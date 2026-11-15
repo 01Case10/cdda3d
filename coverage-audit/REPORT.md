@@ -321,6 +321,44 @@ are exactly wave 2's scope: manufactured/mechanisms/sunken-
 helicopter (18), triffid/reverberations/ice (20), and the 26-id
 scatter.
 
+## TERRAIN COMPLETE: 0 missing (Phase 2g.4 batches 8–10, 2026-11-15)
+
+Wave 2 closed the category. **Terrain: 0 missing of 1,271 —
+100.0% coverage** in the shipped-universe audit (overlay method,
+full chain re-resolved against every folder in `new-tiles/`).
+
+- **Batch 8 — triffid, reverberations, ice (20 ids).** Bark walls
+  and floors, root-chevrons slopes, bramble doors (closed weave vs
+  gaping open), the inner-cabins void pools and the magenta exit
+  portal over `bg: t_inner_cabins_void`, radiosphere tree and bush,
+  thin/thick ice over shallow and deep water, and the two-tone
+  checker `t_pseudo_phase`. `draw_triffid_ice.py`. Overlay
+  (baseline 64 reproduced): 64 → **44**, 95.0% → 96.5%.
+- **Batch 9 — the scatter (26 ids).** Everything left: natural
+  beehive, grazed and holy grass, gelatinous groundcover, the LIXA
+  folded/unfolded walls and infinite shafts, nether basalt and
+  black glass, scarlet-sea water and scaffolding, water cubes,
+  shore boulders (one oyster-crusted), the Isherwood spawn dirt,
+  fungal colony and transformed fungal wall, bone floor,
+  portcullis, the radiosphere glowing floor, shuttered window.
+  `draw_scatter_terrain.py`. Overlay: 44 → **18**, 96.5% → 98.6%.
+- **Batch 10 — manufactured, mechanisms, sunken helicopter
+  (18 ids).** The missile and its exploded twin, the radiosphere
+  radio tower with its spotlight, nanofab body (whole and broken),
+  milking machine, lean-to, brick oven base, boom barrier, the
+  Balthazar intercom, elevator controls (lit and powerless), the
+  nuclear reactor, and the five waterlogged helicopter tiles (the
+  rotor composited over `bg: t_sunkenhelicopter_floor`).
+  `draw_manufactured.py`. Overlay: 18 → **0**.
+
+All three batches verified per the 2g.4 gate (parent re-run):
+voxelizer all-`exact`, 0 missing (60/78/54 layers), byte-identical
+re-runs, opacity checks clean (no semi-transparent pixels outside
+the by-design transparent feature sprites), previews inspected.
+
+The drive continues with furniture (174 missing at the audit) and
+monsters (468).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

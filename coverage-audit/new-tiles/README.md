@@ -1,5 +1,31 @@
 # New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension, the regional templates
 
+## TERRAIN COMPLETE — batches 8–10 (Phase 2g.4 wave 2, 2026-11-15)
+
+**Terrain coverage is 100%: 0 missing of 1,271** in the
+shipped-universe audit. Wave 2's three batches:
+
+- **Batch 8 (20 ids)** — triffid bark walls/floors, root slopes,
+  bramble doors; reverberation voids and the magenta exit portal;
+  radiosphere tree/bush; thin/thick shallow/deep ice; the checker
+  placeholder. `draw_triffid_ice.py`, `preview_triffid_ice.png`.
+  Missing 64 → 44 (96.5%).
+- **Batch 9 (26 ids)** — the scatter: beehive, grasses, gel
+  groundcover, LIXA walls and shafts, nether basalt/glass, scarlet
+  sea, water cubes, shore boulders, fungal pair, bone floor,
+  portcullis, glowing floor, shuttered window.
+  `draw_scatter_terrain.py`, `preview_scatter_terrain.png`.
+  Missing 44 → 18 (98.6%).
+- **Batch 10 (18 ids)** — missile pair, radio tower, nanofab pair,
+  milking machine, lean-to, brick oven, boom barrier, intercom,
+  elevator controls, reactor, and the five sunken-helicopter tiles.
+  `draw_manufactured.py`, `preview_manufactured.png`.
+  Missing 18 → **0 (100%)**.
+
+All parent re-verified: voxelizer all-`exact`/0 missing,
+byte-identical re-runs, opacity checks clean, previews inspected.
+Furniture and monsters are the remaining drive.
+
 ## Terrain batch 7: the walls (Phase 2g.4, 2026-11-15)
 
 **All 20 missing ids in `terrain-walls.json`**: the shipping-
