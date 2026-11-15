@@ -1,5 +1,43 @@
 # New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension, the regional templates
 
+## Terrain batch 5: floors, roofs, z-level transitions (Phase 2g.4, 2026-11-15)
+
+**22 ids** from `terrain-floors-indoor.json`, `terrain-roofs.json`,
+and `terrain-zlevel-transitions.json`: brick floor, the warped-stone
+floors in four glow variants, cratered broken metal floor, the rad
+platform, greenhouse floors (seedlings vs bare tilled ridges),
+warped and canvas roofs, four treetops (mixed, evergreen, dead,
+giant red fern), four earth ramps with direction chevrons, and the
+low-stairs pair. Drawn by `draw_floors_roofs.py` (PIL,
+deterministic; all sprites fully opaque — the first run's
+translucent-ink marks were caught and restructured through
+alpha-composited overlays).
+
+Verified: release voxelizer test-tileset run, **22 materials, all
+`exact`, 0 missing** (66 layers), byte-identical re-run, parent
+re-verified including the opacity check. `preview_floors_roofs.png`
+is the contact sheet. Coverage: terrain missing **122 → 100**,
+coverage **90.4% → 92.1%**.
+
+## Terrain batch 4: the nether labyrinth (Phase 2g.4, 2026-11-15)
+
+**13 ids**: the missing `t_nl_*` labyrinth terrain plus
+`t_slope_to_bosky_labyrinth` — cratered glowing metal floor,
+starfield chasm, scrap columns (the lit one composited over
+`bg: t_nl_column`), the mechanism lever over the metal floor,
+fluorescent cybergrass, overgrown welded wall, sparkling soil,
+lattice suspended bridge, and the three mission obelisks (identical
+in game data, drawn identically). The glowberry pair is covered by
+`looks_like` to the alien-meadow shrubs, not by folders here. Drawn
+by `draw_nether_labyrinth.py` (PIL, deterministic).
+
+Verified: release voxelizer test-tileset run, **13 materials, all
+`exact`, 0 missing** (39 layers), byte-identical re-run, parent
+re-verified. `preview_nether_labyrinth.png` is the contact sheet.
+Coverage: terrain missing **135 → 122**, coverage **89.4% → 90.4%**.
+
+---
+
 ## Terrain batch 3: the regional-pseudo templates (Phase 2g.4, 2026-11-15)
 
 The zero-drive's first batch: **all 29 missing ids in

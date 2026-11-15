@@ -233,6 +233,50 @@ byte-identical re-run. Coverage movement (overlay method, baseline
 terrain set is now empty — every one of the remaining 135 missing
 terrain ids is player-visible.
 
+## Created: the nether labyrinth (Phase 2g.4 batch 4, 2026-11-15)
+
+**13 ids**: the missing `t_nl_*` labyrinth terrain (cratered metal
+floor with glowing cracks, starfield chasm, scrap columns — one
+carrying a light, over `bg: t_nl_column` — a red-knobbed mechanism
+lever over the metal floor, fluorescent cybergrass, an overgrown
+welded wall, sparkling soil, a diamond-lattice suspended bridge)
+plus `t_slope_to_bosky_labyrinth`, and the three mission obelisks,
+which the game data gives identical name/description/symbol/color
+("Metal stele") and are therefore drawn identically.
+`new-tiles/draw_nether_labyrinth.py`;
+`new-tiles/preview_nether_labyrinth.png`. (The glowberry pair is
+*not* in this batch: it has no folders of its own and is covered by
+its `looks_like` resolution to the alien-meadow shrubs, counted
+since batch 1.)
+
+Verified per the 2g.4 gate (parent re-run): **13 materials, all
+`exact`, 0 missing** (39 layers), byte-identical re-run. Coverage
+movement (overlay method, baseline 135 reproduced first): 13
+direct, no rescues — terrain missing **135 → 122**, coverage
+**89.4% → 90.4%** (1,136/1,271 → 1,149/1,271).
+
+## Created: floors, roofs, z-level transitions (Phase 2g.4 batch 5, 2026-11-15)
+
+**22 ids** across three files: indoor floors (brick courses, the
+warped-stone family in four glow variants, cratered broken metal,
+the rad platform's bolted ring, greenhouse seedling rows vs bare
+tilled ridges), roofs (warped, stitched blue canvas, and four
+treetops — mixed canopy, evergreen, dead limbs, giant red fern),
+and z-level transitions (four earth ramps with direction chevrons,
+the low stairs begin/end pair). `new-tiles/draw_floors_roofs.py`;
+`new-tiles/preview_floors_roofs.png`.
+
+One process note: the batch's first script run produced
+semi-transparent pixels in 9 sprites (this Pillow build's
+`ImageDraw` replaces rather than blends); the agent caught it,
+restructured those marks through alpha-composited overlays, and the
+parent re-check confirms **all 22 sprites are fully opaque**.
+Verified per the 2g.4 gate (parent re-run): **22 materials, all
+`exact`, 0 missing** (66 layers), byte-identical re-run. Coverage
+movement (overlay method, baseline 122 reproduced first): 22
+direct, no rescues — terrain missing **122 → 100**, coverage
+**90.4% → 92.1%** (1,149/1,271 → 1,171/1,271).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
