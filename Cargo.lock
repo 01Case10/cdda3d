@@ -503,14 +503,18 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "billboard",
  "bytemuck",
  "fx",
  "glam",
  "image",
+ "lighting",
  "mesher",
  "pollster",
+ "proto",
  "serde_json",
  "treebuild",
+ "ui-share",
  "wgpu",
  "winit",
 ]
@@ -770,6 +774,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdf242682df893b86f33a73828fb09ca4b2d3bb6cc95249707fc684d27484b91"
 dependencies = [
  "bitflags 2.13.2",
+]
+
+[[package]]
+name = "hardcases"
+version = "0.1.0"
+dependencies = [
+ "proto",
 ]
 
 [[package]]
@@ -1778,6 +1789,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "release"
+version = "0.1.0"
+dependencies = [
+ "hardcases",
+ "proto",
+ "transient",
+ "ui-share",
+ "vehicles",
+]
+
+[[package]]
 name = "renderdoc-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2234,6 +2256,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 
 [[package]]
+name = "transient"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "proto",
+]
+
+[[package]]
 name = "treebuild"
 version = "0.1.0"
 dependencies = [
@@ -2293,6 +2323,15 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "vehicles"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "mesher",
+ "proto",
+]
 
 [[package]]
 name = "version_check"

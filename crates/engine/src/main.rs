@@ -1,7 +1,10 @@
 //! voxel-engine binary.
 //!
 //! Modes:
-//! - (no args) windowed winit + wgpu app rendering the fake house.
+//! - (no args) windowed winit + wgpu app: the live frame loop
+//!   (Phase 2h) — every frame composed by `frame::render_frame`
+//!   and presented; `--billboards`, `--light-hour`, `--ui-stub`,
+//!   `--effects` seat the stub scene inputs.
 //! - `--headless-capture --snapshot stub-house --camera x,y,yaw,pitch
 //!   [--distance d] [--cutaway z] --size WxH --out file.png`:
 //!   offscreen render to PNG, no window / surface / event loop.
@@ -16,11 +19,9 @@ use std::time::Instant;
 use engine::camera::OrbitCamera;
 use engine::capture::{run_capture, CaptureArgs, RendererKind};
 use engine::cutaway::CutawayState;
+use engine::frame::BillboardScene;
 use engine::overlay::{resize_action, DebugOverlay, FpsCounter, FramePacer, ResizeAction};
-use engine::render::{create_depth_view, Renderer};
-use engine::rt::RtBlit;
 use engine::world;
-use treebuild::render::{RtCamera, RtRenderer, RtScene};
 use glam::Vec3;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
@@ -53,8 +54,11 @@ fn main() -> ExitCode {
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
              [--textures voxelizer-output-dir] [--effects effects.json] \
-             [--fx-fields-off] [--fx-post-off] \
-             --size WxH --out file.png] [--scene-report] [--renderer raster|rt] [--textures dir]"
+             [--fx-fields-off] [--fx-post-off] [--billboards fixture|<atlas-dir>] \
+             [--light-hour H] [--ui-stub] \
+             --size WxH --out file.png] [--scene-report] \
+             [--renderer raster|rt] [--textures dir] [--effects effects.json] \
+             [--billboards fixture|<atlas-dir>] [--light-hour H] [--ui-stub]"
         );
         return ExitCode::SUCCESS;
     }
@@ -62,7 +66,56 @@ fn main() -> ExitCode {
         .and_then(|s| RendererKind::parse(&s))
         .unwrap_or(RendererKind::Raster);
     let textures = value_after(&args, "--textures").map(std::path::PathBuf::from);
-    windowed_main(kind, textures)
+    let effects = value_after(&args, "--effects").map(std::path::PathBuf::from);
+    let billboards = match value_after(&args, "--billboards") {
+        Some(s) if s == "fixture" => Some(BillboardScene::fixture_crowd()),
+        Some(dir) => match BillboardScene::ultica_crowd(std::path::Path::new(&dir)) {
+            Ok(scene) => Some(scene),
+            Err(e) => {
+                eprintln!("voxel-engine: --billboards atlas load failed: {e}");
+                return ExitCode::from(2);
+            }
+        },
+        _ => None,
+    };
+    let light_hour = value_after(&args, "--light-hour").and_then(|s| s.parse().ok());
+    windowed_main(WindowConfig {
+        renderer_kind: kind,
+        textures_dir: textures,
+        effects,
+        billboards,
+        ui_stub: args.iter().any(|a| a == "--ui-stub"),
+        light_hour,
+    })
+}
+
+/// Shared by the headless and windowed entry points: build the
+/// Phase 2h scene inputs from CLI flags (`--billboards`,
+/// `--light-hour`, `--ui-stub` at `ui_size`).
+fn apply_scene_flags(
+    cap: &mut CaptureArgs,
+    args: &[String],
+    ui_size: (u32, u32),
+) -> Result<(), String> {
+    if let Some(s) = value_after(args, "--billboards") {
+        cap.billboards = Some(if s == "fixture" {
+            BillboardScene::fixture_crowd()
+        } else {
+            BillboardScene::ultica_crowd(std::path::Path::new(&s))?
+        });
+    }
+    if let Some(h) = value_after(args, "--light-hour") {
+        let hour: f32 = h.parse().map_err(|_| format!("bad --light-hour '{h}'"))?;
+        cap.lighting = Some(engine::frame::LightingScene::fake_house(
+            hour,
+            lighting::WeatherKind::Clear,
+        ));
+    }
+    if args.iter().any(|a| a == "--ui-stub") {
+        let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;
+        cap.ui = Some(engine::frame::prepare_ui(&store, &note)?);
+    }
+    Ok(())
 }
 
 fn value_after(args: &[String], flag: &str) -> Option<String> {
@@ -144,6 +197,11 @@ fn headless_main(args: &[String]) -> ExitCode {
     if let Some(o) = value_after(args, "--out") {
         cap.out = o.into();
     }
+    let ui_size = cap.size;
+    if let Err(e) = apply_scene_flags(&mut cap, args, ui_size) {
+        eprintln!("headless-capture: {e}");
+        return ExitCode::from(2);
+    }
     match run_capture(&cap) {
         Ok(outcome) => {
             println!(
@@ -170,8 +228,21 @@ fn headless_main(args: &[String]) -> ExitCode {
 }
 
 // ---------------------------------------------------------------------
-// Windowed app (thin shell over the lib; shared Renderer with capture)
+// Windowed app (Phase 2h: a thin shell over the live frame loop —
+// every frame is composed by `frame::render_frame`, the same
+// function the headless capture reads back, and presented with a
+// plain blit. There is no second, windowed-only composition.)
 // ---------------------------------------------------------------------
+
+/// Everything the windowed app was launched with.
+struct WindowConfig {
+    renderer_kind: RendererKind,
+    textures_dir: Option<std::path::PathBuf>,
+    effects: Option<std::path::PathBuf>,
+    billboards: Option<engine::frame::BillboardScene>,
+    ui_stub: bool,
+    light_hour: Option<f32>,
+}
 
 struct GpuState {
     window: Arc<Window>,
@@ -179,109 +250,130 @@ struct GpuState {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    renderer: Renderer,
-    gpu_meshes: Vec<engine::render::GpuMesh>,
-    depth_view: wgpu::TextureView,
+    blit: engine::frame::PresentBlit,
     size: (u32, u32),
-    // Phase 2c: present only when --renderer rt was requested.
-    rt_renderer: Option<RtRenderer>,
-    rt_scene: Option<RtScene>,
-    rt_blit: Option<RtBlit>,
 }
 
 struct App {
     gpu: Option<GpuState>,
+    /// The frame template `render_frame` runs each redraw; camera,
+    /// cutaway, size and animation time are synced into it in
+    /// place (no per-frame clone — the billboard atlas is an
+    /// image).
+    frame_args: CaptureArgs,
     camera: OrbitCamera,
     cutaway: CutawayState,
     overlay: DebugOverlay,
     fps_counter: FpsCounter,
     pacer: FramePacer,
-    renderer_kind: RendererKind,
-    textures_dir: Option<std::path::PathBuf>,
+    /// Stub UI store + router (Phase 2h.4 windowed half): clicks
+    /// route through the Phase 4 input router and land in
+    /// `input_sink` — the engine has no IPC socket client yet, so
+    /// the sink is an in-process log standing in for the fork's
+    /// input channel (live seating is 0.1/0.2 territory).
+    ui_store: Option<ui_share::UiShmStore>,
+    router: Option<ui_share::input::InputRouter>,
+    input_sink: Vec<proto::InputT>,
+    cursor: (f64, f64),
+    drag_from: Option<(f64, f64)>,
+    started: Instant,
 }
 
 impl App {
-    fn new(renderer_kind: RendererKind, textures_dir: Option<std::path::PathBuf>) -> Self {
+    fn new(cfg: WindowConfig) -> Self {
         // Follow target: house center tile (6,6) -> world (6, top, -6).
         let camera = OrbitCamera::new(Vec3::new(6.0, 1.0, -6.0));
+        let mut frame_args = CaptureArgs {
+            renderer: cfg.renderer_kind,
+            textures: cfg.textures_dir,
+            effects: cfg.effects,
+            billboards: cfg.billboards,
+            lighting: cfg
+                .light_hour
+                .map(|h| engine::frame::LightingScene::fake_house(h, lighting::WeatherKind::Clear)),
+            ..CaptureArgs::default()
+        };
+        // Stub UI: a fixed 640x360 synthetic frame in an in-memory
+        // store (the compositor stretches it to the window).
+        let (ui_store, router) = if cfg.ui_stub {
+            match engine::frame::stub_ui_store(640, 360, false) {
+                Ok((store, note)) => match engine::frame::prepare_ui(&store, &note) {
+                    Ok(prepared) => {
+                        let router =
+                            ui_share::input::InputRouter::new(prepared.mode, prepared.terrain_rect);
+                        frame_args.ui = Some(prepared);
+                        (Some(store), Some(router))
+                    }
+                    Err(e) => {
+                        eprintln!("voxel-engine: stub UI prepare failed: {e}");
+                        (None, None)
+                    }
+                },
+                Err(e) => {
+                    eprintln!("voxel-engine: stub UI store failed: {e}");
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
         Self {
             gpu: None,
+            frame_args,
             camera,
             cutaway: CutawayState::default(),
             overlay: DebugOverlay::new(),
             fps_counter: FpsCounter::new(),
             pacer: FramePacer::new(),
-            renderer_kind,
-            textures_dir,
+            ui_store,
+            router,
+            input_sink: Vec::new(),
+            cursor: (0.0, 0.0),
+            drag_from: None,
+            started: Instant::now(),
         }
     }
 
+    /// Scene inputs (cutaway, textures, lighting) are read by
+    /// `render_frame` from `frame_args` + `cutaway` at draw time,
+    /// so a "remesh" is just a dirty mark now.
     fn remesh(&mut self) {
-        let Some(gpu) = &self.gpu else { return };
-        let visible = self.cutaway.visible_levels();
-        if self.renderer_kind == RendererKind::Rt {
-            // Rebuild the tree for the new cutaway selection (the
-            // windowed RT path rebuilds renderer+scene per remesh;
-            // cutaway changes are rare, per-frame rendering reuses
-            // the scene).
-            let mut voxel_world = engine::rt::world_for_levels(&visible);
-            // Phase 2d: variant-prepare the world before the tree
-            // build when textures are on (same flow as the capture
-            // path); a prepare failure leaves the base world, and
-            // the attach below reports the underlying error.
-            let assignments = match &self.textures_dir {
-                Some(dir) => engine::rt::prepare_fake_variants(&mut voxel_world, dir)
-                    .unwrap_or_default(),
-                None => Vec::new(),
-            };
-            match treebuild::build::build_tree(&voxel_world, treebuild::build::BuildConfig::default()) {
-                Ok(built) => {
-                    let (renderer, mut scene) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
-                    if let Some(dir) = &self.textures_dir {
-                        match engine::rt::attach_fake_textures(&gpu.device, &gpu.queue, &mut scene, dir, &assignments) {
-                            Ok(stats) => eprintln!(
-                                "voxel-engine: RT textures: {} materials, {} layers",
-                                stats.textured_materials, stats.layers_uploaded
-                            ),
-                            Err(e) => eprintln!("voxel-engine: RT textures unavailable: {e}"),
-                        }
-                    }
-                    let gpu = self.gpu.as_mut().unwrap();
-                    gpu.rt_renderer = Some(renderer);
-                    gpu.rt_scene = Some(scene);
-                }
-                Err(e) => eprintln!("voxel-engine: RT tree build failed: {e}"),
-            }
-            self.pacer.mark_world_dirty();
-            return;
-        }
-        // Phase 2g.2: the windowed raster remesh shares scene
-        // preparation with the capture path — with --textures the
-        // spec is built by the shared builder and installed via
-        // set_textures (before this wiring the windowed raster
-        // path was always flat; the RT branch above already had
-        // its textures).
-        match engine::scene_prep::prepare_raster_house(&visible, self.textures_dir.as_deref()) {
-            Ok((meshes, stats, spec)) => {
-                self.overlay.stats = stats;
-                let gpu_meshes = gpu.renderer.upload(&gpu.device, &meshes);
-                let gpu = self.gpu.as_mut().unwrap();
-                if let Some(spec) = &spec {
-                    gpu.renderer.set_textures(&gpu.device, &gpu.queue, spec);
-                }
-                gpu.gpu_meshes = gpu_meshes;
-            }
-            Err(e) => eprintln!("voxel-engine: raster scene prep failed: {e}"),
-        }
         self.pacer.mark_world_dirty();
     }
 
+    /// Sync the live camera/cutaway/size/time into the frame
+    /// template before a redraw.
+    fn sync_frame_args(&mut self) {
+        let a = &mut self.frame_args;
+        a.camera_target = (self.camera.target.x, -self.camera.target.z);
+        a.yaw_deg = self.camera.yaw_deg;
+        a.pitch_deg = self.camera.pitch_deg;
+        a.distance = self.camera.distance;
+        a.cutaway_z = self
+            .cutaway
+            .visible_levels()
+            .last()
+            .copied()
+            .unwrap_or(a.cutaway_z);
+        if let Some(gpu) = &self.gpu {
+            a.size = gpu.size;
+        }
+        let t = self.started.elapsed().as_secs_f32();
+        a.fx_time = t;
+        if let Some(scene) = &mut a.billboards {
+            scene.time_s = t;
+        }
+    }
+
     fn render(&mut self) {
-        let Some(gpu) = &self.gpu else { return };
-        if !engine::overlay::renderable(gpu.size) {
+        let Some(size) = self.gpu.as_ref().map(|g| g.size) else {
+            return;
+        };
+        if !engine::overlay::renderable(size) {
             return; // minimized: skip, never present to a zero-size surface
         }
-        let aspect = gpu.size.0 as f32 / gpu.size.1 as f32;
+        self.sync_frame_args();
+        let Some(gpu) = &self.gpu else { return };
         let frame = match gpu.surface.get_current_texture() {
             Ok(f) => f,
             Err(_) => return,
@@ -289,30 +381,15 @@ impl App {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        if self.renderer_kind == RendererKind::Rt {
-            if let (Some(rt_renderer), Some(rt_scene), Some(rt_blit)) =
-                (&gpu.rt_renderer, &gpu.rt_scene, &gpu.rt_blit)
-            {
-                let rt_camera = RtCamera::from_world(
-                    self.camera.eye(),
-                    self.camera.target,
-                    60.0,
-                    aspect,
-                );
-                let rt_frame =
-                    rt_renderer.render(&gpu.device, &gpu.queue, rt_scene, &rt_camera, gpu.size, true);
-                rt_blit.draw(&gpu.device, &gpu.queue, &rt_frame.color, &view);
+        match engine::frame::render_frame(&gpu.device, &gpu.queue, &self.frame_args) {
+            Ok(outcome) => {
+                if let Some(stats) = &outcome.stats.mesh_stats {
+                    self.overlay.stats = *stats;
+                }
+                gpu.blit
+                    .draw(&gpu.device, &gpu.queue, &outcome.texture, &view);
             }
-        } else {
-            gpu.renderer
-                .set_view_projection(&gpu.queue, self.camera.view_projection(aspect));
-            gpu.renderer.draw(
-                &gpu.device,
-                &gpu.queue,
-                &gpu.gpu_meshes,
-                &view,
-                &gpu.depth_view,
-            );
+            Err(e) => eprintln!("voxel-engine: frame failed: {e}"),
         }
         frame.present();
         self.overlay.fps = self.fps_counter.tick(Instant::now());
@@ -322,6 +399,91 @@ impl App {
             self.cutaway.visible_levels().last().copied().unwrap_or(0)
         ));
         self.pacer.rendered();
+    }
+
+    /// Route one left-click press through the Phase 4 input
+    /// router (when the stub UI is up): a world-pick candidate runs
+    /// the DDA pick against the fake house and the click lands in
+    /// the input sink as a protocol `Input` message; a panel click
+    /// lands as the router's own `InputT`; a press outside the UI
+    /// quad starts a camera drag when the mode allows it. Without
+    /// a router every press starts a camera drag.
+    fn handle_click_press(&mut self) {
+        let Some(gpu) = &self.gpu else { return };
+        let window = ui_share::Size2 { w: gpu.size.0, h: gpu.size.1 };
+        let Some(router) = self.router.clone() else {
+            self.drag_from = Some(self.cursor);
+            return;
+        };
+        // The stub UI canvas is 640x360, stretched over the window
+        // (the same mode the compositor draws it with).
+        let ui_size = ui_share::Size2 { w: 640, h: 360 };
+        let viewport =
+            ui_share::scaling::compute_viewport(window, ui_size, ui_share::ScalingMode::StretchNearest);
+        match router.route_window_click(
+            self.cursor.0 as f32,
+            self.cursor.1 as f32,
+            &viewport,
+            ui_size,
+            0,
+            true,
+            ui_share::input::Modifiers::default(),
+        ) {
+            ui_share::input::ClickRoute::WorldPick { ui_x, ui_y } => {
+                let occupied = engine::frame::fake_house_occupied();
+                let request_id = self.input_sink.len() as u64 + 1;
+                let pick = ui_share::picking::pick_from_ui_click(
+                    request_id,
+                    &router,
+                    &engine::frame::pick_camera(&self.camera),
+                    ui_x,
+                    ui_y,
+                    occupied,
+                );
+                match pick {
+                    Some(r) if r.hit => {
+                        let pos = r.pos.unwrap_or_default();
+                        eprintln!(
+                            "voxel-engine: pick #{} hit tile ({}, {}, {}) [stub sink]",
+                            request_id, pos.x, pos.y, pos.z
+                        );
+                    }
+                    Some(_) => eprintln!("voxel-engine: pick #{request_id} missed [stub sink]"),
+                    None => eprintln!("voxel-engine: pick #{request_id} not a world pick"),
+                }
+                let mut click = proto::InputT::default();
+                click.kind = proto::InputKind::MouseButton;
+                click.mouse_x = ui_x;
+                click.mouse_y = ui_y;
+                click.button = 0;
+                click.pressed = true;
+                click.focused = true;
+                self.input_sink.push(click);
+            }
+            ui_share::input::ClickRoute::UiClick(input) => {
+                eprintln!(
+                    "voxel-engine: UI click ({}, {}) [stub sink]",
+                    input.mouse_x, input.mouse_y
+                );
+                self.input_sink.push(input);
+            }
+            ui_share::input::ClickRoute::Ignored => {
+                if router.camera_drag_allowed() {
+                    self.drag_from = Some(self.cursor);
+                }
+            }
+        }
+    }
+
+    /// Game keys that are not camera controls also produce
+    /// protocol inputs in the stub sink (Phase 4 key mapping).
+    fn handle_game_key(&mut self, key: ui_share::input::EngineKey) {
+        let input = ui_share::input::key_to_input(key, ui_share::input::Modifiers::default(), true);
+        eprintln!(
+            "voxel-engine: key input code {} [stub sink]",
+            input.key_code
+        );
+        self.input_sink.push(input);
     }
 }
 
@@ -378,26 +540,15 @@ impl ApplicationHandler for App {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
-        let renderer = Renderer::new(&device, format);
-        let depth_view = create_depth_view(&device, size);
-        let rt_blit = if self.renderer_kind == RendererKind::Rt {
-            Some(RtBlit::new(&device, format))
-        } else {
-            None
-        };
+        let blit = engine::frame::PresentBlit::new(&device, format);
         self.gpu = Some(GpuState {
             window,
             surface,
             device,
             queue,
             config,
-            renderer,
-            gpu_meshes: Vec::new(),
-            depth_view,
+            blit,
             size,
-            rt_renderer: None,
-            rt_scene: None,
-            rt_blit,
         });
         self.remesh();
         self.gpu.as_ref().unwrap().window.request_redraw();
@@ -423,12 +574,32 @@ impl ApplicationHandler for App {
                         gpu.config.height = height;
                         gpu.size = (width, height);
                         gpu.surface.configure(&gpu.device, &gpu.config);
-                        gpu.depth_view = create_depth_view(&gpu.device, gpu.size);
                         self.pacer.mark_world_dirty();
                     }
                 }
             }
             WindowEvent::RedrawRequested => self.render(),
+            WindowEvent::CursorMoved { position, .. } => {
+                let prev = self.cursor;
+                self.cursor = (position.x, position.y);
+                if let Some(from) = self.drag_from {
+                    let dx = (self.cursor.0 - prev.0) as f32;
+                    let dy = (self.cursor.1 - prev.1) as f32;
+                    let _ = from;
+                    if dx != 0.0 || dy != 0.0 {
+                        self.camera.orbit(dx * 0.3, -dy * 0.3, 0.0);
+                        self.pacer.mark_camera_dirty();
+                    }
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if button == winit::event::MouseButton::Left {
+                    match state {
+                        ElementState::Pressed => self.handle_click_press(),
+                        ElementState::Released => self.drag_from = None,
+                    }
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
@@ -476,6 +647,18 @@ impl ApplicationHandler for App {
                         camera_moved = false;
                         self.pacer.mark_world_dirty();
                     }
+                    PhysicalKey::Code(KeyCode::KeyZ) => {
+                        camera_moved = false;
+                        self.handle_game_key(ui_share::input::EngineKey::Char('z'));
+                    }
+                    PhysicalKey::Code(KeyCode::Enter) => {
+                        camera_moved = false;
+                        self.handle_game_key(ui_share::input::EngineKey::Enter);
+                    }
+                    PhysicalKey::Code(KeyCode::KeyI) => {
+                        camera_moved = false;
+                        self.handle_game_key(ui_share::input::EngineKey::Char('i'));
+                    }
                     _ => camera_moved = false,
                 }
                 if camera_moved {
@@ -487,13 +670,10 @@ impl ApplicationHandler for App {
     }
 }
 
-fn windowed_main(
-    renderer_kind: RendererKind,
-    textures_dir: Option<std::path::PathBuf>,
-) -> ExitCode {
+fn windowed_main(cfg: WindowConfig) -> ExitCode {
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(renderer_kind, textures_dir);
+    let mut app = App::new(cfg);
     match event_loop.run_app(&mut app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
