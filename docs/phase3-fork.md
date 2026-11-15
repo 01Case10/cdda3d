@@ -119,6 +119,20 @@ only; FlatBuffers is header-only as vendored).
 
 ## 5. Exact unblock steps (build-capable machine: Joey's PC or ≥4-core/≥16 GB CI)
 
+**Scripted (2026-11-15): `tools/pc-build/Build-CddaVoxel.ps1`** — one
+command on Joey's PC does everything below for the baseline + the
+`[voxel]` cases (deps via MSYS2 UCRT64, full clone at the pinned
+commit, separate baseline/fork build dirs, JUnit-recorded baseline,
+3.19 failure-set diff). It applies the §2 build lines via
+`tools/pc-build/patch_cmake.py` (the pinned `src/CMakeLists.txt` glob
+is non-recursive, so the module must be appended explicitly) and
+stages the FlatBuffers 24.3.25 headers inside `src/voxel_ipc/` —
+upstream vendors 1.12.0, which the generated header's static_assert
+rejects. Hooks H1–H7 are NOT applied by the script: the Catch2 cases
+link the exporter directly and do not need them; the hooks are for
+live IPC, the step after. See `tools/pc-build/README.md`. The manual
+steps below remain the reference for what the script does.
+
 ```sh
 # 0. Precondition — Phase 0 tests 0.1/0.2 (curses build only; no SDL3)
 cmake -DTILES=OFF -DCURSES=ON -B build && cmake --build build -j
