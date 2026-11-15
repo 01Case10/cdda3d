@@ -1,0 +1,12 @@
+[package]
+name = "release"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+proto = { path = "../proto" }
+vehicles = { path = "../vehicles" }
+transient = { path = "../transient" }
+hardcases = { path = "../hardcases" }
+ui-share = { path = "../ui-share" }
