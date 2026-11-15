@@ -1,4 +1,30 @@
-# New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension
+# New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension, the regional templates
+
+## Terrain batch 3: the regional-pseudo templates (Phase 2g.4, 2026-11-15)
+
+The zero-drive's first batch: **all 29 missing ids in
+`terrain-regional-pseudo.json`** — the `t_region_*` groundcover,
+soil, tree, and shrub region templates, plus `t_highland_groundcover`
+and the string-dimension / netherum-labyrinth / portal-storm
+groundcovers. All are named "pseudo terrain" in game ("should never
+actually show up"), and all are drawn anyway — zero is zero — as the
+full-tile ground each template names: curated lawn, tilled furrow
+soil, swamp algae with water glints, barren cracked dirt, ravine
+scree, forest floors graded by density (evergreen needle litter and
+cones, fallen fruit, wild berries, nut shells, deep shade, ash-gray
+dead), shrub grounds, highland grit, the string dimension's black
+specked ground, netherum rubble, portal-storm scorched ash. Drawn by
+`draw_regional_pseudo.py` (PIL, deterministic); all entries are
+full-tile (`bg: ""`).
+
+Verified: release voxelizer test-tileset run, **29 materials, all
+`exact`, 0 missing** (87 layers), byte-identical re-run, parent
+re-verified. `preview_regional_pseudo.png` is the contact sheet;
+`preview.png` now stacks this batch on top. Coverage: terrain
+missing **164 → 135**, coverage **87.1% → 89.4%** — and the
+non-player-visible terrain set is now empty.
+
+---
 
 ## Terrain batch 2: the string dimension (Phase 2g.4, 2026-11-15)
 

@@ -210,6 +210,29 @@ missing (shipped) moves **184 → 164**, terrain coverage **85.5% →
 **155 → 135**. Remaining named terrain clusters: the nether
 labyrinth `t_nl_*` (17) and the vitrified set (16).
 
+## Created: the regional-pseudo templates (Phase 2g.4 batch 3, 2026-11-15)
+
+The zero-drive (Joey: "drive the coverage until nothing is missing")
+opened with the audit's least visible row: **all 29 missing ids in
+`terrain-regional-pseudo.json`** — the `t_region_*` groundcover/soil/
+tree/shrub templates, highland groundcover, and the string-dimension,
+netherum-labyrinth, and portal-storm groundcovers. They are marked
+"should never actually show up" in game, but zero is zero, and each
+is drawn as the full-tile ground its template role names (curated
+lawn vs tilled furrows, swamp algae, barren cracked dirt, ravine
+scree, forest floors graded by density, shrub grounds), in the same
+decomposed layout (`new-tiles/draw_regional_pseudo.py`;
+`new-tiles/preview_regional_pseudo.png`).
+
+Verified per the 2g.4 gate (parent re-run): **29 materials, all
+resolution `exact`, 0 missing** (87 layers, 29 sprites),
+byte-identical re-run. Coverage movement (overlay method, baseline
+164 reproduced first): 29 direct, no rescues — terrain missing
+**164 → 135**, coverage **87.1% → 89.4%** (1,107/1,271 →
+1,136/1,271). Side effect worth noting: the non-player-visible
+terrain set is now empty — every one of the remaining 135 missing
+terrain ids is player-visible.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
