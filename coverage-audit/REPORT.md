@@ -559,6 +559,35 @@ values only {0, 255}. Coverage movement (monster overlay,
 baseline 351 reproduced): 52 direct, no rescues — monsters
 missing **351 → 299**, coverage **75.1%** (904/1,203).
 
+## Created: reptiles & amphibians (Phase 2g.4 batch 19, 2026-11-15)
+
+**All 56 missing ids in `reptile_amphibian.json`**: garter and
+worm snakes (pink belly showing), rattlesnakes from the baby's
+tail button to the 620 L mega deathrattle at 96×96 (club tail
+with bone segments, red muscle ropes flanking the maw), the
+five-lined skinks (the baby's tail is blue), turtle hatchlings,
+eleven tadpoles and six giant tadpoles (tail fins as composited
+overlays — the gray tadpole's red-orange black-dotted tip, the
+shift bigtad's crimson-to-yellow gradient), and the whole
+frog/toad radiation: leopard spots with halos, the peeper's X,
+the palette frog's bright square patches, pattern frogs with
+static markings and retained gills, the tusked foul giganfrog,
+and the 650 L megafrogs at 96×96.
+`new-tiles/draw_reptiles.py`; `new-tiles/preview_reptiles.png`.
+
+Verified per the 2g.4 gate (parent re-run): **56 materials, all
+`exact`, 0 missing** (168 layers); every monster PNG on disk
+byte-identical across the re-run. One environment note: the
+workspace's root `Cargo.toml` currently lists three crate
+members another session is scaffolding (vehicles / transient /
+hardcases) whose directories are not all on disk yet, so
+`cargo run` cannot load the workspace; verification used the
+prebuilt `target/release/voxelizer` binary (built today from this
+tree) with the standard CLI — the same tool, unaffected by
+workspace membership. Coverage movement (monster overlay,
+baseline 299 reproduced): 56 direct, no rescues — monsters
+missing **299 → 243**, coverage **79.8%** (960/1,203).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

@@ -26,6 +26,24 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 19: reptiles & amphibians (Phase 2g.4, 2026-11-15)
+
+**All 56 missing ids in `reptile_amphibian.json`** — snakes
+(garter stripes, worm-snake pink belly, rattler chevrons; the
+620 L mega deathrattle at 96×96), five-lined skinks, turtle
+hatchlings, tadpoles and giant tadpoles, and the frog/toad
+radiation up to the 650 L megafrogs at 96×96. Drawn by
+`draw_reptiles.py` (PIL, deterministic), placement by resolved
+volume.
+
+Verified: test-tileset run (prebuilt release voxelizer — the
+workspace manifest currently lists another session's in-flight
+crates, so `cargo run` cannot load it), **56 materials, all
+`exact`, 0 missing** (168 layers); every monster PNG on disk
+byte-identical across the re-run, parent re-verified.
+`preview_reptiles.png` is the contact sheet. Coverage: monsters
+missing **299 → 243**, coverage **79.8%**.
+
 ## Monster batch 18: fish, second half — fish complete (Phase 2g.4, 2026-11-15)
 
 **The remaining 52 missing ids in `fish.json`** — 48 fry sharing
