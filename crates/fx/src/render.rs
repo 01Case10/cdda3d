@@ -143,20 +143,50 @@ impl Vertex {
 const BASE_SHADER: &str = r#"
 struct Uniforms { view_proj: mat4x4<f32>, eye: vec3<f32>, time: f32 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
+// Same layout as the field pass's instance buffer (bound here too):
+// flame instances double as point lights — in the reference look,
+// fire is the scene's light source, pooling warm light on the
+// ground and washing nearby walls.
+struct FieldInst {
+    center: vec3<f32>, size: f32,
+    base_color: vec3<f32>, density: f32,
+    emissive: vec3<f32>, emissive_strength: f32,
+    noise_scale: f32, noise_speed: f32, class_id: u32, seed: f32,
+    drift: vec3<f32>, _pad: f32,
+};
+@group(0) @binding(1) var<storage, read> fields: array<FieldInst>;
 struct VsIn { @location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) color: vec4<f32> };
-struct VsOut { @builtin(position) clip: vec4<f32>, @location(0) normal: vec3<f32>, @location(1) color: vec4<f32> };
+struct VsOut { @builtin(position) clip: vec4<f32>, @location(0) normal: vec3<f32>, @location(1) color: vec4<f32>, @location(2) world: vec3<f32> };
 @vertex fn vs_main(input: VsIn) -> VsOut {
     var out: VsOut;
     out.clip = u.view_proj * vec4<f32>(input.position, 1.0);
     out.normal = input.normal;
     out.color = input.color;
+    out.world = input.position;
     return out;
 }
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(input.normal);
     let l = normalize(vec3<f32>(0.35, 0.8, 0.45));
     let shade = 0.45 + 0.55 * max(dot(n, l), 0.0);
-    return vec4<f32>(input.color.rgb * shade, input.color.a);
+    var col = input.color.rgb * shade;
+    // Flame light: warm pool with distance falloff, stronger on
+    // surfaces facing the flame, gently flickering.
+    let count = arrayLength(&fields);
+    for (var i = 0u; i < count; i++) {
+        let f = fields[i];
+        if (f.class_id != 1u) { continue; }
+        let lp = f.center + vec3<f32>(0.0, 0.35, 0.0);
+        let to_l = lp - input.world;
+        let dist = length(to_l);
+        let radius = 4.2 * f.size;
+        let atten = pow(clamp(1.0 - dist / radius, 0.0, 1.0), 2.0);
+        if (atten <= 0.0) { continue; }
+        let facing = 0.45 + 0.55 * max(dot(n, to_l / max(dist, 1e-4)), 0.0);
+        let flick = 0.92 + 0.13 * sin(u.time * 11.0 + f.seed * 17.0) * sin(u.time * 5.3 + f.seed * 7.0);
+        col += f.emissive * atten * facing * flick * 0.85 * f.density;
+    }
+    return vec4<f32>(col, input.color.a);
 }
 "#;
 
@@ -246,7 +276,7 @@ struct VsOut {
     let corner = CORNERS[vi % 36u];
     var scale = vec3<f32>(f.size, f.size, f.size);
     if (f.class_id == 2u || f.class_id == 3u) { scale.y = f.size * 0.55; } // gas/liquid stay low
-    if (f.class_id == 1u) { scale.y = f.size * 1.3; }                       // flame reaches up
+    if (f.class_id == 1u) { scale = vec3<f32>(f.size * 1.3, f.size * 1.7, f.size * 1.3); } // flame: wide billowing base, tall
     let world = f.center + (corner - vec3<f32>(0.5, 0.0, 0.5)) * scale;
     var out: VsOut;
     out.clip = u.view_proj * vec4<f32>(world, 1.0);
@@ -294,7 +324,7 @@ fn fbm(p: vec3<f32>) -> f32 {
     let view_dir = normalize(input.world - u.eye);
     var scale = vec3<f32>(f.size, f.size, f.size);
     if (f.class_id == 2u || f.class_id == 3u) { scale.y = f.size * 0.55; }
-    if (f.class_id == 1u) { scale.y = f.size * 1.3; }
+    if (f.class_id == 1u) { scale = vec3<f32>(f.size * 1.3, f.size * 1.7, f.size * 1.3); }
     let dir_l = view_dir / scale;
     let p = input.local;
     var t_enter = -1e9;
@@ -312,6 +342,49 @@ fn fbm(p: vec3<f32>) -> f32 {
     }
     let chord = clamp(t_exit - t_enter, 0.0, 1.8);
     let local = clamp(p + dir_l * ((t_enter + t_exit) * 0.5), vec3<f32>(0.0), vec3<f32>(1.0));
+    if (f.class_id == 1u) {
+        // FLAME (redone 2026-11-15 against Joey's HD-2D reference
+        // screenshots): a tapered column of rising tongues with a
+        // heat ramp — near-white core at the base center, through
+        // saturated orange, to a deep red rim — plus rising embers.
+        // NOT the generic soft-volume path: fire is mostly opaque
+        // and is the brightest thing in the scene.
+        let taper = 1.0 - 0.38 * local.y;
+        let cx = (local.x - 0.5) * 2.0 / max(taper, 0.2);
+        let cz = (local.z - 0.5) * 2.0 / max(taper, 0.2);
+        let radial = length(vec2<f32>(cx, cz));
+        let rise = u.time * (0.9 + 0.6 * local.y) * f.noise_speed;
+        let sway = 0.18 * local.y * local.y * sin(u.time * 1.7 + f.seed);
+        let sp = vec3<f32>(local.x * f.noise_scale + sway, local.y * f.noise_scale * 0.8 - rise, local.z * f.noise_scale) + vec3<f32>(f.seed);
+        let fnoise = fbm(sp);
+        let flick = 0.85 + 0.35 * vnoise(vec3<f32>(f.seed * 3.0, u.time * 3.5, 7.0));
+        let thresh = 0.24 + 0.30 * local.y;
+        let body = clamp((fnoise - thresh) * 2.4, 0.0, 1.0);
+        let shape = clamp(1.15 - radial, 0.0, 1.0);
+        var fdens = f.density * body * shape * flick * 2.0;
+        fdens *= 1.0 - smoothstep(0.75, 1.0, local.y) * 0.7; // tips fade out, never black caps
+        let heat = clamp((1.0 - local.y * 1.15) * (1.25 - radial * 0.6) * (0.55 + 0.65 * fnoise) * flick * (0.7 + 0.5 * f.density), 0.0, 1.3);
+        // Ramp anchored on the extracted colors (see density.rs
+        // flame_color, the CPU reference of this same ramp).
+        let s = max(f.emissive_strength, 0.6);
+        let core = mix(f.emissive, vec3<f32>(1.0, 0.97, 0.88), 0.55) * s;
+        let mid = f.emissive * (s * 0.85);
+        let edge = f.base_color * vec3<f32>(1.5, 1.1, 0.85);
+        let rim = f.base_color * vec3<f32>(0.85, 0.30, 0.16);
+        var fcol = rim;
+        fcol = mix(fcol, edge, smoothstep(0.08, 0.30, heat));
+        fcol = mix(fcol, mid, smoothstep(0.42, 0.68, heat));
+        fcol = mix(fcol, core, smoothstep(0.72, 0.98, heat));
+        fcol *= (0.85 + 0.5 * heat);
+        // Embers: sparse bright specks racing upward.
+        let cell = vec3<f32>(local.x * 26.0, local.y * 9.0 - u.time * 2.6, local.z * 26.0) + vec3<f32>(f.seed * 7.0);
+        let spark = vnoise(cell);
+        let ember = step(0.93, spark) * clamp(heat + 0.25 - local.y * 0.4, 0.0, 1.0);
+        fcol += vec3<f32>(1.0, 0.55, 0.15) * ember * 2.4;
+        let falpha = clamp(fdens * 3.0 + ember * 0.8, 0.0, 1.0);
+        if (falpha < 0.004) { return vec4<f32>(0.0); }
+        return vec4<f32>(fcol, falpha);
+    }
     // Animated fbm: time-based only, scrolled by drift/buoyancy.
     let sample = local * f.noise_scale - f.drift * (u.time * f.noise_speed) + vec3<f32>(f.seed);
     let n = fbm(sample);
@@ -324,11 +397,8 @@ fn fbm(p: vec3<f32>) -> f32 {
     let fall = (0.25 + 0.75 * (t * t * (3.0 - 2.0 * t))) * clamp(chord, 0.0, 1.0);
     var dens = f.density * fall * (0.45 + 0.55 * shaped);
     var emis = vec3<f32>(0.0);
-    if (f.class_id == 1u) { // flame: base-heavy + flicker
-        let flick = 0.8 + 0.45 * vnoise(vec3<f32>(f.seed * 3.0, u.time * 3.5, 7.0));
-        dens *= (1.25 - 0.55 * local.y) * flick;
-        emis = f.emissive * (f.emissive_strength * flick);
-    } else if (f.class_id == 2u || f.class_id == 3u) { // gas/liquid stay low
+    // (class 1, flame, returned early above — it has its own path.)
+    if (f.class_id == 2u || f.class_id == 3u) { // gas/liquid stay low
         dens *= 1.15 - 0.75 * local.y;
     } else if (f.class_id == 4u) { // energy shimmer
         let shimmer = 0.9 + 0.2 * vnoise(vec3<f32>(1.0, u.time * 5.0, f.seed));
@@ -478,6 +548,9 @@ pub struct CaptureRequest<'a> {
     pub size: (u32, u32),
     pub post: PostConfig,
     pub time: f32,
+    /// Optional clear color override (e.g. near-black for the night
+    /// fire showcase); `None` uses the default `CLEAR_COLOR`.
+    pub clear: Option<[f32; 3]>,
 }
 
 /// Render one frame offscreen and return it as an image. Fails with
@@ -527,27 +600,82 @@ async fn render_frame_async(req: &CaptureRequest<'_>) -> Result<image::RgbaImage
         usage: wgpu::BufferUsages::UNIFORM,
     });
 
+    // Field instances are built BEFORE the base pass: the base
+    // shader binds the same buffer to light the scene from flames.
+    // Sort back-to-front for correct alpha compositing.
+    let eye = req.camera.eye();
+    let mut placed: Vec<&PlacedField> = req.fields.iter().collect();
+    placed.sort_by(|a, b| {
+        b.world_center()
+            .distance_squared(eye)
+            .partial_cmp(&a.world_center().distance_squared(eye))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut instances: Vec<FieldInstGpu> = placed.iter().map(|f| field_instance(f)).collect();
+    let real_instances = instances.len();
+    if instances.is_empty() {
+        // wgpu rejects zero-sized buffers; bind one dummy instance
+        // and simply never draw it.
+        instances.push(FieldInstGpu {
+            center: [0.0; 3],
+            size: 0.0,
+            base_color: [0.0; 3],
+            density: 0.0,
+            emissive: [0.0; 3],
+            emissive_strength: 0.0,
+            noise_scale: 1.0,
+            noise_speed: 0.0,
+            class_id: 5,
+            seed: 0.0,
+            drift: [0.0; 3],
+            _pad: 0.0,
+        });
+    }
+    let inst_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("fx-field-instances"),
+        contents: bytemuck::cast_slice(&instances),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
     // --- base pipeline ---
     let base_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("fx-base-layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
     });
     let base_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("fx-base-bg"),
         layout: &base_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: uniform_buffer.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: inst_buffer.as_entire_binding(),
+            },
+        ],
     });
     let base_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("fx-base-shader"),
@@ -605,40 +733,6 @@ async fn render_frame_async(req: &CaptureRequest<'_>) -> Result<image::RgbaImage
     });
 
     // --- field pipeline (storage buffer of instances; no textures) ---
-    // Sort back-to-front for correct alpha compositing.
-    let eye = req.camera.eye();
-    let mut placed: Vec<&PlacedField> = req.fields.iter().collect();
-    placed.sort_by(|a, b| {
-        b.world_center()
-            .distance_squared(eye)
-            .partial_cmp(&a.world_center().distance_squared(eye))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let mut instances: Vec<FieldInstGpu> = placed.iter().map(|f| field_instance(f)).collect();
-    let real_instances = instances.len();
-    if instances.is_empty() {
-        // wgpu rejects zero-sized buffers; bind one dummy instance
-        // and simply never draw it.
-        instances.push(FieldInstGpu {
-            center: [0.0; 3],
-            size: 0.0,
-            base_color: [0.0; 3],
-            density: 0.0,
-            emissive: [0.0; 3],
-            emissive_strength: 0.0,
-            noise_scale: 1.0,
-            noise_speed: 0.0,
-            class_id: 5,
-            seed: 0.0,
-            drift: [0.0; 3],
-            _pad: 0.0,
-        });
-    }
-    let inst_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("fx-field-instances"),
-        contents: bytemuck::cast_slice(&instances),
-        usage: wgpu::BufferUsages::STORAGE,
-    });
     let field_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("fx-field-layout"),
         entries: &[
@@ -895,7 +989,15 @@ async fn render_frame_async(req: &CaptureRequest<'_>) -> Result<image::RgbaImage
                 view: &color_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    load: wgpu::LoadOp::Clear(match req.clear {
+                        Some(c) => wgpu::Color {
+                            r: c[0] as f64,
+                            g: c[1] as f64,
+                            b: c[2] as f64,
+                            a: 1.0,
+                        },
+                        None => CLEAR_COLOR,
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
             })],

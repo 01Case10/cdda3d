@@ -227,6 +227,7 @@ fn gate_2b_5_effect_captures() {
         size: (320, 180),
         post: PostConfig::all_off(),
         time: 1.25,
+        clear: None,
     };
     let img = match render_frame(&req) {
         Ok(img) => img,
@@ -263,6 +264,7 @@ fn gate_2b_5_effect_captures() {
             size: (160, 90),
             post: PostConfig::all_off(),
             time: 1.25,
+            clear: None,
         })
         .expect("single-field render")
     };

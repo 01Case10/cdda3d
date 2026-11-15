@@ -212,3 +212,42 @@ The fx passes are written to drop into `crates/engine`:
   against the scene depth is a natural engine-integration addition
   (the depth texture is already bound in the post pass).
 - **2b.8 not attempted** (target hardware only, per the plan).
+
+## 8. Flame redo (2026-11-15, Joey's call, against his HD-2D reference screenshots)
+
+Joey rejected the first flame: rendered through the generic
+soft-volume path it read as a pale translucent yellow blob. The
+reference look (burning-town HD-2D screenshots he supplied): tall
+tongues of mostly **saturated orange**, a small near-white core at
+the base center, deep red tips/rim, rising embers, and — critically
+— the fire is the scene's **light source**, pooling warm light on
+the ground and washing nearby walls.
+
+What changed:
+
+- **Dedicated flame path** in the field shader (`render.rs`,
+  class 1 returns early) and mirrored in the CPU reference
+  (`density.rs::flame_heat` / `flame_color`, unit-tested): tapered
+  column (footprint narrows with height), rising fbm scrolled
+  upward, a noise threshold that rises with height so the top
+  breaks into tongues, tips fade out instead of capping dark.
+- **Heat ramp anchored on the extracted colors** (the
+  sprite-parameterized rule still holds — the ramp is built from
+  the def's base/emissive colors, not hard-coded fire colors):
+  rim = base darkened/reddened → edge = base saturated orange →
+  mid = emissive → core = emissive mixed toward near-white at HDR
+  strength, so bloom feeds on the core only.
+- **Embers**: sparse procedural specks racing upward inside the
+  volume, added hot orange.
+- **Flame light**: the base pass now binds the same field-instance
+  buffer; flame instances act as point lights (distance falloff,
+  surface-facing term, gentle flicker) — ground pool + wall wash.
+- **Showcase**: `scene::fire_scene()` (dark street, fires at
+  intensities 1–3) + `captures/effects_fire.png` via fx-capture
+  (closer camera, near-black clear, hotter bloom, chromatic off —
+  its R/B split left a green fringe on flames).
+- Iterated three times against captures on lavapipe; final frame
+  visually matches the reference structure (orange tongues, white
+  base cores, red tips, light pool). Still a still-frame judgment:
+  the rising/flicker animation is the other half of the look and
+  is only verifiable in motion.

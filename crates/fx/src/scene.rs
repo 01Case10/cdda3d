@@ -96,6 +96,40 @@ pub fn test_scene() -> (Vec<BoxPrim>, Vec<PlacedField>) {
     (boxes, fields)
 }
 
+/// Night fire showcase scene (added 2026-11-15 for the flame redo,
+/// against Joey's HD-2D reference screenshots): a dark street where
+/// the fires are the light source — dark ground and walls, a row of
+/// burning tiles at intensities 1–3, crate silhouettes to catch the
+/// glow. Same tile→world mapping as `test_scene`.
+pub fn fire_scene() -> (Vec<BoxPrim>, Vec<PlacedField>) {
+    let boxes = vec![
+        // Dark ground + street slab.
+        bx([0.0, -0.2, -10.0], [14.0, 0.0, 0.0], [0.13, 0.11, 0.10]),
+        bx([0.4, 0.0, -9.6], [13.6, 0.06, -0.4], [0.20, 0.16, 0.13]),
+        // Dark backdrop wall.
+        bx([0.0, 0.0, -1.0], [14.0, 3.0, 0.0], [0.16, 0.13, 0.12]),
+        // Side walls.
+        bx([0.0, 0.0, -10.0], [0.6, 1.6, -1.0], [0.15, 0.12, 0.11]),
+        bx([13.4, 0.0, -10.0], [14.0, 1.6, -1.0], [0.15, 0.12, 0.11]),
+        // Crate silhouettes for the glow to land on.
+        bx([1.0, 0.06, -8.6], [2.2, 1.1, -7.4], [0.19, 0.15, 0.11]),
+        bx([11.8, 0.06, -8.6], [13.0, 1.1, -7.4], [0.19, 0.15, 0.11]),
+    ];
+    let defs = demo_defs();
+    let fire = defs.iter().find(|d| d.field_id == "fd_fire").unwrap().clone();
+    let mut fields = Vec::new();
+    // A burning row: a big central blaze (3,3), neighbours at 2,
+    // one small fire at 1 off to the side.
+    for (x, intensity) in [(3, 2u8), (4, 3), (5, 3), (6, 2), (9, 3), (11, 1)] {
+        fields.push(PlacedField {
+            tile: [x, 4, 0],
+            def: fire.clone(),
+            intensity,
+        });
+    }
+    (boxes, fields)
+}
+
 /// Minimal scene for the intensity gates: one field volume centered
 /// in front of a pure-white backdrop, nothing else to hide behind.
 pub fn single_field_scene(def: EffectDef, intensity: u8) -> (Vec<BoxPrim>, Vec<PlacedField>) {

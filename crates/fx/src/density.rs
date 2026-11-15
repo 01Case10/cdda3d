@@ -119,10 +119,22 @@ pub fn density_at(def: &EffectDef, local: Vec3, time: f32, intensity: u8, weight
     let mut d = effective_density(def, intensity) * weight * falloff(local) * (0.45 + 0.55 * shaped);
     // Class shaping (mirrors the WGSL):
     match def.render_class {
-        // Flame burns denser at the base and flickers.
+        // Flame (redone 2026-11-15 against Joey's HD-2D reference
+        // screenshots): NOT a soft blob — a tapered column of tongues.
+        // The footprint narrows with height, a noise threshold that
+        // rises with height breaks the top into separate tongues, and
+        // the generic 3D falloff is replaced by the tapered radial
+        // shape. Heat/color live in `flame_heat` / `flame_color`.
         RenderClass::Flame => {
             let flicker = 0.85 + 0.3 * value_noise(Vec3::new(def.seed(), time * 2.5, 0.0));
-            d *= (1.25 - 0.55 * local.y) * flicker;
+            let taper = 1.0 - 0.38 * local.y;
+            let cx = (local.x - 0.5) * 2.0 / taper.max(0.2);
+            let cz = (local.z - 0.5) * 2.0 / taper.max(0.2);
+            let radial = (cx * cx + cz * cz).sqrt();
+            let thresh = 0.24 + 0.30 * local.y;
+            let body = ((n - thresh) * 2.4).clamp(0.0, 1.0);
+            let shape = (1.15 - radial).clamp(0.0, 1.0);
+            d = effective_density(def, intensity) * weight * body * shape * flicker * 2.0;
         }
         // Gas stays low: density falls off with height in the volume.
         RenderClass::Gas | RenderClass::Liquid => {
@@ -131,6 +143,67 @@ pub fn density_at(def: &EffectDef, local: Vec3, time: f32, intensity: u8, weight
         _ => {}
     }
     d.max(0.0)
+}
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
+}
+
+/// Flame heat at a point (CPU reference for the WGSL flame path,
+/// redone 2026-11-15 against the HD-2D reference screenshots): the
+/// base center is hottest, tips and rim are cool. `n` is the fbm
+/// sample at the point, `density` the effective density, `flicker`
+/// the time flicker factor. Range roughly [0, 1.3].
+pub fn flame_heat(local: Vec3, n: f32, density: f32, flicker: f32) -> f32 {
+    let taper = 1.0 - 0.38 * local.y;
+    let cx = (local.x - 0.5) * 2.0 / taper.max(0.2);
+    let cz = (local.z - 0.5) * 2.0 / taper.max(0.2);
+    let radial = (cx * cx + cz * cz).sqrt();
+    ((1.0 - local.y * 1.15) * (1.25 - radial * 0.6) * (0.55 + 0.65 * n) * flicker
+        * (0.7 + 0.5 * density))
+        .clamp(0.0, 1.3)
+}
+
+/// Flame color ramp, anchored on the effect's extracted colors (the
+/// sprite-parameterized spirit is kept — the ramp is built FROM the
+/// def, not hard-coded per fire): near-white hot core mixed from the
+/// emissive color, through the emissive mid and the base-color edge,
+/// to a darkened, reddened rim. HDR values (>1) are intentional:
+/// they are what the bloom pass feeds on.
+pub fn flame_color(def: &EffectDef, heat: f32) -> [f32; 3] {
+    let s = def.emissive_strength.max(0.6);
+    let core = mix3(def.emissive_color, [1.0, 0.97, 0.88], 0.55);
+    let core = [core[0] * s, core[1] * s, core[2] * s];
+    let mid = [
+        def.emissive_color[0] * s * 0.85,
+        def.emissive_color[1] * s * 0.85,
+        def.emissive_color[2] * s * 0.85,
+    ];
+    let edge = [
+        def.base_color[0] * 1.5,
+        def.base_color[1] * 1.1,
+        def.base_color[2] * 0.85,
+    ];
+    let rim = [
+        def.base_color[0] * 0.85,
+        def.base_color[1] * 0.30,
+        def.base_color[2] * 0.16,
+    ];
+    let mut c = rim;
+    c = mix3(c, edge, smoothstep(0.08, 0.30, heat));
+    c = mix3(c, mid, smoothstep(0.42, 0.68, heat));
+    c = mix3(c, core, smoothstep(0.72, 0.98, heat));
+    let boost = 0.85 + 0.5 * heat;
+    [c[0] * boost, c[1] * boost, c[2] * boost]
 }
 
 /// Emissive output at a point (for bloom): flame/energy flicker,
@@ -175,6 +248,40 @@ mod tests {
     fn falloff_center_beats_corner() {
         assert_eq!(falloff(Vec3::splat(0.5)), 1.0);
         assert_eq!(falloff(Vec3::new(0.02, 0.02, 0.02)), 0.0);
+    }
+
+    #[test]
+    fn flame_tapers_with_height() {
+        let fire = demo_defs().into_iter().find(|d| d.field_id == "fd_fire").unwrap();
+        // Same off-center point, low vs high in the volume: the
+        // tapered footprint must hold density low and lose it high.
+        let low = density_at(&fire, Vec3::new(0.78, 0.12, 0.5), 1.25, 3, 1.0);
+        let high = density_at(&fire, Vec3::new(0.78, 0.92, 0.5), 1.25, 3, 1.0);
+        assert!(
+            high < low * 0.3,
+            "flame must taper: low {low} vs high {high}"
+        );
+    }
+
+    #[test]
+    fn flame_heat_base_center_beats_tip_and_rim() {
+        let base = flame_heat(Vec3::new(0.5, 0.05, 0.5), 0.8, 1.0, 1.0);
+        let tip = flame_heat(Vec3::new(0.5, 0.95, 0.5), 0.8, 1.0, 1.0);
+        let rim = flame_heat(Vec3::new(0.95, 0.05, 0.5), 0.8, 1.0, 1.0);
+        assert!(base > tip && base > rim, "base {base} tip {tip} rim {rim}");
+    }
+
+    #[test]
+    fn flame_color_core_is_hotter_and_whiter_than_rim() {
+        let fire = demo_defs().into_iter().find(|d| d.field_id == "fd_fire").unwrap();
+        let core = flame_color(&fire, 1.1);
+        let rim = flame_color(&fire, 0.05);
+        let lum = |c: [f32; 3]| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+        assert!(lum(core) > lum(rim) * 2.0, "core {core:?} vs rim {rim:?}");
+        // Core is near-white-yellow: blue channel close to red.
+        assert!(core[2] > core[0] * 0.45, "core must be pale-hot: {core:?}");
+        // Rim is deep red-orange: red dominates, blue is small.
+        assert!(rim[0] > rim[1] * 1.8 && rim[1] > rim[2], "rim must be deep red-orange: {rim:?}");
     }
 
     #[test]
