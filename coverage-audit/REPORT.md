@@ -928,6 +928,25 @@ across the re-run. Coverage (trap overlay, baseline 40
 reproduced): **traps 40 → 0 of 150 — category complete at
 100%.**
 
+## Extension batch OM1: overmap, first set (2026-11-15)
+
+**48 overmap terrain ids** — the first overmap batch establishes
+the category treatment: full-tile opaque map cells, ground fill
+in the entry's color with a centered pictogram. Tree farm
+orchard rows (roof = the farm building's roof plan over the
+same plot), both ant colonies on one dug-chamber renderer
+(chamber contents per function, acid set specked acid-green),
+the red alien meadow (core/end/join), base/roof building pairs
+sharing footprint and palette, the bunker trio, and the giant
+corpse cluster on one flesh ground. `new-tiles/draw_om1.py`;
+`new-tiles/preview_om1.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers) — the loader reads the
+`overmap/` subdir; every PNG byte-identical across the re-run.
+Coverage (overmap overlay, baseline 336 reproduced): overmap
+terrain **336 → 288** of 484.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

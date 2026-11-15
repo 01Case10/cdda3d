@@ -79,6 +79,10 @@ reproduced):
   stairs/shafts, moonpool, ice pair, void spider rift.
   Traps 40 → 0 of 150 — **category complete**.
   `draw_trap3.py`, `preview_trap3.png`.
+- **OM1** — overmap first set (48): full-tile map cells;
+  tree farm, ant colonies, alien meadow, corpse cluster,
+  base/roof pairs. Overmap 336 → 288. `draw_om1.py`,
+  `preview_om1.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
