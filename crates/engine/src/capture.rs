@@ -2,9 +2,9 @@
 //!
 //! Offscreen wgpu rendering with no window, no surface, and no event
 //! loop: `Instance`/`Adapter`/`Device` with `compatible_surface: None`,
-//! render the same fake-house chunk meshes through the same
-//! `render::Renderer` as the windowed path into an offscreen
-//! `Rgba8UnormSrgb` texture, read it back, and write a PNG.
+//! then the shared live frame (`frame::render_frame` — the same
+//! composition the windowed app presents) into an offscreen
+//! `Rgba8UnormSrgb` texture, read back, and written as a PNG.
 //!
 //! On a machine with no wgpu adapter this returns
 //! `CaptureError::NoAdapter` — a named, clean failure. It never panics
@@ -12,12 +12,6 @@
 
 use std::fmt;
 use std::path::PathBuf;
-
-use glam::Vec3;
-
-use crate::camera::OrbitCamera;
-use crate::cutaway::CutawayMode;
-use crate::render::{self, Renderer, CAPTURE_FORMAT};
 
 /// Which renderer a capture uses (Phase 2c added the ray-traced
 /// path; raster remains the default — see docs/phase2c-rt.md).
@@ -43,7 +37,7 @@ impl RendererKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CaptureArgs {
     /// Scene source. Phase 2 supports only "stub-house".
     pub snapshot: String,
@@ -76,6 +70,16 @@ pub struct CaptureArgs {
     pub out: PathBuf,
     /// Player z for the cutaway (levels <= this z are drawn).
     pub cutaway_z: i32,
+    /// Phase 2h.3: lighting scene (game light grid + environment)
+    /// for the visibility mask + bake. `None` = the pre-2h
+    /// unlit render, byte-for-byte.
+    pub lighting: Option<crate::frame::LightingScene>,
+    /// Phase 2h.2: billboard scene drawn between the fields and
+    /// the post. `None` = no billboard pass.
+    pub billboards: Option<crate::frame::BillboardScene>,
+    /// Phase 2h.4: prepared UI frame composited last, over the
+    /// post-processed world. `None` = no UI pass.
+    pub ui: Option<crate::frame::UiPrepared>,
 }
 
 impl Default for CaptureArgs {
@@ -96,6 +100,9 @@ impl Default for CaptureArgs {
             size: (1280, 720),
             out: PathBuf::from("captures/house.png"),
             cutaway_z: 1,
+            lighting: None,
+            billboards: None,
+            ui: None,
         }
     }
 }
@@ -146,215 +153,6 @@ pub struct CaptureOutcome {
     pub distinct_colors: usize,
 }
 
-/// The effect defs a capture runs with, if fx is enabled:
-/// direct defs win over the `effects.json` path.
-fn fx_defs(args: &CaptureArgs) -> Result<Option<Vec<fx::effect::EffectDef>>, CaptureError> {
-    if let Some(defs) = &args.effects_defs {
-        return Ok(Some(defs.clone()));
-    }
-    match &args.effects {
-        Some(path) => Ok(Some(
-            crate::fxwire::load_defs(path).map_err(CaptureError::Device)?,
-        )),
-        None => Ok(None),
-    }
-}
-
-/// The capture's orbit camera (shared framing for both
-/// renderers — the RT camera is built from the same values).
-fn capture_camera(args: &CaptureArgs) -> OrbitCamera {
-    let mut camera = OrbitCamera::new(Vec3::new(args.camera_target.0, 1.0, -args.camera_target.1));
-    camera.yaw_deg = args.yaw_deg;
-    camera.pitch_deg = args.pitch_deg;
-    camera.distance = args.distance;
-    camera.clamp();
-    camera
-}
-
-/// Composite the fx layers over a rendered world (Phase 2g.1):
-/// field volumes (soft-particle pass) into `color_view`, then
-/// the post stack into a fresh texture. Returns the post output
-/// texture when the post stack ran — the caller reads back from
-/// it — or `None` to read back from the color texture itself.
-/// Frame order is fixed here: fields, then post; UI (Phase 4)
-/// composites after everything, in its own step.
-#[allow(clippy::too_many_arguments)]
-fn apply_fx(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    args: &CaptureArgs,
-    defs: &[fx::effect::EffectDef],
-    camera: &OrbitCamera,
-    color_view: &wgpu::TextureView,
-    depth_texture: &wgpu::Texture,
-    depth_view: &wgpu::TextureView,
-    size: (u32, u32),
-) -> Result<Option<wgpu::Texture>, CaptureError> {
-    let (width, height) = size;
-    let aspect = width as f32 / height as f32;
-    if args.fx_fields {
-        let fields = crate::fxwire::fake_house_fields(defs).map_err(CaptureError::Device)?;
-        let instances = crate::fxwire::sorted_instances(&fields, camera.eye());
-        if !instances.is_empty() {
-            // The soft-particle pass samples a COPY of the scene
-            // depth (a pass cannot sample its own depth
-            // attachment).
-            let depth_copy = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("capture-depth-copy"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: render::DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            let depth_copy_view = depth_copy.create_view(&Default::default());
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("capture-depth-copy-encoder"),
-            });
-            encoder.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: depth_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: &depth_copy,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            queue.submit([encoder.finish()]);
-
-            let pass = fx::passes::FieldPass::new(device, CAPTURE_FORMAT, render::DEPTH_FORMAT);
-            let uniforms = fx::passes::FieldUniforms::new(
-                camera.view_projection(aspect),
-                camera.eye(),
-                args.fx_time,
-                fx::passes::soft_fade_z(camera.distance, 0.35),
-            );
-            let prepared = pass.prepare(device, &instances, &uniforms, &depth_copy_view);
-            pass.draw(device, queue, &prepared, color_view, depth_view);
-        }
-    }
-    if args.fx_post {
-        let out_tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("capture-post-out"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: CAPTURE_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let out_view = out_tex.create_view(&Default::default());
-        let post = fx::passes::PostPass::new(device, CAPTURE_FORMAT);
-        post.draw(
-            device,
-            queue,
-            color_view,
-            depth_view,
-            &out_view,
-            &fx::post::PostConfig::default(),
-            fx::passes::projected_depth(camera.distance),
-            size,
-        );
-        return Ok(Some(out_tex));
-    }
-    Ok(None)
-}
-
-/// Read an offscreen texture back into an image (+ its distinct
-/// color count).
-fn readback_rgba(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    size: (u32, u32),
-) -> Result<(image::RgbaImage, usize), CaptureError> {
-    let (width, height) = size;
-    let unpadded = width * 4;
-    let padded = unpadded.div_ceil(256) * 256;
-    let staging = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("capture-staging"),
-        size: (padded * height) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("capture-copy"),
-    });
-    encoder.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &staging,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(padded),
-                rows_per_image: Some(height),
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit([encoder.finish()]);
-    device.poll(wgpu::Maintain::Wait);
-
-    let slice = staging.slice(..);
-    let (tx, rx) = std::sync::mpsc::channel();
-    slice.map_async(wgpu::MapMode::Read, move |r| {
-        let _ = tx.send(r);
-    });
-    device.poll(wgpu::Maintain::Wait);
-    rx.recv()
-        .map_err(|_| CaptureError::Readback("map channel closed".into()))?
-        .map_err(|e| CaptureError::Readback(e.to_string()))?;
-
-    let mut pixels = Vec::with_capacity((unpadded * height) as usize);
-    {
-        let data = slice.get_mapped_range();
-        for row in 0..height as usize {
-            let start = row * padded as usize;
-            pixels.extend_from_slice(&data[start..start + unpadded as usize]);
-        }
-    }
-    staging.unmap();
-
-    let distinct: std::collections::HashSet<[u8; 4]> = pixels
-        .chunks_exact(4)
-        .map(|c| [c[0], c[1], c[2], c[3]])
-        .collect();
-    let img = image::RgbaImage::from_raw(width, height, pixels)
-        .ok_or_else(|| CaptureError::Readback("pixel buffer size mismatch".into()))?;
-    Ok((img, distinct.len()))
-}
-
 /// Save a capture image to `args.out` (creating parent dirs).
 fn save_capture(args: &CaptureArgs, img: &image::RgbaImage) -> Result<(), CaptureError> {
     if let Some(parent) = args.out.parent() {
@@ -368,6 +166,14 @@ fn save_capture(args: &CaptureArgs, img: &image::RgbaImage) -> Result<(), Captur
 }
 
 /// Run one headless capture. Synchronous (pollster drives the futures).
+///
+/// Phase 2h: the capture is the live frame loop read back —
+/// `frame::render_frame` composes world → fields → billboards →
+/// post → UI into one offscreen texture (the same function the
+/// windowed app presents), and the PNG is that texture. Before
+/// 2h this function held its own copy of the composition; the
+/// golden harness (2g.3) pins that the delegation is
+/// byte-stable for the pre-2h scenes.
 pub fn run_capture(args: &CaptureArgs) -> Result<CaptureOutcome, CaptureError> {
     if args.snapshot != "stub-house" {
         return Err(CaptureError::UnsupportedSnapshot(args.snapshot.clone()));
@@ -401,176 +207,14 @@ async fn run_capture_async(args: &CaptureArgs) -> Result<CaptureOutcome, Capture
         .await
         .map_err(|e| CaptureError::Device(e.to_string()))?;
 
-    let defs = fx_defs(args)?;
-
-    // Phase 2c ray-traced path: same world and cutaway selection,
-    // rendered through the Sparse-Voxel-64Tree tracer instead of the
-    // mesher/rasterizer.
-    if args.renderer == RendererKind::Rt {
-        if let Some(defs) = &defs {
-            // Phase 2g.1 RT fx: trace the frame, copy its color
-            // into an engine-format target, convert its linear
-            // depth buffer into a projected-depth texture, then
-            // run the same fx compositing as the raster path.
-            let frame = crate::rt::render_rt_frame(&device, &queue, args)?;
-            let (width, height) = frame.size;
-            let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("capture-rt-color"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: CAPTURE_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::COPY_DST
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-            let color_view = color_texture.create_view(&Default::default());
-            let (depth_texture, depth_view) =
-                render::create_depth_texture(&device, (width, height));
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("capture-rt-copy"),
-            });
-            encoder.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &frame.color,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: &color_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            queue.submit([encoder.finish()]);
-            crate::fxwire::RtDepthConvert::new(&device).draw(
-                &device,
-                &queue,
-                &frame.depth,
-                frame.max_dist,
-                &frame.camera,
-                (width, height),
-                &depth_view,
-            );
-            let camera = capture_camera(args);
-            let post_out = apply_fx(
-                &device,
-                &queue,
-                args,
-                defs,
-                &camera,
-                &color_view,
-                &depth_texture,
-                &depth_view,
-                (width, height),
-            )?;
-            let source = post_out.as_ref().unwrap_or(&color_texture);
-            let (img, distinct) = readback_rgba(&device, &queue, source, (width, height))?;
-            save_capture(args, &img)?;
-            return Ok(CaptureOutcome {
-                out: args.out.clone(),
-                size: (width, height),
-                quads: frame.leaves,
-                distinct_colors: distinct,
-            });
-        }
-        let cap = crate::rt::capture_rt_with_device(&device, &queue, args)?;
-        save_capture(args, &cap.image)?;
-        return Ok(CaptureOutcome {
-            out: args.out.clone(),
-            size: cap.size,
-            quads: cap.leaves,
-            distinct_colors: cap.distinct_colors,
-        });
-    }
-
-    // Same world, same meshing, same renderer as the windowed path.
-    // Phase 2g.2: scene preparation is shared with the windowed
-    // remesh (`scene_prep::prepare_raster_house`) — with a
-    // textures dir the spec is built by the shared builder and
-    // installed on the renderer; without one the flat capture is
-    // unchanged (2f.4).
-    let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
-    let mut renderer = Renderer::new(&device, CAPTURE_FORMAT);
-    let (meshes, stats, spec) = crate::scene_prep::prepare_raster_house(
-        &visible,
-        args.textures.as_deref(),
-    )
-    .map_err(CaptureError::Device)?;
-    if let Some(spec) = &spec {
-        renderer.set_textures(&device, &queue, spec);
-    }
-    let gpu_meshes = renderer.upload(&device, &meshes);
-
-    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
-    let fx_on = defs.is_some();
-    let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("capture-color"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: CAPTURE_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::COPY_SRC
-            | if fx_on {
-                wgpu::TextureUsages::TEXTURE_BINDING
-            } else {
-                wgpu::TextureUsages::empty()
-            },
-        view_formats: &[],
-    });
-    let color_view = color_texture.create_view(&Default::default());
-    let (depth_texture, depth_view) = render::create_depth_texture(&device, (width, height));
-
-    // Camera: target tile (x east, y south) -> world (x, z_up, -y).
-    let camera = capture_camera(args);
-    let aspect = width as f32 / height as f32;
-    renderer.set_view_projection(&queue, camera.view_projection(aspect));
-    renderer.draw(&device, &queue, &gpu_meshes, &color_view, &depth_view);
-
-    // Phase 2g.1: field volumes + post stack over the rendered
-    // world, when effects are enabled.
-    let post_out = match &defs {
-        Some(defs) => apply_fx(
-            &device,
-            &queue,
-            args,
-            defs,
-            &camera,
-            &color_view,
-            &depth_texture,
-            &depth_view,
-            (width, height),
-        )?,
-        None => None,
-    };
-    let source = post_out.as_ref().unwrap_or(&color_texture);
-    let (img, distinct) = readback_rgba(&device, &queue, source, (width, height))?;
+    let frame = crate::frame::render_frame(&device, &queue, args)?;
+    let (img, distinct) =
+        crate::frame::readback_rgba(&device, &queue, &frame.texture, frame.size)?;
     save_capture(args, &img)?;
-
     Ok(CaptureOutcome {
         out: args.out.clone(),
-        size: (width, height),
-        quads: stats.quads,
+        size: frame.size,
+        quads: frame.quads,
         distinct_colors: distinct,
     })
 }

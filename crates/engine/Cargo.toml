@@ -17,6 +17,10 @@ path = "src/main.rs"
 mesher = { path = "../mesher" }
 treebuild = { path = "../treebuild" }
 fx = { path = "../fx" }
+proto = { path = "../proto" }
+ui-share = { path = "../ui-share" }
+billboard = { path = "../billboard" }
+lighting = { path = "../lighting" }
 glam = "0.29"
 wgpu = "24"
 winit = "0.30"

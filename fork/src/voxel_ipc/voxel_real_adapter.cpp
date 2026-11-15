@@ -167,6 +167,7 @@ std::vector<DefVal> RealAdapter::tile_defs()
         if( !d.open.is_empty() && !d.open.is_null() ) { v.open_result = d.open.str(); }
         if( !d.close.is_empty() && !d.close.is_null() ) { v.close_result = d.close.str(); }
         if( d.bash && !d.bash->ter_set.is_null() ) { v.bash_result = d.bash->ter_set.str(); }
+        if( !d.roof.is_empty() && !d.roof.is_null() ) { v.roof_result = d.roof.str(); }
         out.push_back( std::move( v ) );
     }
     for( const furn_t &d : mapdata::furniture_data.get_all() ) {

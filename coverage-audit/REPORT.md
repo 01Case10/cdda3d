@@ -174,11 +174,620 @@ coverage **84.1% → 85.5%** (1,069/1,271 → 1,087/1,271); player-visible
 terrain missing **173 → 155**. The script's headline numbers will show
 this only once the batch lands in an actual tileset tree.
 
+## Created: the string dimension (Phase 2g.4 batch 2, 2026-11-15)
+
+The second terrain batch, same priority order: **the 20 missing ids in
+`terrain-string-dimension.json`** (the audit's second named cluster;
+the file's other ids already resolve via `looks_like`, and
+`t_string_dimension_groundcover` is a regional pseudo that never
+actually shows up, so it stays out). Drawn from their in-game
+descriptions in the same decomposed layout
+(`new-tiles/draw_string_dimension.py` regenerates them
+deterministically; `new-tiles/preview_string_dimension.png` is the
+contact sheet, and `preview.png` now stacks this batch above the
+alien meadow and the monsters). Design notes: the two voids are pure
+black and indistinguishable, as described; the points are specks on
+that black; the perceived geometry — impossibly thin magenta/cyan/
+yellow lines, the flat blue planes (plain, shimmering, wavy), and the
+white xyz cube — plus the rotary lever are transparent `fg` over
+`bg: t_string_void`, things perceived against the nothing; the
+flattened sky is the whole sky squashed into one pale band, the
+walkable horizon is that band as a floor; the flattened ground is
+light-gray veined rock; the charred meteoric rock is pitted,
+scorch-blotched, and streaked with dull olive residue; the inert
+lever is the working lever drawn dimmed and desaturated.
+
+Verified per the 2g.4 gate: a test tileset containing the batch run
+through the release voxelizer produces **20 materials, all resolution
+`exact`, 0 missing** (60 layers, 20 sprites), byte-identical on
+re-run.
+
+Coverage movement (same overlay method as the alien meadow — the
+computation first reproduces that batch's 184 and its two glowberry
+rescues exactly): no `looks_like` rescues this time, so terrain
+missing (shipped) moves **184 → 164**, terrain coverage **85.5% →
+87.1%** (1,087/1,271 → 1,107/1,271), player-visible terrain missing
+**155 → 135**. Remaining named terrain clusters: the nether
+labyrinth `t_nl_*` (17) and the vitrified set (16).
+
+## Created: the regional-pseudo templates (Phase 2g.4 batch 3, 2026-11-15)
+
+The zero-drive (Joey: "drive the coverage until nothing is missing")
+opened with the audit's least visible row: **all 29 missing ids in
+`terrain-regional-pseudo.json`** — the `t_region_*` groundcover/soil/
+tree/shrub templates, highland groundcover, and the string-dimension,
+netherum-labyrinth, and portal-storm groundcovers. They are marked
+"should never actually show up" in game, but zero is zero, and each
+is drawn as the full-tile ground its template role names (curated
+lawn vs tilled furrows, swamp algae, barren cracked dirt, ravine
+scree, forest floors graded by density, shrub grounds), in the same
+decomposed layout (`new-tiles/draw_regional_pseudo.py`;
+`new-tiles/preview_regional_pseudo.png`).
+
+Verified per the 2g.4 gate (parent re-run): **29 materials, all
+resolution `exact`, 0 missing** (87 layers, 29 sprites),
+byte-identical re-run. Coverage movement (overlay method, baseline
+164 reproduced first): 29 direct, no rescues — terrain missing
+**164 → 135**, coverage **87.1% → 89.4%** (1,107/1,271 →
+1,136/1,271). Side effect worth noting: the non-player-visible
+terrain set is now empty — every one of the remaining 135 missing
+terrain ids is player-visible.
+
+## Created: the nether labyrinth (Phase 2g.4 batch 4, 2026-11-15)
+
+**13 ids**: the missing `t_nl_*` labyrinth terrain (cratered metal
+floor with glowing cracks, starfield chasm, scrap columns — one
+carrying a light, over `bg: t_nl_column` — a red-knobbed mechanism
+lever over the metal floor, fluorescent cybergrass, an overgrown
+welded wall, sparkling soil, a diamond-lattice suspended bridge)
+plus `t_slope_to_bosky_labyrinth`, and the three mission obelisks,
+which the game data gives identical name/description/symbol/color
+("Metal stele") and are therefore drawn identically.
+`new-tiles/draw_nether_labyrinth.py`;
+`new-tiles/preview_nether_labyrinth.png`. (The glowberry pair is
+*not* in this batch: it has no folders of its own and is covered by
+its `looks_like` resolution to the alien-meadow shrubs, counted
+since batch 1.)
+
+Verified per the 2g.4 gate (parent re-run): **13 materials, all
+`exact`, 0 missing** (39 layers), byte-identical re-run. Coverage
+movement (overlay method, baseline 135 reproduced first): 13
+direct, no rescues — terrain missing **135 → 122**, coverage
+**89.4% → 90.4%** (1,136/1,271 → 1,149/1,271).
+
+## Created: floors, roofs, z-level transitions (Phase 2g.4 batch 5, 2026-11-15)
+
+**22 ids** across three files: indoor floors (brick courses, the
+warped-stone family in four glow variants, cratered broken metal,
+the rad platform's bolted ring, greenhouse seedling rows vs bare
+tilled ridges), roofs (warped, stitched blue canvas, and four
+treetops — mixed canopy, evergreen, dead limbs, giant red fern),
+and z-level transitions (four earth ramps with direction chevrons,
+the low stairs begin/end pair). `new-tiles/draw_floors_roofs.py`;
+`new-tiles/preview_floors_roofs.png`.
+
+One process note: the batch's first script run produced
+semi-transparent pixels in 9 sprites (this Pillow build's
+`ImageDraw` replaces rather than blends); the agent caught it,
+restructured those marks through alpha-composited overlays, and the
+parent re-check confirms **all 22 sprites are fully opaque**.
+Verified per the 2g.4 gate (parent re-run): **22 materials, all
+`exact`, 0 missing** (66 layers), byte-identical re-run. Coverage
+movement (overlay method, baseline 122 reproduced first): 22
+direct, no rescues — terrain missing **122 → 100**, coverage
+**90.4% → 92.1%** (1,149/1,271 → 1,171/1,271).
+
+## Created: the vitrified terrain (Phase 2g.4 batch 6, 2026-11-15)
+
+**All 16 missing ids in `terrain_vitrified.json`** — a landscape
+fused to glass: pebbled black-glass dirt, wood-whorl glass floor
+and wall, octagonal glass tile, dusty vitrified sand, and the glass
+wall with murky shapes frozen inside it (drawn full-tile: the
+translucency is a property of the pane itself), plus the feature
+set over `bg: t_vitrified_floor` — razor grass, spiral bush, thick
+glass bars, faceted column, draped-glass curtains, barbed coil
+fence, both stairs, and the smashed window frame. Palette:
+near-black blue-teal glass with pale specular light.
+`new-tiles/draw_vitrified_terrain.py`;
+`new-tiles/preview_vitrified_terrain.png`.
+
+Verified per the 2g.4 gate (parent re-run): **16 materials, all
+`exact`, 0 missing** (48 layers), byte-identical re-run. Coverage
+movement (overlay method, sequential chain from batch 5's 100):
+16 direct, no rescues — terrain missing **100 → 84**, coverage
+**92.1% → 93.4%** (1,171/1,271 → 1,187/1,271).
+
+## Created: the wall terrain (Phase 2g.4 batch 7, 2026-11-15)
+
+**All 20 missing ids in `terrain-walls.json`**: the shipping-
+container wall in 15 game colors (one parameterized corrugated-
+steel panel — vertical ribs, rails, rivets, faint weathering),
+`t_wall_warped` (stone courses that visibly disagree, magenta
+seeping through the mortar, shadows on the wrong side, per its
+description), `t_reinforced_glass_lab` (thick pane, embedded wire
+grid, bolted frame), the wasp-paper pair `t_paper_brood` /
+`t_paper_hard` (layered pulp strata, gray vs dark-compressed), and
+`t_wood_sunshade_pole` (canvas canopy on a grained pole — the
+sprite is mostly air by design). `new-tiles/draw_walls.py`;
+`new-tiles/preview_walls.png`. **Wave 1 of the zero-drive is
+complete with this batch.**
+
+Verified per the 2g.4 gate (parent re-run): **20 materials, all
+`exact`, 0 missing** (60 layers), byte-identical re-run. Coverage
+movement (overlay method, baseline 84 reproduced first): 20
+direct, no rescues — terrain missing **84 → 64**, coverage
+**93.4% → 95.0%** (1,187/1,271 → 1,207/1,271). The remaining 64
+are exactly wave 2's scope: manufactured/mechanisms/sunken-
+helicopter (18), triffid/reverberations/ice (20), and the 26-id
+scatter.
+
+## TERRAIN COMPLETE: 0 missing (Phase 2g.4 batches 8–10, 2026-11-15)
+
+Wave 2 closed the category. **Terrain: 0 missing of 1,271 —
+100.0% coverage** in the shipped-universe audit (overlay method,
+full chain re-resolved against every folder in `new-tiles/`).
+
+- **Batch 8 — triffid, reverberations, ice (20 ids).** Bark walls
+  and floors, root-chevrons slopes, bramble doors (closed weave vs
+  gaping open), the inner-cabins void pools and the magenta exit
+  portal over `bg: t_inner_cabins_void`, radiosphere tree and bush,
+  thin/thick ice over shallow and deep water, and the two-tone
+  checker `t_pseudo_phase`. `draw_triffid_ice.py`. Overlay
+  (baseline 64 reproduced): 64 → **44**, 95.0% → 96.5%.
+- **Batch 9 — the scatter (26 ids).** Everything left: natural
+  beehive, grazed and holy grass, gelatinous groundcover, the LIXA
+  folded/unfolded walls and infinite shafts, nether basalt and
+  black glass, scarlet-sea water and scaffolding, water cubes,
+  shore boulders (one oyster-crusted), the Isherwood spawn dirt,
+  fungal colony and transformed fungal wall, bone floor,
+  portcullis, the radiosphere glowing floor, shuttered window.
+  `draw_scatter_terrain.py`. Overlay: 44 → **18**, 96.5% → 98.6%.
+- **Batch 10 — manufactured, mechanisms, sunken helicopter
+  (18 ids).** The missile and its exploded twin, the radiosphere
+  radio tower with its spotlight, nanofab body (whole and broken),
+  milking machine, lean-to, brick oven base, boom barrier, the
+  Balthazar intercom, elevator controls (lit and powerless), the
+  nuclear reactor, and the five waterlogged helicopter tiles (the
+  rotor composited over `bg: t_sunkenhelicopter_floor`).
+  `draw_manufactured.py`. Overlay: 18 → **0**.
+
+All three batches verified per the 2g.4 gate (parent re-run):
+voxelizer all-`exact`, 0 missing (60/78/54 layers), byte-identical
+re-runs, opacity checks clean (no semi-transparent pixels outside
+the by-design transparent feature sprites), previews inspected.
+
+The drive continues with furniture (174 missing at the audit) and
+monsters (468).
+
+## Created: the alien furniture (Phase 2g.4 batch 11, 2026-11-15)
+
+The furniture drive opens: **19 ids** from `furniture-alien.json`
+and `furniture_alien_meadow.json` — the gas-belching alien scar,
+the Exodii portal enclosure and both floor portal rings (verbatim-
+identical game entries, one drawing), the locator antenna, the
+crystalline flower, the impaled officer and soldier over the
+glowing spike (and the empty spike), the string-dimension pylons
+(humming vs inert), the imploded housing, the warped shelf and
+crate, the dead Exodii (whole and heartless), and the three alien
+weeds. Palette anchored to the alien-meadow terrain batch.
+`new-tiles/draw_alien_furniture.py`;
+`new-tiles/preview_alien_furniture.png`.
+
+Verified per the 2g.4 gate (parent re-run): **19 materials, all
+`exact`, 0 missing** (57 layers), byte-identical re-run. Coverage
+movement (furniture overlay, baseline 174 reproduced): 19 direct,
+no rescues — furniture missing **174 → 155**, coverage **75.6% →
+78.3%** (539/713 → 558/713). (A folder-based cross-check already
+reads 104 because the stack/mound batch's 51 folders are on disk
+awaiting their own verification; the chain reconciles when it
+lands.)
+
+## Created: the stack/mound family + cardboard (Phase 2g.4 batch 12, 2026-11-15)
+
+**All 51 missing ids in `furniture-terrains.json`**: the
+stack/mound family — mounds (sand, gravel, pebble, clay, glass,
+rock, rock-large) and stacks (log, plank, brick, adobe, rebar,
+pipe, stick, long-stick), each in short/mid/tall heights taken
+from the game data's coverage values (short tops at the knees,
+mid at the shoulders, tall well above the head), drawn by two
+parameterized renderers with per-material textures — plus the six
+cardboard pieces (fort, wall, floor, roof, and the cut-and-fold
+door, closed and open) drawn individually.
+`new-tiles/draw_furniture_terrains.py`;
+`new-tiles/preview_furniture_terrains.png`.
+
+Verified per the 2g.4 gate (parent re-run): **51 materials, all
+`exact`, 0 missing** (153 layers), byte-identical re-run.
+Coverage movement (furniture overlay, baseline 155 reproduced —
+the post-batch-11 state): 51 direct, no rescues — furniture
+missing **155 → 104**, coverage **78.3% → 85.4%** (558/713 →
+609/713). This is exactly the figure the batch-11 cross-check
+predicted, so the chain is fully reconciled.
+
+## Created: the vitrified furniture (Phase 2g.4 batch 13, 2026-11-15)
+
+**All 32 missing ids in `furniture_vitrified.json`** — the whole
+household in black glass, matching batch 6's terrain palette:
+bed, bathtub (frozen onyx column still pouring from the tap),
+dresser, open fridge, armchair, chair, desk, locker, oven crowned
+with flame shards, mailbox, rack, ripple-frozen sink, toilet,
+cupboard, planter, bench, washer and dryer (portholes filled with
+black sand), both bookcases (the talker's missing book is a dark
+slot), counter, table, birdbath, shower, water heater, fireplace,
+firering, floor lamp, box, sofa, dishwasher — and the set's one
+non-glass object, the matte cloth doll lying on the glass sofa.
+`new-tiles/draw_vitrified_furniture.py`;
+`new-tiles/preview_vitrified_furniture.png`.
+
+Verified per the 2g.4 gate (parent re-run): **32 materials, all
+`exact`, 0 missing** (96 layers); the parent's full-directory
+snapshot test (all 306 files under the furniture tree, md5 before
+and after re-running the batch's script) diffs **empty** — the
+output is byte-identical and the re-run touches nothing else, which
+also closes the folder-deletion incident from this batch's first
+run (an `rm -rf` cleanup by the agent, owned in its report; the
+step is removed and the script contains no deletion calls).
+Coverage movement (furniture overlay, baseline 104 reproduced):
+32 direct, no rescues — furniture missing **104 → 72**, coverage
+**85.4% → 89.9%** (609/713 → 641/713). The remaining 72 are the
+two wave-2 furniture batches now running.
+
+## Created: shores — regional flora, sea flora, decor (Phase 2g.4 batch 14, 2026-11-15)
+
+**All 23 missing ids in `furniture-regional-pseudo.json`,
+`furniture-flora_marine.json`, and `furniture-decorative.json`**:
+the ten regional-pseudo placeholders (drawn anyway — zero is
+zero — each as the flora its regional role names: wildflower
+patch, scraggly weed, lily pads and reeds, fern undergrowth,
+cattails, cultivated flower bed, submerged ribbon weeds); the
+seven marine pieces (red and green algae, sugar kelp, sea
+lettuce, bladderwrack with its paired air bladders, sea anemone,
+sea sponge); and the six decorative pieces (wall shackle with
+sagging chains, gazing ball on its cement pedestal, lighthouse
+light, styling station, both indoor flagpoles).
+`new-tiles/draw_furniture_shores.py`;
+`new-tiles/preview_furniture_shores.png`.
+
+Verified per the 2g.4 gate (parent re-run): **23 materials, all
+`exact`, 0 missing** (69 layers), byte-identical re-run, and the
+furniture folder count held at 125 across the re-run — no sibling
+impact. Coverage movement (furniture overlay, baseline 72
+reproduced): 23 direct, no rescues — furniture missing
+**72 → 49**, coverage **89.9% → 93.1%** (641/713 → 664/713). The
+remaining 49 ids are enumerated in the audit working notes; they
+are the furniture-remainder batch's set, now running.
+
+## Created: the furniture remainder — FURNITURE COMPLETE (Phase 2g.4 batch 15, 2026-11-15)
+
+**All 49 remaining missing furniture ids**: the four generators
+(one body plan from their shared copy-from, four paints — the
+military one in camo), the nether-labyrinth set (autodoc and its
+couch, both boilers, climbing vine, pipe plant, both powerboxes —
+the open one shows the fleshy wired interior), the mutant tree
+line (sprout, sapling, adult), medical pair, torah ark, military
+crates, butter churn, hobo stove, solar cooker, brambles, midden,
+the M224 mortar, roulette table, barber chair, the down beds —
+and the two debug placeholders `f_clear` / `f_no_item`, drawn as
+black tiles with a magenta "? BUG" mark, matching their
+"seeing this is a bug" nature. `new-tiles/draw_furniture_remainder.py`;
+`new-tiles/preview_furniture_remainder.png`.
+
+Verified per the 2g.4 gate (parent re-run): **49 materials, all
+`exact`, 0 missing** (147 layers), byte-identical re-run, folder
+count stable at 174. The final check is a full overlay
+re-resolution of every furniture id against every new-tiles
+folder (not chain arithmetic): **furniture missing 0 of 713 —
+100.0%**. With terrain already at 0 of 1,271, gate 5.10's ≥98%
+terrain+furniture coverage criterion is now met on both halves;
+the gate's TileDefs-form re-run remains blocked on Phase 0 tests
+0.1/0.2 like every in-game gate. Monsters (468) are the drive's
+last category.
+
+## Created: the fungal zombies — monsters begin (Phase 2g.4 batch 16, 2026-11-15)
+
+**All 50 missing ids in the fungus-zombie file**: every dusted /
+fungalize / full-bloom variant of the zombie line (standard,
+smoker, skeleton, child, runner, rot, tough, crawler, fat,
+acidic, beekeeper), the prone wretch with its chest burst open
+like a gory flower, the hand-winged spawn raptor, gasbags and
+boomers, brutes and hulks, the fungal mounds and constructs, and
+the zougar and ziger. Treatments follow the descriptions:
+*dusted* is a gray powder wash composited over the finished body,
+*fungalize* is one stalk bursting from the skull, *fungus/fungal*
+is full bloom. Sheet placement follows the butterfly precedent by
+resolved **volume** (the entries carry no explicit size field):
+standard 62.5 L humanoids at 32×32, bulky 100–150 L at 64×64,
+875 L hulks and massive mounds at 96×96 — this volume rule is the
+standing placement rule for the monster batches.
+`new-tiles/draw_fungus_zombies.py`;
+`new-tiles/preview_fungus_zombies.png`.
+
+Verified per the 2g.4 gate (parent re-run): **50 materials, all
+`exact`, 0 missing** (150 layers); all 59 monster PNGs on disk
+(this batch plus the butterfly/moth set) byte-identical across
+the re-run. Coverage movement (monster overlay; baseline 454 at
+verification time because 14 fish-batch folders had already
+landed): 50 direct, no rescues — monsters missing **454 → 404**,
+coverage **66.4%** (799/1,203).
+
+## Created: fish, first half (Phase 2g.4 batch 17, 2026-11-15)
+
+**52 of the 104 missing ids in `fish.json`** (alphabetical first
+half, `mon_crayfish_giant_larva` … `mon_fry_blackfish`): the two
+crayfish, flatfish with both eyes on the eyed side, catfish with
+barbels, sturgeon with scute rows, the gar's needle jaw, chain
+pickerel reticulation, the haddock's black shoulder blotch, the
+rainbow trout's pink band, and the tiny pale fry with its yolk
+sac. `new-tiles/draw_fish_a.py`; `new-tiles/preview_fish_a.png`.
+
+Verified per the 2g.4 gate (parent re-run): **52 materials, all
+`exact`, 0 missing** (156 layers), byte-identical re-run.
+Coverage movement (monster overlay, baseline 404 reproduced):
+52 direct + 1 rescue (`mon_nether_fish`, whose `looks_like`
+chain reaches a drawn fish) — monsters missing **404 → 351**,
+coverage **70.8%** (852/1,203). Placement note: all 52 sit on the
+32×32 sheet per the brief's letter (no entry carries an explicit
+size field); a parent volume census finds exactly three at
+≥75 L resolved volume — `mon_crayfish_mega` (625 L),
+`mon_fish_bluefin_tuna` (250 L), `mon_fish_halibut` (75 L).
+Re-sheeting those three is a placement-only change (coverage is
+unaffected); the fish second half is briefed with volume-based
+placement from the start.
+
+## Created: fish, second half — fish complete (Phase 2g.4 batch 18, 2026-11-15)
+
+**The remaining 52 missing ids in `fish.json`**: 48 of them are
+fry — every one copy-froms the `mon_fry` abstract ("minuscule
+half-translucent fish larva, impossible to identify which
+species"), so they share the first half's larva design with small
+seeded jitter in tint, yolk, and proportions: the same
+unidentifiable creature, never a species portrait. Plus the
+crayfish zoea larva, the oversized mutant salmon fry, and the two
+mutant salmon — `mon_mutant_salmon_huge` (312 L) and
+`mon_mutant_salmon_mega` (exactly 400 L, with its two
+flesh-colored water-jet tubes beneath the fins), both drawn
+natively at 64×64 under the volume placement rule (only *over*
+400 L goes to the giant sheet; the mega's boundary placement is
+flagged as a placement-only question). `fish.json` is now fully
+covered: 104/104 across batches 17–18.
+`new-tiles/draw_fish_b.py`; `new-tiles/preview_fish_b.png`.
+
+Verified per the 2g.4 gate (parent re-run): **52 materials, all
+`exact`, 0 missing** (156 layers); every monster PNG on disk
+byte-identical across the re-run; sampled sprites carry alpha
+values only {0, 255}. Coverage movement (monster overlay,
+baseline 351 reproduced): 52 direct, no rescues — monsters
+missing **351 → 299**, coverage **75.1%** (904/1,203).
+
+## Created: reptiles & amphibians (Phase 2g.4 batch 19, 2026-11-15)
+
+**All 56 missing ids in `reptile_amphibian.json`**: garter and
+worm snakes (pink belly showing), rattlesnakes from the baby's
+tail button to the 620 L mega deathrattle at 96×96 (club tail
+with bone segments, red muscle ropes flanking the maw), the
+five-lined skinks (the baby's tail is blue), turtle hatchlings,
+eleven tadpoles and six giant tadpoles (tail fins as composited
+overlays — the gray tadpole's red-orange black-dotted tip, the
+shift bigtad's crimson-to-yellow gradient), and the whole
+frog/toad radiation: leopard spots with halos, the peeper's X,
+the palette frog's bright square patches, pattern frogs with
+static markings and retained gills, the tusked foul giganfrog,
+and the 650 L megafrogs at 96×96.
+`new-tiles/draw_reptiles.py`; `new-tiles/preview_reptiles.png`.
+
+Verified per the 2g.4 gate (parent re-run): **56 materials, all
+`exact`, 0 missing** (168 layers); every monster PNG on disk
+byte-identical across the re-run. One environment note: the
+workspace's root `Cargo.toml` currently lists three crate
+members another session is scaffolding (vehicles / transient /
+hardcases) whose directories are not all on disk yet, so
+`cargo run` cannot load the workspace; verification used the
+prebuilt `target/release/voxelizer` binary (built today from this
+tree) with the standard CLI — the same tool, unaffected by
+workspace membership. Coverage movement (monster overlay,
+baseline 299 reproduced): 56 direct, no rescues — monsters
+missing **299 → 243**, coverage **79.8%** (960/1,203).
+
+## Created: insects & spiders (Phase 2g.4 batch 20, 2026-11-15)
+
+**All 26 missing ids in `insect_spider.json`** (the file's other
+missing ids were the already-drawn butterflies and moths): the
+625 L mega acid ant and mega fly at 96×96, the graboid halfworm,
+cicada with alpha-composited rooflike wings, giant mantis, the
+lunar moth titan with glittering dust, the cellar spider mother
+clutching a ball of ~46 individually drawn spiderlings, the
+dermatik's deer host (emaciated, ribs showing, terrified eye —
+the monster is the host body), and the larva/nymph/small-spider
+tail down to 0.8 L. `new-tiles/draw_insects.py`;
+`new-tiles/preview_insects.png`.
+
+Verified per the 2g.4 gate (parent re-run): **26 materials, all
+`exact`, 0 missing** (78 layers); every monster PNG on disk
+byte-identical across the re-run. Coverage movement (monster
+overlay, baseline 243 reproduced): 26 direct, no rescues —
+monsters missing **243 → 217**, coverage **82.0%** (986/1,203).
+
+## Created: the nether creatures (Phase 2g.4 batch 21, 2026-11-15)
+
+**All 52 missing ids in `nether.json` (37) and
+`netherum/labyrinth_monsters.json` (15)**: the dish-head's
+fang-ringed dish face, the halo tangle's golden rings around its
+dark flame, the roper's worm-mass over its maw, star vampires
+with maw-tipped tentacles, the void spider family (all inheriting
+1,800 L through copy-from, so the spiderlings sit on the giant
+sheet drawn juvenile-scaled within the frame), the wells machine,
+the LS robot arm, and the reflections — each wrong in its own
+way: pale and wispy, twisted with one too-long arm, the blank
+copy's too-even smile. `new-tiles/draw_nether_monsters.py`;
+`new-tiles/preview_nether_monsters.png`.
+
+Verified per the 2g.4 gate (parent re-run): **52 materials, all
+`exact`, 0 missing** (156 layers); every monster PNG on disk
+byte-identical across the re-run. Coverage movement (monster
+overlay, baseline 217 reproduced): 51 newly covered + 1 upgrade
+(`mon_nether_fish`, already rescued in batch 17 via its
+`looks_like` to the brown trout, now has its own sprite) —
+monsters missing **217 → 166**, coverage **86.2%** (1,037/1,203).
+
+## Created: feral humans & the zed clusters (Phase 2g.4 batch 22, 2026-11-15)
+
+**All 40 missing ids in the feral-humans, zed_misc,
+zed_amphibian, and zed_amalgamation files (14 + 7 + 12 + 7)**:
+the ferals are living-skinned with the descriptions' shared
+tells — blackened bulging vein webs, bloodshot wide eyes,
+hunched twitching posture — differentiated by uniform and prop
+(sailors with wrench, crash axe, mop, lug wrench; the Marine's
+gleaming bayonet; the fungal-infected cop's sprouting vest; the
+six serum users in orange jumpsuit remnants, from Locutus's
+healthy glow to Anaximander's shadow-blend). The amalgamations
+are drawn to each entry's own creature plan, not as fused
+humanoids: the spotter's twin head-sized compound eyes on waving
+limbs, the corroder's caustic proboscis, the zapper crab's
+glowing organ, the soldier's vertical mouth. The zed frogs and
+toads share a parameterized renderer tuned per description
+(bone death-mask and beak, mummy wraps, smoke haze, shadow
+wreath). `new-tiles/draw_ferals_zeds.py`;
+`new-tiles/preview_ferals_zeds.png`.
+
+Verified per the 2g.4 gate (parent re-run): **40 materials, all
+`exact`, 0 missing** (120 layers); every monster PNG on disk
+byte-identical across the re-run. Coverage movement (monster
+overlay; baseline 124 at verification time because 42
+mammals/birds folders had already landed): 40 direct, no
+rescues — monsters missing **124 → 84**, coverage **93.0%**
+(1,119/1,203).
+
+## Created: mammals, birds & mutant mammals (Phase 2g.4 batch 23, 2026-11-15)
+
+**All 46 missing ids across `mammal.json` (17), `bird.json`
+(16), and `mutant_mammal.json` (13)**: the chickadee's black cap
+and bib, the waxwing's swept crest and red waxy wing dot, the
+guinea fowl's bony helmet casque; thirteen chicks whose palettes
+resolve through the generic chick abstracts with species hints
+(coot chick's orange-red head patch, grebe chick's striped head,
+the yellow duckling's flat bill); the black cats' prominent
+green eyes, the mole's huge pink digging paws, the porcupine's
+banded white-tipped quills, the skunk's dorsal stripe; the three
+corpse placeholders (`mon_human`, `mon_child`,
+`mon_human_scorched`) drawn as plain prone figures in pallor and
+charred tones, no gore, matching their placeholder data nature;
+and the mutant mammals, deformity as silhouette — the
+wyrmhound's furless serpentine head and forked tongue, the
+mauler's widened tooth-crowded jaw, the thrasher's oversized
+digging paws, the raccoon mutant standing on hindlimbs with long
+fingered paws. All 46 resolved under 100 L through their
+copy-from chains, so all sit on the 32×32 sheet.
+`new-tiles/draw_mammals_birds.py`;
+`new-tiles/preview_mammals_birds.png`.
+
+Verified per the 2g.4 gate (parent re-run): **46 materials, all
+`exact`, 0 missing** (138 layers); every monster PNG on disk
+byte-identical across the re-run (383 files). Coverage movement
+(monster overlay, folders-minus-batch baseline 126 reproduced):
+42 newly covered + 4 upgraded from `looks_like` rescue to their
+own sprites — monsters missing **84 → 84** (the headline holds
+because 42 of this batch's folders had already landed inside
+batch 22's verification window and were counted in its
+baseline), coverage **93.0%** (1,119/1,203). Remaining: 84 ids,
+enumerated exactly — the finisher wave.
+
+## Created: the cosmic & misc tail (Phase 2g.4 batch 25, 2026-11-15)
+
+**42 of the 84 enumerated remaining ids** (the finisher wave's
+second half): the seven yrax as gold faceted geometric forms —
+apeirogon disc, delta, triakis, trifacet, the quadraphract and
+its leg, the sphenocorona — plus the golden monolith on the same
+inherited 930 L frame; the devourers (daitya with clone-heads
+straining out of the flesh mass, the hekatonkheire, lab_sec's
+pitch-black central figure, the melded task force); kraken guard
+and queen (950 L, beak over foam); the stalker octopus and its
+spawn; the ocean zhark; three snails up to the colossal 875 L
+shell; both solar reverberation beetles; biollante sprig and
+sprout; the three linelanders as bright vibrating filaments with
+oscillating echoes (yellow drawn yellow — its data color says
+`red` but the entry's name and its cyan/magenta siblings say
+otherwise); the singularity Reclaimer (950 L) and its spawn; the
+two TALON secubots with sensor arrays (the Liberty Edition's
+flag decal) and Balthazar's rifle turret; and the singles —
+robofac hound, radiosphere flailer, cabin tunnel shadow,
+interstice horror, black ratkin (drawn as the plain black rat
+its description specifies), sewer blob, camouflaged mutant, the
+fungal wasp queen, the whisper fungus, and `mon_poly_special_test`
+drawn as the ancient red dragon its entry describes, with a
+small checkerboard calibration patch on one wing as the
+test-artifact nod. Placement by resolved volume: 19 at 32×32,
+13 at 64×64, 10 at 96×96. `new-tiles/draw_finisher_cosmic.py`;
+`new-tiles/preview_finisher_cosmic.png`.
+
+Verified per the 2g.4 gate (parent re-run): **42 materials, all
+`exact`, 0 missing** (126 layers); every monster PNG on disk
+byte-identical across the re-run (425 files). Coverage movement
+(monster overlay, baseline 84 reproduced): 42 direct, no
+rescues — monsters missing **84 → 42**, coverage **96.5%**
+(1,161/1,203). The remaining 42 are exactly batch 24's
+assignment (undead & lab tail), whose dispatch ended empty and
+is re-run on Joey's word.
+
+## Created: the undead & lab tail (Phase 2g.4 batch 24, 2026-11-15)
+
+**The final 42 ids**: four skeletons (the executioner's
+sword-blade forearms and fused-jaw mask, the reaper's scythe
+arms with black goo dripping from its sockets, necro, slasher);
+the four zombie horses at 550 L (the smoldering black stallion's
+smoke pillars, the pale horse's green bile reservoir showing
+through its rotund belly, red, white); the scorched/rust/
+fireproof zed line; the two no-weakpoints zeds drawn as straight
+soldier/survivor zombies (their descriptions are testing notes);
+the grue's swollen gray eyes and stark white slack maw in a
+shadow body (435 L); the string-dimension zeds and zomborgs; six
+weird dogs (the antimemetic dog's static-smudge head, the
+triclopean dog's lidded third eye, the incorporeal dog's pale
+ghost palette, the scorched hulk at 440 L); the liquid and void
+cats; three lab ghouls; the brute and hulk pupae with their
+decoys deliberately near-identical to their twins (their
+in-game function), the hulk pupae at 875 L; and the two
+`pseudo_*` test monsters as readable range targets (bullseye,
+bullet holes, marked glowing weak points). Placement by resolved
+volume: 24 at 32×32, 10 at 64×64, 8 at 96×96.
+`new-tiles/draw_finisher_undead.py`;
+`new-tiles/preview_finisher_undead.png`. (Batch 24's first
+dispatch ended empty — no files, no report; the batch was
+re-dispatched on Joey's word and completed in full.)
+
+Verified per the 2g.4 gate (parent re-run): **42 materials, all
+`exact`, 0 missing** (126 layers); every monster PNG on disk
+byte-identical across the re-run (467 files). Coverage movement
+(monster overlay, baseline 42 reproduced): 42 direct, no
+rescues — monsters missing **42 → 0**, coverage **100.0%**
+(1,203/1,203).
+
+## Zero-drive complete (2026-11-15)
+
+Final audit re-run, same folder-based full-chain overlay method
+as every batch gate (shipped universe ∪ all drawn folders,
+effective `looks_like` through copy-from chains, 10-hop rescue):
+
+- **Terrain: 0 missing of 1,271 — 100.0%**
+- **Furniture: 0 missing of 713 — 100.0%**
+- **Monsters: 0 missing of 1,203 — 100.0%**
+
+Gate 5.10's coverage criterion (≥98% of base-game
+terrain+furniture) is met at 100% on both halves, with monsters
+also at 100%. The gate's TileDefs-form re-run (measuring through
+the fork's in-game exporter) remains blocked on Phase 0 tests
+0.1/0.2, as do all in-game gates. Out of scope throughout, per
+the audit's own caveats: items (3,778; Phase 6 ground-sprite
+scope), field types (shader effects, Phase 2b), traps (mostly
+internal triggers), overmap (own tilesets), vehicle parts
+(Phase 8).
+
 ## Status
 
-Working tree only — not committed, not pushed (other sessions have
-uncommitted 2d/2e/2f work in this repo). `fork-src/` is gitignored, so
-expanding its sparse checkout for `data/json` does not dirty the repo.
+Batches are committed locally as they land (butterfly/moth in
+`5f740f2`, alien meadow in `13e91e2`, string dimension with this
+record); pushes follow Joey's word via the PC-clone bundle route.
+`fork-src/` is gitignored, so expanding its sparse checkout for
+`data/json` does not dirty the repo.
 Gate 5.10 stays open, now with a measured list instead of an unknown:
 as written (≥98% of base-game terrain+furniture) it cannot pass on
 current UltiCa — closing it means either re-scoping the gate or a

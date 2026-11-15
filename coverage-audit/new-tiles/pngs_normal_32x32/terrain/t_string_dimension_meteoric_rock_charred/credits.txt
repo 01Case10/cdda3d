@@ -1,0 +1,2 @@
+Drawn from the terrain's in-game description for the CDDA Voxel
+coverage audit (2026-11-15). License: CC BY-SA 3.0, as the tileset.

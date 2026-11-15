@@ -32,6 +32,7 @@ materials and cutaway geometry are legible.
 | `house_rt_textured_ultica` | rt | `assets/ultica_run1` | yaw 45°, pitch 45°, cutaway z≤1 |
 | `house_raster_textured_fixture` | raster | hermetic fixture | yaw 45°, pitch 45°, cutaway z≤1 |
 | `house_rt_textured_fixture` | rt | hermetic fixture | yaw 45°, pitch 45°, cutaway z≤1 |
+| `house_raster_effects` | raster | — (fx demo defs) | yaw 135°, pitch 50°, cutaway z≤0, fields + post on |
 
 Two textured variants, deliberately:
 
@@ -46,10 +47,15 @@ Two textured variants, deliberately:
   layer). It keeps the textured path golden-gated on any machine,
   and it is what the negative test mutates.
 
-Effects variants are **not** in the set: the fx→engine wiring
-(2g.1) was landing in parallel and its capture flags were not
-stable when this harness was built. Follow-up: add one
-effects-on golden once 2g.1's flags settle.
+Effects: the set originally shipped without an effects variant
+(the fx→engine wiring, 2g.1, was landing in parallel and its
+capture flags were not stable). **Added 2026-11-15** once the
+flags settled: `house_raster_effects` — the interior camera
+(135°/50°, cutaway 0, the fx_gate view) with field volumes +
+HD-2D post on, defs injected from fx's hermetic demo set via
+`CaptureArgs::effects_defs` (deterministic; `fx_time` is pinned
+in `CaptureArgs::default`). 2,533 distinct colors vs 15 for the
+flat frame — the effects are unambiguously in the picture.
 
 ## Tolerance model
 
@@ -74,7 +80,7 @@ of which must hold:
    per-pixel tolerance and would otherwise pass.
 
 Same-machine reruns are currently exact (0 mismatched pixels,
-max delta 0 on all 7 scenes) — the tolerance is headroom for other
+max delta 0 on all 8 scenes) — the tolerance is headroom for other
 drivers, not slack the current renderer needs.
 
 ## Regeneration
@@ -151,7 +157,11 @@ artifacts per failing scene (`<scene>.actual.png`,
   (`gate_2g3_golden_image_diff`, `gate_2g3_negative_one_material_change_fails`,
   `gate_2g3_skip_notice_is_loud`), ~6–9 s wall including captures.
 - Golden gate detail: 7/7 scenes compared, 0 mismatched px each,
-  capture times 0.25–1.8 s per scene.
+  capture times 0.25–1.8 s per scene. **Update 2026-11-15:** with
+  the effects scene added, 8/8 scenes compared, 0 mismatched px
+  each; regeneration reproduced the 7 existing goldens
+  byte-identically, and the negative test is unchanged
+  (1.730% vs the 1% budget).
 - Full `cargo test -p engine` at the same tree state: **31/31
   pass** (17 lib + 2 capture + 3 golden + 3 multitile + 3
   raster-tex + 3 rt).

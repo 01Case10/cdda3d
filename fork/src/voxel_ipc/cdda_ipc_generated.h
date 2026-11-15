@@ -1033,6 +1033,7 @@ struct TileDefT : public ::flatbuffers::NativeTable {
   std::string looks_like{};
   int32_t fg_ref = -1;
   int32_t bg_ref = -1;
+  std::string roof_result{};
 };
 
 struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1053,7 +1054,8 @@ struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_BASH_RESULT = 26,
     VT_LOOKS_LIKE = 28,
     VT_FG_REF = 30,
-    VT_BG_REF = 32
+    VT_BG_REF = 32,
+    VT_ROOF_RESULT = 34
   };
   uint32_t id() const {
     return GetField<uint32_t>(VT_ID, 0);
@@ -1108,6 +1110,15 @@ struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   int32_t bg_ref() const {
     return GetField<int32_t>(VT_BG_REF, -1);
   }
+  /// String id of the terrain that is the floor above this terrain
+  /// (ter_t::roof — "what will be the floor above this terrain").
+  /// Absent/empty = this terrain roofs nothing. Added 2026-11-15
+  /// (Phase 8): without it the engine cannot resolve what floor an
+  /// open-air tile shows (gate 8.4b) and would have to guess.
+  /// Appended last: additive/non-breaking, old readers ignore it.
+  const ::flatbuffers::String *roof_result() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_ROOF_RESULT);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint32_t>(verifier, VT_ID, 4) &&
@@ -1136,6 +1147,8 @@ struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyString(looks_like()) &&
            VerifyField<int32_t>(verifier, VT_FG_REF, 4) &&
            VerifyField<int32_t>(verifier, VT_BG_REF, 4) &&
+           VerifyOffset(verifier, VT_ROOF_RESULT) &&
+           verifier.VerifyString(roof_result()) &&
            verifier.EndTable();
   }
   TileDefT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1192,6 +1205,9 @@ struct TileDefBuilder {
   void add_bg_ref(int32_t bg_ref) {
     fbb_.AddElement<int32_t>(TileDef::VT_BG_REF, bg_ref, -1);
   }
+  void add_roof_result(::flatbuffers::Offset<::flatbuffers::String> roof_result) {
+    fbb_.AddOffset(TileDef::VT_ROOF_RESULT, roof_result);
+  }
   explicit TileDefBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1219,9 +1235,11 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDef(
     ::flatbuffers::Offset<::flatbuffers::String> bash_result = 0,
     ::flatbuffers::Offset<::flatbuffers::String> looks_like = 0,
     int32_t fg_ref = -1,
-    int32_t bg_ref = -1) {
+    int32_t bg_ref = -1,
+    ::flatbuffers::Offset<::flatbuffers::String> roof_result = 0) {
   TileDefBuilder builder_(_fbb);
   builder_.add_hot_flags(hot_flags);
+  builder_.add_roof_result(roof_result);
   builder_.add_bg_ref(bg_ref);
   builder_.add_fg_ref(fg_ref);
   builder_.add_looks_like(looks_like);
@@ -1255,7 +1273,8 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDefDirect(
     const char *bash_result = nullptr,
     const char *looks_like = nullptr,
     int32_t fg_ref = -1,
-    int32_t bg_ref = -1) {
+    int32_t bg_ref = -1,
+    const char *roof_result = nullptr) {
   auto string_id__ = string_id ? _fbb.CreateString(string_id) : 0;
   auto name__ = name ? _fbb.CreateString(name) : 0;
   auto flags__ = flags ? _fbb.CreateVector<::flatbuffers::Offset<::flatbuffers::String>>(*flags) : 0;
@@ -1266,6 +1285,7 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDefDirect(
   auto close_result__ = close_result ? _fbb.CreateString(close_result) : 0;
   auto bash_result__ = bash_result ? _fbb.CreateString(bash_result) : 0;
   auto looks_like__ = looks_like ? _fbb.CreateString(looks_like) : 0;
+  auto roof_result__ = roof_result ? _fbb.CreateString(roof_result) : 0;
   return cdda::ipc::CreateTileDef(
       _fbb,
       id,
@@ -1282,7 +1302,8 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDefDirect(
       bash_result__,
       looks_like__,
       fg_ref,
-      bg_ref);
+      bg_ref,
+      roof_result__);
 }
 
 ::flatbuffers::Offset<TileDef> CreateTileDef(::flatbuffers::FlatBufferBuilder &_fbb, const TileDefT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -3923,6 +3944,7 @@ inline void TileDef::UnPackTo(TileDefT *_o, const ::flatbuffers::resolver_functi
   { auto _e = looks_like(); if (_e) _o->looks_like = _e->str(); }
   { auto _e = fg_ref(); _o->fg_ref = _e; }
   { auto _e = bg_ref(); _o->bg_ref = _e; }
+  { auto _e = roof_result(); if (_e) _o->roof_result = _e->str(); }
 }
 
 inline ::flatbuffers::Offset<TileDef> TileDef::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TileDefT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -3948,6 +3970,7 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDef(::flatbuffers::FlatBufferBui
   auto _looks_like = _o->looks_like.empty() ? 0 : _fbb.CreateString(_o->looks_like);
   auto _fg_ref = _o->fg_ref;
   auto _bg_ref = _o->bg_ref;
+  auto _roof_result = _o->roof_result.empty() ? 0 : _fbb.CreateString(_o->roof_result);
   return cdda::ipc::CreateTileDef(
       _fbb,
       _id,
@@ -3964,7 +3987,8 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDef(::flatbuffers::FlatBufferBui
       _bash_result,
       _looks_like,
       _fg_ref,
-      _bg_ref);
+      _bg_ref,
+      _roof_result);
 }
 
 inline TileDefsT::TileDefsT(const TileDefsT &o)

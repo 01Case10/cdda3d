@@ -107,6 +107,61 @@ pub fn world_for_levels(visible_levels: &[i32]) -> VoxelWorld {
     VoxelWorld::from_chunk_map(&filtered)
 }
 
+/// Phase 2h.3: the lit form of [`world_for_levels`] — the Phase 7
+/// wiring contract (docs/phase7-lighting.md §12, RT half) applied
+/// before the tree build:
+///
+/// 1. A voxel whose tile the shared `VisibilityMask` marks
+///    `Hidden` (`BLANK` / never seen) is **skipped entirely** — a
+///    BLANK voxel never enters the tree, so no primary, shadow or
+///    AO ray can reveal it (the same predicate the raster mask
+///    uses; one contract, two renderers).
+/// 2. A `MEMORIZED` voxel carries Phase 7's pinned presentation
+///    in its color (`lighting::present_color`: 0.30
+///    saturation-keep × 0.45 brightness) and `LIT_MEMORIZED` as
+///    its side-table lit value — the tracer's scalar shading
+///    (sun × `lit_factor` × AO) preserves that saturation, and
+///    `FLAG_MEMORIZED` is deliberately *not* set, so the tracer
+///    does not apply its own second desaturation on top.
+/// 3. A visible voxel keeps its albedo; its side-table lit value
+///    is the game's own `LitLevel` (the schema numbering is the
+///    treebuild `LIT_*` numbering), so the tracer's per-tile
+///    output stays capped by the game's visibility truth via
+///    `lit_factor` (Phase 7 §12.3).
+pub fn world_for_levels_lit(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+) -> VoxelWorld {
+    let base = world_for_levels(visible_levels);
+    let mask = lighting::VisibilityMask::new(&lit.grid);
+    let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
+    let mut out = VoxelWorld::new();
+    for (pos, cell) in base.iter() {
+        // VoxelWorld coords are block coords: x/y are tile units
+        // (1 block per tile horizontally), z is blocks.
+        let tile = [pos[0], pos[1], lit.min_game_z + pos[2] / per];
+        let vis = mask.visibility(tile[0], tile[1], tile[2]);
+        if !lighting::include_in_tree(vis) {
+            continue; // BLANK: never enters the tree
+        }
+        let mut cell = *cell;
+        let tile_light = lit.grid.get(tile[0], tile[1], tile[2]);
+        match vis {
+            lighting::Visibility::Memorized => {
+                cell.color = lighting::present_color(cell.color, tile_light);
+                cell.lit = treebuild::world::LIT_MEMORIZED;
+                cell.flags &= !treebuild::world::FLAG_MEMORIZED;
+            }
+            lighting::Visibility::Visible => {
+                cell.lit = tile_light.lit.0;
+            }
+            lighting::Visibility::Hidden => unreachable!("filtered above"),
+        }
+        out.set(*pos, cell);
+    }
+    out
+}
+
 /// Visible levels the capture path uses for a player z (same
 /// selection as the raster capture: HideAbove(0)).
 pub fn capture_visible_levels(cutaway_z: i32) -> Vec<i32> {
@@ -170,11 +225,20 @@ pub fn render_rt_frame(
     args: &CaptureArgs,
 ) -> Result<RtFrameOut, CaptureError> {
     let t0 = Instant::now();
+    // Phase 2h.3: with a lighting scene, the world is built
+    // through the Phase 7 visibility contract (BLANK voxels never
+    // enter the tree, MEMORIZED voxels carry the pinned
+    // presentation) — before any variant preparation, so hidden
+    // tiles also cannot contribute connection masks.
     // Phase 2d: with textures, the world is variant-prepared
     // *before* the tree build so the virtual material ids land in
     // the side-table; without textures the world is untouched and
     // the render is exactly the pre-2d one.
-    let mut voxel_world = world_for_levels(&capture_visible_levels(args.cutaway_z));
+    let levels = capture_visible_levels(args.cutaway_z);
+    let mut voxel_world = match &args.lighting {
+        Some(lit) => world_for_levels_lit(&levels, lit),
+        None => world_for_levels(&levels),
+    };
     let assignments = match &args.textures {
         Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
         None => Vec::new(),

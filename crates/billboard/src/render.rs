@@ -390,8 +390,41 @@ impl BillboardPass {
         instances: &[BillboardInstance],
         shadows: &[ShadowInstance],
     ) {
+        self.prepare_with_view_proj(
+            device,
+            queue,
+            camera.view_projection(aspect),
+            camera.eye(),
+            time_s,
+            atlas_image,
+            instances,
+            shadows,
+        );
+    }
+
+    /// Phase 2h engine-integration form of [`BillboardPass::prepare`]:
+    /// the caller supplies the view-projection matrix and eye
+    /// directly, so the billboards are projected with the *world*
+    /// renderer's camera (the engine's `OrbitCamera`, 60° FOV)
+    /// instead of this crate's harness camera (55° FOV). Depth
+    /// testing against the world/RT depth is only meaningful when
+    /// both passes share one projection; instance generation
+    /// (sorting, anchoring) depends only on the eye, which the
+    /// caller also supplies.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_with_view_proj(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view_proj: Mat4,
+        eye: Vec3,
+        time_s: f32,
+        atlas_image: &RgbaImage,
+        instances: &[BillboardInstance],
+        shadows: &[ShadowInstance],
+    ) {
         use wgpu::util::DeviceExt;
-        let uniforms = Uniforms { view_proj: camera.view_projection(aspect).to_cols_array_2d(), eye: camera.eye().to_array(), time: time_s };
+        let uniforms = Uniforms { view_proj: view_proj.to_cols_array_2d(), eye: eye.to_array(), time: time_s };
         let ubuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("bb-uniforms"), contents: bytemuck::bytes_of(&uniforms), usage: wgpu::BufferUsages::UNIFORM });
         let premul = premultiply(atlas_image);
         let tex = device.create_texture_with_data(queue, &wgpu::TextureDescriptor {

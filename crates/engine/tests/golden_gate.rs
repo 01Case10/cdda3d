@@ -2,7 +2,7 @@
 //! 2.10 and 5.13). See docs/phase2g-imagediff.md.
 //!
 //! A fixed set of headless captures of the fake house (both
-//! renderers, flat + textured, full view + cutaway) is compared
+//! renderers, flat + textured + effects, full view + cutaway) is compared
 //! pixel-by-pixel against committed golden PNGs in
 //! `crates/engine/tests/golden/`.
 //!
@@ -80,16 +80,24 @@ struct Scene {
     yaw: f32,
     pitch: f32,
     cutaway_z: i32,
+    /// Effects variant (2g.1): field volumes + HD-2D post composited
+    /// over the frame, defs injected from fx's hermetic demo set
+    /// (the same injection fx_gate uses — deterministic, no file IO).
+    effects: bool,
 }
 
 const SCENES: &[Scene] = &[
-    Scene { name: "house_raster_flat", renderer: RendererKind::Raster, tex: Tex::Flat, yaw: 45.0, pitch: 45.0, cutaway_z: 1 },
-    Scene { name: "house_raster_cutaway0", renderer: RendererKind::Raster, tex: Tex::Flat, yaw: 135.0, pitch: 50.0, cutaway_z: 0 },
-    Scene { name: "house_rt_flat", renderer: RendererKind::Rt, tex: Tex::Flat, yaw: 45.0, pitch: 45.0, cutaway_z: 1 },
-    Scene { name: "house_raster_textured_ultica", renderer: RendererKind::Raster, tex: Tex::Ultica, yaw: 45.0, pitch: 45.0, cutaway_z: 1 },
-    Scene { name: "house_rt_textured_ultica", renderer: RendererKind::Rt, tex: Tex::Ultica, yaw: 45.0, pitch: 45.0, cutaway_z: 1 },
-    Scene { name: "house_raster_textured_fixture", renderer: RendererKind::Raster, tex: Tex::Fixture, yaw: 45.0, pitch: 45.0, cutaway_z: 1 },
-    Scene { name: "house_rt_textured_fixture", renderer: RendererKind::Rt, tex: Tex::Fixture, yaw: 45.0, pitch: 45.0, cutaway_z: 1 },
+    Scene { name: "house_raster_flat", renderer: RendererKind::Raster, tex: Tex::Flat, yaw: 45.0, pitch: 45.0, cutaway_z: 1, effects: false },
+    Scene { name: "house_raster_cutaway0", renderer: RendererKind::Raster, tex: Tex::Flat, yaw: 135.0, pitch: 50.0, cutaway_z: 0, effects: false },
+    Scene { name: "house_rt_flat", renderer: RendererKind::Rt, tex: Tex::Flat, yaw: 45.0, pitch: 45.0, cutaway_z: 1, effects: false },
+    Scene { name: "house_raster_textured_ultica", renderer: RendererKind::Raster, tex: Tex::Ultica, yaw: 45.0, pitch: 45.0, cutaway_z: 1, effects: false },
+    Scene { name: "house_rt_textured_ultica", renderer: RendererKind::Rt, tex: Tex::Ultica, yaw: 45.0, pitch: 45.0, cutaway_z: 1, effects: false },
+    Scene { name: "house_raster_textured_fixture", renderer: RendererKind::Raster, tex: Tex::Fixture, yaw: 45.0, pitch: 45.0, cutaway_z: 1, effects: false },
+    Scene { name: "house_rt_textured_fixture", renderer: RendererKind::Rt, tex: Tex::Fixture, yaw: 45.0, pitch: 45.0, cutaway_z: 1, effects: false },
+    // Effects scene (added with 2g.1's flags): interior view
+    // (cutaway 0, the fx_gate camera) so the fire/smoke/gas volumes
+    // inside the house are in frame; fields + post both on.
+    Scene { name: "house_raster_effects", renderer: RendererKind::Raster, tex: Tex::Flat, yaw: 135.0, pitch: 50.0, cutaway_z: 0, effects: true },
 ];
 
 fn golden_dir() -> PathBuf {
@@ -189,7 +197,7 @@ fn write_fixture_layers(dir: &Path, recolor: Option<(usize, [u8; 4])>) {
 // Capture + diff
 
 fn scene_args(scene: &Scene, textures: Option<PathBuf>, out: &Path) -> CaptureArgs {
-    CaptureArgs {
+    let mut args = CaptureArgs {
         snapshot: "stub-house".to_string(),
         renderer: scene.renderer,
         textures,
@@ -201,7 +209,14 @@ fn scene_args(scene: &Scene, textures: Option<PathBuf>, out: &Path) -> CaptureAr
         out: out.to_path_buf(),
         cutaway_z: scene.cutaway_z,
         ..CaptureArgs::default()
+    };
+    if scene.effects {
+        // fx_fields / fx_post default to on and fx_time is pinned
+        // in CaptureArgs::default, so the effects frame is
+        // deterministic; defs come from fx's demo set (hermetic).
+        args.effects_defs = Some(fx::effect::demo_defs());
     }
+    args
 }
 
 struct Diff {
@@ -311,6 +326,7 @@ fn probe_adapter(scratch: &Path) -> Result<bool, CaptureError> {
         yaw: 45.0,
         pitch: 45.0,
         cutaway_z: 1,
+        effects: false,
     };
     let mut args = scene_args(&probe, None, &scratch.join("probe.png"));
     args.size = (64, 36);

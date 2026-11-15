@@ -120,6 +120,7 @@ struct DefVal {
     std::optional<std::string> open_result;
     std::optional<std::string> close_result;
     std::optional<std::string> bash_result; // ter bash->ter_set / furn bash->furn_set
+    std::optional<std::string> roof_result; // ter_t::roof (terrain only; Phase 8, gate 8.4b)
     std::optional<std::string> looks_like;
     int32_t fg_ref = -1;
     int32_t bg_ref = -1;

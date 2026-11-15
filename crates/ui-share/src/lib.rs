@@ -37,6 +37,7 @@ pub mod scaling;
 pub mod store;
 pub mod synthetic;
 
+pub use compositor::UiPass;
 pub use frame::{TerrainRect, UploadPlan, ValidatedFrame};
 pub use input::{EngineKey, InputRouter, Modifiers};
 pub use picking::{PickCamera, Ray};
