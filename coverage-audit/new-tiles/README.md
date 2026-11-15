@@ -89,6 +89,10 @@ reproduced):
 - **OM3** — mansion tail, farms, FEMA camp (48): room-rug
   interiors, Isherwood farm set, pale-gravel FEMA language.
   Overmap 240 → 192. `draw_om3.py`, `preview_om3.png`.
+- **OM4** — labyrinth complex, kelp, looted set (48): maze
+  rings, chasm maw, flooded/overgrown states, damaged
+  hospital/house. Overmap 192 → 144. `draw_om4.py`,
+  `preview_om4.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 

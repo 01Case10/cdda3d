@@ -985,6 +985,25 @@ Verified per the 2g.4 gate (parent re-run): **48 materials, all
 across the re-run. Coverage (overmap overlay, baseline 240
 reproduced): overmap terrain **240 → 192**.
 
+## Extension batch OM4: labyrinth, kelp, looted set (2026-11-15)
+
+**48 overmap terrain ids** — the labyrinth complex on one
+dark-floor/stone-wall system (maze rings, roof block-plans, the
+gold-sparkle chasm maw in core/end widths, flooded and
+overgrown states, stairs, safehouse, boiler exit), kelp forest
+graded core/end on open water, highway and its bridge, the
+looted hospital/house set with damage (scraped cross, broken
+windows, a faded helipad H on the hospital roof), LAN center
+pair, landfill, lighthouse, the near-black inner-cabins depths
+(its data symbol is a space on black — intentionally almost
+pure black), and the mi-go camp's resin spires. `new-tiles/draw_om4.py`;
+`new-tiles/preview_om4.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 192
+reproduced): overmap terrain **192 → 144**.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
