@@ -11,6 +11,7 @@
 
 pub mod block;
 pub mod chunk;
+pub mod connect;
 pub mod grid;
 pub mod mesh;
 pub mod mesher;

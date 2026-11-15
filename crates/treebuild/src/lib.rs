@@ -15,10 +15,12 @@
 //! `(x, z, -y)` exactly like the mesher (see [`render::RtCamera`]).
 
 pub mod build;
+pub mod connect;
 pub mod cpu;
 pub mod render;
 pub mod world;
 
 pub use build::{build_tree, BuiltTree, BuildConfig, BuildError, SideEntry};
+pub use connect::{assign_variants, connection_mask, same_material, VariantAssignment};
 pub use cpu::{cast_ray, dda_reference, occupied_at, RayHit, TraceMode};
 pub use world::{VoxelCell, VoxelWorld, FLAG_CUTOUT, FLAG_EMISSIVE, FLAG_MEMORIZED, FLAG_TRANSPARENT, LIT_BLANK, LIT_BRIGHT, LIT_BRIGHT_ONLY, LIT_DARK, LIT_LIT, LIT_LOW, LIT_MEMORIZED};

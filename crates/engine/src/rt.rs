@@ -46,18 +46,54 @@ pub fn fake_material_ids() -> std::collections::HashMap<u32, String> {
     .collect()
 }
 
+/// Phase 2d, world half: rewrite the fake house's multitile voxels
+/// in `world` to virtual material ids for their connection masks
+/// (same-material adjacency — the fake-data rule). Which numeric
+/// ids are multitile comes from the voxelizer table in `dir`
+/// through the same fake id map the spec builder uses, so the two
+/// halves can never disagree about a material. Must run *before*
+/// `build_tree`: the virtual ids ride into the tree's side-table.
+/// Returns the assignments the spec builder must emit variants for.
+pub fn prepare_fake_variants(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+) -> Result<Vec<treebuild::connect::VariantAssignment>, CaptureError> {
+    let table = crate::materials::MaterialTable::load(dir)
+        .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+    let id_map = fake_material_ids();
+    let multitile_ids: std::collections::HashSet<u32> = id_map
+        .iter()
+        .filter(|(_, game_id)| table.get(game_id).is_some_and(|m| m.multitile))
+        .map(|(num, _)| *num)
+        .collect();
+    Ok(treebuild::connect::assign_variants(
+        world,
+        |id| multitile_ids.contains(&id),
+        treebuild::connect::same_material,
+    ))
+}
+
 /// Attach voxelizer textures from `dir` to `scene`, resolving the
-/// fake house's material ids. Returns the build stats.
+/// fake house's material ids. `assignments` are the Phase 2d
+/// variants [`prepare_fake_variants`] rewrote the world with
+/// (empty for an unprepared world — the spec is then exactly the
+/// pre-2d base spec). Returns the build stats.
 pub fn attach_fake_textures(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     scene: &mut treebuild::render::RtScene,
     dir: &std::path::Path,
+    assignments: &[treebuild::connect::VariantAssignment],
 ) -> Result<crate::textures::TextureStats, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let (spec, stats) = crate::textures::build_texture_spec(&table, dir, &fake_material_ids())
-        .map_err(CaptureError::Device)?;
+    let (spec, stats) = crate::textures::build_texture_spec_multitile(
+        &table,
+        dir,
+        &fake_material_ids(),
+        assignments,
+    )
+    .map_err(CaptureError::Device)?;
     scene
         .attach_textures(device, queue, &spec)
         .map_err(CaptureError::Device)?;
@@ -77,7 +113,8 @@ pub fn capture_visible_levels(cutaway_z: i32) -> Vec<i32> {
     CutawayMode::HideAbove(0).visible_levels(cutaway_z)
 }
 
-/// Build the tree for the capture at `cutaway_z`.
+/// Build the tree for the capture at `cutaway_z` (no textures —
+/// the world keeps its base material ids).
 pub fn build_capture_tree(cutaway_z: i32) -> Result<BuiltTree, CaptureError> {
     let world = world_for_levels(&capture_visible_levels(cutaway_z));
     build_tree(&world, BuildConfig::default())
@@ -116,11 +153,27 @@ pub fn capture_rt_with_device(
     args: &CaptureArgs,
 ) -> Result<RtCapture, CaptureError> {
     let t0 = Instant::now();
-    let built = build_capture_tree(args.cutaway_z)?;
+    // Phase 2d: with textures, the world is variant-prepared
+    // *before* the tree build so the virtual material ids land in
+    // the side-table; without textures the world is untouched and
+    // the render is exactly the pre-2d one.
+    let mut voxel_world = world_for_levels(&capture_visible_levels(args.cutaway_z));
+    let assignments = match &args.textures {
+        Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
+        None => Vec::new(),
+    };
+    let built = build_tree(&voxel_world, BuildConfig::default())
+        .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) = RtRenderer::with_scene(device, queue, &built);
     let texture_stats = match &args.textures {
-        Some(dir) => Some(attach_fake_textures(device, queue, &mut scene, dir)?),
+        Some(dir) => Some(attach_fake_textures(
+            device,
+            queue,
+            &mut scene,
+            dir,
+            &assignments,
+        )?),
         None => None,
     };
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
@@ -131,8 +184,10 @@ pub fn capture_rt_with_device(
 
     let pixels = read_texture_rgba(device, queue, &frame.color, (width, height))?;
     let depth = read_buffer_f32(device, queue, &frame.depth, (width * height) as usize)?;
-    let distinct: std::collections::HashSet<[u8; 4]> =
-        pixels.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+    let distinct: std::collections::HashSet<[u8; 4]> = pixels
+        .chunks_exact(4)
+        .map(|c| [c[0], c[1], c[2], c[3]])
+        .collect();
     let image = image::RgbaImage::from_raw(width, height, pixels)
         .ok_or_else(|| CaptureError::Readback("pixel buffer size mismatch".into()))?;
     Ok(RtCapture {
