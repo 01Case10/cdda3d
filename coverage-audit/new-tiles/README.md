@@ -1,3 +1,49 @@
+# New tiles: the butterfly and moth lifecycles, the alien meadow
+
+## Terrain batch: the alien meadow (Phase 2g.4, 2026-11-15)
+
+The first terrain batch, in the plan's priority order (player-visible
+terrain first): **all 16 terrain ids in
+`data/json/furniture_and_terrain/terrain_alien_meadow.json`** — the
+audit's first named cluster — missing from UltiCa in every form (no
+entry, no orphan PNG, no `looks_like`). All 32×32 on the normal sheet
+under `pngs_normal_32x32/terrain/<id>/`, drawn from the in-game
+descriptions by `draw_alien_meadow.py` (PIL, deterministic):
+
+| id | drawn from |
+|---|---|
+| `t_alien_meadow_grass` | "light reddish color and the stalks are much broader… waxy residue" — full-tile light-red ground, broad blades, pale waxy streaks (flat: fg full tile, `bg: ""`) |
+| `t_alien_meadow_grass_long` | "Dark red… almost waist-high, each stalk splits into two to four other stalks… ending in fine fern-like fronds" — recursively splitting stalks with fern fronds, fg over `t_alien_meadow_grass` |
+| `t_alien_meadow_grass_tall` | "Head high and such a dark red as to be nearly black… burst of fine fronds… forming a canopy" — near-black stalks, tangled frond canopy |
+| `t_alien_meadow_tree_trap_roots_long_grass` | game data: "Looks exactly the same so it's not obvious unless the player spots the trap" — entry-only, `fg` references the `t_alien_meadow_grass_long` sprite itself; no separate PNG, so the trap is indistinguishable by construction |
+| `t_alien_meadow_tree_trap_roots_tall_grass` | same, over the tall-grass sprite |
+| `t_alien_meadow_tree_trap_roots_obvious` | "A cluster of dark roots from an alien tree are visible here. Did one of them just move?" — snaking dark roots, one tip raised mid-motion |
+| `t_alien_meadow_shrub_1` | "dark blue-green… leaves are all interwoven, forming a sphere except for spots where the leaves have been eaten away… glows faintly in the dark" — interwoven teal sphere, eaten holes, sparse dim glow points (`light_emitted: 5`) |
+| `t_alien_meadow_shrub_2` | "very similar to a terrestrial bush despite the dark purple leaves… clusters of white berries" |
+| `t_alien_meadow_shrub_2_harvested` | the same bush with the berries gone — bare berry stems, no white clusters |
+| `t_alien_meadow_shrub_3` | "branches split and split again into very fine tendrils with bulbs on the end that float upward, holding its yellow leaves(?) up" |
+| `t_alien_meadow_tree_1` | "a group of individual dark-colored trunks that intertwine… branches have nodes of dark red leaves interspersed" |
+| `t_alien_meadow_tree_2` | "vaguely like a willow with yellow leaves… branches that touch the ground have put down roots and are forming secondary trunks" — drooping yellow branches, root flares where tips ground |
+| `t_alien_meadow_tree_3` | "trunk lifted off the ground on a cluster of roots. Giant dark-red globes the size of watermelons hang from its branches amidst clusters of dark-red leaves" |
+| `t_alien_meadow_tree_3_harvested` | the same root-lifted tree, globes harvested — "clusters of long, dark-red leaves" |
+| `t_alien_meadow_tree_trap` | "a group of thick dark-colored trunks half-fused together. The drooping branches have nodes of dark red leaves" — the mature tree_1 form, drawn thicker/fused |
+| `t_alien_meadow_pond_goo` | "A pool of some very thick, nearly-opaque liquid. The surface is almost perfectly smooth." — flat green pool, faint swirls under one smooth specular sheen |
+
+Verified: run through this project's release voxelizer as a test
+tileset, all 16 produce materials with resolution `exact`, **0 missing**
+(48 layers, 14 sprites — the two shared-fg trap entries add no sprite),
+byte-identical re-run. `preview_alien_meadow.png` is the batch contact
+sheet (each tile composited over its bg ground, as the game shows it);
+`preview.png` now shows all batches — terrain grid above the monsters.
+
+Knock-on: covering `t_alien_meadow_shrub_2` / `_harvested` also rescues
+`t_nl_shrub_glowberries` / `_harvested` (nether labyrinth), whose
+`looks_like` points at them. With this batch overlaid on the audit
+universe, terrain missing (shipped) goes **202 → 184** and terrain
+coverage **84.1% → 85.5%** (see `../REPORT.md`).
+
+---
+
 # New tiles: the butterfly and moth lifecycles
 
 Nine monsters in base CDDA (`data/json/monsters/insect_spider.json`,
