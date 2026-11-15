@@ -203,7 +203,9 @@ Added on Joey's word after the 2c gate, RT path only:
 - Not covered: multitile/subtile layer selection (walls use their
   base side layer regardless of neighbors — needs connectivity at
   build time), the raster path (still needs the mesher
-  UV/texture-layer field), mipmapping.
+  UV/texture-layer field), mipmapping. **All three were scheduled
+  as plan phases on 2026-11-15: 2d (multitile), 2e (mipmaps),
+  2f (raster-path textures).**
 
 ## Follow-ups (not 2c scope)
 

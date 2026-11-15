@@ -21,6 +21,9 @@
 | 2 — Engine MVP with fake data | ✅ GATE PASSED (conditional — see Phase 2 record) | 2026-11-15 | Run in parallel with Phase 1; paused mid-run by Joey to add **headless capture** to scope, resumed same day with it built in. Parent-verified: mesher 8/8 + engine 16/16 tests, bench 2.12 greedy 0.397 ms/chunk (< 2 ms). **Headless rendering subsequently PROVEN on this VM** (2026-11-15, after Joey asked): `mesa-vulkan-drivers` (lavapipe/llvmpipe) was installed, and `tools/capture.sh` produced real 1280×720 PNGs of the fake house — full view (roof slab, walls, windows) and `--cutaway 0` view (interior floor, windows, door) — both visually inspected and saved in `captures/`. Remaining conditions: 2.10's formal golden image-diff (3 fixed cameras vs committed goldens) not yet established — captures are visually verified, not diff-gated; 2.13 frame benchmark still not run (llvmpipe frame times don't represent target hardware; run on Joey's PC); windowed app compiled + lib-tested but never run live. Full record: Phase 2 section below |
 | 2b — Shader field effects and HD-2D look | ✅ GATE PASSED (conditional — see Phase 2b record) | 2026-11-15 | Parent-verified: `cargo test -p voxelizer -p fx` all pass, workspace **75/75**; real UltiCa effect extraction **39 field types, 39 with sprites, 0 fallbacks**, effects.json byte-identical on re-run; lavapipe captures visually inspected (smoke/fire/gas volumes, post on/off pair — same geometry, warm grade + bloom). Conditions: 2b.8 performance is target-hardware only (not run); the fx crate is standalone — wiring it into the engine's renderer/capture path is the recorded follow-up (design in `docs/phase2b-effects.md`). Full record: Phase 2b section below. **Flame redo same day (Joey's call, against his HD-2D reference screenshots):** dedicated flame path (tapered tongues, heat ramp from extracted colors, embers), flames now light the base pass (ground pool/wall wash), night showcase `captures/effects_fire.png`; fx 10 lib + 7 gate tests pass, visually iterated ×3 on lavapipe — see `docs/phase2b-effects.md` §8. **Smoke redo same day (Joey's pick: Loop-Box's Stylized Smoke Shader, godotshaders.com, CC0):** voronoi cellular puffs + alpha-curve remap + flat dark-to-light gradient, procedural in WGSL (no textures, gate 2b.2 intact), CPU-mirrored; smoke column added over the fire-scene blaze; fx 12 lib + 7 gate pass — §9. **Smoke-over-fire coupling same day (Joey rejected §9 smoke over fire):** NOT a merged shader — per-instance `heat` (fire on/below tile: faster rise, eroded thin dark base, world-height orange underlight) + `link` (column continuity, no per-tile waists) + 4-step marched smoke shading; gradient moved to shadow range; fx 13 lib + 7 gate pass — §10 |
 | 2c — Ray-traced renderer (Sparse-Voxel-64Tree) | **Done (conditional pass)** | 2026-11-15 | Added 2026-11-15 (Joey's direction): replace the raster mesher path with a compute ray tracer over a sparse voxel 64-tree ([Sparse-Voxel-64Tree](https://docs.rs/Sparse-Voxel-64Tree/latest/Sparse_Voxel_64Tree/) crate, wgpu-compatible — verified 2026-11-15). **Run attempts 2026-11-15 (×2, incl. one retry on Joey's word): both subagents were refused by a safety policy ~1 s after dispatch, before any work — no reason given, no 2c code written; not a project/code/crate failure.** Scaffolding is prepped and committed: `crates/treebuild` workspace member (stub), `Sparse-Voxel-64Tree =0.1.0` verified to resolve/download against wgpu 24.0.5. **Implemented 2026-11-15 directly in the main session on Joey's re-ask:** treebuild crate (world/tree builder/material side-table/CPU oracle/WGSL tracer) + engine `--renderer rt` (headless + windowed); gates 2c.1–2c.8 + 2c.10 ✅ (2c.4 silhouette IoU 1.000), 2c.9 ⛔ target hardware. **Raster stays the default** until 2c.9 evidence exists. See Phase 2c section + docs/phase2c-rt.md |
+| 2d — Multitile layer selection (connected walls) | Not started | 2026-11-15 | Added 2026-11-15 (Joey's direction, out of the 2c texture hookup): the RT hookup always samples a material's base layers, ignoring neighbors — connected walls need per-voxel variant layers from the voxelizer's `subtile_layers` (16 cardinal masks + connect groups, Phase 5 data already exists). See Phase 2d section |
+| 2e — Texture mipmaps (RT renderer) | Not started | 2026-11-15 | Added 2026-11-15 (Joey's direction, out of the 2c texture hookup): RT textures currently sample level 0 with nearest filtering — distant faces alias/shimmer. Needs mip chains + an explicit LOD estimate (compute shaders have no implicit derivatives). See Phase 2e section |
+| 2f — Raster-path textures (mesher UVs) | Not started | 2026-11-15 | Added 2026-11-15 (Joey's direction, out of the 2c texture hookup): the raster renderer still shades flat color — the mesher's `Vertex` carries no UV/texture-layer field (Phase 5's named follow-up). See Phase 2f section |
 | 3 — Game-side export in the fork | ✅ GATE PASSED (conditional — see Phase 3 record) | 2026-11-15 | Run in parallel with Phase 5. Parent-verified harness run: ALL HARNESS TESTS PASS — 3.3 (3,888 tiles, 0 mismatches), 3.9 delta invariant (1,100 turns × 10 seeds, mirror == fresh snapshot), 3.14 hash-identical, C++ serde ↔ Rust `proto` decode PASS. The exporter module (`fork/src/voxel_ipc/`), hook patches H1–H7 and Catch2 cases are written against grep-verified real APIs but **never compiled in-game**: the full gate still requires 0.1/0.2 on a build-capable machine (3.2/3.13/3.15/3.16/3.19 blocked there). Full record: Phase 3 section below |
 | 4 — UI compositing | Not started | — | |
 | 5 — Voxelizer and textures | ✅ GATE PASSED (conditional — see Phase 5 record) | 2026-11-15 | Run in parallel with Phase 3. Parent-verified: `cargo test -p voxelizer -p tileset` 16/16, workspace 57/57; parent's own real UltiCa run byte-identical to the agent's (`diff -r` clean): **7,717 materials, 26,389 layers, 14,450 sprites, 0 missing, 6.2 s** (sparse checkout expanded — 14,451 PNGs now on disk). Conditions: 5.10's TileDefs-based form must re-run once the fork exports real TileDefs (tileset-universe coverage is 100%); 5.13 image-diff gate not established (same status as 2.10); 5.14 manual contact-sheet review ✅ signed off by Joey 2026-11-15 ("looks fine for now" — provisional; overrides can still be filed later); textured *rendering* not wired (mesher has no UV/texture-layer field — named follow-up). Full record: Phase 5 section below |
@@ -135,6 +138,9 @@ Read this before scheduling. **Hard dependency** = that phase's gate must pass b
 | 2 — Engine MVP (fake data) | **0** (world scale, chunk size) | 1 — final world/chunk format for its gate; mesher and camera work need only Phase 0 | **1, 3, 5** |
 | 2b — Shader field effects / HD-2D | **2** (renderer + headless capture to composite over), **5** (sprite-derived effect parameters from the voxelizer) | 3 — real field export; fake field tiles suffice during development | **3, 4, 5** — engine-side; its post stack is renderer-agnostic and carries into **2c** |
 | 2c — Ray-traced renderer | **2** (world model, camera, capture harness) | 5 — materials/texture array for the material side-table; flat-color tree rendering needs only Phase 2 · 3 — real snapshots; fake house suffices during development | **3, 4, 5, 2b** — engine-core work on fake data |
+| 2d — Multitile layer selection | **2c texture hookup** (f4c1c45), **5** (`subtile_layers` data) | 3 — connect-group semantics for real data; fake data uses same-material adjacency | **2f** (same per-voxel layer choice feeds the mesher), 3, 4 |
+| 2e — Texture mipmaps (RT) | **2c texture hookup** (f4c1c45) | 5 — voxelizer's alpha-aware averaging rules for the downsample | 2d, 2f |
+| 2f — Raster-path textures | **2** (mesher + raster pipeline), **5** (materials) | 2c texture hookup — its scene-local spec builder is reused · 2d — shared layer selection | 2d, 3, 4 |
 | 3 — Game-side export (fork) | **0, 1** (hook points + protocol to export over) | — | **2, 5** — different codebase (C++ fork vs Rust), the main parallel track |
 | 4 — UI compositing | **3** (fork scaffolding: `--frontend=ipc`, `voxel_ipc` server, input injector) | 2 — an engine window/quad to composite onto; engine-side compositing can start earlier against Phase 1 stub UI frames | **5**; engine-side parts alongside **3** |
 | 5 — Voxelizer and textures | **0** (tileset study) | 1 — TileDefs format for materials keyed by def; the voxelizer can start from game JSON + composed `tile_config.json` before the exporter exists | **2, 3, 4**, and the sprite-atlas parts of **6** |
@@ -325,9 +331,64 @@ Time estimates assume one developer working full time; scale accordingly. Phase 
 >
 > **Default-renderer decision (recorded per the gate): raster stays the default; RT is opt-in via `--renderer rt`.** 2c.4 correctness evidence is complete, but the decision rule weighs 2c.9 frame time, which does not exist yet; a sub-16 ms median at 1440p on the RX 9070 XT flips it.
 >
-> **Findings / deviations:** (1) **Textures:** the RT shader shades from flat node color + side-table (material/lit/flags/alpha); the Phase 5 texture array is **not sampled** because the engine has no GPU texture array yet — the same open follow-up as the raster path (materials JSON loads, no array). Exit-criteria "with textures" is therefore met at the data level (per-leaf material ids proven by 2c.2), not the sampling level. **Addendum (2026-11-15, Joey's word): texture sampling is now hooked up on the RT path** — scene-local texture array + per-material (top/side/bottom) layer lookup in treebuild, engine spec builder decoding only referenced layers (fake house: 27 of 26,389), `--textures <dir>` on capture/windowed; gates: treebuild checkerboard test + engine UltiCa gate (9/9 materials, depth bit-identical, distinct colors 38→232); captures `house_rt.png` vs `house_rt_textured.png`; details in docs/phase2c-rt.md. Still open: mipmaps, multitile layer selection, and the raster path's mesher-UV follow-up. (2) **llvmpipe device loss:** dynamically-indexed local arrays in WGSL (`array<f32,3>` indexed by a loop variable) compile clean under naga but lose the llvmpipe device at pipeline creation; vectorizing the slab/entry-normal helpers fixed it — recorded in docs/phase2c-rt.md. (3) **RT captures are linear-valued** (storage texture, no sRGB encode on write, unlike the raster surface format), so `captures/house_rt.png` reads darker than `house.png`; the windowed blit compensates with pow 2.2. (4) **Delta path:** per-column rebuild is measured and available via `subset_box`, but the engine still rebuilds the single tree per cutaway change; wiring dirty-column updates is deferred until real Snapshot/Delta data (Phases 3/4) drives updates. (5) **fx (2b) not composited over RT frames yet** — fx→engine wiring was deferred until 2c landed; it is now unblocked and remains a named follow-up. (6) Windowed RT has never run live on this VM (same status as the windowed app generally); the headless capture path is the verified surface.
+> **Findings / deviations:** (1) **Textures:** the RT shader shades from flat node color + side-table (material/lit/flags/alpha); the Phase 5 texture array is **not sampled** because the engine has no GPU texture array yet — the same open follow-up as the raster path (materials JSON loads, no array). Exit-criteria "with textures" is therefore met at the data level (per-leaf material ids proven by 2c.2), not the sampling level. **Addendum (2026-11-15, Joey's word): texture sampling is now hooked up on the RT path** — scene-local texture array + per-material (top/side/bottom) layer lookup in treebuild, engine spec builder decoding only referenced layers (fake house: 27 of 26,389), `--textures <dir>` on capture/windowed; gates: treebuild checkerboard test + engine UltiCa gate (9/9 materials, depth bit-identical, distinct colors 38→232); captures `house_rt.png` vs `house_rt_textured.png`; details in docs/phase2c-rt.md. Still open at the time: mipmaps, multitile layer selection, and the raster path's mesher-UV follow-up — **scheduled 2026-11-15 as Phases 2e, 2d and 2f respectively (Joey's direction)**. (2) **llvmpipe device loss:** dynamically-indexed local arrays in WGSL (`array<f32,3>` indexed by a loop variable) compile clean under naga but lose the llvmpipe device at pipeline creation; vectorizing the slab/entry-normal helpers fixed it — recorded in docs/phase2c-rt.md. (3) **RT captures are linear-valued** (storage texture, no sRGB encode on write, unlike the raster surface format), so `captures/house_rt.png` reads darker than `house.png`; the windowed blit compensates with pow 2.2. (4) **Delta path:** per-column rebuild is measured and available via `subset_box`, but the engine still rebuilds the single tree per cutaway change; wiring dirty-column updates is deferred until real Snapshot/Delta data (Phases 3/4) drives updates. (5) **fx (2b) not composited over RT frames yet** — fx→engine wiring was deferred until 2c landed; it is now unblocked and remains a named follow-up. (6) Windowed RT has never run live on this VM (same status as the windowed app generally); the headless capture path is the verified surface.
 >
 > **Gate verdict: CONDITIONAL PASS.** Condition: 2c.9 on the RX 9070 XT. Everything else mandatory is green on lavapipe + CPU evidence.
+
+---
+
+### Phase 2d: Multitile layer selection — connected walls (small follow-up, days) — added 2026-11-15, Joey's direction
+
+> **Dependencies:** ⛔ hard — Phase 2c texture hookup (landed f4c1c45), Phase 5 gate (`subtile_layers` data) · soft — Phase 3 (connect-group semantics for real data; fake data uses same-material adjacency). **Parallel with:** 2e, 2f, Phases 3, 4.
+
+**Problem (Joey's words, 2026-11-15):** the texture hookup always uses the plain standalone-wall picture for every wall block, ignoring neighbors — walls look repetitive and corners/joins don't visually connect. In the game's tileset, a wall's sprite depends on its neighbors: straight run, corner, T-junction, cross, end cap and isolated pillar are different pictures, so a wall run reads as one continuous structure.
+
+**What exists already:** Phase 5's voxelizer emits per-material `subtile_layers` in `materials.json` — the variant layer indices for all 16 cardinal connection masks plus connect-group cases — and Phase 3 exports the game's connect-group data in TileDefs. What is missing is purely the *selection*: nothing looks at a voxel's neighbors when its layers are chosen.
+
+**Tasks**
+- **Connectivity at build time:** when the engine builds a scene (RT side-table / texture spec, and the mesher under 2f), compute each voxel's cardinal connection mask (N/E/S/W neighbors that connect: same material, or same connect group once TileDefs drives real scenes) and select the side layer from the material's `subtile_layers` for that mask. Top/bottom layers are unchanged. The per-voxel choice must ride into the RT shader without breaking the per-material lookup: a per-node layer override in (or alongside) the side-table is the expected shape — the shader prefers the override when present.
+- **Semantics match the game:** connection is the game's own rule (connect groups / `connects_to`), not "same sprite": a wall must connect to a door frame or fence exactly when the tileset says it does. Fake data (no TileDefs yet) uses same-material adjacency and says so.
+- **Scope:** side faces of wall-like (multitile) materials first. Floors/roofs keep base layers; rotation variants are Phase 8 polish, not this phase.
+
+**Deliverables**: connectivity selection in the engine texture path (RT first); captures of a wall-run test scene (straight, corner, T, cross, end cap, isolated) flat vs selected; gate results in Part II §5d.
+
+**Exit criteria**: the wall-run scene renders each layout with the variant the voxelizer assigned to that connection mask; non-multitile materials and the no-textures path are byte-identical to before; 2c.4's silhouette parity is untouched.
+
+---
+
+### Phase 2e: Texture mipmaps for the RT renderer (small follow-up, days) — added 2026-11-15, Joey's direction
+
+> **Dependencies:** ⛔ hard — Phase 2c texture hookup (landed f4c1c45) · soft — Phase 5 (its alpha-aware premultiplied averaging rules are the downsample reference). **Parallel with:** 2d, 2f, Phases 3, 4.
+
+**Problem (plain form):** RT textures are sampled at full resolution with nearest filtering no matter the distance. A far-away face carries far more texture detail than the screen has pixels for, and the single texel picked per pixel jumps around as the camera moves — distant textured surfaces alias: they shimmer and crawl. The standard cure is mipmaps: pre-shrunk copies of each texture (half, quarter, … size) with the detail averaged out, sampled at the level matching the face's on-screen size.
+
+**Design constraint that shapes the work:** the RT renderer is a *compute* shader, and compute shaders have no implicit derivatives — `textureSample` (which auto-picks a mip level in fragment shaders) is unavailable. The LOD must be estimated explicitly from ray geometry (hit distance × per-pixel ray spread is the standard approximation) and sampled with `textureSampleLevel`. Getting that estimate right — neither blurry near nor shimmering far — is the phase's real work; generating the chain is the easy half.
+
+**Tasks**
+- **Mip chain generation** for the scene texture array (per layer, down to 1×1), using the voxelizer's alpha-aware premultiplied averaging with edge clamping (Phase 5 §8 rules) so cutout edges don't bleed color. CPU generation at spec-build time is acceptable at scene-local layer counts; measure before optimizing.
+- **LOD estimation + sampling** in the RT render shader: footprint from hit distance and the camera's per-pixel ray cone; clamp to the chain length; trilinear (linear between levels) if the estimate is stable, bilinear-within-level otherwise — record which shipped.
+- Sampler/filtering changes stay inside `TextureSet`; the flat-color dummy path is unaffected.
+
+**Deliverables**: mip chain in `TextureSet`; LOD sampling in the RT shader; before/after captures of a distant textured wall (two camera poses a fraction of a pixel apart); gate results in Part II §5e.
+
+**Exit criteria**: distant textured faces are stable between the two poses (variance metric in gate 2e.3 drops materially vs the level-0-only build); close-up captures are unchanged (level 0 sampled); existing texture gates still pass.
+
+---
+
+### Phase 2f: Raster-path textures — mesher UVs (small follow-up, days) — added 2026-11-15, Joey's direction
+
+> **Dependencies:** ⛔ hard — Phase 2 gate (mesher + raster pipeline), Phase 5 gate (materials) · soft — Phase 2c texture hookup (its scene-local spec builder and texture set are reused, not duplicated), Phase 2d (the same per-voxel layer selection feeds the mesher). **Parallel with:** 2d, 2e, Phases 3, 4.
+
+**Problem (plain form):** the raster renderer — still the default — shades flat color only. Painting a texture on a rasterized triangle needs each vertex to carry UV coordinates (which point of the picture this corner corresponds to) plus which texture layer to sample; the mesher's `Vertex` has neither field, so the raster pipeline cannot sample textures at all. This is Phase 5's named follow-up ("mesher UV/texture-layer field"), scheduled here as its own phase. The RT renderer never needed UVs — it computes the hit position mathematically — which is why it got textures first.
+
+**Tasks**
+- **Mesher change:** extend `Vertex` with UV + texture-layer fields; the greedy mesher emits per-face UVs spanning the face and the material's layer for that face class (top/side/bottom), resolved from the same `MaterialTable` the RT path uses. Greedy merging must not merge faces across different layers (it already must not merge across materials — verify the merge key includes the layer).
+- **Raster pipeline:** bind the scene texture array (the engine's existing spec builder from the RT hookup, shared code) and sample in the fragment shader; materials without textures keep the flat vertex color. Alpha/cutout pass behavior (Phase 2 notes) must survive: cutout samples alpha-test, transparent blends.
+- **`--textures <dir>`** works with `--renderer raster` exactly as with `rt`; no flag = today's flat captures, byte-identical.
+
+**Deliverables**: mesher UV/layer fields + raster sampling; raster textured fake-house capture next to the RT one; gate results in Part II §5f.
+
+**Exit criteria**: the raster fake-house capture with `--textures` shows the same materials as the RT textured capture (same layers chosen — one shared spec builder); flat captures without `--textures` are unchanged; the full workspace suite stays green.
 
 ---
 
@@ -1001,6 +1062,51 @@ Goal: prove the hook points exist before building on them. (Most source question
 **Gate:** 2c.1–2c.8, 2c.10 mandatory; 2c.9 on target hardware; the default-renderer decision is recorded in Part I with the 2c.4/2c.9 evidence.
 
 > **Gate results (2026-11-15, parent re-run; workspace 91/91):** 2c.1 ✅ · 2c.2 ✅ · 2c.3 ✅ · 2c.4 ✅ (IoU 1.000) · 2c.5 ⚠️ measured (full build 91.7 ms release on this VM vs 20 ms target-hardware budget; dirty-column delta 0.110 ms) · 2c.6 ✅ · 2c.7 ✅ · 2c.8 ✅ · 2c.9 ⛔ RX 9070 XT · 2c.10 ✅ (primary arm). **CONDITIONAL PASS** — condition is 2c.9 only. Default renderer: **raster** (RT opt-in) until 2c.9 evidence exists. Full record: Phase 2c completion record in Part I + docs/phase2c-rt.md.
+
+---
+
+## 5d. Phase 2d: Multitile layer selection (connected walls)
+
+> **Phase dependencies:** ⛔ requires the Phase 2c texture hookup and the Phase 5 gate; soft-requires Phase 3 for real connect-group semantics. Runs in parallel with 2e, 2f, Phases 3, 4.
+
+| # | Test | Method | Pass criteria |
+|---|---|---|---|
+| 2d.1 | Connection masks | build known wall layouts (isolated, straight run, corner, T, cross, end cap) as voxel worlds; compute each voxel's cardinal mask | every voxel's mask equals the hand-computed mask for its layout |
+| 2d.2 | Layer selection | for a multitile material with known `subtile_layers`, resolve layers for each mask in 2d.1 | selected side layer == the voxelizer's layer for that mask, 100% of cases; non-multitile materials resolve to base layers |
+| 2d.3 | Render evidence | RT capture of the wall-run scene with textures, per-layout close-ups | each layout visibly samples its variant layer (pixel comparison against the base-layer render differs exactly on the connected faces); no-textures render unchanged |
+| 2d.4 | No regression | re-run 2c.4 parity + full workspace suite | silhouette IoU still 1.000; suite green |
+
+**Gate:** 2d.1–2d.4 mandatory.
+
+---
+
+## 5e. Phase 2e: Texture mipmaps (RT renderer)
+
+> **Phase dependencies:** ⛔ requires the Phase 2c texture hookup. Runs in parallel with 2d, 2f, Phases 3, 4.
+
+| # | Test | Method | Pass criteria |
+|---|---|---|---|
+| 2e.1 | Mip chain correctness | generate the chain for known layers (checkerboard, gradient, cutout with transparent edges); compare against a CPU reference downsample using the Phase 5 premultiplied/edge-clamped rules | every level within tolerance of the reference; cutout edge texels carry no color bleed from transparent neighbors |
+| 2e.2 | LOD selection | textured plane at known distances; instrumented probe (debug capture encoding the sampled level, or readback of a level-tinted test texture) | sampled level matches the footprint estimate's expected level ±1 at every probed distance |
+| 2e.3 | Aliasing reduction | distant textured wall captured from two camera poses offset by a sub-pixel amount, mip build vs level-0-only build | inter-pose pixel variance on the wall region drops by at least half with mips; close-up capture (level 0 range) is pixel-identical to the pre-mip build |
+| 2e.4 | No regression | re-run the texture hookup gates (treebuild checkerboard, engine UltiCa) + full workspace suite | all pass |
+
+**Gate:** 2e.1–2e.4 mandatory.
+
+---
+
+## 5f. Phase 2f: Raster-path textures (mesher UVs)
+
+> **Phase dependencies:** ⛔ requires the Phase 2 and Phase 5 gates; soft-requires the Phase 2c texture hookup (shared spec builder) and 2d (shared layer selection). Runs in parallel with 2d, 2e, Phases 3, 4.
+
+| # | Test | Method | Pass criteria |
+|---|---|---|---|
+| 2f.1 | Mesher UV/layer output | mesh a known single-material chunk; inspect emitted vertices | every face's UVs span the full [0,1]² of its layer; layer index equals the material's layer for that face class; greedy merging never merges faces with different layers |
+| 2f.2 | Raster textured capture | `--headless-capture --renderer raster --textures <ultica_run1>` on the fake house | capture shows the same materials as `captures/house_rt_textured.png` (silhouette IoU vs the RT capture ≥ 0.99; color differences itemized as lighting-model differences only) |
+| 2f.3 | Shared selection | same scene through both renderers' spec builders | identical (material → layers) resolution in both paths (one shared builder, asserted by test) |
+| 2f.4 | No regression | raster capture without `--textures`; full workspace suite | flat capture byte-identical to the pre-2f golden; suite green |
+
+**Gate:** 2f.1–2f.4 mandatory.
 
 ---
 
