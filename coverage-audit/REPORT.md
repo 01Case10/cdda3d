@@ -1023,6 +1023,36 @@ Verified per the 2g.4 gate (parent re-run): **48 materials, all
 across the re-run. Coverage (overmap overlay, baseline 144
 reproduced): overmap terrain **144 → 96**.
 
+## Extension batches OM6 + OM7 + null terrain: overmap complete (2026-11-15)
+
+**96 overmap terrain ids** — OM6: the classic shop row on one
+storefront language (sign band in the data color, per-shop
+pictogram, fascia-striped roofs), the ravine depth grade, the
+river-cave system (food stores, nest, the kraken's tentacle
+chamber), refugee-center fence corners running on exactly the
+edges their line glyphs name, and the portal-storm teleporter
+as a nether-violet vortex. OM7: the shop tail, slime pits
+graded z0 → z−2 into darkness, string-dimension line geometry
+on void black, the triffid grade from field shoots to the
+finale's red heart, true stadium corner segments, and the
+`unexplored` cell as the classic dark `#`-hatched unknown.
+Plus a parent-drawn micro-batch: the audit's 336th overmap id
+is the game data's **null terrain** — an `overmap_terrain`
+whose id is the empty string (name "nothing", sym `%`, white).
+The decomposed format represents it (a folder whose entry JSON
+declares `"id": ""` — the voxelizer resolves a material with
+id `""` as `exact`), so it is drawn as a void cell with a faint
+white `%`. `new-tiles/draw_om6.py`, `new-tiles/draw_om7.py`,
+`new-tiles/draw_nothing.py`; previews alongside.
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **48 + 47 materials, all `exact`, 0 missing**, the
+null terrain 1/1 `exact` with id `""`; every PNG byte-identical
+across the parent re-runs. Coverage (overmap overlay with
+JSON-declared ids counted, baseline 96 = 48 + 47 + the null
+terrain): **overmap terrain 96 → 0 of 484 — category complete
+at 100%.**
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

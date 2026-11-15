@@ -96,6 +96,12 @@ reproduced):
 - **OM5** — microlab system, mi-go camp/portal, minefield,
   ocean grade (48). Overmap 144 → 96. `draw_om5.py`,
   `preview_om5.png`.
+- **OM6 + OM7 + null terrain** — overmap complete (96):
+  shop row, ravine grade, river cave, slime pits, string
+  dimension, triffid grade, and the null terrain (id "",
+  name "nothing") as a void cell. Overmap 96 → 0 of 484 —
+  **category complete**. `draw_om6.py`, `draw_om7.py`,
+  `draw_nothing.py`, previews.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
