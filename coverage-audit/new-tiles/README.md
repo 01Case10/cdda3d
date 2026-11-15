@@ -83,6 +83,9 @@ reproduced):
   tree farm, ant colonies, alien meadow, corpse cluster,
   base/roof pairs. Overmap 336 → 288. `draw_om1.py`,
   `preview_om1.png`.
+- **OM2** — shops, EXO safehouses, faction camps (48):
+  palisade compounds with function pictograms, tier upgrades
+  in stone. Overmap 288 → 240. `draw_om2.py`, `preview_om2.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 

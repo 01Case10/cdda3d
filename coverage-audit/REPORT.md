@@ -947,6 +947,24 @@ Verified per the 2g.4 gate (parent re-run): **48 materials, all
 Coverage (overmap overlay, baseline 336 reproduced): overmap
 terrain **336 → 288** of 484.
 
+## Extension batch OM2: shops, EXO, faction camps (2026-11-15)
+
+**48 overmap terrain ids** — city shops with their roof plans,
+the EXO/exodii stone safehouses graded 0→2 by growing alien-tech
+nodes, and the faction-base camp system: one palisade compound
+with a per-function pictogram (anvil, tent, canteen, crop rows,
+garage, helipad, kitchen, livestock), the `_2_0` tiers upgraded
+to stone/metal palisades with the same icons, and the mansion
+components on hedged lawns (t3 drawn with a "?" — its data name
+is literally "mansion base???"). Debug tiles in the project's
+black/red treatment. `new-tiles/draw_om2.py`;
+`new-tiles/preview_om2.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 288
+reproduced): overmap terrain **288 → 240**.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
