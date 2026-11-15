@@ -965,6 +965,26 @@ Verified per the 2g.4 gate (parent re-run): **48 materials, all
 across the re-run. Coverage (overmap overlay, baseline 288
 reproduced): overmap terrain **288 → 240**.
 
+## Extension batch OM3: mansion tail, farms, FEMA (2026-11-15)
+
+**48 overmap terrain ids** — the mansion tower rooms (kitchen,
+library, bedroom, living room on colored rugs), the remaining
+faction surveys (saltworks pans, storehouse/workshop tiers, the
+camouflaged hide site), the farm set and its Isherwood copies
+(coop, carriage house, stable + hayloft, every roof plan — two
+ids drawn as their data names rather than their id names:
+`farm_dairy_twd_11` is "farm road", `farm_stills_11` is
+"orchard"), the FEMA camp in one pale-gravel language, fungal
+flowers/tower, the golf course cells, and storefronts
+(`full_mutagen_lab_roof` drawn as its data name, a Trans-Coast
+Logistics roof). `new-tiles/draw_om3.py`;
+`new-tiles/preview_om3.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 240
+reproduced): overmap terrain **240 → 192**.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

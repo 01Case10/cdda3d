@@ -86,6 +86,9 @@ reproduced):
 - **OM2** — shops, EXO safehouses, faction camps (48):
   palisade compounds with function pictograms, tier upgrades
   in stone. Overmap 288 → 240. `draw_om2.py`, `preview_om2.png`.
+- **OM3** — mansion tail, farms, FEMA camp (48): room-rug
+  interiors, Isherwood farm set, pale-gravel FEMA language.
+  Overmap 240 → 192. `draw_om3.py`, `preview_om3.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
