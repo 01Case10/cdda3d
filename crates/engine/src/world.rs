@@ -59,15 +59,11 @@ pub fn build_fake_house(scale: WorldScale) -> ChunkMap {
     map
 }
 
-/// Mesh every chunk in `map`, keeping only blocks whose game z-level is
-/// in `visible_levels` (the cutaway applied at data level, so windowed
-/// and headless paths render exactly the selected layers). Returns the
-/// combined meshes plus stats.
-pub fn mesh_world(
-    map: &ChunkMap,
-    min_game_z: i32,
-    visible_levels: &[i32],
-) -> (PassMeshes, MeshStats) {
+/// The cutaway applied at data level: a copy of `map` keeping only
+/// blocks whose game z-level is in `visible_levels`. Shared by the
+/// raster mesher and the Phase 2c tree builder so both renderers see
+/// exactly the same world for a given cutaway (gate 2c.6).
+pub fn filtered_map(map: &ChunkMap, min_game_z: i32, visible_levels: &[i32]) -> ChunkMap {
     let scale = map.scale;
     let per = scale.blocks_per_z_level as i32;
     let mut filtered = ChunkMap::new(scale);
@@ -90,6 +86,19 @@ pub fn mesh_world(
         fc.dirty = false;
         filtered.chunks.insert(*coord, fc);
     }
+    filtered
+}
+
+/// Mesh every chunk in `map`, keeping only blocks whose game z-level is
+/// in `visible_levels` (the cutaway applied at data level, so windowed
+/// and headless paths render exactly the selected layers). Returns the
+/// combined meshes plus stats.
+pub fn mesh_world(
+    map: &ChunkMap,
+    min_game_z: i32,
+    visible_levels: &[i32],
+) -> (PassMeshes, MeshStats) {
+    let filtered = filtered_map(map, min_game_z, visible_levels);
     let mut combined = PassMeshes::default();
     let mut n_chunks = 0;
     for coord in filtered.chunks.keys().copied().collect::<Vec<_>>() {

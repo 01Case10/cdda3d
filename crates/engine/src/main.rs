@@ -14,11 +14,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use engine::camera::OrbitCamera;
-use engine::capture::{run_capture, CaptureArgs};
+use engine::capture::{run_capture, CaptureArgs, RendererKind};
 use engine::cutaway::CutawayState;
 use engine::overlay::{resize_action, DebugOverlay, FpsCounter, FramePacer, ResizeAction};
 use engine::render::{create_depth_view, Renderer};
+use engine::rt::RtBlit;
 use engine::world;
+use treebuild::render::{RtCamera, RtRenderer, RtScene};
 use glam::Vec3;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
@@ -49,12 +51,15 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
-             --camera x,y,yaw,pitch [--distance d] [--cutaway z] --size WxH --out file.png] \
-             [--scene-report]"
+             --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
+             --size WxH --out file.png] [--scene-report] [--renderer raster|rt]"
         );
         return ExitCode::SUCCESS;
     }
-    windowed_main()
+    let kind = value_after(&args, "--renderer")
+        .and_then(|s| RendererKind::parse(&s))
+        .unwrap_or(RendererKind::Raster);
+    windowed_main(kind)
 }
 
 fn value_after(args: &[String], flag: &str) -> Option<String> {
@@ -112,17 +117,32 @@ fn headless_main(args: &[String]) -> ExitCode {
             }
         }
     }
+    if let Some(r) = value_after(args, "--renderer") {
+        match RendererKind::parse(&r) {
+            Some(k) => cap.renderer = k,
+            None => {
+                eprintln!("headless-capture: --renderer must be raster|rt (got '{r}')");
+                return ExitCode::from(2);
+            }
+        }
+    }
     if let Some(o) = value_after(args, "--out") {
         cap.out = o.into();
     }
     match run_capture(&cap) {
         Ok(outcome) => {
             println!(
-                "headless-capture: wrote {} ({}x{}, {} quads, {} distinct colors)",
+                "headless-capture: wrote {} ({}x{}, renderer {}, {} {}, {} distinct colors)",
                 outcome.out.display(),
                 outcome.size.0,
                 outcome.size.1,
+                cap.renderer.name(),
                 outcome.quads,
+                if cap.renderer == RendererKind::Rt {
+                    "voxels"
+                } else {
+                    "quads"
+                },
                 outcome.distinct_colors
             );
             ExitCode::SUCCESS
@@ -148,6 +168,10 @@ struct GpuState {
     gpu_meshes: Vec<engine::render::GpuMesh>,
     depth_view: wgpu::TextureView,
     size: (u32, u32),
+    // Phase 2c: present only when --renderer rt was requested.
+    rt_renderer: Option<RtRenderer>,
+    rt_scene: Option<RtScene>,
+    rt_blit: Option<RtBlit>,
 }
 
 struct App {
@@ -157,10 +181,11 @@ struct App {
     overlay: DebugOverlay,
     fps_counter: FpsCounter,
     pacer: FramePacer,
+    renderer_kind: RendererKind,
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(renderer_kind: RendererKind) -> Self {
         // Follow target: house center tile (6,6) -> world (6, top, -6).
         let camera = OrbitCamera::new(Vec3::new(6.0, 1.0, -6.0));
         Self {
@@ -170,12 +195,31 @@ impl App {
             overlay: DebugOverlay::new(),
             fps_counter: FpsCounter::new(),
             pacer: FramePacer::new(),
+            renderer_kind,
         }
     }
 
     fn remesh(&mut self) {
         let Some(gpu) = &self.gpu else { return };
         let visible = self.cutaway.visible_levels();
+        if self.renderer_kind == RendererKind::Rt {
+            // Rebuild the tree for the new cutaway selection (the
+            // windowed RT path rebuilds renderer+scene per remesh;
+            // cutaway changes are rare, per-frame rendering reuses
+            // the scene).
+            let voxel_world = engine::rt::world_for_levels(&visible);
+            match treebuild::build::build_tree(&voxel_world, treebuild::build::BuildConfig::default()) {
+                Ok(built) => {
+                    let (renderer, scene) = RtRenderer::with_scene(&gpu.device, &built);
+                    let gpu = self.gpu.as_mut().unwrap();
+                    gpu.rt_renderer = Some(renderer);
+                    gpu.rt_scene = Some(scene);
+                }
+                Err(e) => eprintln!("voxel-engine: RT tree build failed: {e}"),
+            }
+            self.pacer.mark_world_dirty();
+            return;
+        }
         let (_map, meshes, stats) = world::mesh_fake_house(&visible);
         self.overlay.stats = stats;
         let gpu_meshes = gpu.renderer.upload(&gpu.device, &meshes);
@@ -189,8 +233,6 @@ impl App {
             return; // minimized: skip, never present to a zero-size surface
         }
         let aspect = gpu.size.0 as f32 / gpu.size.1 as f32;
-        gpu.renderer
-            .set_view_projection(&gpu.queue, self.camera.view_projection(aspect));
         let frame = match gpu.surface.get_current_texture() {
             Ok(f) => f,
             Err(_) => return,
@@ -198,13 +240,31 @@ impl App {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        gpu.renderer.draw(
-            &gpu.device,
-            &gpu.queue,
-            &gpu.gpu_meshes,
-            &view,
-            &gpu.depth_view,
-        );
+        if self.renderer_kind == RendererKind::Rt {
+            if let (Some(rt_renderer), Some(rt_scene), Some(rt_blit)) =
+                (&gpu.rt_renderer, &gpu.rt_scene, &gpu.rt_blit)
+            {
+                let rt_camera = RtCamera::from_world(
+                    self.camera.eye(),
+                    self.camera.target,
+                    60.0,
+                    aspect,
+                );
+                let rt_frame =
+                    rt_renderer.render(&gpu.device, &gpu.queue, rt_scene, &rt_camera, gpu.size, true);
+                rt_blit.draw(&gpu.device, &gpu.queue, &rt_frame.color, &view);
+            }
+        } else {
+            gpu.renderer
+                .set_view_projection(&gpu.queue, self.camera.view_projection(aspect));
+            gpu.renderer.draw(
+                &gpu.device,
+                &gpu.queue,
+                &gpu.gpu_meshes,
+                &view,
+                &gpu.depth_view,
+            );
+        }
         frame.present();
         self.overlay.fps = self.fps_counter.tick(Instant::now());
         gpu.window.set_title(&format!(
@@ -271,6 +331,11 @@ impl ApplicationHandler for App {
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, format);
         let depth_view = create_depth_view(&device, size);
+        let rt_blit = if self.renderer_kind == RendererKind::Rt {
+            Some(RtBlit::new(&device, format))
+        } else {
+            None
+        };
         self.gpu = Some(GpuState {
             window,
             surface,
@@ -281,6 +346,9 @@ impl ApplicationHandler for App {
             gpu_meshes: Vec::new(),
             depth_view,
             size,
+            rt_renderer: None,
+            rt_scene: None,
+            rt_blit,
         });
         self.remesh();
         self.gpu.as_ref().unwrap().window.request_redraw();
@@ -370,10 +438,10 @@ impl ApplicationHandler for App {
     }
 }
 
-fn windowed_main() -> ExitCode {
+fn windowed_main(renderer_kind: RendererKind) -> ExitCode {
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new();
+    let mut app = App::new(renderer_kind);
     match event_loop.run_app(&mut app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 mesher = { path = "../mesher" }
+treebuild = { path = "../treebuild" }
 glam = "0.29"
 wgpu = "24"
 winit = "0.30"

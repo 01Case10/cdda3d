@@ -20,10 +20,36 @@ use crate::cutaway::CutawayMode;
 use crate::render::{self, Renderer, CAPTURE_FORMAT};
 use crate::world;
 
+/// Which renderer a capture uses (Phase 2c added the ray-traced
+/// path; raster remains the default — see docs/phase2c-rt.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererKind {
+    Raster,
+    Rt,
+}
+
+impl RendererKind {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "raster" => Some(RendererKind::Raster),
+            "rt" => Some(RendererKind::Rt),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            RendererKind::Raster => "raster",
+            RendererKind::Rt => "rt",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaptureArgs {
     /// Scene source. Phase 2 supports only "stub-house".
     pub snapshot: String,
+    /// Renderer selection (Phase 2c).
+    pub renderer: RendererKind,
     /// Follow-target tile coords (x = east, y = south).
     pub camera_target: (f32, f32),
     pub yaw_deg: f32,
@@ -39,6 +65,7 @@ impl Default for CaptureArgs {
     fn default() -> Self {
         Self {
             snapshot: "stub-house".to_string(),
+            renderer: RendererKind::Raster,
             camera_target: (6.0, 6.0),
             yaw_deg: 45.0,
             pitch_deg: 45.0,
@@ -91,6 +118,7 @@ impl From<std::io::Error> for CaptureError {
 pub struct CaptureOutcome {
     pub out: PathBuf,
     pub size: (u32, u32),
+    /// Raster: mesh quads drawn. RT: tree leaves (voxels) traced.
     pub quads: usize,
     pub distinct_colors: usize,
 }
@@ -128,6 +156,27 @@ async fn run_capture_async(args: &CaptureArgs) -> Result<CaptureOutcome, Capture
         )
         .await
         .map_err(|e| CaptureError::Device(e.to_string()))?;
+
+    // Phase 2c ray-traced path: same world and cutaway selection,
+    // rendered through the Sparse-Voxel-64Tree tracer instead of the
+    // mesher/rasterizer.
+    if args.renderer == RendererKind::Rt {
+        let cap = crate::rt::capture_rt_with_device(&device, &queue, args)?;
+        if let Some(parent) = args.out.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        cap.image
+            .save(&args.out)
+            .map_err(|e| CaptureError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        return Ok(CaptureOutcome {
+            out: args.out.clone(),
+            size: cap.size,
+            quads: cap.leaves,
+            distinct_colors: cap.distinct_colors,
+        });
+    }
 
     // Same world, same meshing, same renderer as the windowed path.
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);

@@ -3,7 +3,8 @@
 #
 # Usage:
 #   tools/capture.sh [--snapshot stub-house] [--camera x,y,yaw,pitch]
-#                    [--distance d] [--cutaway z] [--size WxH] --out file.png
+#                    [--distance d] [--cutaway z] [--renderer raster|rt]
+#                    [--size WxH] --out file.png
 #
 # Thin wrapper around `cargo run -p engine -- --headless-capture ...`.
 # The engine's exit code is propagated: on a machine with no wgpu
