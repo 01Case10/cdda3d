@@ -781,6 +781,19 @@ scope), field types (shader effects, Phase 2b), traps (mostly
 internal triggers), overmap (own tilesets), vehicle parts
 (Phase 8).
 
+## Scope extension: all tiles means all tiles (2026-11-15)
+
+On Joey's word the drive reopens for the five categories above.
+Re-resolved with audit semantics (drawn folders in the
+universe), the exact remaining work is: **items 3,742**,
+**overmap terrain 336**, **vehicle parts 195**, **traps 121**,
+**field types 90** — 4,484 ids (46 already rescued by chains
+through the first drive's folders). Same method, same gates,
+sprites native 32×32 under `pngs_normal_32x32/` in the shipped
+subdirs (`items`, `overmap`, `vehicle`, `traps`, `fields`).
+Batch records follow below as they land; the finish line is
+0 missing in all eight audit categories.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
