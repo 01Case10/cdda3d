@@ -607,6 +607,28 @@ byte-identical across the re-run. Coverage movement (monster
 overlay, baseline 243 reproduced): 26 direct, no rescues —
 monsters missing **243 → 217**, coverage **82.0%** (986/1,203).
 
+## Created: the nether creatures (Phase 2g.4 batch 21, 2026-11-15)
+
+**All 52 missing ids in `nether.json` (37) and
+`netherum/labyrinth_monsters.json` (15)**: the dish-head's
+fang-ringed dish face, the halo tangle's golden rings around its
+dark flame, the roper's worm-mass over its maw, star vampires
+with maw-tipped tentacles, the void spider family (all inheriting
+1,800 L through copy-from, so the spiderlings sit on the giant
+sheet drawn juvenile-scaled within the frame), the wells machine,
+the LS robot arm, and the reflections — each wrong in its own
+way: pale and wispy, twisted with one too-long arm, the blank
+copy's too-even smile. `new-tiles/draw_nether_monsters.py`;
+`new-tiles/preview_nether_monsters.png`.
+
+Verified per the 2g.4 gate (parent re-run): **52 materials, all
+`exact`, 0 missing** (156 layers); every monster PNG on disk
+byte-identical across the re-run. Coverage movement (monster
+overlay, baseline 217 reproduced): 51 newly covered + 1 upgrade
+(`mon_nether_fish`, already rescued in batch 17 via its
+`looks_like` to the brown trout, now has its own sprite) —
+monsters missing **217 → 166**, coverage **86.2%** (1,037/1,203).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

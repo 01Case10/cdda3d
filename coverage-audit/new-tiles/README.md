@@ -26,6 +26,23 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 21: the nether creatures (Phase 2g.4, 2026-11-15)
+
+**All 52 missing ids in `nether.json` and
+`netherum/labyrinth_monsters.json`** — dish-head, halo tangle,
+roper, star vampires, the void spider family, wells machine, LS
+robots, and the three reflections. Drawn by
+`draw_nether_monsters.py` (PIL, deterministic), placement by
+resolved volume (the void spider family inherits 1,800 L, so its
+spiderlings are juvenile-scaled on the giant sheet).
+
+Verified: test-tileset run (prebuilt release voxelizer), **52
+materials, all `exact`, 0 missing** (156 layers); every monster
+PNG on disk byte-identical across the re-run, parent re-verified.
+`preview_nether_monsters.png` is the contact sheet. Coverage:
+monsters missing **217 → 166** (51 new + `mon_nether_fish`
+upgraded from rescue to its own sprite), coverage **86.2%**.
+
 ## Monster batch 20: insects & spiders (Phase 2g.4, 2026-11-15)
 
 **All 26 missing ids in `insect_spider.json`** — mega ant and
