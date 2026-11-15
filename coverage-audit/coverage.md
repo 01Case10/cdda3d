@@ -1,0 +1,9410 @@
+# CDDA base-game coverage vs UltiCa tileset (v2)
+
+Pinned: CDDA 6a3e59e0 / Tilesets 5ee942f9 (UltiCa).
+`json` universe = tile-entry JSON ids (what our voxelizer loader saw before the 2026-11-15 --use-all fix).
+`shipped` universe = json ids + stems of PNGs no entry references (compose.py --use-all, the official UltiCa build; our loader now synthesizes the same entries).
+Resolution: exact -> variant -> season -> looks_like (copy-from inherited, jump limit 10) -> filler. Filler = NOT represented.
+
+## terrain: 1271 ids — not represented in shipped game: 202 (15.9%) — not represented to our voxelizer loader: 288 — of which 86 are orphan-PNG (--use-all) cases
+shipped stages: {'looks_like': 438, 'filler/missing': 202, 'exact': 549, 'exact/use-all-png': 68, 'season': 14}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `t_alien_meadow_grass` — alien grass — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_grass_long` — long alien grass — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_grass_tall` — tall alien grass — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_pond_goo` — strange pool — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_shrub_1` — alien bush — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_shrub_2` — alien bush — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_shrub_2_harvested` — alien bush — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_shrub_3` — alien shrub — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_1` — alien tree — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_2` — alien tree — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_3` — alien tree — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_3_harvested` — alien tree — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_trap` — alien tree — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_trap_roots_long_grass` — long alien grass — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_trap_roots_obvious` — alien roots — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_alien_meadow_tree_trap_roots_tall_grass` — tall alien grass — looks_like: - — furniture_and_terrain/terrain_alien_meadow.json
+- `t_bark_wall_broken` — broken bark wall — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_bark_wall_chipped` — chipped bark wall — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_barkfloor` — bark — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_barkfloor_noroof` — bark — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_beehive_natural` — bee hive — looks_like: - — furniture_and_terrain/terrain-flora.json
+- `t_bramble_door_c` — closed bramble roots — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_bramble_door_o` — open bramble roots — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_brick_floor` — brick floor — looks_like: - — furniture_and_terrain/terrain-floors-indoor.json
+- `t_brick_oven_base` — brick oven base — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_broken_metal_floor` — broken metal floor — looks_like: - — furniture_and_terrain/terrain-floors-indoor.json
+- `t_canvas_roof` — canvas roof — looks_like: - — furniture_and_terrain/terrain-roofs.json
+- `t_dirt_isherwood_player_spawnpoint` — dirt — looks_like: - — furniture_and_terrain/special_use/isherwood_spawnpoints.json
+- `t_earth_ramp_down_high` — earth ramp down (high end) — looks_like: - — furniture_and_terrain/terrain-zlevel-transitions.json
+- `t_earth_ramp_down_low` — earth ramp down (low end) — looks_like: - — furniture_and_terrain/terrain-zlevel-transitions.json
+- `t_earth_ramp_up_high` — earth ramp up (high end) — looks_like: - — furniture_and_terrain/terrain-zlevel-transitions.json
+- `t_earth_ramp_up_low` — earth ramp up (low end) — looks_like: - — furniture_and_terrain/terrain-zlevel-transitions.json
+- `t_elevator_control_no_roof` — elevator controls — looks_like: - — furniture_and_terrain/terrain-mechanisms.json
+- `t_elevator_control_off_no_roof` — powerless controls — looks_like: - — furniture_and_terrain/terrain-mechanisms.json
+- `t_floor_warped` — warped stone floor — looks_like: - — furniture_and_terrain/terrain-floors-indoor.json
+- `t_floor_warped_light` — warped stone floor — looks_like: t_floor_warped — furniture_and_terrain/terrain-floors-indoor.json
+- `t_floor_warped_nl_glow` — warped stone floor — looks_like: t_floor_warped — furniture_and_terrain/terrain-floors-indoor.json
+- `t_floor_warped_nl_n` — warped stone floor — looks_like: t_floor_warped — furniture_and_terrain/terrain-floors-indoor.json
+- `t_floor_warped_nl_s` — warped stone floor — looks_like: t_floor_warped — furniture_and_terrain/terrain-floors-indoor.json
+- `t_folded_wall` — folded wall — looks_like: - — furniture_and_terrain/LIXA_furniture_and_terrain.json
+- `t_fungus_colony` — mushroom colony — looks_like: - — furniture_and_terrain/terrain-flora.json
+- `t_fungus_wall_transformed` — fungal wall — looks_like: - — furniture_and_terrain/terrain-fungal.json
+- `t_gates_boom_barrier` — boom barrier controls — looks_like: - — furniture_and_terrain/terrain-mechanisms.json
+- `t_gelatinous_groundcover` — gelatinous ground — looks_like: - — furniture_and_terrain/terrain-floors-outdoors.json
+- `t_grass_grazed` — grazed grass — looks_like: - — furniture_and_terrain/terrain-flora.json
+- `t_greenhouse` — greenhouse — looks_like: - — furniture_and_terrain/terrain-floors-indoor.json
+- `t_greenhouse_tilled` — plantable greenhouse — looks_like: - — furniture_and_terrain/terrain-floors-indoor.json
+- `t_highland_groundcover` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_highland_holy_grass` — golden grass — looks_like: - — furniture_and_terrain/terrain-flora.json
+- `t_ice_dp_thick` — thick ice — looks_like: - — furniture_and_terrain/terrain-ice.json
+- `t_ice_dp_thin` — thin ice — looks_like: - — furniture_and_terrain/terrain-ice.json
+- `t_ice_sh_thick` — thick ice — looks_like: - — furniture_and_terrain/terrain-ice.json
+- `t_ice_sh_thin` — thin ice — looks_like: - — furniture_and_terrain/terrain-ice.json
+- `t_infinite_shaft_no_roof` — open air — looks_like: - — furniture_and_terrain/LIXA_furniture_and_terrain.json
+- `t_infinite_shaft_rooved` — open air — looks_like: - — furniture_and_terrain/LIXA_furniture_and_terrain.json
+- `t_inner_cabins_exit_portal` — unstable portal — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_inner_cabins_nether_glass_floor` — black glass — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_inner_cabins_void` — sprawling plane of black — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_inner_cabins_void_trans` — fluid void — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_inner_cabins_void_trans_retracting` — fluid void — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_intercom_balthazar` — intercom — looks_like: - — furniture_and_terrain/terrain-mechanisms.json
+- `t_leanto` — pine lean-to — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_low_stairs_begin` — low stairs (beginning section) — looks_like: - — furniture_and_terrain/terrain-zlevel-transitions.json
+- `t_low_stairs_end` — low stairs (end section) — looks_like: - — furniture_and_terrain/terrain-zlevel-transitions.json
+- `t_milking_machine` — milking machine — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_missile` — missile — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_missile_exploded` — blown-out missile — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_nanofab_body` — nanofabricator — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_nanofab_body_broken` — broken nanofabricator — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_nether_basalt` — perfect basalt wall — looks_like: - — furniture_and_terrain/terrain-nether.json
+- `t_nether_glass_floor` — black glass — looks_like: - — furniture_and_terrain/terrain-nether.json
+- `t_nether_glass_floor_clairvoyance` — black glass — looks_like: - — furniture_and_terrain/terrain-nether.json
+- `t_nether_glass_wall` — black glass — looks_like: - — furniture_and_terrain/terrain-nether.json
+- `t_netherum_labyrinth_groundcover` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_nl_broken_metal_floor` — broken metal floor — looks_like: t_broken_metal_floor — furniture_and_terrain/netherum/terrain_labyrinth_cybernetic.json
+- `t_nl_chasm_no_trap` — sparkling chasm — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_any.json
+- `t_nl_column` — scrap metal column — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_cybernetic.json
+- `t_nl_column_light` — protruding light — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_cybernetic.json
+- `t_nl_gates_mech_control` — rotary lever — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_cybernetic.json
+- `t_nl_grass_very_tall` — tangled cybergrass harness — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_overgrown.json
+- `t_nl_metal_wall_overgrown` — overgrown metal wall — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_overgrown.json
+- `t_nl_obelisk_mission_autodoc` — Metal stele — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_safehouse.json
+- `t_nl_obelisk_mission_living_space_1` — Metal stele — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_safehouse.json
+- `t_nl_obelisk_mission_utility_space` — Metal stele — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_safehouse.json
+- `t_nl_sd_2d_ground` — flattened ground — looks_like: t_wall_warped — furniture_and_terrain/terrain-string-dimension.json
+- `t_nl_sd_2d_sky` — flattened sky — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_nl_sd_2d_sky_walkable` — flattened horizon — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_nl_shrub_glowberries` — glowberry bush — looks_like: t_alien_meadow_shrub_2 — furniture_and_terrain/netherum/terrain_labyrinth_overgrown.json
+- `t_nl_shrub_glowberries_harvested` — glowberry bush — looks_like: t_alien_meadow_shrub_2_harvested — furniture_and_terrain/netherum/terrain_labyrinth_overgrown.json
+- `t_nl_soil` — solid earth — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_overgrown.json
+- `t_nl_suspended_bridge` — walkway — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_cybernetic.json
+- `t_nm_floor_bone` — bone floor — looks_like: - — furniture_and_terrain/terrain_nether_monster.json
+- `t_nuclear_reactor` — nuclear reactor core — looks_like: - — furniture_and_terrain/terrain-mechanisms.json
+- `t_paper_brood` — paper wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_paper_hard` — layered paper wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_portal_storm_dungeon_groundcover` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_portcullis` — makeshift portcullis — looks_like: - — furniture_and_terrain/terrain-fences-gates.json
+- `t_pseudo_phase` — pseudo phase — looks_like: - — furniture_and_terrain/terrain-ice.json
+- `t_rad_platform` — radiation platform — looks_like: t_blue_floor — furniture_and_terrain/terrain-floors-indoor.json
+- `t_radiosphere_bush` — wire bush — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_radiosphere_glowing_floor` — vanishing floor — looks_like: - — mapgen/reverberations/radiosphere.json
+- `t_radiosphere_radio_tower_liminal_light` — radio tower — looks_like: - — furniture_and_terrain/terrain-manufactured.json
+- `t_radiosphere_tree` — power tree — looks_like: - — furniture_and_terrain/terrain-reverberations.json
+- `t_region_grass` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_groundcover` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_groundcover_barren` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_groundcover_forest` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_groundcover_ravine` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_groundcover_swamp` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_groundcover_urban` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub_decorative` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub_forest` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub_forest_dense` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub_fruit` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub_plains` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_shrub_swamp` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_soil` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_dead` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_evergreen` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_forest` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_forest_dense` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_forest_other` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_fruit` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_fruit_wild` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_nut` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_region_tree_shade` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_reinforced_glass_lab` — reinforced glass — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_saltwater_cube` — submersed salt water — looks_like: - — furniture_and_terrain/terrain-liquids.json
+- `t_scrap_scaffolding_scarlet` — mass of climbable metal — looks_like: - — furniture_and_terrain/terrain-scarlet-sea.json
+- `t_shore_boulder` — smooth rocky outcropping — looks_like: - — furniture_and_terrain/terrain-shore.json
+- `t_shore_boulder_oyster` — oyster-encrusted boulder — looks_like: - — furniture_and_terrain/terrain-shore.json
+- `t_slope_to_bosky_labyrinth` — overgrown slope down — looks_like: - — furniture_and_terrain/netherum/terrain_labyrinth_overgrown.json
+- `t_string_dimension_groundcover` — pseudo terrain — looks_like: - — furniture_and_terrain/terrain-regional-pseudo.json
+- `t_string_dimension_meteoric_rock_charred` — charred rock — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_gates_mech_control` — rotary lever — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_gates_mech_control_inert` — rotary lever — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_point_big` — nothing — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_point_big_gray` — nothing — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_point_small` — nothing — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_point_small_gray` — nothing — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_true_void` — nothing — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_void` — nothing — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_x` — impossibly thin magenta line — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_xy` — impossibly flat blue square — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_xy_plane_1` — impossibly flat blue square — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_xy_plane_2` — shimmering blue square — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_xy_plane_3` — wavy square — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_xyz` — white cube — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_y` — impossibly thin cyan line — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_string_z` — impossibly thin yellow line — looks_like: - — furniture_and_terrain/terrain-string-dimension.json
+- `t_sunkenhelicopter_floor` — waterlogged aisle — looks_like: - — furniture_and_terrain/special_use/sunken_helicopter_furniture.json
+- `t_sunkenhelicopter_floor_rotator` — waterlogged aisle — looks_like: - — furniture_and_terrain/special_use/sunken_helicopter_furniture.json
+- `t_sunkenhelicopter_roof` — waterlogged roof — looks_like: - — furniture_and_terrain/special_use/sunken_helicopter_furniture.json
+- `t_sunkenhelicopter_rotor` — waterlogged heavy-duty military Blackhawk rotors — looks_like: - — furniture_and_terrain/special_use/sunken_helicopter_furniture.json
+- `t_sunkenhelicopter_windshield_n` — waterlogged windshield — looks_like: - — furniture_and_terrain/special_use/sunken_helicopter_furniture.json
+- `t_treetop` — treetop — looks_like: - — furniture_and_terrain/terrain-roofs.json
+- `t_treetop_dead` — dead treetop — looks_like: - — furniture_and_terrain/terrain-roofs.json
+- `t_treetop_evergreen` — treetop — looks_like: - — furniture_and_terrain/terrain-roofs.json
+- `t_treetop_giant_fern` — giant fern top — looks_like: - — furniture_and_terrain/terrain-roofs.json
+- `t_triffid_slope_down` — downward root slope — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_triffid_slope_up` — upward root slope — looks_like: - — furniture_and_terrain/terrain-triffid.json
+- `t_unfolded_wall` — unfolded wall — looks_like: - — furniture_and_terrain/LIXA_furniture_and_terrain.json
+- `t_vitrified_bars` — black glass bars — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_bush` — black glass bush — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_column` — black glass column — looks_like: t_nether_glass_wall — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_curtains` — black glass curtains — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_dirt` — black glass ground — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_edge` — edge of a vastness — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_fence_barbed` — spined glasswire fence — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_floor` — black glass floor — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_grass` — black grass — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_sand` — black glass dust — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_stairs_down` — black glass stairs — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_stairs_up` — black glass stairs — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_tile` — black glass floor — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_wall` — black glass wall — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_wall_glass` — translucent black glass wall — looks_like: t_vitrified_wall — furniture_and_terrain/terrain_vitrified.json
+- `t_vitrified_window_frame` — jagged glass aperture — looks_like: - — furniture_and_terrain/terrain_vitrified.json
+- `t_wall_metal_shipping_container` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_black` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_blue` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_brown` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_cyan` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_green` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_light_blue` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_light_cyan` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_light_green` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_light_red` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_magenta` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_pink` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_red` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_white` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_metal_shipping_container_yellow` — shipping container wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_wall_warped` — warped wall — looks_like: - — furniture_and_terrain/terrain-walls.json
+- `t_warped_roof` — warped roof — looks_like: - — furniture_and_terrain/terrain-roofs.json
+- `t_water_cube_hot` — warm water — looks_like: - — furniture_and_terrain/terrain-liquids.json
+- `t_water_sh_scarlet` — scarlet water — looks_like: - — furniture_and_terrain/terrain-scarlet-sea.json
+- `t_water_sh_scarlet_wave` — scarlet water — looks_like: - — furniture_and_terrain/terrain-scarlet-sea.json
+- `t_window_boarded_shutters_closed` — window with makeshift shutters — looks_like: - — furniture_and_terrain/terrain-windows.json
+- `t_wood_sunshade_pole` — wooden pole — looks_like: - — furniture_and_terrain/terrain-walls.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `t_card_reader_broken` — broken card reader — via exact/use-all-png -> t_card_reader_broken
+- `t_distortion_floor` — distorted image — via looks_like -> fd_fatigue
+- `t_double_pane_glass` — double glazed window — via looks_like -> t_window_no_curtains
+- `t_double_pane_glass_open` — open double glazed window — via looks_like -> t_window_no_curtains_open
+- `t_double_pane_glass_with_curtain_open` — open double glazed window with curtains — via looks_like -> t_window_open
+- `t_double_pane_glass_with_curtain_open_window_closed` — double glazed window with curtains — via looks_like -> t_window_domestic
+- `t_intercom` — intercom — via exact/use-all-png -> t_intercom
+- `t_ladder_down` — ladder — via exact/use-all-png -> t_ladder_down
+- `t_ladder_up` — ladder — via exact/use-all-png -> t_ladder_up
+- `t_ladder_up_down` — ladder — via exact/use-all-png -> t_ladder_up_down
+- `t_marloss` — Marloss bush — via exact/use-all-png -> t_marloss
+- `t_nl_mist` — swirling mist — via looks_like -> fd_smoke
+- `t_ov_reb_cage` — rebar roof cage — via exact/use-all-png -> t_ov_reb_cage
+- `t_ov_smreb_cage` — small rebar roof cage — via exact/use-all-png -> t_ov_smreb_cage
+- `t_plastic_window` — plastic window — via looks_like -> t_window_no_curtains
+- `t_plastic_window_open` — open plastic window — via looks_like -> t_window_no_curtains_open
+- `t_plastic_window_with_curtain_open` — open plastic window with curtains — via looks_like -> t_window_open
+- `t_plastic_window_with_curtain_open_window_closed` — plastic window with curtains — via looks_like -> t_window_domestic
+- `t_quadruple_pane_glass` — quadruple glazed window — via looks_like -> t_window_no_curtains
+- `t_quadruple_pane_glass_open` — open quadruple glass window — via looks_like -> t_window_no_curtains_open
+- `t_quadruple_pane_glass_with_curtain_open` — open quadruple glazed window with curtains — via looks_like -> t_window_open
+- `t_quadruple_pane_glass_with_curtain_open_window_closed` — quadruple glazed glass window with a curtain — via looks_like -> t_window_domestic
+- `t_radio_tower` — radio tower — via exact/use-all-png -> t_radio_tower
+- `t_ramp_down_high` — road ramp down (high end) — via exact/use-all-png -> t_ramp_down_high
+- `t_ramp_up_high` — road ramp up (high end) — via exact/use-all-png -> t_ramp_up_high
+- `t_reinforced_double_pane_glass` — reinforced double glazed window — via looks_like -> t_window_no_curtains
+- `t_reinforced_double_pane_glass_open` — open reinforced double glazed window — via looks_like -> t_window_no_curtains_open
+- `t_reinforced_double_pane_glass_with_curtain_open` — open reinforced double glazed window with curtains — via looks_like -> t_window_open
+- `t_reinforced_double_pane_glass_with_curtain_open_window_closed` — reinforced double glazed window with curtains — via looks_like -> t_window_domestic
+- `t_reinforced_plastic_window` — reinforced plastic window — via looks_like -> t_window_no_curtains
+- `t_reinforced_plastic_window_open` — open reinforced plastic window — via looks_like -> t_window_no_curtains_open
+- `t_reinforced_plastic_window_with_curtain_open` — open reinforced plastic window with curtains — via looks_like -> t_window_open
+- `t_reinforced_plastic_window_with_curtain_open_window_closed` — reinforced plastic window with curtains — via looks_like -> t_window_domestic
+- `t_reinforced_quadruple_double_pane_glass_with_curtain_open_window_closed` — reinforced quadruple glazed window with curtains — via looks_like -> t_window_domestic
+- `t_reinforced_quadruple_pane_glass` — reinforced quadruple glazed window — via looks_like -> t_window_no_curtains
+- `t_reinforced_quadruple_pane_glass_open` — open reinforced quadruple glazed window — via looks_like -> t_window_no_curtains_open
+- `t_reinforced_quadruple_pane_glass_with_curtain_open` — open reinforced quadruple glazed glass window with curtains — via looks_like -> t_window_open
+- `t_reinforced_single_pane_glass` — reinforced single glazed window — via looks_like -> t_window_no_curtains
+- `t_reinforced_single_pane_glass_open` — open reinforced single glazed window — via looks_like -> t_window_no_curtains_open
+- `t_reinforced_single_pane_glass_with_curtain_open` — open reinforced single glazed window with curtains — via looks_like -> t_window_open
+- `t_reinforced_single_pane_glass_with_curtain_open_window_closed` — reinforced single glazed window with curtains — via looks_like -> t_window_domestic
+- `t_reinforced_triple_pane_glass` — reinforced triple glazed window — via looks_like -> t_window_no_curtains
+- `t_reinforced_triple_pane_glass_open` — open reinforced triple glazed window — via looks_like -> t_window_no_curtains_open
+- `t_reinforced_triple_pane_glass_with_curtain_open` — open reinforced triple glazed window with curtains — via looks_like -> t_window_open
+- `t_reinforced_triple_pane_glass_with_curtain_open_window_closed` — reinforced triple glazed window with curtains — via looks_like -> t_window_domestic
+- `t_resin_hole` — resin-lined hole — via exact/use-all-png -> t_resin_hole
+- `t_rubber_mulch` — rubber mulch — via exact/use-all-png -> t_rubber_mulch
+- `t_scaffolding_pipe_down` — scaffolding down — via looks_like -> t_ladder_down
+- `t_scaffolding_pipe_up` — scaffolding up — via looks_like -> t_ladder_up
+- `t_scaffolding_pipe_updown` — scaffolding up/down — via looks_like -> t_ladder_up_down
+- `t_shrub_fungal` — fungal shrub — via exact/use-all-png -> t_shrub_fungal
+- `t_single_pane_glass` — single glazed window — via looks_like -> t_window_no_curtains
+- `t_single_pane_glass_open` — open single glazed window — via looks_like -> t_window_no_curtains_open
+- `t_single_pane_glass_with_curtain_open` — open single glazed window with curtains — via looks_like -> t_window_open
+- `t_single_pane_glass_with_curtain_open_window_closed` — single glazed window with curtains — via looks_like -> t_window_domestic
+- `t_slope_down` — downward slope — via exact/use-all-png -> t_slope_down
+- `t_slope_up` — upward slope — via exact/use-all-png -> t_slope_up
+- `t_strconc_floor_halfway` — half-built reinforced concrete floor — via exact/use-all-png -> t_strconc_floor_halfway
+- `t_tempered_glass_open` — open tempered glass window — via looks_like -> t_window_no_curtains_open
+- `t_tempered_glass_window` — tempered glass window — via looks_like -> t_window_no_curtains
+- `t_tempered_glass_with_curtain_open` — open tempered glass window with curtains — via looks_like -> t_window_open
+- `t_tempered_glass_with_curtain_open_window_closed` — tempered glass window with curtains — via looks_like -> t_window_domestic
+- `t_thconc_floor_flesh` — overgrown floor — via exact/use-all-png -> t_thconc_floor_flesh
+- `t_thconc_warning` — concrete floor — via exact/use-all-png -> t_thconc_warning
+- `t_triffid_leaves` — branches with leaves — via exact/use-all-png -> t_triffid_leaves
+- `t_triple_pane_glass` — triple glazed window — via looks_like -> t_window_no_curtains
+- `t_triple_pane_glass_open` — open triple glazed window — via looks_like -> t_window_no_curtains_open
+- `t_triple_pane_glass_with_curtain_open` — open triple glazed window with curtains — via looks_like -> t_window_open
+- `t_triple_pane_glass_with_curtain_open_window_closed` — triple glazed window with curtains — via looks_like -> t_window_domestic
+- `t_truss_pillar` — truss pillar — via looks_like -> t_radio_tower
+- `t_wall_resin_cage` — resin cage — via exact/use-all-png -> t_wall_resin_cage
+- `t_window_boarded_shutters_open_fully` — window with open makeshift shutters — via looks_like -> t_window_open
+- `t_window_domestic` — window with curtains — via exact/use-all-png -> t_window_domestic
+- `t_window_domestic_alarm` — window with curtains — via looks_like -> t_window_domestic
+- `t_window_domestic_taped` — taped window — via exact/use-all-png -> t_window_domestic_taped
+- `t_window_no_curtains` — window without curtains — via exact/use-all-png -> t_window_no_curtains
+- `t_window_no_curtains_alarm` — window without curtains — via looks_like -> t_window_no_curtains
+- `t_window_no_curtains_open` — open window without curtains — via exact/use-all-png -> t_window_no_curtains_open
+- `t_window_no_curtains_open_alarm` — open window without curtains — via looks_like -> t_window_no_curtains_open
+- `t_window_open` — open window with curtains — via exact/use-all-png -> t_window_open
+- `t_window_open_alarm` — open window with curtains — via looks_like -> t_window_open
+- `t_window_stained_blue` — high stained glass window — via exact/use-all-png -> t_window_stained_blue
+- `t_window_stained_green` — stone wall with high stained glass window — via exact/use-all-png -> t_window_stained_green
+- `t_window_stained_red` — stone wall with high stained glass window — via exact/use-all-png -> t_window_stained_red
+- `t_wood_stairs_up_broken` — broken wooden stairs — via exact/use-all-png -> t_wood_stairs_up_broken
+- `t_wood_stairs_up_half` — half-built wooden stairs — via exact/use-all-png -> t_wood_stairs_up_half
+
+## furniture: 713 ids — not represented in shipped game: 174 (24.4%) — not represented to our voxelizer loader: 271 — of which 97 are orphan-PNG (--use-all) cases
+shipped stages: {'looks_like': 220, 'exact': 190, 'exact/use-all-png': 125, 'filler/missing': 174, 'season': 4}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `f_12000_gasoline_generator` — powerful gasoline generator — looks_like: t_plut_generator — furniture_and_terrain/furniture_generators.json
+- `f_adobe_stack_mid` — stack of adobe bricks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_adobe_stack_short` — short stack of adobe bricks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_adobe_stack_tall` — tall stack of adobe bricks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_algae_green` — green algae — looks_like: - — furniture_and_terrain/furniture-flora_marine.json
+- `f_algae_red` — red algae — looks_like: - — furniture_and_terrain/furniture-flora_marine.json
+- `f_alien_scar` — scarred lump — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_alien_weed_1` — alien plant — looks_like: - — furniture_and_terrain/furniture_alien_meadow.json
+- `f_alien_weed_2` — alien plant — looks_like: - — furniture_and_terrain/furniture_alien_meadow.json
+- `f_alien_weed_3` — alien plant — looks_like: - — furniture_and_terrain/furniture_alien_meadow.json
+- `f_ball_mach` — ball machine — looks_like: - — furniture_and_terrain/furniture-recreation.json
+- `f_barber_chair` — barber chair — looks_like: f_barber_chair — furniture_and_terrain/furniture-seats.json
+- `f_beanbag` — bean bag — looks_like: - — furniture_and_terrain/furniture-seats.json
+- `f_bed_down` — down bed — looks_like: - — furniture_and_terrain/furniture-sleep.json
+- `f_bladderwrack` — bladderwrack — looks_like: f_algae_green — furniture_and_terrain/furniture-flora_marine.json
+- `f_brambles` — brambles — looks_like: - — furniture_and_terrain/furniture-triffid.json
+- `f_brick_stack_mid` — stack of bricks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_brick_stack_short` — short stack of bricks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_brick_stack_tall` — tall stack of bricks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_bunkbed_down` — down bunkbed — looks_like: f_bed_down — furniture_and_terrain/furniture-sleep.json
+- `f_butter_churn` — butter churn — looks_like: - — furniture_and_terrain/furniture-storage.json
+- `f_cardboard_door` — cardboard door — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_cardboard_door_o` — cardboard door — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_cardboard_floor` — cardboard floor — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_cardboard_fort` — cardboard fort — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_cardboard_roof` — cardboard roof — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_cardboard_wall` — cardboard wall — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_clay_mound_mid` — mound of clay — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_clay_mound_short` — short mound of clay — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_clay_mound_tall` — tall mound of clay — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_clear` — seeing this is a bug — looks_like: - — furniture_and_terrain/furniture-fakes.json
+- `f_crystalline_flower` — crystalline flower — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_dead_exodii` — remains of a cyborg — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_dead_exodii_heartless` — crumbled remains of a cyborg — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_diesel_generator` — diesel generator — looks_like: t_plut_generator — furniture_and_terrain/furniture_generators.json
+- `f_empty_spike` — empty spike — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_exam_chair` — exam chair — looks_like: - — furniture_and_terrain/furniture-medical.json
+- `f_exodii_floor_portal_enclosure` — metal ring — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_exodii_locator_antenna` — locator antenna — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_exodii_portal_enclosure` — portal enclosure — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_firefly_terrarium` — firefly terrarium — looks_like: - — furniture_and_terrain/furniture-tools.json
+- `f_flower_marloss` — Marloss flower — looks_like: - — furniture_and_terrain/furniture-fungal.json
+- `f_fog_breather` — fog — looks_like: t_gelatinous_groundcover — furniture_and_terrain/furniture-emitters.json
+- `f_gazing_ball` — gazing ball — looks_like: - — furniture_and_terrain/furniture-decorative.json
+- `f_glass_mound_mid` — mound of broken glass — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_glass_mound_short` — short mound of broken glass — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_glass_mound_tall` — tall mound of broken glass — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_glowingbulb` — illuminating plant bulb — looks_like: - — furniture_and_terrain/furniture-triffid.json
+- `f_grave_monument` — obelisk — looks_like: - — furniture_and_terrain/furniture-graves.json
+- `f_gravel_mound_mid` — mound of gravel — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_gravel_mound_short` — short mound of gravel — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_gravel_mound_tall` — tall mound of gravel — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_hobo_stove` — hobo stove — looks_like: - — furniture_and_terrain/furniture-fireplaces.json
+- `f_impaled_officer` — impaled officer — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_impaled_soldier` — impaled mercenary — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_indoor_flagpole` — indoor flagpole — looks_like: - — furniture_and_terrain/furniture-decorative.json
+- `f_indoor_flagpole_wooden` — wooden indoor flagpole — looks_like: - — furniture_and_terrain/furniture-decorative.json
+- `f_kelp_sugar` — sugar kelp — looks_like: - — furniture_and_terrain/furniture-flora_marine.json
+- `f_lighthouse_light` — lighthouse light — looks_like: - — furniture_and_terrain/furniture-decorative.json
+- `f_log_stack_mid` — stack of logs — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_log_stack_short` — short stack of logs — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_log_stack_tall` — tall stack of logs — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_m224_mortar` — M224 mortar — looks_like: - — furniture_and_terrain/furniture_military.json
+- `f_metal_crate_military` — engine container — looks_like: - — furniture_and_terrain/furniture-storage.json
+- `f_metal_crate_military_o` — engine container base — looks_like: - — furniture_and_terrain/furniture-storage.json
+- `f_metal_crate_o_string_warped` — glowing metal crate — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_metal_detector` — metal detector — looks_like: - — furniture_and_terrain/furniture-industrial.json
+- `f_midden` — composting midden — looks_like: - — furniture_and_terrain/furniture-triffid.json
+- `f_military_generator` — military diesel generator — looks_like: t_plut_generator — furniture_and_terrain/furniture_generators.json
+- `f_mutant_tree_adult` — mutant tree — looks_like: - — obsoletion_and_migration_0.I/obsolete_furniture.json
+- `f_mutant_tree_sapling` — mutant sapling — looks_like: - — obsoletion_and_migration_0.I/obsolete_furniture.json
+- `f_mutant_tree_sprout` — sprout — looks_like: - — obsoletion_and_migration_0.I/obsolete_furniture.json
+- `f_nl_autodoc` — twitchy medical robot — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_safehouse.json
+- `f_nl_autodoc_couch` — operation table — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_safehouse.json
+- `f_nl_boiler` — clouded cylinder — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_safehouse.json
+- `f_nl_climbing_vine` — climbing vines — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_overgrown.json
+- `f_nl_pipe_plant` — pipe plant — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_overgrown.json
+- `f_nl_powerbox` — utility box — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_overgrown.json
+- `f_nl_powerbox_o` — open utility box — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_overgrown.json
+- `f_nl_safehouse_boiler` — otherworldly boiler — looks_like: - — furniture_and_terrain/netherum/furniture_labyrinth_safehouse.json
+- `f_nm_nether_lichen` — nether lichen — looks_like: f_shrub_moss — furniture_and_terrain/furniture_nether_monster.json
+- `f_no_item` — seeing this is a bug — looks_like: - — furniture_and_terrain/furniture-fakes.json
+- `f_pebble_mound_mid` — mound of pebbles — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_pebble_mound_short` — short mound of pebbles — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_pebble_mound_tall` — tall mound of pebbles — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_pipe_stack_mid` — stack of pipes — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_pipe_stack_short` — short stack of pipes — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_pipe_stack_tall` — tall stack of pipes — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_plank_stack_mid` — stack of planks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_plank_stack_short` — short stack of planks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_plank_stack_tall` — tall stack of planks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_portable_generator` — portable generator — looks_like: t_plut_generator — furniture_and_terrain/furniture_generators.json
+- `f_portal_dungeon_reward_increaser` — metanoiac possibility — looks_like: - — furniture_and_terrain/furniture_misc.json
+- `f_portal_dungeon_reward_increaser_inert` — inert metanoiac possibility — looks_like: - — furniture_and_terrain/furniture_misc.json
+- `f_rebar_stack_mid` — stack of rebar — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rebar_stack_short` — short stack of rebar — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rebar_stack_tall` — tall stack of rebar — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_region_flower` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_flower_decorative` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_forest` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_forest_dense` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_forest_water` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_lake_bed` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_ocean_bed` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_plain` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_water_plant` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_region_weed` — pseudo furniture — looks_like: - — furniture_and_terrain/furniture-regional-pseudo.json
+- `f_rock_large_mound_mid` — mound of large rocks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rock_large_mound_short` — short mound of large rocks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rock_large_mound_tall` — tall mound of large rocks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rock_mound_mid` — mound of rocks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rock_mound_short` — short mound of rocks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_rock_mound_tall` — tall mound of rocks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_roulette_table` — roulette table — looks_like: - — furniture_and_terrain/furniture-recreation.json
+- `f_sand_mound_mid` — mound of sand — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_sand_mound_short` — short mound of sand — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_sand_mound_tall` — tall mound of sand — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_screw_press` — screw press — looks_like: - — furniture_and_terrain/furniture-tools.json
+- `f_sea_anemone` — sea anemone — looks_like: - — furniture_and_terrain/furniture-flora_marine.json
+- `f_sea_lettuce` — sea lettuce — looks_like: f_algae_green — furniture_and_terrain/furniture-flora_marine.json
+- `f_sea_sponge` — sea sponge — looks_like: - — furniture_and_terrain/furniture-flora_marine.json
+- `f_shackle` — manacles — looks_like: - — furniture_and_terrain/furniture-decorative.json
+- `f_sink_gravity` — sink with gravity-feed tank — looks_like: - — furniture_and_terrain/furniture-plumbing.json
+- `f_solar_cooker` — parabolic solar cooker — looks_like: - — furniture_and_terrain/furniture-fireplaces.json
+- `f_solar_unit_v2` — mounted monocrystalline solar panel — looks_like: - — furniture_and_terrain/furniture-appliances.json
+- `f_stick_long_stack_mid` — stack of long sticks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_stick_long_stack_short` — short stack of long sticks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_stick_long_stack_tall` — tall stack of long sticks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_stick_stack_mid` — stack of sticks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_stick_stack_short` — short stack of sticks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_stick_stack_tall` — tall stack of sticks — looks_like: - — furniture_and_terrain/furniture-terrains.json
+- `f_string_dimension_dead_flower` — frosted flowers — looks_like: - — furniture_and_terrain/furniture-flora.json
+- `f_string_dimension_floor_portal_enclosure` — metal ring — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_string_dimension_housing_imploded` — imploded clump of metal — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_string_dimension_pylon` — humming column — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_string_dimension_pylon_inert` — inert column — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_styling_station` — styling station — looks_like: - — furniture_and_terrain/furniture-decorative.json
+- `f_sunkenhelicopter_seat_rotating` — waterlogged bucket seat — looks_like: - — furniture_and_terrain/special_use/sunken_helicopter_furniture.json
+- `f_surgical_table` — lab workbench — looks_like: - — furniture_and_terrain/furniture-medical.json
+- `f_torah_ark` — Torah Ark — looks_like: - — furniture_and_terrain/furniture-storage.json
+- `f_utility_shelf_string_warped` — warped utility shelf — looks_like: - — furniture_and_terrain/furniture-alien.json
+- `f_vitrified_armchair` — black glass armchair — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_bathtub` — black glass bathtub — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_bed` — black glass bed — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_bench` — black glass bench — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_birdbath` — black glass birdbath — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_bookcase` — black glass bookcase — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_bookcase_talker` — black glass bookcase — looks_like: f_vitrified_bookcase — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_box` — black glass box — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_chair` — black glass chair — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_counter` — black glass counter — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_cupboard` — black glass cupboard — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_desk` — black glass desk — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_dishwasher` — black glass dishwasher — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_doll` — incomplete plush doll — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_dresser` — black glass dresser — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_dryer` — black glass dryer — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_fireplace` — black glass fireplace — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_firering` — ring of black stones — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_floor_lamp` — black glass lantern — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_fridge` — black glass refrigerator — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_locker` — black glass locker — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_mailbox` — black glass mailbox — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_oven` — black glass oven — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_planter` — black glass garden — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_rack` — black glass display rack — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_shower` — black glass shower — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_sink` — black glass sink — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_sofa` — black glass sofa — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_table` — black glass table — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_toilet` — black glass toilet — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_washer` — black glass washer — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_vitrified_water_heater` — black glass water heater — looks_like: - — furniture_and_terrain/furniture_vitrified.json
+- `f_xedra_mobile_weather_station` — mobile antenna — looks_like: - — furniture_and_terrain/furniture-industrial.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `f_LIXA_unfold_barrier` — wall of flat space — via looks_like -> fd_fatigue
+- `f_active_backup_generator` — active backup generator — via exact/use-all-png -> f_active_backup_generator
+- `f_alien_gasper` — gasping tube — via exact/use-all-png -> f_alien_gasper
+- `f_aluminum_stepladder` — aluminum stepladder — via exact/use-all-png -> f_aluminum_stepladder
+- `f_anvil` — anvil — via exact/use-all-png -> f_anvil
+- `f_anvil_bronze` — bronze anvil — via looks_like -> f_anvil
+- `f_anvil_crude` — small anvil — via looks_like -> f_anvil
+- `f_anvil_heavy` — heavy anvil — via looks_like -> f_anvil
+- `f_anvil_ingot` — makeshift anvil — via looks_like -> f_anvil
+- `f_anvil_scavenged` — scavenger's anvil — via looks_like -> f_anvil
+- `f_archery_target_box` — box archery target — via exact/use-all-png -> f_archery_target_box
+- `f_battlefield_cross` — battlefield cross — via exact/use-all-png -> f_battlefield_cross
+- `f_beach_seaweed` — scattered seaweed — via looks_like -> f_leaves_pile
+- `f_bigmirror` — standing mirror — via exact/use-all-png -> f_bigmirror
+- `f_bigmirror_b` — broken standing mirror — via exact/use-all-png -> f_bigmirror_b
+- `f_bitts` — bitts — via exact/use-all-png -> f_bitts
+- `f_brazier` — brazier — via exact/use-all-png -> f_brazier
+- `f_bullettrailer_bed_foot` — trailer bed — via exact/use-all-png -> f_bullettrailer_bed_foot
+- `f_bullettrailer_bed_head` — trailer bed — via exact/use-all-png -> f_bullettrailer_bed_head
+- `f_bullettrailer_cabinet` — trailer cabinets — via exact/use-all-png -> f_bullettrailer_cabinet
+- `f_bullettrailer_desk` — mini desk — via exact/use-all-png -> f_bullettrailer_desk
+- `f_bullettrailer_minisofa` — trailer sofa — via exact/use-all-png -> f_bullettrailer_minisofa
+- `f_bullettrailer_sign_danabakery` — plywood sign for 'Dana's Bakery' — via exact/use-all-png -> f_bullettrailer_sign_danabakery
+- `f_bullettrailer_sink` — trailer sink — via exact/use-all-png -> f_bullettrailer_sink
+- `f_bullettrailer_table_bottom` — table — via exact/use-all-png -> f_bullettrailer_table_bottom
+- `f_bullettrailer_table_middle` — table — via exact/use-all-png -> f_bullettrailer_table_middle
+- `f_bullettrailer_table_top` — table — via exact/use-all-png -> f_bullettrailer_table_top
+- `f_bullettrailer_toilet` — travel toilet — via exact/use-all-png -> f_bullettrailer_toilet
+- `f_camp_anvil` — anvil (camp) — via looks_like -> f_anvil
+- `f_canvas_floor` — canvas floor — via exact/use-all-png -> f_canvas_floor
+- `f_chimney` — chimney crown — via exact/use-all-png -> f_chimney
+- `f_cleat` — cleat — via looks_like -> f_bitts
+- `f_coffin_c` — coffin — via exact/use-all-png -> f_coffin_c
+- `f_coffin_o` — open coffin — via exact/use-all-png -> f_coffin_o
+- `f_curtain` — privacy curtain — via exact/use-all-png -> f_curtain
+- `f_curtain_open` — open privacy curtain — via exact/use-all-png -> f_curtain_open
+- `f_dancing_pole` — dancing pole — via exact/use-all-png -> f_dancing_pole
+- `f_dive_block` — diving block — via exact/use-all-png -> f_dive_block
+- `f_down_mattress` — down mattress — via exact/use-all-png -> f_down_mattress
+- `f_egg_sackbw` — spider egg sac — via exact/use-all-png -> f_egg_sackbw
+- `f_egg_sackcs` — spider egg sac — via exact/use-all-png -> f_egg_sackcs
+- `f_egg_sacke` — ruptured egg sac — via exact/use-all-png -> f_egg_sacke
+- `f_egg_sackws` — spider egg sac — via exact/use-all-png -> f_egg_sackws
+- `f_exodii_charger` — personal charging station — via exact/use-all-png -> f_exodii_charger
+- `f_exodii_charger_cheap` — simple charging station — via exact/use-all-png -> f_exodii_charger_cheap
+- `f_exodii_generator_1` — Mavrik 10-101 power core — via exact/use-all-png -> f_exodii_generator_1
+- `f_exodii_generator_2` — spherical generator — via exact/use-all-png -> f_exodii_generator_2
+- `f_exodii_generator_3` — fluidic generator — via exact/use-all-png -> f_exodii_generator_3
+- `f_exodii_generator_4` — rusty generator — via exact/use-all-png -> f_exodii_generator_4
+- `f_exodii_lamp_string_warped` — warped utility light — via exact/use-all-png -> f_exodii_lamp_string_warped
+- `f_exodii_portal_tower` — shimmering superstructure — via exact/use-all-png -> f_exodii_portal_tower
+- `f_exodii_printer_large` — metalloid printer — via exact/use-all-png -> f_exodii_printer_large
+- `f_fiber_mat` — fiber mat — via exact/use-all-png -> f_fiber_mat
+- `f_flagpole` — flagpole — via exact/use-all-png -> f_flagpole
+- `f_floor_mattress` — mattress — via exact/use-all-png -> f_floor_mattress
+- `f_fungal_mass` — fungal mass — via exact/use-all-png -> f_fungal_mass
+- `f_fungal_tangle` — fungal tangle — via exact/use-all-png -> f_fungal_tangle
+- `f_hammock` — hammock — via exact/use-all-png -> f_hammock
+- `f_hammock_net` — net hammock — via exact/use-all-png -> f_hammock_net
+- `f_hd_compressor_unit` — high pressure compressor unit — via exact/use-all-png -> f_hd_compressor_unit
+- `f_hoist_chain` — chain hoist — via exact/use-all-png -> f_hoist_chain
+- `f_hoist_pulley` — rope and tackle hoist — via exact/use-all-png -> f_hoist_pulley
+- `f_hoist_rope` — rope hoist — via exact/use-all-png -> f_hoist_rope
+- `f_ladder` — wooden stepladder — via exact/use-all-png -> f_ladder
+- `f_large_skin_groundsheet` — large skin groundsheet — via looks_like -> f_skin_groundsheet
+- `f_leaves_pile` — pile of leaves — via exact/use-all-png -> f_leaves_pile
+- `f_nm_tube` — decaying tube — via looks_like -> f_alien_gasper
+- `f_nm_tube_emitter` — glowing decaying tube — via looks_like -> f_alien_gasper
+- `f_oxygen_concentrator` — oxygen concentrator — via exact/use-all-png -> f_oxygen_concentrator
+- `f_pallet_belted` — packed pallet — via exact/use-all-png -> f_pallet_belted
+- `f_pallet_belted_open` — damaged pallet — via exact/use-all-png -> f_pallet_belted_open
+- `f_pallet_cement` — pallet of cement bags — via exact/use-all-png -> f_pallet_cement
+- `f_pillow_fort` — pillow fort — via exact/use-all-png -> f_pillow_fort
+- `f_room_divider` — room divider — via looks_like -> f_curtain
+- `f_rubble_landfill` — pile of trashy rubble — via exact/use-all-png -> f_rubble_landfill
+- `f_sand_castle` — sand castle — via exact/use-all-png -> f_sand_castle
+- `f_satellite` — large satellite dish — via looks_like -> t_radio_tower
+- `f_sign_stop` — stop sign — via exact/use-all-png -> f_sign_stop
+- `f_skin_center_groundsheet` — large skin groundsheet — via looks_like -> f_skin_groundsheet
+- `f_skin_groundsheet` — animalskin floor — via exact/use-all-png -> f_skin_groundsheet
+- `f_small_satellite_dish` — satellite dish — via exact/use-all-png -> f_small_satellite_dish
+- `f_stack_plank` — stack of wooden planks — via exact/use-all-png -> f_stack_plank
+- `f_stook_empty` — stooking spot — via exact/use-all-png -> f_stook_empty
+- `f_stook_full` — grain stook — via exact/use-all-png -> f_stook_full
+- `f_street_light` — street light — via exact/use-all-png -> f_street_light
+- `f_target` — target — via exact/use-all-png -> f_target
+- `f_traffic_light` — traffic light — via exact/use-all-png -> f_traffic_light
+- `f_training_dummy_heavy` — armored training dummy — via exact/use-all-png -> f_training_dummy_heavy
+- `f_training_dummy_light` — training dummy — via exact/use-all-png -> f_training_dummy_light
+- `f_treadmill` — treadmill — via exact/use-all-png -> f_treadmill
+- `f_treadmill_mechanical` — gravity treadmill — via looks_like -> f_treadmill
+- `f_utility_pole` — utility pole — via exact/use-all-png -> f_utility_pole
+- `f_wind_vane` — wind vane — via exact/use-all-png -> f_wind_vane
+- `f_winter_wreath` — pine wreath — via exact/use-all-png -> f_winter_wreath
+- `f_woodchips` — pile of woodchips — via exact/use-all-png -> f_woodchips
+- `f_wooden_flagpole` — flagpole — via exact/use-all-png -> f_wooden_flagpole
+- `f_xedra_antenna` — mobile antenna — via looks_like -> f_small_satellite_dish
+
+## monster: 1203 ids — not represented in shipped game: 468 (38.9%) — not represented to our voxelizer loader: 543 — of which 75 are orphan-PNG (--use-all) cases
+shipped stages: {'looks_like': 76, 'exact': 592, 'filler/missing': 468, 'exact/use-all-png': 67}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `mon_LS_fixbot` — rouge fixbot — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_fixbot_haywire` — haywire bot — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_medbot` — rouge medbot — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_robot_arm` — rouge robotic arm — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_sparkgenerator` — Bot Printer — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_sparkgenerator_aux` — Churning Ribcage — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_sparkgenerator_aux_haywire` — Haywire Ribcage — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_sparkgenerator_haywire` — Haywire Bot Printer — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_LS_spotbot` — rouge spotbot — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_XEDRA_officer` — mercenary officer — looks_like: - — monsters/nether.json
+- `mon_amalgamation_breather` — breather — looks_like: - — monsters/zed_amalgamation.json
+- `mon_amalgamation_breather_hub` — breather — looks_like: - — monsters/zed_amalgamation.json
+- `mon_amalgamation_corroder` — caustic amalgamation — looks_like: - — monsters/zed_amalgamation.json
+- `mon_amalgamation_jumper` — leaping amalgamation — looks_like: - — monsters/zed_amalgamation.json
+- `mon_amalgamation_soldier` — brutish amalgamation — looks_like: - — monsters/zed_amalgamation.json
+- `mon_amalgamation_spotter` — vigilant amalgamation — looks_like: - — monsters/zed_amalgamation.json
+- `mon_amalgamation_zapper` — charged amalgamation — looks_like: - — monsters/zed_amalgamation.json
+- `mon_ant_acid_soldier_mega` — super soldier acidic ant — looks_like: - — monsters/insect_spider.json
+- `mon_beaver_kit` — beaver kit — looks_like: - — monsters/mammal.json
+- `mon_beaver_mutant_avian_kit` — bald beaver kit — looks_like: - — monsters/mutant_mammal.json
+- `mon_beaver_mutant_huge_kit` — dambreaker kit — looks_like: - — monsters/mutant_mammal.json
+- `mon_beekeeper_dusted` — dusted scarred zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_beekeeper_fungalize` — fungalizing scarred zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_beetle_solar_reverberation` — giant solar beetle — looks_like: - — monsters/reverberation.json
+- `mon_beetle_solar_starving_reverberation` — malnourished giant solar beetle — looks_like: - — monsters/reverberation.json
+- `mon_better_half` — better half — looks_like: - — monsters/nether.json
+- `mon_biollante_sprig` — biollante sprig — looks_like: - — monsters/triffid.json
+- `mon_biollante_sprout` — biollante sprout — looks_like: - — monsters/triffid.json
+- `mon_black_ratkin` — black rat — looks_like: - — monsters/rodentkin.json
+- `mon_blank_avatar_copy` — blank body? — looks_like: - — monsters/nether.json
+- `mon_blob_sewer` — sewer slime — looks_like: - — monsters/slimes.json
+- `mon_boomer_dusted` — dusted boomer — looks_like: - — monsters/fungus_zombie.json
+- `mon_boomer_fungalize` — fungal stalk boomer — looks_like: - — monsters/fungus_zombie.json
+- `mon_brute_pupa` — pupating brute — looks_like: - — monsters/zed-pupating.json
+- `mon_brute_pupa_decoy` — pupating brute — looks_like: - — monsters/zed-pupating.json
+- `mon_bullfrog_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_butterfly` — oversized butterfly — looks_like: - — monsters/insect_spider.json
+- `mon_butterfly_cocoon` — giant cocoon — looks_like: - — monsters/insect_spider.json
+- `mon_butterfly_giant` — giant butterfly — looks_like: - — monsters/insect_spider.json
+- `mon_butterfly_titan` — emperor butterfly — looks_like: - — monsters/insect_spider.json
+- `mon_cabin_tunnel_shadow` — languorous spectre — looks_like: - — monsters/reverberation_cabin.json
+- `mon_carrion_grub` — carrion grub — looks_like: - — monsters/nether.json
+- `mon_cat_black` — black cat — looks_like: - — monsters/mammal.json
+- `mon_cat_black_kitten` — black kitten — looks_like: - — monsters/mammal.json
+- `mon_cat_isherwood` — shorthair cat — looks_like: - — monsters/mammal.json
+- `mon_cat_liquid` — liquid cat — looks_like: - — monsters/nether_animal.json
+- `mon_cat_void` — void cat — looks_like: - — monsters/nether_animal.json
+- `mon_caterpillar_butterfly` — giant caterpillar — looks_like: - — monsters/insect_spider.json
+- `mon_caterpillar_moth` — giant caterpillar — looks_like: - — monsters/insect_spider.json
+- `mon_chickadee` — black-capped chickadee — looks_like: - — monsters/bird.json
+- `mon_chickadee_chick` — gray chick — looks_like: mon_generic_chick_tiny — monsters/bird.json
+- `mon_child` — child — looks_like: - — monsters/mammal.json
+- `mon_cicada` — giant cicada — looks_like: - — monsters/insect_spider.json
+- `mon_cicada_nymph` — cicada nymph — looks_like: - — monsters/insect_spider.json
+- `mon_coot_chick` — waterfowl chick — looks_like: - — monsters/bird.json
+- `mon_cormorant_chick` — waterfowl chick — looks_like: - — monsters/bird.json
+- `mon_coyote_pup` — coyote pup — looks_like: - — monsters/mammal.json
+- `mon_coyote_pup_mutant_shark` — grinning coyote pup — looks_like: - — monsters/mutant_mammal.json
+- `mon_coyote_pup_mutant_venom` — slavering coyote pup — looks_like: - — monsters/mutant_mammal.json
+- `mon_crayfish_giant_larva` — giant crayfish larva — looks_like: - — monsters/fish.json
+- `mon_crayfish_mega` — colossal crayfish — looks_like: - — monsters/fish.json
+- `mon_dark_reflection` — dark reflection — looks_like: - — monsters/nether.json
+- `mon_dermatik_incubator_deer` — motionless deer — looks_like: - — monsters/insect_spider.json
+- `mon_dermatik_midwife` — dermatik midwife — looks_like: - — monsters/insect_spider.json
+- `mon_devourer_daitya` — daitya devourer — looks_like: - — monsters/zed_fusion.json
+- `mon_devourer_daitya_clone` — daitya clone — looks_like: - — monsters/zed_fusion.json
+- `mon_devourer_hekatonkheire` — hekatonkheire devourer — looks_like: - — monsters/zed_fusion.json
+- `mon_devourer_lab_sec` — melded task force — looks_like: - — monsters/zed_fusion.json
+- `mon_dish_head` — dish-head — looks_like: - — monsters/nether.json
+- `mon_dog_antimemetic` — unknowable dog — looks_like: - — monsters/nether_animal.json
+- `mon_dog_cuspated` — cuspated dog — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_dog_howling` — howling dog — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_dog_incorporeal` — translucent dog — looks_like: - — monsters/nether_animal.json
+- `mon_dog_mutant_loper` — Loper — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_loper_pup` — Loper puppy — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_mauler` — Mauler — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_mauler_pup` — Mauler puppy — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_thrasher` — Thrasher — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_thrasher_pup` — Thrasher puppy — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_wyrmhound` — wyrmhound — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_mutant_wyrmhound_pup` — wyrmhound puppy — looks_like: - — monsters/mutant_mammal.json
+- `mon_dog_scorched` — scorched dog — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_dog_scorched_hulk` — scorched hulking dog — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_dog_telekenetic` — triclopean dog — looks_like: - — monsters/nether_animal.json
+- `mon_duck_domestic_chick` — waterfowl chick — looks_like: - — monsters/bird.json
+- `mon_feral_cop_fungal_infected` — feral cop — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_marine_bayonet` — feral Marine — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_officer` — feral officer — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_prisoner` — feral prisoner — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_sailor_axe` — feral crewman — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_sailor_lug_wrench` — feral crewman — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_sailor_mop` — feral crewman — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_sailor_wrench` — feral crewman — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_serum_user_anaximander` — feral test subject — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_serum_user_armus` — feral test subject — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_serum_user_landru` — feral test subject — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_serum_user_locutus` — feral test subject — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_serum_user_lore` — feral test subject — looks_like: chud — monsters/feral_humans.json
+- `mon_feral_serum_user_noonien` — feral test subject — looks_like: chud — monsters/feral_humans.json
+- `mon_ferret` — ferret — looks_like: - — monsters/mammal.json
+- `mon_ferret_kit` — ferret kit — looks_like: - — monsters/mammal.json
+- `mon_firefly_larva` — firefly larva — looks_like: - — monsters/insect_spider.json
+- `mon_fish_blackfish` — black sea bass — looks_like: - — monsters/fish.json
+- `mon_fish_bluefin_tuna` — Atlantic bluefin tuna — looks_like: - — monsters/fish.json
+- `mon_fish_bluefish` — bluefish — looks_like: - — monsters/fish.json
+- `mon_fish_bluegill` — bluegill — looks_like: - — monsters/fish.json
+- `mon_fish_bowfin` — bowfin — looks_like: - — monsters/fish.json
+- `mon_fish_brook_trout` — brook trout — looks_like: mon_fish_salmon — monsters/fish.json
+- `mon_fish_brown_trout` — brown trout — looks_like: mon_fish_salmon — monsters/fish.json
+- `mon_fish_bullhead` — brown bullhead — looks_like: - — monsters/fish.json
+- `mon_fish_bullhead_yellow` — yellow bullhead — looks_like: mon_fish_bullhead — monsters/fish.json
+- `mon_fish_burbot` — burbot — looks_like: - — monsters/fish.json
+- `mon_fish_calico_bass` — black crappie — looks_like: mon_fish_pbass — monsters/fish.json
+- `mon_fish_carp` — European carp — looks_like: - — monsters/fish.json
+- `mon_fish_channel_catfish` — channel catfish — looks_like: mon_fish_bullhead — monsters/fish.json
+- `mon_fish_cod` — Atlantic cod — looks_like: - — monsters/fish.json
+- `mon_fish_fallfish` — fallfish — looks_like: mon_fish_pbass — monsters/fish.json
+- `mon_fish_flounder` — summer flounder — looks_like: - — monsters/fish.json
+- `mon_fish_gar_longnose` — longnose gar — looks_like: mon_fish_pike — monsters/fish.json
+- `mon_fish_goldfish` — goldfish — looks_like: mon_fish_carp — monsters/fish.json
+- `mon_fish_grass_carp` — grass carp — looks_like: mon_fish_carp — monsters/fish.json
+- `mon_fish_green_sunfish` — green sunfish — looks_like: mon_fish_sunfish — monsters/fish.json
+- `mon_fish_haddock` — haddock — looks_like: - — monsters/fish.json
+- `mon_fish_halibut` — Atlantic halibut — looks_like: - — monsters/fish.json
+- `mon_fish_kokanee_salmon` — kokanee salmon — looks_like: mon_fish_salmon — monsters/fish.json
+- `mon_fish_lake_trout` — lake trout — looks_like: mon_fish_salmon — monsters/fish.json
+- `mon_fish_lbass` — largemouth bass — looks_like: - — monsters/fish.json
+- `mon_fish_mackerel` — Atlantic mackerel — looks_like: - — monsters/fish.json
+- `mon_fish_muskellunge` — muskellunge — looks_like: mon_fish_pike — monsters/fish.json
+- `mon_fish_pbass` — striped bass — looks_like: - — monsters/fish.json
+- `mon_fish_perch` — yellow perch — looks_like: mon_fish_pickerel — monsters/fish.json
+- `mon_fish_pickerel` — chain pickerel — looks_like: - — monsters/fish.json
+- `mon_fish_pickerel_american` — American pickerel — looks_like: - — monsters/fish.json
+- `mon_fish_pike` — northern pike — looks_like: - — monsters/fish.json
+- `mon_fish_pollock` — pollock — looks_like: mon_fish_cod — monsters/fish.json
+- `mon_fish_porgy` — scup — looks_like: - — monsters/fish.json
+- `mon_fish_pumpkinseed` — pumpkinseed — looks_like: mon_fish_sunfish — monsters/fish.json
+- `mon_fish_rainbow_trout` — rainbow trout — looks_like: mon_fish_salmon — monsters/fish.json
+- `mon_fish_redbreast` — redbreast sunfish — looks_like: mon_fish_sunfish — monsters/fish.json
+- `mon_fish_rock_bass` — rock bass — looks_like: mon_fish_sunfish — monsters/fish.json
+- `mon_fish_salmon` — Atlantic salmon — looks_like: - — monsters/fish.json
+- `mon_fish_sbass` — smallmouth bass — looks_like: - — monsters/fish.json
+- `mon_fish_sturgeon_lake` — lake sturgeon — looks_like: - — monsters/fish.json
+- `mon_fish_sturgeon_shortnose` — shortnose sturgeon — looks_like: mon_fish_sturgeon_lake — monsters/fish.json
+- `mon_fish_sunfish` — banded sunfish — looks_like: - — monsters/fish.json
+- `mon_fish_walleye` — walleye — looks_like: mon_fish_pbass — monsters/fish.json
+- `mon_fish_warmouth` — warmouth — looks_like: mon_fish_sunfish — monsters/fish.json
+- `mon_fish_white_catfish` — white catfish — looks_like: mon_fish_bullhead — monsters/fish.json
+- `mon_fish_white_sucker` — white sucker — looks_like: mon_fish_pbass — monsters/fish.json
+- `mon_fish_whitefish` — lake whitefish — looks_like: - — monsters/fish.json
+- `mon_fish_whitefish_round` — round whitefish — looks_like: mon_fish_whitefish — monsters/fish.json
+- `mon_flailer_radiosphere` — flailer — looks_like: - — monsters/radiosphere.json
+- `mon_flatlander` — flatlander — looks_like: - — monsters/nether.json
+- `mon_fly_larva` — giant grub — looks_like: - — monsters/insect_spider.json
+- `mon_fly_mega` — frigate fly — looks_like: - — monsters/insect_spider.json
+- `mon_fly_small` — oversized fly — looks_like: - — monsters/insect_spider.json
+- `mon_foul_bigfrog` — greasy stinktoad — looks_like: - — monsters/reptile_amphibian.json
+- `mon_foul_bigtad` — giant tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_foul_giganfrog` — giant hogtoad — looks_like: - — monsters/reptile_amphibian.json
+- `mon_foul_megafrog` — great beaked toad — looks_like: - — monsters/reptile_amphibian.json
+- `mon_foul_toad` — foul toad — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_fowler_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_fowler_toad` — Fowler's toad — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_freedom_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_frog_dad` — colossal zombie bullfrog — looks_like: - — monsters/zed_amphibian.json
+- `mon_frog_husk` — leaping husk — looks_like: - — monsters/zed_amphibian.json
+- `mon_frog_mummy` — batrachian mummy — looks_like: - — monsters/zed_amphibian.json
+- `mon_frog_shadow` — shadow leaper — looks_like: - — monsters/zed_amphibian.json
+- `mon_frog_shocker` — bioelectric zombie frog — looks_like: - — monsters/zed_amphibian.json
+- `mon_frog_smoker_hulk` — batrachian smoker — looks_like: - — monsters/zed_amphibian.json
+- `mon_fry_blackfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_bluefin_tuna` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_bluefish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_bluegill` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_bowfin` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_brook_trout` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_brown_trout` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_bullhead` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_bullhead_yellow` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_burbot` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_calico_bass` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_carp` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_channel_catfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_cod` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_crayfish` — crustacean larva — looks_like: - — monsters/fish.json
+- `mon_fry_fallfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_flounder` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_gar_longnose` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_goldfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_grass_carp` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_green_sunfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_haddock` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_halibut` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_kokanee_salmon` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_lake_trout` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_lbass` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_mackerel` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_muskellunge` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_mutant_salmon` — mutant fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_pbass` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_perch` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_pickerel` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_pickerel_american` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_pike` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_pollock` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_porgy` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_pumpkinseed` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_rainbow_trout` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_redbreast` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_rock_bass` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_salmon` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_sbass` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_sturgeon_lake` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_sturgeon_shortnose` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_sunfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_walleye` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_warmouth` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_white_catfish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_white_sucker` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_whitefish` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fry_whitefish_round` — fish fry — looks_like: - — monsters/fish.json
+- `mon_fungal_construct` — fungal construct — looks_like: - — monsters/fungus_zombie.json
+- `mon_fungal_construct_large` — large fungal construct — looks_like: - — monsters/fungus_zombie.json
+- `mon_fungal_construct_massive` — massive fungal construct — looks_like: - — monsters/fungus_zombie.json
+- `mon_fungal_mound` — fungal mound — looks_like: - — monsters/fungus_zombie.json
+- `mon_fungal_mound_large` — large fungal mound — looks_like: - — monsters/fungus_zombie.json
+- `mon_fungal_mound_massive` — massive fungal mound — looks_like: - — monsters/fungus_zombie.json
+- `mon_gartersnake` — common garter snake — looks_like: - — monsters/reptile_amphibian.json
+- `mon_gartersnake_baby` — common garter snake snakelet — looks_like: - — monsters/reptile_amphibian.json
+- `mon_gasbag_dusted` — dusted gasbag zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_gasbag_fungalize` — fungal cherry bomb — looks_like: - — monsters/fungus_zombie.json
+- `mon_gastro_bufo` — gastro bufo — looks_like: - — monsters/zed_amphibian.json
+- `mon_ghoul_lab_adult` — mature lab ghoul — looks_like: - — monsters/ghouls.json
+- `mon_ghoul_lab_baby` — shivering lab ghoul — looks_like: - — monsters/ghouls.json
+- `mon_ghoul_lab_juvenile` — lab ghoul — looks_like: - — monsters/ghouls.json
+- `mon_golden_monolith` — golden monolith — looks_like: - — monsters/yrax.json
+- `mon_goose_chick` — waterfowl chick — looks_like: - — monsters/bird.json
+- `mon_grasshopper_giant` — giant grasshopper — looks_like: - — monsters/insect_spider.json
+- `mon_grasshopper_nymph` — grasshopper nymph — looks_like: - — monsters/insect_spider.json
+- `mon_gray_frog` — gray treefrog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_gray_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_grebe_chick` — waterfowl chick — looks_like: - — monsters/bird.json
+- `mon_green_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_guilt` — guilt — looks_like: - — monsters/nether.json
+- `mon_guinea_fowl` — domestic guineafowl — looks_like: - — monsters/bird.json
+- `mon_guinea_fowl_chick` — yellow chick — looks_like: - — monsters/bird.json
+- `mon_halfworm_graboid` — graboid half worm — looks_like: - — monsters/insect_spider.json
+- `mon_halfworm_small` — oversized half worm — looks_like: - — monsters/insect_spider.json
+- `mon_hallucinator` — person — looks_like: - — monsters/nether.json
+- `mon_halo_tangle` — halo tangle — looks_like: - — monsters/nether.json
+- `mon_hanging_roper` — hanging roper — looks_like: - — monsters/nether.json
+- `mon_hare_baby` — snowshoe hare kit — looks_like: mon_rabbit_baby — monsters/mammal.json
+- `mon_highlands_revenant` — crypt revenant — looks_like: - — monsters/nether.json
+- `mon_hulk_pupa` — hive hulk — looks_like: - — monsters/zed-pupating.json
+- `mon_hulk_pupa_decoy` — hive hulk — looks_like: - — monsters/zed-pupating.json
+- `mon_human` — human — looks_like: - — monsters/mammal.json
+- `mon_human_scorched` — charred human — looks_like: - — monsters/mammal.json
+- `mon_hummingbird_chick` — gray chick — looks_like: mon_generic_chick_tiny — monsters/bird.json
+- `mon_inner_cabins_interstice_horror` — pallid horror — looks_like: - — monsters/cabins_inner.json
+- `mon_jumbo_bigfrog` — jumbo treefrog — looks_like: - — monsters/reptile_amphibian.json
+- `mon_kraken_guard` — kraken — looks_like: - — monsters/kraken_spawn.json
+- `mon_kraken_queen` — scylla — looks_like: - — monsters/kraken_spawn.json
+- `mon_leo_frog` — leopard frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_leo_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_leo_worm` — many-legged frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_linelander_cyan` — cyan linelander — looks_like: - — monsters/string_dimension.json
+- `mon_linelander_magenta` — magenta linelander — looks_like: - — monsters/string_dimension.json
+- `mon_linelander_yellow` — yellow linelander — looks_like: - — monsters/string_dimension.json
+- `mon_mantis_giant` — giant praying mantis — looks_like: - — monsters/insect_spider.json
+- `mon_mantis_nymph` — praying mantis nymph — looks_like: - — monsters/insect_spider.json
+- `mon_mink_frog` — mink frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_mink_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_mole` — mole — looks_like: - — monsters/mammal.json
+- `mon_moorhen_chick` — waterfowl chick — looks_like: - — monsters/bird.json
+- `mon_mosquito_larva` — giant mosquito larva — looks_like: - — monsters/insect_spider.json
+- `mon_moth` — oversized moth — looks_like: - — monsters/insect_spider.json
+- `mon_moth_cocoon` — giant cocoon — looks_like: - — monsters/insect_spider.json
+- `mon_moth_fly` — giant moth fly — looks_like: - — monsters/insect_spider.json
+- `mon_moth_fly_larva` — giant moth fly larva — looks_like: - — monsters/insect_spider.json
+- `mon_moth_giant` — giant moth — looks_like: - — monsters/insect_spider.json
+- `mon_moth_titan` — lunar moth — looks_like: - — monsters/insect_spider.json
+- `mon_mutant_camouflaged` — camouflaged mutant — looks_like: - — monsters/mutant.json
+- `mon_mutant_salmon_huge` — huge salmon — looks_like: - — monsters/fish.json
+- `mon_mutant_salmon_mega` — leaper salmon — looks_like: - — monsters/fish.json
+- `mon_nether_cucumber` — waterbed skulker — looks_like: - — monsters/nether.json
+- `mon_nether_fish` — nether fish symbiote — looks_like: mon_fish_brown_trout — monsters/nether.json
+- `mon_nether_spearfisher` — spearfisher — looks_like: - — monsters/nether.json
+- `mon_nether_unviable_bug` — strange bug — looks_like: - — monsters/nether.json
+- `mon_nether_unviable_butterfly` — veiled butterfly — looks_like: - — monsters/nether.json
+- `mon_nether_unviable_root` — writhing root — looks_like: - — monsters/nether.json
+- `mon_nether_unviable_stomper` — eldritch stomper — looks_like: - — monsters/nether.json
+- `mon_nl_surgicalbot_1_1` — surgical bonebot — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_nl_surgicalbot_assist` — surgical bonebot — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_ocean_zhark` — abyssal terror — looks_like: - — monsters/zed-animal.json
+- `mon_octupus_stalker` — stalker octopus — looks_like: - — monsters/kraken_spawn.json
+- `mon_octupus_stalker_spawn` — octopus spawn — looks_like: - — monsters/kraken_spawn.json
+- `mon_odd_bigtad` — giant tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_odd_giganfrog` — giant toad — looks_like: - — monsters/reptile_amphibian.json
+- `mon_odd_megafrog` — gargantuan toad — looks_like: - — monsters/reptile_amphibian.json
+- `mon_odd_toad` — odd toad — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_overgrown_labyrinth_turret_2_1` — vine turret — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_pale_reflection` — pale reflection — looks_like: - — monsters/nether.json
+- `mon_palette_frog` — palette frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_pattern_bigfrog` — staticskin frog — looks_like: - — monsters/reptile_amphibian.json
+- `mon_pattern_bigtad` — giant tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_pattern_frog` — strangely-patterned frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_pattern_giganfrog` — taser tongue — looks_like: - — monsters/reptile_amphibian.json
+- `mon_peeper_frog` — spring peeper — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_peeper_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_pickerel_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_pigeon_chick` — brown chick — looks_like: - — monsters/bird.json
+- `mon_plantborg_2_1` — plantborg — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_plantborg_2_2` — advanced plantborg — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_poly_special_test` — ancient red dragon — looks_like: - — monsters/misc.json
+- `mon_porcupine` — porcupine — looks_like: - — monsters/mammal.json
+- `mon_rabbit_baby` — domestic rabbit kit — looks_like: - — monsters/mammal.json
+- `mon_raccoon_mutant` — dextrous raccoon — looks_like: - — monsters/mutant_mammal.json
+- `mon_rattlesnake_big` — mutant rattlesnake — looks_like: - — monsters/reptile_amphibian.json
+- `mon_rattlesnake_big_s` — mutant rattlesnake snakelet — looks_like: - — monsters/reptile_amphibian.json
+- `mon_rattlesnake_mega` — deathrattle serpent — looks_like: - — monsters/reptile_amphibian.json
+- `mon_rattlesnake_s` — timber rattlesnake snakelet — looks_like: - — monsters/reptile_amphibian.json
+- `mon_robofac_hound` — Hub 01 HOUND — looks_like: - — monsters/robofac_robots.json
+- `mon_secubot_america_refurbished` — refurbished autonomous TALON UGV Liberty Edition — looks_like: - — monsters/defense_bot.json
+- `mon_secubot_balthazar` — M16A4 autonomous TALON UGV — looks_like: - — monsters/balthazar_fac_robots.json
+- `mon_shift_bigfrog` — mimic treefrog — looks_like: - — monsters/reptile_amphibian.json
+- `mon_shift_bigtad` — giant tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_shift_frog` — shifting treefrog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_shrapnel_swarm` — shrapnel swarm — looks_like: - — monsters/nether.json
+- `mon_shrew` — shrew — looks_like: - — monsters/mammal.json
+- `mon_singularity_reclaimer` — Reclaimer — looks_like: - — monsters/singularities.json
+- `mon_singularity_reclaimer_spawn` — reclaimer spawn — looks_like: - — monsters/singularities.json
+- `mon_skeleton_brute_dusted` — dusted skeletal brute — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_brute_fungalize` — fungalizing bone brute — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_brute_fungus` — fungal bone brute — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_dusted` — dusted skeletal zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_executioner` — skeletal executioner — looks_like: - — monsters/zed_skeletal.json
+- `mon_skeleton_fungalize` — fungal stalk skeleton — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_fungus` — fungal skeletal zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_hulk_dusted` — dusted skeletal hulk — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_hulk_fungalize` — fungal stalk juggernaut — looks_like: - — monsters/fungus_zombie.json
+- `mon_skeleton_necro` — zombie lich — looks_like: - — monsters/zed_command.json
+- `mon_skeleton_reaper` — skeletal reaper — looks_like: - — monsters/zed_skeletal.json
+- `mon_skeleton_slasher` — skeletal slasher — looks_like: - — monsters/zed_skeletal.json
+- `mon_skink_fivelined` — five-lined skink — looks_like: - — monsters/reptile_amphibian.json
+- `mon_skink_fivelined_baby` — five-lined skink hatchling — looks_like: - — monsters/reptile_amphibian.json
+- `mon_skunk` — skunk — looks_like: - — monsters/mammal.json
+- `mon_sloth` — sloth — looks_like: - — monsters/nether.json
+- `mon_snail_giant` — colossal snail — looks_like: - — monsters/mollusk.json
+- `mon_snail_river` — freshwater snail — looks_like: - — monsters/mollusk.json
+- `mon_snail_small` — giant snail — looks_like: - — monsters/mollusk.json
+- `mon_spade_frog` — spadefoot toad — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_spade_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_spawn_raptor_dusted` — dusted raptor — looks_like: - — monsters/fungus_zombie.json
+- `mon_spawn_raptor_fungalize` — fungal stalk raptor — looks_like: - — monsters/fungus_zombie.json
+- `mon_spider_cellar_leg` — detached spider leg — looks_like: - — monsters/insect_spider.json
+- `mon_spider_cellar_mom` — mommy long-legs — looks_like: - — monsters/insect_spider.json
+- `mon_spider_jumping_giant_s` — jumping spiderling — looks_like: - — monsters/insect_spider.json
+- `mon_spider_trapdoor_s` — trapdoor spiderling — looks_like: - — monsters/insect_spider.json
+- `mon_spider_wolf_giant_s` — wolf spiderling — looks_like: - — monsters/insect_spider.json
+- `mon_star_vampire` — star vampire — looks_like: - — monsters/nether.json
+- `mon_star_vampire_coiling` — star vampire — looks_like: - — monsters/nether.json
+- `mon_strange_bigtad` — giant tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_strange_giganfrog` — giant bullfrog — looks_like: - — monsters/reptile_amphibian.json
+- `mon_strange_megafrog` — colossal croaker — looks_like: - — monsters/reptile_amphibian.json
+- `mon_structural_spur` — structural spur — looks_like: - — monsters/nether.json
+- `mon_swarm_structure` — swarm structure — looks_like: - — monsters/nether.json
+- `mon_tail_frog` — tailed frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_tainted_shadow` — tainted shadow — looks_like: - — monsters/nether.json
+- `mon_toad_bloat` — bloated zombie toad — looks_like: - — monsters/zed_amphibian.json
+- `mon_toad_bone` — death mask zombie toad — looks_like: - — monsters/zed_amphibian.json
+- `mon_toad_wart` — warted monstrosity — looks_like: - — monsters/zed_amphibian.json
+- `mon_toad_zombie` — giant zombie toad — looks_like: - — monsters/zed_amphibian.json
+- `mon_turkey_domestic_chick` — brown chick — looks_like: - — monsters/bird.json
+- `mon_turret_rifle_balthazar` — M249 autonomous CROWS II — looks_like: - — monsters/balthazar_fac_robots.json
+- `mon_turtle_painted_baby` — painted turtle hatchling — looks_like: - — monsters/reptile_amphibian.json
+- `mon_turtle_snapping_common_baby` — common snapping turtle hatchling — looks_like: - — monsters/reptile_amphibian.json
+- `mon_twisted_reflection` — twisted reflection — looks_like: - — monsters/nether.json
+- `mon_twisting_mass` — glowing mass of strings — looks_like: - — monsters/nether.json
+- `mon_unseen_hunter` — unseen hunter — looks_like: - — monsters/nether.json
+- `mon_vinewalker_2_1` — vinewalker — looks_like: - — monsters/netherum/labyrinth_monsters.json
+- `mon_vocal_bigfrog` — wailing treefrog — looks_like: - — monsters/reptile_amphibian.json
+- `mon_vocal_bigtad` — giant tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_void_spider` — unformed weaver — looks_like: - — monsters/nether.json
+- `mon_void_spider_limb` — hanging limb — looks_like: - — monsters/nether.json
+- `mon_void_spider_maw` — hanging maw — looks_like: - — monsters/nether.json
+- `mon_void_spider_spiderling` — weaver juvenile — looks_like: - — monsters/nether.json
+- `mon_void_spider_spiderling_skewered` — skewered juvenile — looks_like: - — monsters/nether.json
+- `mon_wasp_queen_fungus` — fungal wasp queen — looks_like: - — monsters/fungus.json
+- `mon_water_scorpion_larva` — water scorpion nymph — looks_like: - — monsters/insect_spider.json
+- `mon_waxwing` — cedar waxwing — looks_like: - — monsters/bird.json
+- `mon_waxwing_chick` — gray chick — looks_like: mon_generic_chick_tiny — monsters/bird.json
+- `mon_wells_machine` — labyrinth warlord — looks_like: - — monsters/nether.json
+- `mon_wells_machine_leg` — warlord leg — looks_like: - — monsters/nether.json
+- `mon_whisper_fungus` — whispering fungi — looks_like: - — monsters/fungus.json
+- `mon_wild_rabbit_baby` — cottontail rabbit kit — looks_like: mon_rabbit_baby — monsters/mammal.json
+- `mon_wood_frog` — wood frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_wood_tadpole` — tadpole — looks_like: - — monsters/reptile_amphibian.json
+- `mon_wood_worm` — many-legged frog — looks_like: mon_frog — monsters/reptile_amphibian.json
+- `mon_woodpecker_chick` — gray chick — looks_like: mon_generic_chick_tiny — monsters/bird.json
+- `mon_worm_larva` — earthworm larva — looks_like: - — monsters/insect_spider.json
+- `mon_wormsnake` — worm snake — looks_like: - — monsters/reptile_amphibian.json
+- `mon_wormsnake_baby` — worm snake snakelet — looks_like: - — monsters/reptile_amphibian.json
+- `mon_yrax_apeirogon` — Yrax apeirohedron — looks_like: - — monsters/yrax.json
+- `mon_yrax_delta` — Yrax delta — looks_like: - — monsters/yrax.json
+- `mon_yrax_quadraphract` — Yrax quadraphract — looks_like: - — monsters/yrax.json
+- `mon_yrax_quadraphract_leg` — quadraphract leg — looks_like: - — monsters/yrax.json
+- `mon_yrax_sphenocorona` — Yrax sphenocorona — looks_like: - — monsters/yrax.json
+- `mon_yrax_triakis` — Yrax triakis — looks_like: - — monsters/yrax.json
+- `mon_yrax_trifacet` — Yrax trifacet — looks_like: - — monsters/yrax.json
+- `mon_ziger_fungus` — tiger fungal wight — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_acidic_dusted` — dusted acidic zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_acidic_fungalize` — fungalizing acid zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_brute_dusted` — dusted brute zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_brute_fungal` — fungal brute — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_brute_fungalize` — fungal stalk brute — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_brute_string_dimension` — mummified zombie — looks_like: - — monsters/string_dimension.json
+- `mon_zombie_child_base` — zombie child — looks_like: - — monsters/zed_children.json
+- `mon_zombie_child_dusted` — dusted zombie child — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_child_fungalize` — fungal stalk child — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_crawler_dusted` — dusted crawling zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_crawler_fungalize` — fungal stalk crawler — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_dusted` — dusted zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_fat_dusted` — dusted fat zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_fat_fungalize` — fungal stalk feeder — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_fiend_rust` — scorched zombie brute — looks_like: - — monsters/zed_burned.json
+- `mon_zombie_fireproof` — fireproof zombie — looks_like: - — monsters/zed_nomex.json
+- `mon_zombie_fireproof_brute` — fireproof brute — looks_like: - — monsters/zed_nomex.json
+- `mon_zombie_fireproof_grappler` — fireproof grappler — looks_like: - — monsters/zed_nomex.json
+- `mon_zombie_fungalize` — fungal stalk zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_fursuit` — fursuited zombie — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_horse_black` — smoldering stallion — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_zombie_horse_pale` — pale charger — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_zombie_horse_red` — sinewy warhorse — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_zombie_horse_white` — acidic zombie horse — looks_like: - — monsters/zanimal_upgrade.json
+- `mon_zombie_hulk_dusted` — dusted zombie hulk — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_hulk_fungal` — fungal hulk — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_hulk_fungalize` — fungal stalk hulk — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_inner_cabins_grue` — lurking spectre — looks_like: - — monsters/cabins_inner.json
+- `mon_zombie_ocular` — ocular zombie — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_regenerating_final` — regenerating abomination — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_regenerating_hunter` — fleshy hunter — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_rot_diseased` — zombie plaguebearer — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_rot_dusted` — dusted decayed zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_rot_fungalize` — fungal stalk rotter — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_rot_grabber` — decayed grasper — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_runner_dusted` — dusted zombie runner — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_runner_fungalize` — fungal stalk runner — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_scorched_brute` — scorched zombie brute — looks_like: - — monsters/zed_burned.json
+- `mon_zombie_scorched_lasher` — scorched lasher — looks_like: - — monsters/zed_burned.json
+- `mon_zombie_scorched_rust` — scorched zombie — looks_like: - — monsters/zed_burned.json
+- `mon_zombie_smoker_dusted` — dusted smoker zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_smoker_fungalize` — fungal stalk smoker — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_soldier_no_weakpoints` — zombie soldier test only — looks_like: - — monsters/zed_soldiers.json
+- `mon_zombie_summoner` — zombie summoner — looks_like: - — monsters/zed_misc.json
+- `mon_zombie_survivor_no_weakpoints` — zombie survivor test only — looks_like: - — monsters/zed_survivor.json
+- `mon_zombie_tough_dusted` — dusted tough zombie — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_tough_fungalize` — fungal stalk bulk — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_wretch_dusted` — dusted zombie wretch — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_wretch_fungalize` — fungal stalk wretch — looks_like: - — monsters/fungus_zombie.json
+- `mon_zombie_xedra_scarlet_sea` — zombie explorer — looks_like: - — monsters/scarlet_sea.json
+- `mon_zomborg_boss_string_dimension` — frostbitten zomborg hulk — looks_like: - — monsters/string_dimension.json
+- `mon_zomborg_devourer` — zomborg devourer — looks_like: - — monsters/cyborgs.json
+- `mon_zomborg_devourer_string_dimension` — frostbitten zomborg devourer — looks_like: - — monsters/string_dimension.json
+- `mon_zomborg_string_dimension` — frostbitten zomborg — looks_like: - — monsters/string_dimension.json
+- `mon_zombtreefrog` — giant zombie treefrog — looks_like: - — monsters/zed_amphibian.json
+- `mon_zougar_fungus` — fungal pouncer — looks_like: - — monsters/fungus_zombie.json
+- `pseudo_debug_bullet_sponge` — debug bullet sponge — looks_like: - — monsters/misc.json
+- `pseudo_weakpoint_mon` — weakpoint monster — looks_like: - — monsters/misc.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `mon_ant_soldier_mega` — super soldier ant — via exact/use-all-png -> mon_ant_soldier_mega
+- `mon_antlion_larva` — giant antlion larva — via exact/use-all-png -> mon_antlion_larva
+- `mon_archunk_medium` — pulsating chunk of unknown material — via exact/use-all-png -> mon_archunk_medium
+- `mon_archunk_strong` — resonating chunk of unknown material — via exact/use-all-png -> mon_archunk_strong
+- `mon_archunk_weak` — chunk of unknown material — via exact/use-all-png -> mon_archunk_weak
+- `mon_beekeeper` — scarred zombie — via exact/use-all-png -> mon_beekeeper
+- `mon_blood_sacrifice` — blood sacrifice — via exact/use-all-png -> mon_blood_sacrifice
+- `mon_breather` — breather — via exact/use-all-png -> mon_breather
+- `mon_breather_hub` — breather — via exact/use-all-png -> mon_breather_hub
+- `mon_centipede_mega` — armored centipede — via exact/use-all-png -> mon_centipede_mega
+- `mon_creeper_hub` — creeper hub — via exact/use-all-png -> mon_creeper_hub
+- `mon_creeper_vine` — creeper vine — via exact/use-all-png -> mon_creeper_vine
+- `mon_dragon_dummy` — ancient red dragon — via exact/use-all-png -> mon_dragon_dummy
+- `mon_dragonfly_naiad` — giant dragonfly naiad — via exact/use-all-png -> mon_dragonfly_naiad
+- `mon_eigenspectre_2` — photonic eigenspectre — via looks_like -> mon_memory
+- `mon_eigenspectre_3` — shifting eigenspectre — via looks_like -> mon_memory
+- `mon_eigenspectre_3_echo` — shifting eigenspectre — via looks_like -> mon_memory
+- `mon_eigenspectre_4` — titanic eigenspectre — via looks_like -> mon_memory
+- `mon_fish_crayfish` — crayfish — via exact/use-all-png -> mon_fish_crayfish
+- `mon_fish_eel` — American eel — via exact/use-all-png -> mon_fish_eel
+- `mon_fish_lobster` — lobster — via exact/use-all-png -> mon_fish_lobster
+- `mon_frog_mother` — frog mother — via exact/use-all-png -> mon_frog_mother
+- `mon_fungal_wall` — fungal wall — via exact/use-all-png -> mon_fungal_wall
+- `mon_generator` — generator — via exact/use-all-png -> mon_generator
+- `mon_giant_appendage` — giant appendage — via exact/use-all-png -> mon_giant_appendage
+- `mon_graboid` — graboid — via exact/use-all-png -> mon_graboid
+- `mon_gracke` — gracken — via exact/use-all-png -> mon_gracke
+- `mon_halloween_dragon` — inflatable dragon — via looks_like -> mon_dragon_dummy
+- `mon_impossible_shape` — impossible shape — via exact/use-all-png -> mon_impossible_shape
+- `mon_leech_blossom` — leech blossom — via exact/use-all-png -> mon_leech_blossom
+- `mon_leech_pod_cluster` — leech pod cluster — via exact/use-all-png -> mon_leech_pod_cluster
+- `mon_leech_radio` — signal tree — via exact/use-all-png -> mon_leech_radio
+- `mon_leech_root_drone` — root drone — via exact/use-all-png -> mon_leech_root_drone
+- `mon_leech_root_runner` — root runner — via exact/use-all-png -> mon_leech_root_runner
+- `mon_leech_stalk` — leech stalk — via exact/use-all-png -> mon_leech_stalk
+- `mon_living_vector` — unfolded impossibility — via looks_like -> mon_impossible_shape
+- `mon_mantis_mega` — great mantis — via exact/use-all-png -> mon_mantis_mega
+- `mon_meat_cocoon_large` — gigantic meat cocoon — via looks_like -> mon_breather_hub
+- `mon_meat_cocoon_med` — large meat cocoon — via looks_like -> mon_breather_hub
+- `mon_meat_cocoon_small` — small meat cocoon — via looks_like -> mon_breather
+- `mon_meat_cocoon_tiny` — tiny meat cocoon — via looks_like -> mon_breather
+- `mon_memory` — memory — via exact/use-all-png -> mon_memory
+- `mon_mutant_antler` — ungulate mutant — via exact/use-all-png -> mon_mutant_antler
+- `mon_mutant_arthropod` — arthropod mutant — via exact/use-all-png -> mon_mutant_arthropod
+- `mon_mutant_carp` — giant carp — via exact/use-all-png -> mon_mutant_carp
+- `mon_mutant_evolved` — bestial mutant — via exact/use-all-png -> mon_mutant_evolved
+- `mon_mutant_mollusk` — shelled mutant — via exact/use-all-png -> mon_mutant_mollusk
+- `mon_mutant_salmon` — giant salmon — via exact/use-all-png -> mon_mutant_salmon
+- `mon_robofac_prototype` — prototype robot — via exact/use-all-png -> mon_robofac_prototype
+- `mon_secubot` — M16A4 autonomous TALON UGV — via exact/use-all-png -> mon_secubot
+- `mon_secubot_america` — autonomous TALON UGV Liberty Edition — via exact/use-all-png -> mon_secubot_america
+- `mon_shadow` — shadow — via exact/use-all-png -> mon_shadow
+- `mon_shifting_mass` — shifting mass — via exact/use-all-png -> mon_shifting_mass
+- `mon_skeleton_hulk_fungus` — fungal juggernaut — via exact/use-all-png -> mon_skeleton_hulk_fungus
+- `mon_spawn_raptor_electric` — zaptor — via exact/use-all-png -> mon_spawn_raptor_electric
+- `mon_spawn_raptor_shady` — shadow raptor — via exact/use-all-png -> mon_spawn_raptor_shady
+- `mon_spawn_raptor_unstable` — unstable flesh-raptor — via exact/use-all-png -> mon_spawn_raptor_unstable
+- `mon_stag_beetle_mega` — titan stag beetle — via exact/use-all-png -> mon_stag_beetle_mega
+- `mon_tadpole_grabber` — tadpole constrictor — via exact/use-all-png -> mon_tadpole_grabber
+- `mon_talon_m202a1` — M202A1 autonomous TALON UGV — via exact/use-all-png -> mon_talon_m202a1
+- `mon_vortex` — vortex — via exact/use-all-png -> mon_vortex
+- `mon_vortex_ricochet` — swirling vortex — via looks_like -> mon_memory
+- `mon_zombie_armored` — armored zombie — via exact/use-all-png -> mon_zombie_armored
+- `mon_zombie_crushed_giant` — trapped tendril — via exact/use-all-png -> mon_zombie_crushed_giant
+- `mon_zombie_gasbag_crawler` — gangrenous crawler — via exact/use-all-png -> mon_zombie_gasbag_crawler
+- `mon_zombie_gasbag_immobile` — gangrenous flesh — via exact/use-all-png -> mon_zombie_gasbag_immobile
+- `mon_zombie_gasbag_impaler` — gangrenous impaler — via exact/use-all-png -> mon_zombie_gasbag_impaler
+- `mon_zombie_giant_heart` — spasming lump — via exact/use-all-png -> mon_zombie_giant_heart
+- `mon_zombie_hanging_innards` — hanging innards — via exact/use-all-png -> mon_zombie_hanging_innards
+- `mon_zombie_living_wall` — flesh wall — via exact/use-all-png -> mon_zombie_living_wall
+- `mon_zombie_necro_boomer` — zombie necro-boomer — via exact/use-all-png -> mon_zombie_necro_boomer
+- `mon_zombie_scissorlimbs` — scissorlimbs — via exact/use-all-png -> mon_zombie_scissorlimbs
+- `mon_zombie_shady` — shady zombie — via exact/use-all-png -> mon_zombie_shady
+- `mon_zougar_shady` — shadowcat — via exact/use-all-png -> mon_zougar_shady
+- `pseudo_debug_mon` — debug monster — via exact/use-all-png -> pseudo_debug_mon
+
+## trap: 150 ids — not represented in shipped game: 121 (80.7%) — not represented to our voxelizer loader: 124 — of which 3 are orphan-PNG (--use-all) cases
+shipped stages: {'filler/missing': 121, 'exact/use-all-png': 3, 'exact': 26}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `tr_LIXA_back_1` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_10` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_11` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_12` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_13` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_14` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_15` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_16` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_2` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_3` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_4` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_5` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_6` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_7` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_8` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_back_9` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_1` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_10` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_11` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_12` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_13` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_14` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_15` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_16` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_2` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_3` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_4` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_5` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_6` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_7` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_8` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_forward_9` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_1` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_10` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_11` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_12` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_13` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_14` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_15` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_16` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_2` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_3` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_4` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_5` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_6` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_7` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_8` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_LIXA_unfold_entry_9` — (no name) — looks_like: - — effects_on_condition/nether_eocs/LIXA_EOCs_spells_traps.json
+- `tr_alien_tree_trap_roots` — alien roots — looks_like: - — traps.json
+- `tr_beartrap_buried` — buried bear trap — looks_like: - — traps.json
+- `tr_birchbark_funnel` — birchbark funnel — looks_like: - — traps.json
+- `tr_blade` — spinning blade — looks_like: - — obsoletion_and_migration_0.J/traps.json
+- `tr_boobytrap` — booby trap — looks_like: - — traps.json
+- `tr_bubblewrap` — bubble wrap — looks_like: - — traps.json
+- `tr_caltrops_teeth` — monster teeth caltrops — looks_like: - — traps.json
+- `tr_concrete_wall_door_lab_res_8_NE` — door — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_concrete_wall_door_lab_res_8_NW` — door — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_crossbow` — crossbow trap — looks_like: - — traps.json
+- `tr_dermatik` — burrowed dermatik — looks_like: - — traps.json
+- `tr_dissector` — exposed high-energy conduit — looks_like: - — traps.json
+- `tr_dormant_corpse` — dormant zombie corpse — looks_like: - — monsters/zed_dormant.json
+- `tr_down_mattress` — down mattress — looks_like: - — traps.json
+- `tr_drain` — (no name) — looks_like: - — traps.json
+- `tr_engine` — spinning blade engine — looks_like: - — obsoletion_and_migration_0.J/traps.json
+- `tr_glass` — glass shards — looks_like: - — traps.json
+- `tr_glimmer_floor` — glimmering floor — looks_like: - — traps.json
+- `tr_glow` — (no name) — looks_like: - — traps.json
+- `tr_hum` — (no name) — looks_like: - — traps.json
+- `tr_imperial_road_go` — (no name) — looks_like: - — effects_on_condition/nether_eocs/highland_dimension.json
+- `tr_inner_cabins_door_o` — strange open door — looks_like: - — traps.json
+- `tr_inner_cabins_exit_portal` — swirling vortex — looks_like: - — traps.json
+- `tr_inner_cabins_void` — fluid void — looks_like: - — traps.json
+- `tr_lab_security_corridor_a` — door — looks_like: - — mapgen/lab/lab_modular/lab_central_hallway.json
+- `tr_lab_security_corridor_b` — door — looks_like: - — mapgen/lab/lab_modular/lab_central_hallway.json
+- `tr_light_on_MUT_SE_2` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_2x2_MUT_Tier_2.json
+- `tr_light_on_lab_security_z0N_A` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_lab_security_z0N_B` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_lab_security_z0S_A` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_lab_security_z0S_B` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_res_8_NE` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_res_8_NW` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_res_8_SE` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_res_8_SW` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_nests_modular/lab_shared_traps.json
+- `tr_light_on_res_8_SW_2` — overhead light — looks_like: - — mapgen/lab/lab_modular/lab_2x2_MUT_Tier_2.json
+- `tr_light_snare` — light snare trap — looks_like: - — traps.json
+- `tr_lixa_climbing_fall_down` — open air — looks_like: - — traps.json
+- `tr_lixa_fall_down` — open air — looks_like: - — traps.json
+- `tr_ls_scarlet_tunnel_portal` —   — looks_like: - — traps.json
+- `tr_ls_sd_tunnel_portal` —   — looks_like: - — traps.json
+- `tr_ls_teleport_fixbot` —   — looks_like: - — traps.json
+- `tr_ls_teleport_from_bridges` —   — looks_like: - — traps.json
+- `tr_ls_teleport_to_bridges` —   — looks_like: - — traps.json
+- `tr_mattress` — mattress — looks_like: - — traps.json
+- `tr_microlab_portal_elevator_physics_shift` — microlab shifting elevator — looks_like: - — traps.json
+- `tr_microlab_shifting_hall` — microlab shifting hall — looks_like: - — traps.json
+- `tr_microlab_shifting_hall_2` — microlab shifting hall — looks_like: - — traps.json
+- `tr_nl_chasm` — sparkling chasm — looks_like: - — traps.json
+- `tr_nl_stairs_1_to_2` — mysterious staircase — looks_like: - — traps.json
+- `tr_nl_stairs_2_to_1` — mysterious staircase — looks_like: - — traps.json
+- `tr_portal_dungeon_entrance` — swirling vortex — looks_like: - — traps.json
+- `tr_portal_dungeon_exit` — hole to outside — looks_like: - — traps.json
+- `tr_portal_dungeon_how_dare_you_skip_the_real_teleporter` — mysterious hallway — looks_like: - — traps.json
+- `tr_portal_dungeon_next_level` — swirling vortex — looks_like: - — traps.json
+- `tr_portal_dungeon_teleporter` — elsewhere — looks_like: - — traps.json
+- `tr_portal_dungeon_to_labyrinth_teleporter_n` — mysterious hallway — looks_like: - — traps.json
+- `tr_portal_dungeon_to_labyrinth_teleporter_s` — mysterious hallway — looks_like: - — traps.json
+- `tr_shadow` — (no name) — looks_like: - — traps.json
+- `tr_sinkhole` — sinkhole — looks_like: - — traps.json
+- `tr_slope_to_bosky_labyrinth` — overgrown slope — looks_like: - — traps.json
+- `tr_snake` — (no name) — looks_like: - — traps.json
+- `tr_spider` — trapdoor spiderden — looks_like: - — traps.json
+- `tr_string_dimension_ka_moonpool` — strange moonpool — looks_like: - — traps.json
+- `tr_string_dimension_ka_moonpool_exit` — 1D plane — looks_like: - — traps.json
+- `tr_swirling_vortex` — swirling vortex — looks_like: - — traps.json
+- `tr_target_spinner` — spinner target — looks_like: - — traps.json
+- `tr_teeth` — scattered monster teeth — looks_like: - — traps.json
+- `tr_temple_flood` — ledge — looks_like: - — traps.json
+- `tr_temple_toggle` — (no name) — looks_like: - — traps.json
+- `tr_thick_ice` — thick ice — looks_like: - — traps.json
+- `tr_thin_ice` — thin ice — looks_like: - — traps.json
+- `tr_void_spider_entry` — (no name) — looks_like: - — monster_special_attacks/void_spider_mechanics.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `tr_cot` — cot — via exact/use-all-png -> tr_cot
+- `tr_leather_funnel` — leather funnel — via exact/use-all-png -> tr_leather_funnel
+- `tr_practice_target` — practice target — via exact/use-all-png -> tr_practice_target
+
+## field_type: 172 ids — not represented in shipped game: 90 (52.3%) — not represented to our voxelizer loader: 126 — of which 36 are orphan-PNG (--use-all) cases
+shipped stages: {'exact': 21, 'looks_like': 46, 'filler/missing': 90, 'exact/use-all-png': 15}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `fd_air_conditioner_radiosphere` — (no name) — looks_like: - — field_type.json
+- `fd_ammo_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_armor_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_artifacts_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_auto_drink_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_auto_eat_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_basecamp_food_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_basecamp_storage_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_bee_swarm` — (no name) — looks_like: - — field_type.json
+- `fd_biolum` — (no name) — looks_like: - — field_type.json
+- `fd_bionics_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_books_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_chemical_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_chop_trees_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_clairvoyant` — (no name) — looks_like: - — field_type.json
+- `fd_clothing_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_cold_air1` — (no name) — looks_like: - — field_type.json
+- `fd_cold_air2` — (no name) — looks_like: - — field_type.json
+- `fd_cold_air3` — (no name) — looks_like: - — field_type.json
+- `fd_cold_air4` — (no name) — looks_like: - — field_type.json
+- `fd_construction_blueprint_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_construction_site` — (no name) — looks_like: fd_shadow — field_type.json
+- `fd_containers_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_corpses_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_currency_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_custom_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_darkness` — (no name) — looks_like: - — field_type.json
+- `fd_default_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_disassembly_work_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_dissection_work_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_drink_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_drugs_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_farm_plot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_filthy_armor_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_filthy_clothing_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_firewood_source_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_fishing_spot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_food_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_fuel_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_guns_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_hot_air1` — (no name) — looks_like: - — field_type.json
+- `fd_hot_air2` — (no name) — looks_like: - — field_type.json
+- `fd_hot_air3` — (no name) — looks_like: - — field_type.json
+- `fd_hot_air4` — (no name) — looks_like: - — field_type.json
+- `fd_ignore_favorites_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_ignore_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_item_group_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_keys_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_last_known` — (no name) — looks_like: - — field_type.json
+- `fd_magazines_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_manuals_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_maps_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_martial_arts_manuals_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_migo_atmosphere` — (no name) — looks_like: - — field_type.json
+- `fd_mine_terrain_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_mods_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_mop_tile_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_mutagens_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_nauseating_smell` — (no name) — looks_like: - — field_type.json
+- `fd_no_auto_pickup_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_no_npc_pickup_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_npc_ignore_sounds_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_npc_investigation_area_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_npc_no_go_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_npc_retreat_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_other_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_perishable_drink_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_perishable_food_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_push_items` — (no name) — looks_like: - — field_type.json
+- `fd_scarlet_atmosphere` — (no name) — looks_like: - — field_type.json
+- `fd_scarlet_fog` — (no name) — looks_like: - — field_type.json
+- `fd_scarlet_sea_gas` — (no name) — looks_like: - — field_type.json
+- `fd_scarlet_sea_wave` — (no name) — looks_like: - — field_type.json
+- `fd_scarlet_storm_lightning` — (no name) — looks_like: - — field_type.json
+- `fd_seeds_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_shadow` — (no name) — looks_like: - — field_type.json
+- `fd_spare_parts_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_start_point_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_strip_corpses_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_tool_magazines_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_tools_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_traps_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_unload_everything_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_unsorted_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_vehicle_deconstruct_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_vehicle_parts_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_vehicle_patrol_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_vehicle_repair_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_weapons_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+- `fd_wood_loot_zone` — (no name) — looks_like: - — zone_field_type.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `fd_LIXA_decompression` — (no name) — via looks_like -> fd_smoke
+- `fd_black_incense` — (no name) — via looks_like -> fd_smoke
+- `fd_dazzling` — (no name) — via exact/use-all-png -> fd_dazzling
+- `fd_direction` — (no name) — via looks_like -> footstep
+- `fd_extinguisher` — (no name) — via exact/use-all-png -> fd_extinguisher
+- `fd_fatigue` — (no name) — via exact/use-all-png -> fd_fatigue
+- `fd_fire` — (no name) — via exact/use-all-png -> fd_fire
+- `fd_fire_FAKE` — (no name) — via looks_like -> fd_fire
+- `fd_fire_vent` — (no name) — via looks_like -> fd_fire
+- `fd_flame_burst` — (no name) — via looks_like -> fd_fire
+- `fd_fog` — (no name) — via looks_like -> fd_smoke
+- `fd_fungal_haze` — (no name) — via exact/use-all-png -> fd_fungal_haze
+- `fd_fungicidal_gas` — (no name) — via exact/use-all-png -> fd_fungicidal_gas
+- `fd_gas_vent` — (no name) — via looks_like -> fd_toxic_gas
+- `fd_hallucinogenic_spores` — (no name) — via looks_like -> fd_nuke_gas
+- `fd_hot_air_sauna` — (no name) — via exact/use-all-png -> fd_hot_air_sauna
+- `fd_incendiary` — (no name) — via looks_like -> fd_laser
+- `fd_insecticidal_gas` — (no name) — via exact/use-all-png -> fd_insecticidal_gas
+- `fd_labyrinth_fog` — (no name) — via looks_like -> fd_smoke
+- `fd_labyrinth_fog_perm` — (no name) — via looks_like -> fd_smoke
+- `fd_laser` — (no name) — via exact/use-all-png -> fd_laser
+- `fd_meadow_portal` — (no name) — via looks_like -> fd_fatigue
+- `fd_nm_monster_gas_1` — (no name) — via looks_like -> fd_tear_gas
+- `fd_nm_monster_gas_2` — (no name) — via looks_like -> fd_tear_gas
+- `fd_nuke_gas` — (no name) — via exact/use-all-png -> fd_nuke_gas
+- `fd_plasma` — (no name) — via exact/use-all-png -> fd_plasma
+- `fd_pollen_triffid` — (no name) — via looks_like -> fd_nuke_gas
+- `fd_portal_cracked_mirror` — (no name) — via looks_like -> fd_fatigue
+- `fd_relax_gas` — (no name) — via exact/use-all-png -> fd_relax_gas
+- `fd_smoke` — (no name) — via exact/use-all-png -> fd_smoke
+- `fd_smoke_vent` — (no name) — via looks_like -> fd_smoke
+- `fd_swamp_gas` — (no name) — via looks_like -> fd_nuke_gas
+- `fd_tear_gas` — (no name) — via exact/use-all-png -> fd_tear_gas
+- `fd_tindalos_rift` — (no name) — via looks_like -> fd_smoke
+- `fd_toxic_gas` — (no name) — via exact/use-all-png -> fd_toxic_gas
+- `fd_twisting_mass_dust` — (no name) — via looks_like -> fd_smoke
+
+## vehicle_part: 483 ids — not represented in shipped game: 202 (41.8%) — not represented to our voxelizer loader: 236 — of which 34 are orphan-PNG (--use-all) cases
+shipped stages: {'filler/missing': 202, 'looks_like': 124, 'vp_prefixed': 95, 'exact': 19, 'exact/use-all-png': 43}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `afs_roof_external_tank_aluminum` — roof-mounted aluminum tank (200 L) — looks_like: - — vehicleparts/tanks.json
+- `afs_small_roof_external_tank` — roof-mounted tank (100 L) — looks_like: afs_roof_external_tank — vehicleparts/tanks.json
+- `afs_small_roof_external_tank_aluminum` — roof-mounted aluminum tank (100 L) — looks_like: afs_roof_external_tank — vehicleparts/tanks.json
+- `air_jack` — (no name) — looks_like: crane_small — vehicleparts/engineering.json
+- `aisle_lights` — aisle lights — looks_like: - — vehicleparts/lights.json
+- `ap_ammonia_machine_pipework` — makeshift ammonia machine pipework — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_ammonia_machine_reactor` — makeshift ammonia machine reactor — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_electrolyzer_makeshift` — makeshift water electrolyzer — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_folding_solar_panel` — deployed folding solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_folding_solar_panel_v2` — deployed solar suitcase — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_glassblowers_crucible` — glassblower's crucible — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_ground_solar_panel` — vehicle solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_ground_solar_panel_v2` — vehicle advanced solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_mobile_weather_station` — mobile weather station — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_nitrogen_generator` — makeshift nitrogen generator — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_nl_safehouse_boiler` — otherworldly boiler — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_reinforced_solar_panel` — vehicle reinforced solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_reinforced_solar_panel_v2` — vehicle advanced reinforced solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_robofac_mobile_weather_station` — mobile HEW-NRE station — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_solar_panel` — small solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_solar_panel_v2` — small advanced solar panel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_standing_directed_floodlight` — standing directed floodlight — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_standing_floodlight` — standing floodlight — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_stereo` — stereo system — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_veh_tools_workshop` — workshop station — looks_like: welding_rig — furniture_and_terrain/appliances.json
+- `ap_wall_light` — wall light — looks_like: ap_standing_directed_floodlight — furniture_and_terrain/appliances.json
+- `ap_water_wheel` — water wheel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_wind_turbine` — wind turbine — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_workbench_with_recharger` — workbench with battery recharger (folded) — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_xedra_mobile_weather_station` — mobile hazardous environment weather station — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_xl_water_wheel` — large water wheel — looks_like: - — furniture_and_terrain/appliances.json
+- `ap_xl_wind_turbine` — large wind turbine — looks_like: - — furniture_and_terrain/appliances.json
+- `basketlg_folding` — (no name) — looks_like: basketlg — vehicleparts/cargo.json
+- `beeper` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `bike_rack` — (no name) — looks_like: foldframe — vehicleparts/cargo.json
+- `cam_control` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `car_heavy_battery_cell` — (no name) — looks_like: - — vehicleparts/battery.json
+- `car_heavy_plus_battery_cell` — (no name) — looks_like: - — vehicleparts/battery.json
+- `car_light_battery_cell` — (no name) — looks_like: - — vehicleparts/battery.json
+- `car_light_minus_battery_cell` — (no name) — looks_like: - — vehicleparts/battery.json
+- `car_medium_battery_cell` — (no name) — looks_like: - — vehicleparts/battery.json
+- `cargo_bag` — storage bag — looks_like: - — vehicleparts/cargo.json
+- `cargo_lock` — cargo lock — looks_like: - — vehicleparts/vehicle_parts.json
+- `cargo_space_external` — external cargo rack — looks_like: - — vehicleparts/cargo.json
+- `cart_handle` — cart handle — looks_like: frame_wood_horizontal — vehicleparts/vehicle_parts.json
+- `controls_electronic` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `controls_turret` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `counterweight` — counterweight — looks_like: hdhalfboard — vehicleparts/boards.json
+- `crane_medium_internal` — internal boom crane — looks_like: - — vehicleparts/engineering.json
+- `dashboard` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `diesel_engine_i6` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `diesel_engine_inline1` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `diesel_engine_inline4` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `diesel_engine_multifuel_i6` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `diesel_engine_v12` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `diesel_engine_v6` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `diesel_engine_v8` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `dimensional_perambulator` — Dimensional Perambulator — looks_like: - — debug/teleportation.json
+- `door_lock` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `door_motor` — door motor — looks_like: - — vehicleparts/vehicle_parts.json
+- `drive_by_wire_controls` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `drum_concrete_mix` — concrete mixer drum — looks_like: - — vehicleparts/utilities.json
+- `engine_1cyl_diesel_large` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_1cyl_large` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_1cyl_med` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_1cyl_small` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_aero_light` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_electric_enhanced` — (no name) — looks_like: - — vehicleparts/motor.json
+- `engine_electric_small` — (no name) — looks_like: - — vehicleparts/motor.json
+- `engine_electric_super` — (no name) — looks_like: - — vehicleparts/motor.json
+- `engine_electric_tiny` — (no name) — looks_like: motor_small — vehicleparts/motor.json
+- `engine_electric_train` — (no name) — looks_like: - — vehicleparts/motor.json
+- `engine_inline4` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_steam_makeshift` — internal combustion engine — looks_like: diesel_engine_v12 — vehicleparts/combustion.json
+- `engine_steam_medium` — internal combustion engine — looks_like: diesel_engine_v12 — vehicleparts/combustion.json
+- `engine_steam_small` — internal combustion engine — looks_like: diesel_engine_v12 — vehicleparts/combustion.json
+- `engine_turbine_large` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_turbine_medium` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `engine_turbine_small` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `external_tank_aluminum` — external aluminum tank (200 L) — looks_like: - — vehicleparts/tanks.json
+- `external_tank_small_aluminum` — external aluminum tank (100 L) — looks_like: afs_roof_external_tank — vehicleparts/tanks.json
+- `folding_frame` — (no name) — looks_like: - — vehicleparts/frames.json
+- `folding_wooden_frame` — (no name) — looks_like: - — vehicleparts/frames.json
+- `foldxlframe` — foldable extra-light frame — looks_like: - — vehicleparts/frames.json
+- `frame_concrete_mix` — (no name) — looks_like: - — vehicleparts/frames.json
+- `frame_wood_handle` — wooden handle — looks_like: frame_wood_cover — vehicleparts/vehicle_parts.json
+- `frame_wood_light` — (no name) — looks_like: - — vehicleparts/frames.json
+- `frame_wood_light_handle` — light wooden handle — looks_like: frame_wood_light_cover — vehicleparts/vehicle_parts.json
+- `fridgetank` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `fridgetank_large` — (no name) — looks_like: fridgetank — vehicleparts/tanks.json
+- `fuel_bunker` — (no name) — looks_like: tank — vehicleparts/tanks.json
+- `hand_controls` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `handheld_battery_mount` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `heattank` — refrigerated tank (60 L) — looks_like: - — vehicleparts/tanks.json
+- `horn_big` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `horn_car` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `improvised_frame` — steel unibody frame — looks_like: - — vehicleparts/frames.json
+- `inboard_mirror` — inboard mirror — looks_like: - — vehicleparts/mirrors.json
+- `inflatable_airbag` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `integrated_cooler` — vehicle cooler — looks_like: - — vehicleparts/vehicle_parts.json
+- `integrated_heater_small` — small integrated heater — looks_like: - — vehicleparts/vehicle_parts.json
+- `jumper_cable_debug` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `large_pressure_tank` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `large_storage_battery` — (no name) — looks_like: - — vehicleparts/battery.json
+- `large_storage_battery_removable` — swappable very large storage battery — looks_like: - — vehicleparts/battery.json
+- `medium_pressure_tank` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `medium_storage_battery` — (no name) — looks_like: - — vehicleparts/battery.json
+- `metal_bench` — steel bench — looks_like: - — vehicleparts/seats.json
+- `metal_tray` — metal tray — looks_like: - — vehicleparts/cargo.json
+- `motorcycle_headlight` — (no name) — looks_like: - — vehicleparts/lights.json
+- `motorcycle_kickstand` — (no name) — looks_like: - — vehicleparts/engineering.json
+- `mountable_cooler` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `nose_plate` — nose plate — looks_like: forklift_fork — vehicleparts/cargo.json
+- `null` — null part — looks_like: - — vehicleparts/vehicle_parts.json
+- `pedal_extenders` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `pedal_extenders_makeshift` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `plating_acidchitin` — biosilicified chitin plating — looks_like: - — vehicleparts/vehicle_parts.json
+- `plating_chitin` — chitin plating — looks_like: - — vehicleparts/vehicle_parts.json
+- `plugged_3in_ordnance_rifle` — plugged 3-inch ordnance rifle — looks_like: - — vehicleparts/vehicle_parts.json
+- `power_cord` — power cord — looks_like: - — furniture_and_terrain/appliances.json
+- `programmable_autopilot` — (no name) — looks_like: cam_control — vehicleparts/vehicle_parts.json
+- `rail_wheel` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `rail_wheel_small_pair` — small rail wheels (pair) — looks_like: - — vehicleparts/wheel.json
+- `rail_wheel_steerable` — rail wheel (steerable) — looks_like: - — vehicleparts/wheel.json
+- `ram_acidchitin` — biosilicified chitin ram — looks_like: ram_wood — vehicleparts/rams.json
+- `ram_chitin` — chitin ram — looks_like: ram_wood — vehicleparts/rams.json
+- `rebar_plate` — (no name) — looks_like: - — vehicleparts/armor.json
+- `roof_wood` — wooden roof — looks_like: - — vehicleparts/vehicle_parts.json
+- `sail` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `small_civilian_rotors` — (no name) — looks_like: - — vehicleparts/rotor.json
+- `small_pressure_tank` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `smart_engine_controller` — smart engine controller — looks_like: - — vehicleparts/vehicle_parts.json
+- `solar_reflector` — solar reflector — looks_like: - — vehicleparts/engineering.json
+- `spring_plate` — (no name) — looks_like: - — vehicleparts/armor.json
+- `storage_battery_mount` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `storage_battery_removable` — swappable large storage battery — looks_like: - — vehicleparts/battery.json
+- `stowed_air_compressor` — tied-down air compressor — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_arcade_machine` — tied-down arcade machine — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_bandsaw` — tied-down band saw — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_big_portable_freezer` — tied-down food truck freezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_big_portable_fridge` — tied-down food truck fridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_bot_golden_monolith` — tied-down golden monolith — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_broken_golden_monolith` — tied-down broken golden monolith — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_broken_yrax_quadraphract` — tied-down broken quadraphract — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_broken_yrax_quadraphract_leg` — tied-down broken quadraphract leg — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_chest_freezer` — tied-down chest freezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_chest_minifreezer` — tied-down chest minifreezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_display_freezer` — tied-down display freezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_display_fridge` — tied-down display fridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_drill_press` — tied-down drill press — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_freezer` — tied-down household freezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_fridge` — tied-down household fridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_glass_freezer` — tied-down glass freezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_glass_fridge` — tied-down single glass door fridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_glass_fridge_double` — tied-down double glass door fridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_hd_compressor_unit` — tied-down high pressure compressor unit — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_heavy_duty_freezer` — tied-down heavy-duty freezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_heavy_duty_fridge` — tied-down heavy duty fridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_hydraulic_press` — tied-down hydraulic press — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_jointer` — tied-down jointer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_minifreezer` — tied-down minifreezer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_minifridge` — tied-down minifridge — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_mitresaw` — tied-down mitre saw — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_oven` — tied-down oven — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_oxygen_concentrator` — tied-down oxygen concentrator — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_planer` — tied-down planer — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_router` — tied-down router — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `stowed_tablesaw` — tied-down table saw — looks_like: - — obsoletion_and_migration_0.J/stowed_parts.json
+- `tank` — vehicle tank (60 L) — looks_like: - — vehicleparts/tanks.json
+- `tank_30gal_drum` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `tank_30gal_drum_aluminum` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `tank_55gal_drum_aluminum` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `tank_barrel` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `tank_little` — vehicle tank (2 L) — looks_like: - — vehicleparts/tanks.json
+- `tank_medium` — vehicle tank (20 L) — looks_like: - — vehicleparts/tanks.json
+- `tank_small` — vehicle tank (10 L) — looks_like: - — vehicleparts/tanks.json
+- `towel_hanger` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `veh_binoculars` — binoculars — looks_like: binoculars — vehicleparts/utilities.json
+- `veh_mobile_weather_station` — mobile weather station — looks_like: - — vehicleparts/utilities.json
+- `veh_robofac_mobile_weather_station` — mobile HEW-NRE station — looks_like: - — vehicleparts/utilities.json
+- `veh_tools_workshop` — (no name) — looks_like: welding_rig — vehicleparts/modular_tools.json
+- `veh_xedra_mobile_weather_station` — mobile hazardous environment weather station — looks_like: - — vehicleparts/utilities.json
+- `vehicle_alarm` — security system — looks_like: - — vehicleparts/vehicle_parts.json
+- `vehicle_clock` — makeshift clock — looks_like: - — vehicleparts/vehicle_parts.json
+- `water_wheel` — (no name) — looks_like: - — vehicleparts/vehicle_parts.json
+- `wheel_caster_large` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_concrete_mix` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_heavy` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_heavy_steerable` — heavy wheel hub assembly (steerable) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_light` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_light_steerable` — light wheel mount (steerable) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_medium` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_medium_steerable` — medium wheel hub assembly (steerable) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_skateboard` — skateboard trucks — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_wood` — (no name) — looks_like: - — vehicleparts/wheel.json
+- `wheel_mount_wood_steerable` — wooden wheel mount (steerable) — looks_like: - — vehicleparts/wheel.json
+- `wheel_skateboard` — skateboard wheels — looks_like: - — vehicleparts/wheel.json
+- `xedra_genset` — internal combustion engine — looks_like: - — vehicleparts/combustion.json
+- `xl_pressure_tank` — (no name) — looks_like: - — vehicleparts/tanks.json
+- `xl_water_wheel` — (no name) — looks_like: water_wheel — vehicleparts/vehicle_parts.json
+- `yoke_harness` — (no name) — looks_like: frame_wood_cross — vehicleparts/vehicle_parts.json
+- `yoke_harness_heavyduty` — (no name) — looks_like: yoke_harness — vehicleparts/vehicle_parts.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `alternator_truck` — vehicle alternator — via exact/use-all-png -> alternator_truck
+- `ap_12000_gasoline_generator` — powerful gasoline generator — via looks_like -> f_active_backup_generator
+- `ap_battery_car` — car grid battery — via looks_like -> battery_car
+- `ap_battery_motorbike` — motorbike grid battery — via looks_like -> battery_car
+- `ap_battery_motorbike_small` — small motorbike grid battery — via looks_like -> battery_car
+- `ap_diesel_generator` — diesel generator — via looks_like -> f_active_backup_generator
+- `ap_military_generator` — military diesel generator — via looks_like -> f_active_backup_generator
+- `ap_portable_generator` — portable gasoline generator — via looks_like -> f_active_backup_generator
+- `ap_power_station_portable` — portable power station — via looks_like -> battery_car
+- `battery_car` — (no name) — via exact/use-all-png -> battery_car
+- `battery_motorbike_small` — (no name) — via looks_like -> battery_car
+- `black_box` — (no name) — via exact/use-all-png -> black_box
+- `extension_cable` — (no name) — via exact/use-all-png -> extension_cable
+- `hand_paddles` — (no name) — via exact/use-all-png -> hand_paddles
+- `hand_rims` — hand rims — via exact/use-all-png -> hand_rims
+- `hd_tow_cable` — (no name) — via exact/use-all-png -> hd_tow_cable
+- `heavy_duty_military_blackhawk_rotors` — heavy-duty military Blackhawk rotors — via looks_like -> wind_turbine
+- `heavy_duty_military_osprey_rotors` — heavy-duty military Osprey rotors — via looks_like -> wind_turbine
+- `heavy_duty_military_rotor` — (no name) — via looks_like -> wind_turbine
+- `horn_bicycle` — (no name) — via exact/use-all-png -> horn_bicycle
+- `inflatable_section` — (no name) — via exact/use-all-png -> inflatable_section
+- `jumper_cable` — (no name) — via exact/use-all-png -> jumper_cable
+- `jumper_cable_heavy` — (no name) — via exact/use-all-png -> jumper_cable_heavy
+- `long_extension_cable` — (no name) — via exact/use-all-png -> long_extension_cable
+- `omnicamera_reinforced` — (no name) — via looks_like -> omnicamera
+- `water_purifier` — water purifier — via exact/use-all-png -> water_purifier
+- `wheel_10` — (no name) — via exact/use-all-png -> wheel_10
+- `wheel_barrow` — (no name) — via exact/use-all-png -> wheel_barrow
+- `wheel_set_concrete_mix` — (no name) — via looks_like -> wheel
+- `wheel_slick` — wheel — via exact/use-all-png -> wheel_slick
+- `wheel_tricycle` — (no name) — via exact/use-all-png -> wheel_tricycle
+- `wheel_unicycle` — unicycle wheel — via looks_like -> wheel_bicycle
+- `wind_turbine` — (no name) — via exact/use-all-png -> wind_turbine
+- `xl_wind_turbine` — (no name) — via looks_like -> wind_turbine
+
+## overmap_terrain: 484 ids — not represented in shipped game: 339 (70.0%) — not represented to our voxelizer loader: 343 — of which 4 are orphan-PNG (--use-all) cases
+shipped stages: {'filler/missing': 339, 'looks_like': 19, 'exact': 122, 'exact/use-all-png': 4}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `` — nothing — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `TreeFarm_1a` — tree farm — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `TreeFarm_1a_roof` — tree farm — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `TreeFarm_1b` — tree farm — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `acid_ants` — ant tunnel — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `acid_ants_food` — ant food storage — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `acid_ants_fungus_colony` — ant fungus colony — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `acid_ants_larvae` — ant larva chamber — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `acid_ants_queen` — ant queen chamber — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `alien_meadow_core` — alien meadow — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `alien_meadow_end` — alien meadow — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `alien_meadow_join` — alien meadow — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `animalpound` — animal pound — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `animalpound_roof` — animal pound roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `animalshelter` — animal shelter — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `animalshelter_roof` — animal shelter roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `ants` — ant tunnel — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `ants_food` — ant food storage — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `ants_fungus_colony` — ant fungus colony — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `ants_larvae` — ant larva chamber — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `ants_queen` — ant queen chamber — looks_like: - — overmap/overmap_terrain/overmap_terrain_ants.json
+- `apartment_complex_courtyard` — apartment complex - courtyard — looks_like: - — overmap/overmap_terrain/overmap_terrain_residential.json
+- `art_gallery` — art gallery — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `art_gallery_roof` — art gallery roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `bakery` — bakery — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `bakery_roof` — bakery roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `bakery_upper_roof` — bakery roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `barn_aban1_roof` — barn — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `bowling_alley_roof` — bowling alley roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `bunker` — military bunker — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `bunker_basement_1` — military bunker — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `bunker_roof` — military bunker — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `c_cave_entrance` — river cave entrance — looks_like: - — overmap/overmap_terrain/river_cave.json
+- `cabin_aban1` — ruined cabin — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `cabin_aban1_roof` — ruined cabin — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `cabin_prepper_shelter` — LMOE shelter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `campground_roof` — campground roof — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `campsite_cabin_incomplete_roof` — incomplete cabin roof — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `car_corner_aban1` — car corner — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `car_corner_aban1_roof` — car corner — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `coop_chicken` — chicken coop — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `corpse_bowels_tentacle_edge` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_nether_monster_corpse.json
+- `corpse_surface` — monster corpse — looks_like: - — overmap/overmap_terrain/overmap_terrain_nether_monster_corpse.json
+- `corpse_tentacle` — monster corpse tentacle — looks_like: - — overmap/overmap_terrain/overmap_terrain_nether_monster_corpse.json
+- `corpse_tentacle_entry` — monster corpse tentacle — looks_like: - — overmap/overmap_terrain/overmap_terrain_nether_monster_corpse.json
+- `corpse_tentacle_surface_entry` — monster corpse — looks_like: - — overmap/overmap_terrain/overmap_terrain_nether_monster_corpse.json
+- `craft_shop_upper_roof` — craft shop upper roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_car_showroom` — car showroom — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_car_showroom_2ndfloor` — car showroom 2nd floor — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_car_showroom_roof` — car showroom roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_gardening_allotment` — gardening allotment — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_gardening_allotment_roof` — gardening allotment roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_internet_cafe` — internet cafe — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_market_small` — small market — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_market_small_roof` — small market roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_tire_shop` — tire shop — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `cs_tire_shop_roof` — tire shop roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `debug_itemgroup_test` — debug_item_group_test — looks_like: - — mapgen/debug.json
+- `debug_ramps` — ramp testing area — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `default_portal_storm_dungeon_overmap` — somewhere — looks_like: nether_glass — overmap/overmap_terrain/overmap_terrain_nether.json
+- `derelict_property_roof` — derelict property roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_residential.json
+- `dirt_road_farm_parking` — rural road — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `dirtroad1_aban1` — forest — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `drug_lab_roof` — drug lab roof — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `exo_base_safehouse_stone_0` — unusual stone barn — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_base_safehouse_stone_1` — unusual stone barn — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_base_safehouse_stone_2` — unusual stone barn roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_safehouse_stone_0` — unusual stone barn — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_safehouse_stone_1` — unusual stone barn — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_safehouse_stone_2` — unusual stone barn roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_warehouse_1` — strange warehouse — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exo_warehouse_2` — strange warehouse — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exodii_base_x0y0z0` — rocky butte — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exodii_base_x0y0z1` — scrap metal encampment — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `exodii_base_x0y3z0` — ground-level entrance — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `faction_base_blacksmith_0` — blacksmith survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_camp_0` — camp survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_canteen_0` — canteen survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_canteen_2_0` — canteen survey 2 — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_farm_0` — farm survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_farm_2_0` — farm survey 2 — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_garage_0` — garage survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_garage_2_0` — garage survey 2 — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_helipad_garage_0` — military helipad garage — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_kitchen_0` — kitchen survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_lightindustry_workshop_0` — light industries workshop survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_livestock_0` — livestock survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_livestock_2_0` — livestock survey 2 — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_c1` — mansion base swimming pool — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_c2` — mansion base bar — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_c3` — mansion base living rooms — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_c4` — mansion base bedroom — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_c5` — mansion base kitchen — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_e1` — mansion base entrance — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_e2` — mansion base entrance — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t1` — mansion base swimming pool — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t2` — mansion base bedrooms — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t3` — mansion base??? — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t4` — mansion base kitchen — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t5` — mansion base library — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t6` — mansion base bedroom — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_mansion_t7` — mansion base living rooms — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_saltworks_0` — saltworks survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_storehouse_0` — store house survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_storehouse_2_0` — store house survey 2 — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_workshop_0` — fabrication workshop survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_base_workshop_2_0` — fabrication workshop 2 survey — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `faction_hide_site_0` — hide site — looks_like: - — overmap/overmap_terrain/overmap_terrain_faction_base.json
+- `farm_1_coop` — chicken coop — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_1_coop_roof` — chicken coop roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_dairy_twd_11` — farm road — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_dairy_twd_7` — farm — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_dairy_twd_8` — farm — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_horse_carriage_house_1` — carriage house — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_horse_carriage_house_1_roof` — carriage house roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_horse_stable_1` — horse stable — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_horse_stable_1_hayloft` — horse stable hayloft — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_horse_stable_1_roof` — horse stable roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `farm_stills_11` — orchard — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `fema_bus` — FEMA camp bus stop — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `fema_entrance` — FEMA camp entrance checkpoint — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `fema_housing` — FEMA camp housing — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `fema_military_building` — FEMA camp outpost — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `fema_road` — FEMA camp road — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `fema_storage` — FEMA camp storage — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `full_mutagen_lab_roof` — Trans-Coast Logistics roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_lab.json
+- `fungal_flowers` — fungal flowers — looks_like: - — overmap/overmap_terrain/overmap_terrain_fungal.json
+- `fungal_tower` — fungal tower — looks_like: - — overmap/overmap_terrain/overmap_terrain_fungal.json
+- `furniture` — furniture store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `godco_enter` — dirt road — looks_like: - — overmap/overmap_terrain/overmap_terrain_transportation.json
+- `golfcourse_30` — golf course parking lot — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `golfcourse_31` — golf course service building — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `golfcourse_31_2ndfloor` — golf course bar — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `golfcourse_31_roof` — golf course service building roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `headshop` — head shop — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `highland_dead_exodii` — floral outcropping — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `highland_road` — cobblestone road — looks_like: - — overmap/overmap_terrain/overmap_terrain_transportation.json
+- `home_improvement` — home improvement store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `home_improvement_roof` — home improvement store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `horse_farm_isherwood_10` — chicken coop — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_10_roof` — chicken coop roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_4` — carriage house — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_4_roof` — carriage house roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_7` — horse stable — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_7_hayloft` — horse stable hayloft — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_7_roof` — horse stable roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_9` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `horse_farm_isherwood_9_roof` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `house_fungus_01` — strange house — looks_like: - — overmap/overmap_terrain/overmap_terrain_fungal.json
+- `house_fungus_roof_01` — house roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_fungal.json
+- `hw_road` — highway — looks_like: - — overmap/overmap_terrain/overmap_terrain_transportation.json
+- `hw_road_bridge` — road bridge — looks_like: - — overmap/overmap_terrain/overmap_terrain_transportation.json
+- `icecream_shop` — icecream shop — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `icecream_shop_roof` — icecream shop roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `inner_cabins_depths` — cellar depths — looks_like: - — overmap/overmap_terrain/overmap_terrain_reverberations.json
+- `irradiator_1_8` — irradiation plant — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `irradiator_1_8_roof` — irradiation plant — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `island_sand` — island — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `kelp_forest_core` — kelp forest — looks_like: - — overmap/overmap_terrain/overmap_terrain_kelp_forest.json
+- `kelp_forest_end` — kelp forest — looks_like: - — overmap/overmap_terrain/overmap_terrain_kelp_forest.json
+- `lab_surface_brick_blockC3` — research facility entrance — looks_like: - — overmap/overmap_terrain/overmap_terrain_lab.json
+- `labyrinth2` — labyrinthian hallways — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth2_roof` — labyrinthian buildings — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth2_roof2` — labyrinthian buildings — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth2_sparkling_chasm_field_core` — sparkling maw — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth2_sparkling_chasm_field_end` — sparkling maw — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth2_stairs` — stairwell — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_entrance` — terminal — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_flooded_entrance` — terminal — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_flooded_hall` — labyrinthian gangways — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_hall` — labyrinthian structures — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_nl_exit_boiler` — central node — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_overgrown_entrance` — root — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_overgrown_hall` — bosky labyrinth — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `labyrinth_safehouse` — home away from home — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `lake_dock_small` — dock — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `lake_shore_dock_small` — dock — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `lancenter` — LAN center — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `lancenter_1` — LAN center — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `lancenter_roof` — LAN center roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `lancenter_roof_1` — LAN center roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `landfill` — landfill — looks_like: - — overmap/overmap_terrain/overmap_terrain_waste_junk.json
+- `lighthouse_small_ground` — small lighthouse — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `lmoe_under` — LMOE shelter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `looted_hospital` — looted hospital — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `looted_hospital_roof` — looted hospital roof — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `looted_house` — looted house — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `looted_house_basement` — looted house basement — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `looted_house_roof` — looted house roof — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `lumbermill_dforest` — forest — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `mall_upper_roof_4` — mall - loading bay roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_mall.json
+- `megastore_1_1_roof` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `megastore_1_2_0` — megastore — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `mi-go_camp2` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_mi-go.json
+- `mi-go_camp2-1` — mi-go spire — looks_like: - — overmap/overmap_terrain/overmap_terrain_mi-go.json
+- `mi-go_camp2-2` — mi-go landing platform — looks_like: - — overmap/overmap_terrain/overmap_terrain_mi-go.json
+- `mi-go_camp2-3` — mi-go landing roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_mi-go.json
+- `mi-go_portal` — mi-go structure — looks_like: - — overmap/overmap_terrain/overmap_terrain_mi-go.json
+- `mi-go_portal_roof` — mi-go structure roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_mi-go.json
+- `microlab_distorted_hallway` — distorted hallway — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic_edge` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic_sub_entry` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic_surface` — lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic_surface_connector` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic_surface_roof` — lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_generic_vent_shaft_connector` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_portal_elevator_nether_glass` — lost level — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_ratkin` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_ratkin_edge` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_ratkin_sub_entry` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_ratkin_surface_connector` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_ratkin_vent_shaft_connector` — science lab — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_sub_connector` — subway station? — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_sub_connector_ratkin` — subway station? — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_sub_station` — subway station? — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `microlab_sub_station_ratkin` — pump station? — looks_like: - — overmap/overmap_terrain/overmap_terrain_microlab.json
+- `mil_base_minefield_gate_left` — military base perimeter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `mil_base_minefield_gate_right` — military base perimeter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `mil_base_minefield_ne` — military base perimeter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `mil_base_minefield_nw` — military base perimeter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `mil_base_minefield_se` — military base perimeter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `mil_base_minefield_sw` — military base perimeter — looks_like: - — overmap/overmap_terrain/overmap_terrain_military.json
+- `mine_finale` — mine — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `mine_tunnel` — mine tunnels — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `mortuary` — mortuary — looks_like: - — overmap/overmap_terrain/overmap_terrain_public_institutional.json
+- `mortuary_roof` — mortuary roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_public_institutional.json
+- `movietheater_1_0` — movie theater entrance — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `museum` — museum — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `museum_roof` — museum roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `natural_spring` — natural spring — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `netherum_labyrinth_sparkling_chasm` — sparkling chasm — looks_like: - — overmap/overmap_terrain/overmap_terrain_netherum_labyrinth.json
+- `ocean_bed` — ocean bed (submerged) — looks_like: - — overmap/overmap_terrain/overmap_terrain_waterbody.json
+- `ocean_shore` — ocean shore — looks_like: - — overmap/overmap_terrain/overmap_terrain_waterbody.json
+- `ocean_surface` — ocean — looks_like: - — overmap/overmap_terrain/overmap_terrain_waterbody.json
+- `ocean_water_cube` — ocean (submerged) — looks_like: - — overmap/overmap_terrain/overmap_terrain_waterbody.json
+- `office_warehouse_anduril` — small warehouse — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `office_warehouse_anduril_roof` — small warehouse roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `omt_obsolete` — nether-chewed field — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `orchard_processing` — orchard processing — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `orchard_processing_roof` — orchard processing roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `orchard_stall` — orchard stall — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `orchard_stall_roof` — orchard stall roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `outcrop` — outcrop — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `outcrop_bottom` — outcrop base — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `portal_storm_dungeon_teleporter` — elsewhere — looks_like: nether_glass — overmap/overmap_terrain/overmap_terrain_nether.json
+- `prefab` — mobile home — looks_like: - — overmap/overmap_terrain/overmap_terrain_residential.json
+- `prefab_roof` — mobile home roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_residential.json
+- `public_works_SW` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `public_works_SW_roof` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `pump_station_1` — pump station — looks_like: - — overmap/overmap_terrain/overmap_terrain_waste_junk.json
+- `pump_station_2` — pump station — looks_like: - — overmap/overmap_terrain/overmap_terrain_waste_junk.json
+- `pwr_sub_s` — small power substation — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `pwr_sub_s_roof` — small power substation roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_industrial.json
+- `ranch_camp_65_roof` — barn roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_ranch_camp.json
+- `ranch_camp_67` — garage — looks_like: - — overmap/overmap_terrain/overmap_terrain_ranch_camp.json
+- `ranch_camp_67_roof` — garage roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_ranch_camp.json
+- `ravine` — ravine — looks_like: - — overmap/overmap_terrain/overmap_terrain_ravines.json
+- `ravine_edge` — cliffside — looks_like: - — overmap/overmap_terrain/overmap_terrain_ravines.json
+- `ravine_floor` — ravine floor — looks_like: - — overmap/overmap_terrain/overmap_terrain_ravines.json
+- `ravine_floor_edge` — cliffside — looks_like: - — overmap/overmap_terrain/overmap_terrain_ravines.json
+- `refctr_fence_NE` — fence — looks_like: - — overmap/overmap_terrain/overmap_terrain_evac_center.json
+- `refctr_fence_NW` — fence — looks_like: - — overmap/overmap_terrain/overmap_terrain_evac_center.json
+- `refctr_fence_SE` — fence — looks_like: - — overmap/overmap_terrain/overmap_terrain_evac_center.json
+- `refctr_fence_SW` — fence — looks_like: - — overmap/overmap_terrain/overmap_terrain_evac_center.json
+- `refctr_fence_v` — fence — looks_like: - — overmap/overmap_terrain/overmap_terrain_evac_center.json
+- `river_cave` — river cave tunnel — looks_like: - — overmap/overmap_terrain/river_cave.json
+- `river_cave_food` — kraken food storage — looks_like: - — overmap/overmap_terrain/river_cave.json
+- `river_cave_kraken` — kraken chamber — looks_like: - — overmap/overmap_terrain/river_cave.json
+- `river_cave_nest` — river cave nest — looks_like: - — overmap/overmap_terrain/river_cave.json
+- `robofac_strip_mall_roof_5` — open air — looks_like: - — overmap/overmap_terrain/overmap_terrain_robofac_locs.json
+- `robofachq_surface_parking` — hub 01 parking space — looks_like: - — overmap/overmap_terrain/overmap_terrain_robofachq.json
+- `rock_border` — rock border — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `ruined_tower_highlands_basement` — (no name) — looks_like: magic_academy_basement — overmap/overmap_terrain/overmap_terrain.json
+- `ruined_tower_highlands_ground` — ruined tower — looks_like: lake_retreat_ground — overmap/overmap_terrain/overmap_terrain.json
+- `rural_outbuilding` — outbuilding — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `rural_outbuilding_roof` — outbuilding roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `s_antique` — antique store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_antique_roof` — antique store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_arcade` — arcade — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_arcade_roof` — arcade roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_daycare` — daycare center — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_daycare_roof` — daycare center roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_electronicstore_2ndfloor` — electronics store 2nd floor — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_games` — gaming store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_games_roof` — gaming store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_gardening` — gardening supply — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_gardening_roof` — gardening supply roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_jewelry` — jewelry store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_jewelry_roof` — jewelry store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_music` — music store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_music_roof` — music store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_sports_roof` — sporting goods store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_thrift` — thrift store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_thrift_roof` — thrift store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_vfw` — veterans of foreign wars — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `s_vfw_roof` — veterans of foreign wars center roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `salon` — salon — looks_like: salon — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `salon_roof` — salon roof — looks_like: salon_roof — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `school_1_2` — regional school — looks_like: - — overmap/overmap_terrain/overmap_terrain_public_institutional.json
+- `sewer_connector` — sewer — looks_like: - — overmap/overmap_terrain/overmap_terrain_waste_junk.json
+- `shootingrange_1a_roof` — shooting range roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `slimepit_z-1` — slime pit — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `slimepit_z-2` — slime pit — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `slimepit_z0` — slime pit — looks_like: - — overmap/overmap_terrain/overmap_terrain_alien.json
+- `smallscrapyard` — small scrap yard — looks_like: - — overmap/overmap_terrain/overmap_terrain_waste_junk.json
+- `smokehouse` — smokehouse — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `smokehouse_roof` — smokehouse roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `special_field_highway` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_special.json
+- `spider_pit` — spider pit — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `stadium_football_0_0` — stadium parking — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `stadium_football_8_0` — stadium parking — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `standing_stones` — standing stones — looks_like: - — overmap/overmap_terrain/overmap_terrain_hardcoded.json
+- `standing_stones_highlands` — highlands — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `string_dimension_field_core` — fields — looks_like: - — overmap/overmap_terrain/overmap_terrain_string_dimension.json
+- `string_dimension_field_end` — fields — looks_like: - — overmap/overmap_terrain/overmap_terrain_string_dimension.json
+- `string_dimension_plane_core` — planes — looks_like: - — overmap/overmap_terrain/overmap_terrain_string_dimension.json
+- `string_dimension_plane_end` — planes — looks_like: - — overmap/overmap_terrain/overmap_terrain_string_dimension.json
+- `sugar_house` — sugar house — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `sugar_house_parking` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `sugar_house_roof` — sugar house roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_agricultural.json
+- `temple_finale` — strange temple — looks_like: - — overmap/overmap_terrain/overmap_terrain_hardcoded.json
+- `trailer_commercial_00` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `trailer_commercial_00_roof` — (no name) — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `trailer_commercial_10` — convenience store — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `trailer_commercial_10_roof` — convenience store roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `trailer_hub_10` — administration building — looks_like: - — overmap/overmap_terrain/overmap_terrain_residential.json
+- `trailer_hub_10_roof` — administration building roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_residential.json
+- `trailer_public_10` — pavilion — looks_like: - — overmap/overmap_terrain/overmap_terrain_recreational.json
+- `triffid_field` — vibrant field — looks_like: - — overmap/overmap_terrain/overmap_terrain_triffid.json
+- `triffid_finale` — triffid heart — looks_like: - — overmap/overmap_terrain/overmap_terrain_triffid.json
+- `triffid_grove` — triffid grove — looks_like: - — overmap/overmap_terrain/overmap_terrain_triffid.json
+- `triffid_grove_roof` — triffid grove roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_triffid.json
+- `unexplored` — Unexplored — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `urban_25_sewer_connector` — sewer — looks_like: - — overmap/overmap_terrain/overmap_terrain_waste_junk.json
+- `veterinarian_roof` — veterinarian clinic roof — looks_like: - — overmap/overmap_terrain/overmap_terrain_commercial.json
+- `void_spider_lair` — abyssal cavern — looks_like: - — overmap/overmap_terrain/overmap_terrain_nether.json
+- `ws_giant_sinkhole_1` — giant sinkhole — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+- `ws_giant_sinkhole_2` — giant sinkhole base — looks_like: - — overmap/overmap_terrain/overmap_terrain.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `cemetery_small` — small cemetery — via exact/use-all-png -> cemetery_small
+- `hunting_blind` — hunting blind — via exact/use-all-png -> hunting_blind
+- `lake_shore` — lake shore — via exact/use-all-png -> lake_shore
+- `lake_surface` — lake — via exact/use-all-png -> lake_surface
+
+## item: 10270 ids — not represented in shipped game: 3778 (36.8%) — not represented to our voxelizer loader: 7417 — of which 3639 are orphan-PNG (--use-all) cases
+shipped stages: {'exact': 1345, 'looks_like': 3346, 'exact/use-all-png': 1782, 'filler/missing': 3778, 'variant': 19}
+
+### Truly missing (no JSON entry, no orphan PNG, no looks_like rescue)
+- `10l_budget_steel` — 10 L budget steel ingot — looks_like: - — items/resources/metal.json
+- `10l_hc_steel` — 10 L high steel ingot — looks_like: - — items/resources/metal.json
+- `10l_lc_steel` — 10 L mild steel ingot — looks_like: - — items/resources/metal.json
+- `10l_mc_steel` — 10 L medium steel ingot — looks_like: - — items/resources/metal.json
+- `10l_methanol_tank` — 10 L methanol fuel cartridge — looks_like: - — items/magazine/methanol_fuelcell.json
+- `10l_plastic` — 10 L plastic block — looks_like: - — items/resources/plastic.json
+- `10mmP` — 10mm Auto +P — looks_like: - — items/ammo/10mm.json
+- `10mm_jhp` — 10mm Auto JHP — looks_like: - — items/ammo/10mm.json
+- `123_steel_core` — 12.3 steel core — looks_like: - — items/ammo.json
+- `123ln_ap` — 12.3ln AP — looks_like: - — items/ammo/exodii.json
+- `1911_22` — .22 1911 pistol — looks_like: 1911 — items/gun/22.json
+- `1cyl_combustion_large` — 0.2 L large 1-cylinder engine — looks_like: - — items/vehicle/engine.json
+- `1cyl_combustion_med` — 0.2 L medium 1-cylinder engine — looks_like: - — items/vehicle/engine.json
+- `1cyl_combustion_small` — 0.02 L small 1-cylinder engine — looks_like: - — items/vehicle/engine.json
+- `1l_aluminum` — 1L aluminum ingot — looks_like: - — items/resources/metal.json
+- `1l_brass` — 1L brass ingot — looks_like: - — items/resources/metal.json
+- `1l_bronze` — 1L bronze ingot — looks_like: - — items/resources/metal.json
+- `1l_copper` — 1L copper ingot — looks_like: - — items/resources/metal.json
+- `1l_gold` — 1 L gold ingot — looks_like: - — items/resources/metal.json
+- `1l_lead` — 1 L lead ingot — looks_like: - — items/resources/metal.json
+- `1l_platinum` — 1 L platinum ingot — looks_like: - — items/resources/metal.json
+- `1l_silver` — 1 L silver ingot — looks_like: - — items/resources/metal.json
+- `1l_tin` — 1 L tin ingot — looks_like: - — items/resources/metal.json
+- `1l_zinc` — 1L zinc ingot — looks_like: - — items/resources/metal.json
+- `20shot_bird` — 20 gauge birdshot — looks_like: - — items/ammo/20shot.json
+- `20shot_buck` — 20 gauge buckshot — looks_like: - — items/ammo/20shot.json
+- `20shot_hull` — 20 gauge hull — looks_like: - — items/generic/casing.json
+- `20shot_slug` — 20 gauge slug — looks_like: - — items/ammo/20shot.json
+- `20x66_10_mag` — compact caseless 10-round magazine — looks_like: shotbelt_20 — obsoletion_and_migration_0.I/gun.json
+- `20x66_20_mag` — RM20 20-round magazine — looks_like: shotbelt_20 — obsoletion_and_migration_0.I/gun.json
+- `20x66_40_mag` — RM20 40-round magazine — looks_like: shotbelt_20 — obsoletion_and_migration_0.I/gun.json
+- `223` — .223 Remington — looks_like: - — items/ammo/223.json
+- `223_casing` — .223 casing — looks_like: - — items/generic/casing.json
+- `22_ar15mag_10` — .22 10-round conversion magazine — looks_like: - — items/magazine/22.json
+- `22_ar15mag_28` — .22 28-round conversion magazine — looks_like: - — items/magazine/22.json
+- `22_blank` — .22 blank — looks_like: - — items/ammo/blank.json
+- `22_cb` — .22 CB — looks_like: - — items/ammo/22.json
+- `22_fmj` — .22 LR FMJ — looks_like: - — items/ammo/22.json
+- `22_lr` — .22 LR — looks_like: - — items/ammo/22.json
+- `22_ratshot` — .22 rat-shot — looks_like: - — items/ammo/22.json
+- `22_speedloader8` — .22 8-round speedloader — looks_like: 38_speedloader — items/magazine/22.json
+- `270win_casing` — .270 Winchester casing — looks_like: 223_casing — items/generic/casing.json
+- `270win_jsp` — .270 Winchester JSP — looks_like: - — items/ammo/270win.json
+- `273x110canister` — 27.3x110 Diyua canister — looks_like: - — items/ammo/exodii.json
+- `273x110casing` — 27.3x110 Diyua casing — looks_like: 50beowulf_casing — items/generic/casing.json
+- `273x110flock` — 27.3x110 Diyua flockshot — looks_like: - — items/ammo/exodii.json
+- `273x110slugheavy` — 27.3x110 Diyua heavy slug — looks_like: - — items/ammo/exodii.json
+- `273x110sluglight` — 27.3x110 Diyua light slug — looks_like: - — items/ammo/exodii.json
+- `273x110slugmedium` — 27.3x110 Diyua medium slug — looks_like: - — items/ammo/exodii.json
+- `273x44HE` — 27.3x44 Diyua high explosive — looks_like: - — items/ammo/exodii.json
+- `273x44RG` — 66/27.3x278 Diyua multipurpose — looks_like: - — items/ammo/exodii.json
+- `273x44casing` — 27.3x44 Diyua casing — looks_like: 50beowulf_casing — items/generic/casing.json
+- `273x44flare` — 27.3x44 Diyua star — looks_like: - — items/ammo/exodii.json
+- `273x44thermobaric` — 27.3x44 Diyua thermobaric — looks_like: - — items/ammo/exodii.json
+- `273x44trainer` — 27.3x44 Diyua practice — looks_like: - — items/ammo/exodii.json
+- `28l_methanol_tank` — 28 L methanol fuel cartridge — looks_like: - — items/magazine/methanol_fuelcell.json
+- `3006` — .30-06 FMJ — looks_like: - — items/ammo/3006.json
+- `3006_casing` — .30-06 casing — looks_like: 223_casing — items/generic/casing.json
+- `3006_incendiary` — .30-06 tracer — looks_like: - — items/ammo/3006.json
+- `3006_jsp` — .30-06 JSP — looks_like: - — items/ammo/3006.json
+- `3006_steel_core` — .30-06 steel core — looks_like: - — items/ammo.json
+- `3006fmj` — .30-06 M2 AP — looks_like: - — items/ammo/3006.json
+- `300_casing` — .300 Winchester Magnum casing — looks_like: 223_casing — items/generic/casing.json
+- `300_winmag` — .300 Winchester Magnum JHP — looks_like: - — items/ammo/300.json
+- `300blk` — .300 AAC Blackout — looks_like: - — items/ammo/300blk.json
+- `300blk_casing` — .300 AAC Blackout casing — looks_like: 223_casing — items/generic/casing.json
+- `300blk_ss` — .300 AAC Blackout subsonic — looks_like: - — items/ammo/300blk.json
+- `3030` — .30-30 Winchester SP — looks_like: - — items/ammo/3030.json
+- `3030_casing` — .30-30 Winchester casing — looks_like: 223_casing — items/generic/casing.json
+- `303_bthp` — .303 British OTM — looks_like: - — items/ammo/303.json
+- `303_casing` — .303 British casing — looks_like: 223_casing — items/generic/casing.json
+- `303_fmjbt` — .303 British FMJ — looks_like: - — items/ammo/303.json
+- `303_sp` — .303 British JSP — looks_like: - — items/ammo/303.json
+- `308` — .308 Winchester — looks_like: - — items/ammo/308.json
+- `308_casing` — .308 Winchester casing — looks_like: 223_casing — items/generic/casing.json
+- `30carbine` — .30 Carbine FMJ — looks_like: - — items/ammo/30carbine.json
+- `30carbine_casing` — .30 Carbine casing — looks_like: 223_casing — items/generic/casing.json
+- `30carbine_jsp` — .30 Carbine JSP — looks_like: - — items/ammo/30carbine.json
+- `32_acp` — .32 ACP FMJ — looks_like: - — items/ammo/32.json
+- `32_acp_jhp` — .32 ACP JHP — looks_like: - — items/ammo/32.json
+- `338lapua_api` — .338 Lapua API526 — looks_like: - — items/ammo/338lapua.json
+- `338lapua_casing` — .338 Lapua casing — looks_like: 223_casing — items/generic/casing.json
+- `338lapua_fmjbt` — .338 Lapua AP485 — looks_like: - — items/ammo/338lapua.json
+- `338lapua_hpbt` — .338 Lapua HPBT — looks_like: - — items/ammo/338lapua.json
+- `33_naval_casing` — 3.3 naval casing — looks_like: 223_casing — items/generic/casing.json
+- `33naval_ball` — 3.3 naval FMJ — looks_like: - — items/ammo/exodii.json
+- `357mag_fmj` — .357 Magnum FMJ — looks_like: - — items/ammo/357mag.json
+- `357mag_jhp` — .357 Magnum JHP — looks_like: - — items/ammo/357mag.json
+- `357sig_fmj` — .357 SIG FMJ — looks_like: - — items/ammo/357sig.json
+- `357sig_jhp` — .357 SIG JHP — looks_like: - — items/ammo/357sig.json
+- `36navy` — .36 paper cartridge — looks_like: - — items/ammo/36paper.json
+- `380_FMJ` — .380 ACP FMJ — looks_like: - — items/ammo/380.json
+- `380_JHP` — .380 ACP JHP — looks_like: - — items/ammo/380.json
+- `380_p` — .380 ACP +P — looks_like: - — items/ammo/380.json
+- `38_fmj` — .38 Special FMJ — looks_like: - — items/ammo/38.json
+- `38_special` — .38 Special JHP — looks_like: - — items/ammo/38.json
+- `38_special_p` — .38 Special +P — looks_like: - — items/ammo/38.json
+- `38_speedloader` — .38/.357 7-round speedloader — looks_like: - — items/magazine/38.json
+- `38_speedloader5` — .38/.357 5-round speedloader — looks_like: 38_speedloader — items/magazine/38.json
+- `38_speedloader6` — .38/.357 6-round speedloader — looks_like: 38_speedloader — items/magazine/38.json
+- `38_super` — .38 Super JHP — looks_like: - — items/ammo/38super.json
+- `38super_fmj` — .38 Super FMJ — looks_like: - — items/ammo/38super.json
+- `40_speedloader6` — 10mm 6-round speedloader — looks_like: 38_speedloader — obsoletion_and_migration_0.J/guns.json
+- `40fmj` — .40 S&W FMJ — looks_like: - — items/ammo/40.json
+- `40sw` — .40 S&W JHP — looks_like: - — items/ammo/40.json
+- `40x46mm_hornets_nest_410_bird` — 40x46mm .410 bird's nest — looks_like: - — items/ammo/40x46mm.json
+- `40x46mm_hornets_nest_410_scrap` — 40x46mm .410 scrap nest — looks_like: - — items/ammo/40x46mm.json
+- `40x46mm_hornets_nest_410_slug` — 40x46mm .410 slug's nest — looks_like: - — items/ammo/40x46mm.json
+- `410shot_bird` — .410 birdshot — looks_like: - — items/ammo/410shot.json
+- `410shot_scrap` — .410 scrap shot, reloaded — looks_like: - — items/ammo/410shot.json
+- `410shot_slug` — .410 slug — looks_like: - — items/ammo/410shot.json
+- `432gal_drum_rubber` — big collapsible drum — looks_like: - — items/containers/military.json
+- `44_speedloader6` — .44 6-round speedloader — looks_like: 38_speedloader — items/magazine/44.json
+- `44army` — .44 paper cartridge — looks_like: - — items/ammo/44paper.json
+- `44fmj` — .44 Magnum FMJ — looks_like: - — items/ammo/44.json
+- `44magnum` — .44 Magnum JHP — looks_like: - — items/ammo/44.json
+- `450_ar15mag` — .450 Bushmaster 4-round conversion magazine — looks_like: - — items/magazine/450bushmaster.json
+- `450_casing` — .450 Bushmaster casing — looks_like: 223_casing — items/generic/casing.json
+- `450_ftx` — .450 Bushmaster FTX — looks_like: - — items/ammo/450bushmaster.json
+- `450_penetrator` — .450 Bushmaster Xtreme Hunter — looks_like: - — items/ammo/450bushmaster.json
+- `454_Casull` — .454 Casull JSP — looks_like: - — items/ammo/454.json
+- `454_speedloader5` — .454 5-round speedloader — looks_like: 38_speedloader — items/magazine/454.json
+- `454_speedloader6` — .454 6-round speedloader — looks_like: 38_speedloader — obsoletion_and_migration_0.I/gun.json
+- `4570_low` — .45-70 LFN cowboy — looks_like: - — items/ammo/4570.json
+- `4570_pen` — .45-70 +P — looks_like: - — items/ammo/4570.json
+- `4570_sp` — .45-70 SP — looks_like: - — items/ammo/4570.json
+- `458wm` — .458 Winchester Magnum JSP — looks_like: - — items/ammo/458wm.json
+- `458wm_casing` — .458 Winchester Magnum casing — looks_like: 50beowulf_casing — items/generic/casing.json
+- `45_acp` — .45 ACP FMJ — looks_like: - — items/ammo/45.json
+- `45_jhp` — .45 ACP JHP — looks_like: - — items/ammo/45.json
+- `45_super` — .45 ACP +P — looks_like: - — items/ammo/45.json
+- `45colt_cowboy` — .45 Colt LFN cowboy — looks_like: - — items/ammo/45colt.json
+- `45colt_jhp` — .45 Colt +P JHP — looks_like: - — items/ammo/45colt.json
+- `460sw` — .460 S&W Magnum FTX — looks_like: - — items/ammo/460sw.json
+- `460sw_jhp` — .460 S&W Magnum JHP — looks_like: - — items/ammo/460sw.json
+- `500_Magnum` — .500 S&W Magnum — looks_like: - — items/ammo/500.json
+- `50_casing` — .50 BMG casing — looks_like: 223_casing — items/generic/casing.json
+- `50_incendiary` — .50 BMG M17 tracer — looks_like: - — items/ammo/50.json
+- `50_mk211` — .50 BMG Raufoss Mk 211 — looks_like: - — items/ammo/50.json
+- `50_steel_core` — .50 BMG steel core — looks_like: - — items/ammo.json
+- `50ae_fmj` — .50 AE FMJ — looks_like: - — items/ammo/50ae.json
+- `50ae_jhp` — .50 AE JHP — looks_like: - — items/ammo/50ae.json
+- `50beowulf_ar15mag` — .50 Beowulf 10-round conversion magazine — looks_like: - — items/magazine/50beowulf.json
+- `50beowulf_casing` — .50 Beowulf casing — looks_like: 223_casing — items/generic/casing.json
+- `50beowulf_penetrator` — .50 Beowulf Xtreme Penetrator — looks_like: - — items/ammo/50_beowulf.json
+- `50beowulf_xtp` — .50 Beowulf XTP — looks_like: - — items/ammo/50_beowulf.json
+- `50bmg` — .50 BMG M33 Ball — looks_like: - — items/ammo/50.json
+- `50match` — .50 BMG Match — looks_like: - — items/ammo/50.json
+- `50ss` — .50 BMG M2 AP — looks_like: - — items/ammo/50.json
+- `545_steel_core` — 5.45 steel core — looks_like: - — items/ammo.json
+- `556_m995` — 5.56x45mm NATO M995 — looks_like: - — items/ammo/223.json
+- `55gal_drum_rubber` — collapsible drum — looks_like: - — items/containers/military.json
+- `57mm_lf` — 5.7x28mm JHP — looks_like: - — items/ammo/57.json
+- `57mm_ss` — 5.7x28mm FMJ BT — looks_like: - — items/ammo/57.json
+- `5l_budget_steel` — 5 L budget steel ingot — looks_like: - — items/resources/metal.json
+- `5l_hc_steel` — 5 L high steel ingot — looks_like: - — items/resources/metal.json
+- `5l_lc_steel` — 5 L mild steel ingot — looks_like: - — items/resources/metal.json
+- `5l_mc_steel` — 5 L medium steel ingot — looks_like: - — items/resources/metal.json
+- `5l_methanol_tank` — 5 L methanol fuel cartridge — looks_like: - — items/magazine/methanol_fuelcell.json
+- `5l_plastic` — 5 L plastic block — looks_like: - — items/resources/plastic.json
+- `60l_methanol_tank` — 60 L methanol fuel cartridge — looks_like: - — items/magazine/methanol_fuelcell.json
+- `60mm_propellant` — 60 mm mortar propellant charge — looks_like: - — items/tool/explosives.json
+- `60mm_shell_m720a1` — high-explosive mortar shell — looks_like: - — items/ammo/60mm.json
+- `60mm_shell_m768` — high-explosive mortar shell — looks_like: - — items/ammo/60mm.json
+- `762_51_m993` — 7.62x51mm NATO M993 — looks_like: - — items/ammo/308.json
+- `762_jhp` — 7.62x39mm JHP — looks_like: - — items/ammo/762.json
+- `77arisaka_casing` — 7.7x58mm Arisaka casing — looks_like: 223_casing — items/generic/casing.json
+- `77mm_arisaka_jsp` — 7.7x58mm Arisaka JSP — looks_like: - — items/ammo/77mm_arisaka.json
+- `9x18_steel_core` — 9x18 steel core — looks_like: - — items/ammo.json
+- `DEBUG_stabbing` — stone of stabbing — looks_like: - — artifact/premade_artifacts.json
+- `FlatCoin` — FlatCoin — looks_like: - — items/generic/currency.json
+- `HAADF_t_substrate` — HAADF MICROGRAPH: T-SUBSTRATE — looks_like: - — items/generic.json
+- `HEW_printout_data` — HEW printout — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_amigara` — HEW printout 01ITO — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_barricaded_church` — HEW printout ESFX — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_cabin_reverb` — HEW printout CITW01 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_cabin_reverb_dimension` — HEW printout CITW02 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_exodii` — HEW printout IAE20 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_highlands` — HEW printout TCOB1 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_inner_cabins_home_cabin` — HEW printout CITW-BFγ — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_inner_cabins_open_field` — HEW printout CITW-BFα — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_inner_cabins_warped_cabin` — HEW printout CITW-BFβ — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_labyrinth` — HEW printout DB86 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_lixa` — HEW printout DP72063 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_monster_corpse` — HEW printout LKG1 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_morgantown` — HEW printout 01Z90 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_physics_lab` — HEW printout 22BMBS — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_portal` — HEW stable portal report — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_portal_storm` — HEW unstable portal report — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_portal_storm_dungeon` — HEW printout MROTS-S — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_radiosphere` — HEW printout VKTRS — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_spiral_mine` — HEW printout UJI98 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_strange_temple` — HEW printout WKG1 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_string_dimension` — HEW printout IHS — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_vitrified` — HEW printout CC1044 — looks_like: - — items/weather_reports.json
+- `HEW_printout_data_void_spider_lair` — HEW printout NLL8 — looks_like: - — items/weather_reports.json
+- `HEW_weather_data` — HEW datasheet — looks_like: - — items/weather_reports.json
+- `LIXA_generic_file` — LIXA data file — looks_like: - — items/fluff.json
+- `LIXA_lab_file` — LIXA on-site staff notice — looks_like: - — items/fluff.json
+- `LIXA_lab_postit` — cyan post-it note — looks_like: - — items/fluff.json
+- `LIXA_mil_file` — LIXA military notice — looks_like: - — items/fluff.json
+- `LIXA_spit_light` — photonic gun — looks_like: - — monsters/LIXA_monsters.json
+- `LIXA_vector_volley` — coordinate rotation volley — looks_like: - — monsters/LIXA_monsters.json
+- `PBJ_Toast` — PBJ toast — looks_like: - — items/comestibles/bread.json
+- `RTG_coffee` — radioisotope thermoelectric generator — looks_like: - — items/ammo.json
+- `RobofacCoin` — Hub 01 Gold Coin — looks_like: - — items/generic/currency.json
+- `UPS_OFF` — UPS (off) — looks_like: - — items/tool/electronics.json
+- `UPS_ON` — UPS (on) — looks_like: - — items/tool/electronics.json
+- `XS_holster` — holster — looks_like: - — items/armor/holster.json
+- `abaya` — abaya — looks_like: - — items/armor/coats.json
+- `abstract_hair_dye` — hair dye — looks_like: - — items/resources/chemicals.json
+- `abstract_software` — abstract software — looks_like: - — items/software.json
+- `abyss_teleport_orb` — black glass orb — looks_like: - — items/nether.json
+- `acetaminophen` — acetaminophen — looks_like: - — items/comestibles/med.json
+- `acetylene` — acetylene — looks_like: - — items/chemicals_and_resources.json
+- `acetylene_cooker` — acetylene cooker — looks_like: - — items/tool/cooking.json
+- `acetylene_machine` — acetylene-gas machine — looks_like: - — items/tool/workshop.json
+- `acid_sniper` — acid dart gun — looks_like: - — monster_special_attacks/monster_gun.json
+- `acid_soaked_hide` — acid soaked hide — looks_like: - — items/comestibles/other.json
+- `acid_spit` — acid spit gun — looks_like: - — monster_special_attacks/monster_gun.json
+- `acid_spray` — acid dart volley — looks_like: - — monster_special_attacks/monster_gun.json
+- `acidchitin_armor_cow` — biosilicified chitin cow armor — looks_like: - — items/armor/pets_cow_armor.json
+- `acidchitin_armor_horse` — biosilicified chitin horse armor — looks_like: - — items/armor/pets_horse_armor.json
+- `acorn_roasted` — Handful of roasted acorns — looks_like: - — items/comestibles/nuts.json
+- `acorns_blanched` — Handful of blanched acorns — looks_like: - — items/comestibles/nuts.json
+- `adderall` — prescription stimulant — looks_like: - — items/comestibles/med.json
+- `adjustable_stock` — adjustable stock — looks_like: - — items/gunmod/stock.json
+- `adobe_pallet_full_active` — pallet of wet adobe bricks — looks_like: frame_wood_light — items/tool/workshop.json
+- `advanced_ecig` — advanced electronic cigarette — looks_like: - — items/tool/smoking.json
+- `advanced_gpnvg` — panoramic night vision goggles — looks_like: - — items/armor/head_attachments.json
+- `advanced_gpnvg_on` — panoramic night vision goggles (on) — looks_like: - — items/armor/head_attachments.json
+- `aero_engine_light` — 5.24 L light aero-engine — looks_like: - — items/vehicle/engine.json
+- `agricola` — Farmland — looks_like: - — items/fluff.json
+- `ai_module` — AI core — looks_like: - — items/robot_parts.json
+- `ai_module_advanced` — advanced AI core — looks_like: - — items/robot_parts.json
+- `ai_module_basic` — basic AI core — looks_like: - — items/robot_parts.json
+- `aim_game` — aim game target practice kit — looks_like: - — items/generic/toys_and_sports.json
+- `air_compressor_tool` — air compressor — looks_like: - — items/fake.json
+- `alexandrite` — alexandrite — looks_like: - — items/generic.json
+- `alien_meadow_bush_2_fruit` — handful of alien berries — looks_like: - — items/comestibles/alien.json
+- `alien_meadow_tree_3_fruit` — alien fruit — looks_like: - — items/comestibles/alien.json
+- `alien_pod_resin` — alien resin pod — looks_like: - — items/resources/alien.json
+- `alloy_book` — alloying reference manual — looks_like: - — items/book/fabrication.json
+- `alloy_sheet` — superalloy sheet — looks_like: - — items/vehicle/plating.json
+- `almond_pulp` — Almond pulp — looks_like: granola — items/comestibles/nuts.json
+- `alquerque` — alquerque set — looks_like: - — items/fluff.json
+- `altered_badge` — defaced badge — looks_like: - — items/relics/altered_items.json
+- `altered_keyring` — shifting keyring — looks_like: old_key — items/relics/altered_items.json
+- `altered_scissors` — antique scissors — looks_like: - — items/relics/altered_items.json
+- `aluminum_bar_flat` — aluminum flat bar stock — looks_like: - — items/resources/metal.json
+- `aluminum_bar_round` — aluminum bar stock — looks_like: - — items/resources/metal.json
+- `aluminum_pan` — aluminum frying pan — looks_like: - — items/generic/dining_kitchen.json
+- `amatriciana_pasta` — amatriciana pasta — looks_like: - — items/comestibles/junkfood.json
+- `ambush` — Ambuscade! — looks_like: - — items/fluff.json
+- `amethyst` — amethyst — looks_like: - — items/generic.json
+- `ammolink223` — .223 ammo belt linkage — looks_like: - — items/generic/ammolink.json
+- `ammolink308` — .308 ammo belt linkage — looks_like: - — items/generic/ammolink.json
+- `ammolink40mm` — 40mm grenade belt linkage — looks_like: - — items/generic/ammolink.json
+- `ammolink50` — .50 ammo belt linkage — looks_like: - — items/generic/ammolink.json
+- `ammonia_hydroxide` — ammonia solution — looks_like: - — items/chemicals_and_resources.json
+- `ammonia_liquid` — liquid ammonia — looks_like: - — items/chemicals_and_resources.json
+- `ammonia_machine_pipework` — makeshift ammonia machine pipework — looks_like: - — items/tool/science.json
+- `ammonia_machine_reactor` — makeshift ammonia machine reactor — looks_like: - — items/tool/science.json
+- `ammunition_box_grenade` — grenade container — looks_like: - — items/containers/military.json
+- `ammunition_can_carlgustav` — double 84mm HEDP container — looks_like: - — items/containers/military.json
+- `ammunition_tube_mortar` — mortar container — looks_like: - — items/containers/military.json
+- `amplifier` — amplifier circuit — looks_like: - — items/generic.json
+- `ampoule` — RA21E medical ampoule — looks_like: - — items/ammo.json
+- `android_arms` — set of android arms — looks_like: - — items/robot_parts.json
+- `android_chassis` — android skeleton — looks_like: - — items/robot_parts.json
+- `android_legs` — set of android legs — looks_like: - — items/robot_parts.json
+- `angel_halo_headband` — angel halo — looks_like: - — items/armor/jewelry.json
+- `animal` — animal — looks_like: - — items/generic.json
+- `animal_locker` — animal locker — looks_like: cargo_rack — items/vehicle/cargo.json
+- `antihistamine` — antihistamine pill — looks_like: - — items/comestibles/med.json
+- `anvil_crude` — small anvil — looks_like: - — items/tool/metalworking.json
+- `anvil_heavy` — heavy anvil — looks_like: - — items/tool/metalworking.json
+- `anvil_scavenged` — scavenger's anvil — looks_like: - — items/tool/metalworking.json
+- `anvil_stump` — makeshift stump anvil — looks_like: - — items/tool/metalworking.json
+- `apartment_freezer` — household freezer — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `apartment_fridge` — household fridge — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `apparatus` — a smoking device and a source of flame — looks_like: - — items/generic.json
+- `apple_canned` — canned fruit — looks_like: - — items/comestibles/fruit_dishes.json
+- `apple_sugar` — fruit slice — looks_like: - — items/comestibles/fruit_dishes.json
+- `aquamarine` — aquamarine — looks_like: - — items/generic.json
+- `aquarium_large` — 100 gallon aquarium — looks_like: aquarium_medium — items/containers/containers.json
+- `aquarium_large_drying` — 100 gallon aquarium (drying) (obsolete) — looks_like: aquarium_medium — obsoletion_and_migration_0.J/containers.json
+- `aquarium_large_drying_active` — 100 gallon aquarium (drying) — looks_like: aquarium_medium — items/containers/containers.json
+- `aquarium_medium` — 50 gallon aquarium — looks_like: - — items/containers/containers.json
+- `aquarium_medium_drying` — 50 gallon aquarium (drying) (obsolete) — looks_like: - — obsoletion_and_migration_0.J/containers.json
+- `aquarium_medium_drying_active` — 50 gallon aquarium (drying) — looks_like: - — items/containers/containers.json
+- `aquarium_small` — 30 gallon aquarium — looks_like: aquarium_medium — items/containers/containers.json
+- `aquarium_small_drying` — 30 gallon aquarium (drying) (obsolete) — looks_like: aquarium_medium — obsoletion_and_migration_0.J/containers.json
+- `aquarium_small_drying_active` — 30 gallon aquarium (drying) — looks_like: aquarium_medium — items/containers/containers.json
+- `arbor_press` — arbor press — looks_like: - — items/tool/handloading.json
+- `arduino_experiments` — Arduino Experiments — looks_like: - — items/book/electronics.json
+- `arisaka_bayonet` — Type 30 bayonet — looks_like: - — items/melee/swords_and_blades.json
+- `arisaka_monopod` — wire monopod, collapsed — looks_like: - — items/gunmod/underbarrel.json
+- `arisaka_monopod_deployed` — wire monopod, deployed — looks_like: - — items/gunmod/underbarrel.json
+- `arm` — mutated arm — looks_like: - — items/comestibles/mutagen.json
+- `arm_zed` — tainted limb — looks_like: - — items/comestibles/carnivore.json
+- `armchair` — armchair — looks_like: - — items/furniture/seating.json
+- `armguard_metal_sheets_shoulders` — mild steel sheet metal pauldrons (pair) — looks_like: - — items/armor/arms_armor.json
+- `armor_bio_eyes` — protective lenses — looks_like: - — items/armor/integrated.json
+- `armor_cardboard_cuirass` — cardboard cuirass — looks_like: hoodie_brown — items/armor/cardboard.json
+- `armor_junk_plate` — junk ornamental plate armor — looks_like: armor_lightplate — items/armor/suits_protection.json
+- `armor_mercenary_top` — mercenary coat — looks_like: armor_scavenger — items/armor/bespoke_armor/custom_overcoats.json
+- `armor_samurai` — ō-yoroi — looks_like: armor_lightplate — items/armor/suits_protection.json
+- `armor_scrapsuit` — scrap suit — looks_like: armor_lightplate — items/armor/suits_protection.json
+- `armor_star_samurai` — ryūsei battle kit — looks_like: armor_lightplate — items/armor/exotic.json
+- `armor_star_samurai_helmet_destroyed` — destroyed ryūsei kabuto — looks_like: - — items/resources/misc.json
+- `armor_star_samurai_legs` — ryūsei hai-date — looks_like: armor_lightplate — items/armor/exotic.json
+- `armor_star_samurai_mask` — filtering menpo — looks_like: - — items/armor/exotic.json
+- `armor_star_samurai_shoulder` — ryūsei kote — looks_like: armor_lightplate — items/armor/exotic.json
+- `armor_star_samurai_torso` — ryūsei dō — looks_like: armor_lightplate — items/armor/exotic.json
+- `armor_tiresuit` — tire suit — looks_like: armor_scrapsuit — items/armor/suits_protection.json
+- `armor_xl_scrapsuit` — scrap suit — looks_like: armor_lightplate — items/armor/suits_protection.json
+- `armor_xs_scrapsuit` — scrap suit — looks_like: armor_lightplate — items/armor/suits_protection.json
+- `arredondo_chute` — speedloader chute — looks_like: - — items/gunmod/loading_port.json
+- `arredondo_chute_benelli_sa` — speedloader chute, 4-round waterfowl shotgun — looks_like: - — items/gunmod/loading_port.json
+- `arredondo_chute_mossberg_500` — speedloader chute, 6-round combat shotgun — looks_like: - — items/gunmod/loading_port.json
+- `arredondo_chute_mossberg_590` — speedloader chute, 9-round combat shotgun — looks_like: - — items/gunmod/loading_port.json
+- `arredondo_chute_mossberg_930` — speedloader chute, 8-round auto-loading shotgun — looks_like: - — items/gunmod/loading_port.json
+- `arredondo_chute_remington_870` — speedloader chute, 5-round hunting shotgun — looks_like: - — items/gunmod/loading_port.json
+- `arredondo_chute_remington_870_breacher` — speedloader chute, 4-round breaching shotgun — looks_like: - — items/gunmod/loading_port.json
+- `arrowrest_wood` — wooden arrow rest — looks_like: - — items/gunmod/accessories.json
+- `art_bomorrean` — set of oddly interlocked rings — looks_like: - — artifact/artifact_item_types.json
+- `art_dagger` — ancient athame — looks_like: - — artifact/artifact_item_types.json
+- `art_duocylinder` — wobbly ring — looks_like: - — artifact/artifact_item_types.json
+- `art_harp` — ancient harp — looks_like: - — artifact/artifact_item_types.json
+- `art_irrational` — irrational cube — looks_like: - — artifact/artifact_item_types.json
+- `art_klein` — self-crossing flask — looks_like: - — artifact/artifact_item_types.json
+- `art_penrose` — strange triangle — looks_like: - — artifact/artifact_item_types.json
+- `art_ring` — amber ring — looks_like: - — artifact/artifact_item_types.json
+- `art_spear` — ancient spear — looks_like: - — artifact/artifact_item_types.json
+- `art_tesseract` — four-dimensional cube — looks_like: - — artifact/artifact_item_types.json
+- `artichoke_heart` — artichoke heart — looks_like: raw_artichoke — items/comestibles/raw_veggy.json
+- `artifact_energy_shield` — distorted air — looks_like: - — items/armor/cloaks.json
+- `artifact_scp_doc` — ANOMALOUS ARTIFACT REPORT — looks_like: - — items/generic.json
+- `atgm_spent` — 152mm ATGM tube — looks_like: - — items/generic/casing.json
+- `atlatl` — atlatl — looks_like: - — items/ranged/atlatl.json
+- `atomic_coffee` — atomic coffee — looks_like: - — items/comestibles/drink.json
+- `attachable_ear_muffs` — attachable ear muffs — looks_like: - — items/armor/head_attachments.json
+- `attachable_ear_muffs_on` — attachable ear muffs (on) — looks_like: - — items/armor/head_attachments.json
+- `attached_ear_plugs_off` — attached ear plugs (out) (pair) — looks_like: - — items/tool_armor.json
+- `attached_ear_plugs_on` — attached ear plugs (in) (pair) — looks_like: - — items/tool_armor.json
+- `ayran` — ayran — looks_like: - — items/comestibles/drink.json
+- `aztec_spear_glass` — glass bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `aztec_spear_scrap` — makeshift tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `aztec_spear_stone` — stone bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `aztec_sword_scrap` — makeshift macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `aztec_sword_stone` — stone lined macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `backgammon` — backgammon set — looks_like: - — items/fluff.json
+- `bacon_uncooked` — uncooked bacon — looks_like: - — items/comestibles/carnivore.json
+- `bacon_uncut` — large slab of uncut bacon — looks_like: - — items/comestibles/carnivore.json
+- `badge_cardboard` — cardboard badge — looks_like: - — items/armor/cardboard.json
+- `badge_fbi` — FBI badge — looks_like: - — items/armor/jewelry.json
+- `badge_foodkid` — Foodkid badge — looks_like: - — items/armor/jewelry.json
+- `bag_garbage_reinforced` — reinforced garbage bag — looks_like: - — items/containers/containers.json
+- `bag_zipper_gallon` — gallon-sized zipper bag — looks_like: - — items/containers/containers.json
+- `bagh_nakha` — tiger claws — looks_like: - — items/melee/swords_and_blades.json
+- `baklava` — baklava — looks_like: - — items/comestibles/baked.json
+- `ballast` — ballast organs — looks_like: - — items/generic.json
+- `ballista` — carroballista — looks_like: - — items/ranged/ballista.json
+- `ballistic_mandible_guard` — ballistic mandible guard — looks_like: - — items/armor/head_attachments.json
+- `ballistic_vest_light` — light ballistic vest (mag pouches) — looks_like: - — items/armor/ballistic_armor.json
+- `ballistic_vest_light_operator` — light ballistic vest (shoulder pouch) — looks_like: - — items/armor/ballistic_armor.json
+- `ballistic_vest_light_pouches` — light ballistic vest (storage pouch) — looks_like: - — items/armor/ballistic_armor.json
+- `balthazar_radio` — modified radio — looks_like: - — items/tool/radio_tools.json
+- `bamboo_cooked` — cooked bamboo shoots — looks_like: - — items/comestibles/veggy_dishes.json
+- `bamboo_fried` — fried bamboo shoots — looks_like: - — items/comestibles/veggy_dishes.json
+- `bandages_makeshift` — makeshift bandage — looks_like: - — items/tool/med.json
+- `bandages_makeshift_bleached` — bleached makeshift bandage — looks_like: - — items/tool/med.json
+- `bandages_makeshift_boiled` — boiled makeshift bandage — looks_like: - — items/tool/med.json
+- `bandsaw_tool` — band saw — looks_like: - — items/fake.json
+- `barb_launcher` — barb launching organ — looks_like: - — monster_special_attacks/monster_gun.json
+- `barb_paralysis` — paralyzing barb — looks_like: - — items/ammo/barb.json
+- `barley_stalks` — barley stalks — looks_like: - — items/comestibles/raw_grain.json
+- `barrel_ported` — ported barrel — looks_like: - — items/gunmod/barrel.json
+- `barrel_small` — shortened barrel — looks_like: - — items/gunmod/barrel.json
+- `bars` — balanced recoil system — looks_like: - — items/gunmod/mechanism.json
+- `barstool` — bar stool — looks_like: - — items/furniture/seating.json
+- `basket` — wire basket — looks_like: - — items/vehicle/cargo.json
+- `bat_anklet` — bat charm anklet — looks_like: - — items/armor/jewelry.json
+- `bat_metal_bolt` — bolt studded aluminum bat — looks_like: - — items/melee/bludgeons.json
+- `battery_bionic` — bionic power conversion mod — looks_like: - — items/toolmod.json
+- `battery_ups` — UPS conversion mod — looks_like: - — items/toolmod.json
+- `battleaxe` — battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `battleaxe_fake` — battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `battleaxe_inferior` — battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `bbholster` — belly band holster — looks_like: - — items/armor/holster.json
+- `beam_scatterer` — beam scatterer — looks_like: - — items/gunmod/laser_gunmods.json
+- `beanbag` — bean bag — looks_like: - — items/furniture/seating.json
+- `beckoning_stone` — strange conduct — looks_like: - — items/nether.json
+- `bee_sting` — bee stinger — looks_like: - — items/resources/misc.json
+- `beeper` — back-up beeper — looks_like: - — items/vehicle/noise.json
+- `bell_pepper_cut` — cut bell pepper — looks_like: - — items/comestibles/raw_veggy.json
+- `belt_clip` — belt clip — looks_like: - — items/gunmod/accessories.json
+- `belt_grinder` — belt grinder — looks_like: pedal_grindstone — items/tool/metalworking.json
+- `bench_vise` — bench vise — looks_like: - — items/tool/workshop.json
+- `betavoltaic` — betavoltaic cell — looks_like: - — items/ammo.json
+- `bholster` — deep concealment holster — looks_like: - — items/armor/holster.json
+- `bifocal_contacts_daily` — bifocal contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `bifocal_contacts_weekly` — bifocal contact lenses (weekly) — looks_like: - — items/comestibles/med.json
+- `bifocal_transition_contacts_daily` — bifocal transition contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `bifocal_transition_contacts_weekly` — bifocal transition contact lenses (weekly) — looks_like: - — items/comestibles/med.json
+- `big_brass_catcher` — big brass catcher — looks_like: - — items/gunmod/brass_catcher.json
+- `bike_basket` — bike basket — looks_like: - — items/vehicle/cargo.json
+- `bike_rack` — bike rack — looks_like: foldframe — items/vehicle/cargo.json
+- `billet_bone` — bone billet — looks_like: - — items/tool/stoneworking.json
+- `billet_wood` — wooden billet — looks_like: - — items/tool/stoneworking.json
+- `binoculars` — binoculars — looks_like: - — items/tool_armor.json
+- `bio_adrenaline` — Adrenaline Pump CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_ads` — Active Defense System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_alarm` — Alarm System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_ankles` — Squeaky Ankles CBM — looks_like: - — items/bionics.json
+- `bio_ar` — Integrated AR System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_armor_arms` — Subcutaneous Protective Mesh - Arms CBM — looks_like: - — items/bionics.json
+- `bio_armor_eyes` — Protective Lenses CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_armor_head` — Subcutaneous Protective Mesh - Head CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_armor_legs` — Subcutaneous Protective Mesh - Legs CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_armor_torso` — Subcutaneous Protective Mesh - Torso CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_batteries` — Battery System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_blade` — Monomolecular Blade CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_blade_weapon` — monomolecular blade — looks_like: - — items/melee/fake.json
+- `bio_blood_anal` — Blood Analysis CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_blood_filter` — Blood Filter CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_cable` — Cable Charger System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_carbon` — Subdermal Carbon Filament CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_chain_lightning` — Chain Lightning CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_claws` — Bionic Claws CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_claws_weapon` — bionic claws — looks_like: - — items/melee/fake.json
+- `bio_climate` — Internal Climate Control CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_cloak` — Cloaking System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_cqb` — Close Quarters Battle CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_creeyncaggii` — Heart of The Warrior CBM — looks_like: jabberwock_heart — items/bionics.json
+- `bio_deformity` — Bionic-Induced Deformity CBM — looks_like: - — items/bionics.json
+- `bio_dex_enhancer` — Wired Reflexes CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_digestion` — Expanded Digestive System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_dis_acid` — Acidic Discharge CBM — looks_like: - — items/bionics.json
+- `bio_dis_shock` — Electrical Discharge CBM — looks_like: - — items/bionics.json
+- `bio_drain` — Electrical Drain CBM — looks_like: - — items/bionics.json
+- `bio_ears` — Enhanced Hearing CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_electrokit` — Integrated Circuitry Toolset CBM — looks_like: bio_tools — items/bionics.json
+- `bio_emp` — Directional EMP CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_emp_armgun` — EMP Projector CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_emp_gun` — EMP Projector — looks_like: - — items/gun/bio.json
+- `bio_ethanol` — Ethanol Burner CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_evap` — Aero-Evaporator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_arm_bionic_basic_armored_left` — Bionic Left Arm (Cyberframe 1a) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_arm_bionic_basic_armored_right` — Bionic Right Arm (Cyberframe 1a) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_arm_bionic_basic_left` — Bionic Left Arm (Cyberframe 1b) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_arm_bionic_basic_right` — Bionic Right Arm (Cyberframe 1b) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_cyberframe_1a` — Exodii Cyberframe 1a — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_cyberframe_1b` — Exodii Cyberframe 1b — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_leg_bionic_basic_armored_left` — Bionic Left Leg (Cyberframe 1a) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_leg_bionic_basic_armored_right` — Bionic Right Leg (Cyberframe 1a) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_leg_bionic_basic_left` — Bionic Left Leg (Cyberframe 1b) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_leg_bionic_basic_right` — Bionic Right Leg (Cyberframe 1b) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_exodii_leg_bionic_treads` — Bionic Treads (Cyberframe 1a) — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_eye_enhancer` — Ocular Amplifiers CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_eye_optic` — Telescopic Eyes CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_face_mask` — Facial Distortion CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_faraday` — Dielectric Capacitance System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_faulty_electromagnetic_leak` — Electromagnetic Leak CBM — looks_like: - — items/bionics.json
+- `bio_faulty_grossfood` — Taste Fouler CBM — looks_like: - — items/bionics.json
+- `bio_file` — lab report (biology) — looks_like: - — items/newspaper.json
+- `bio_fingerhack` — Fingerhack CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_fitnessband` — Calorie Tracker CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_flashbang` — Flashbang Generator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_flashlight` — Cranial Flashlight CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_fuel_cell_gasoline` — Gasoline Fuel Cell CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_geiger` — Integrated Dosimeter CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_gills` — Respirator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_glowy` — Glowy Thing CBM — looks_like: - — items/bionics.json
+- `bio_ground_sonar` — Terranian Sonar CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_heat_absorb` — Heat Drain CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_heatsink` — Thermal Dissipation CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_hydraulics` — Hydraulic Muscles CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_infrared` — Infrared Vision CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_int_enhancer` — Cerebral Booster CBM — looks_like: - — items/bionics.json
+- `bio_itchy` — Itchy Metal Thing CBM — looks_like: - — items/bionics.json
+- `bio_jointservo` — Joint Servo CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_lampoil` — Oil Generator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_laser` — Finger-Mounted Laser CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_leaky` — Leaky Bionic CBM — looks_like: - — items/bionics.json
+- `bio_leukocyte` — Leukocyte Breeder System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_lighter` — Finger Lighter CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_lockpick` — Fingerpick CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_magnet` — Electromagnetic Unit CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_membrane` — Nictitating Membrane CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_memory` — Enhanced Memory Banks CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_metabolics` — Metabolic Interchange CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_meteorologist` — Weather Reader CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_mp3` — WearMan CBM — looks_like: - — items/bionics.json
+- `bio_multimeter` — Integrated Multimeter CBM — looks_like: bio_tools — items/bionics.json
+- `bio_nanobots` — Repair Nanobots CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_night` — Artificial Night Generator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_night_vision` — Implanted Night Vision CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_antigravity_jump` — Antigravity Leap Assist CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_blood_factory` — Bone Marrow Bio-Factory CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_collar` — Cyberbone Collar CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_collar_deactivated` — Cyberbone Collar CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_dimensional_anchor` — Dimensional Anchor CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_hair` — Artificial Hair CBM — looks_like: - — items/bionics.json
+- `bio_nl_laser_reader` — Laser-Assisted Reading Device CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_nl_psyshield` — Cranial EMF Shielding CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_noise` — Noisemaker CBM — looks_like: - — items/bionics.json
+- `bio_nostril` — Bionic Nostril CBM — looks_like: - — items/bionics.json
+- `bio_ods` — Offensive Defense System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_painkiller` — Sensory Dulling CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_pitch_perfect` — Throwing Assist CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_pokedeye` — Bionic Visual Impairment CBM — looks_like: - — items/bionics.json
+- `bio_power_storage` — Power Storage CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_power_storage_mkII` — Power Storage Mk. II CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_power_weakness` — Power Overload CBM — looks_like: - — items/bionics.json
+- `bio_probability_travel` — Probability Travel CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_purifier` — Air Filtration System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_radio` — Infolink CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_radio_pat` — Modified Infolink CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_radleak` — Radioactive Leak CBM — looks_like: - — items/bionics.json
+- `bio_radscrubber` — Radiation Scrubber System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_razors` — Fingertip Razors CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_recoil` — Recoil Compensators CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_recycler` — Recycler Unit CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_remote` — Remote Controller CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_resonator` — Sonic Resonator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_robofac_xmarm` — Hub 01 XM-ARM Interface — looks_like: - — items/bionics.json
+- `bio_robofac_xmback` — Hub 01 XM-BACK Interface — looks_like: - — items/bionics.json
+- `bio_robofac_xmleg` — Hub 01 XM-LEG Interface — looks_like: - — items/bionics.json
+- `bio_robofac_xmlens` — Hub 01 XM-LENS Interface — looks_like: - — items/bionics.json
+- `bio_scalpel` — autonomous surgical scalpels — looks_like: - — items/fake.json
+- `bio_scent_mask` — Olfactory Mask CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_shakes` — Bionic Short Circuit CBM — looks_like: - — items/bionics.json
+- `bio_shock` — Electroshock Unit CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_shockwave` — Shockwave Generator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_shotgun` — Shotgun Arm CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_sleep_shutdown` — Sleep Mode Shutdown CBM — looks_like: - — items/bionics.json
+- `bio_sleepy` — Endocrine Enervator CBM — looks_like: - — items/bionics.json
+- `bio_sonar` — Subaquatic Navigation System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_soporific` — Soporific Induction CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_spasm` — Motor Control Overstimulator CBM — looks_like: - — items/bionics.json
+- `bio_speed` — Synaptic Accelerator CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_stiff` — Wire-Induced Stiffness CBM — looks_like: - — items/bionics.json
+- `bio_str_enhancer` — Muscle Augmentation CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_sunglasses` — Anti-Glare Compensators CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_surgical_razor` — Autonomous Surgical Scalpels CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_synaptic_regen` — Synaptic Regeneration System CBM — looks_like: - — items/bionics.json
+- `bio_synlungs` — Synthetic Lungs CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_syringe` — Intravenous Needletip CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_targeting` — Targeting System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_taser` — Super Stun Gun CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_taste_blocker` — Taste Modifier CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_tattoo_led` — LED Tattoo CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_teleport` — Teleportation Unit CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_thumbs` — Self-Locking Thumbs CBM — looks_like: - — items/bionics.json
+- `bio_time_freeze` — Time Dilation CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_tools` — Integrated Multitool CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_torsionratchet` — Joint Torsion Ratchet CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_trip` — Visual Disruptor CBM — looks_like: - — items/bionics.json
+- `bio_uncanny_dodge` — Uncanny Dodge CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_ups` — Unified Power System CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_voice` — Voice Remodulator CBM — looks_like: - — items/bionics.json
+- `bio_voice_b` — AudioVox CBM — looks_like: - — items/bionics.json
+- `bio_watch` — Internal Chronometer CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_water_extractor` — Water Extraction Unit CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `bio_weight` — Titanium Skeletal Bracing CBM — looks_like: bio_int_enhancer — items/bionics.json
+- `biogas` — biogas — looks_like: - — items/fuel.json
+- `biogas_cooker` — biogas cooker — looks_like: - — items/tool/cooking.json
+- `biollante_bud` — biollante bud — looks_like: - — items/generic.json
+- `bipod` — bipod — looks_like: - — items/gunmod/underbarrel.json
+- `bipod_handguard` — bipod hand guard — looks_like: - — items/gunmod/underbarrel.json
+- `bipod_handguard_deployed` — bipod hand guard (deployed) — looks_like: - — items/gunmod/underbarrel.json
+- `birth_control` — birth control pill — looks_like: - — items/comestibles/med.json
+- `black_glass_shard` — black glass shard — looks_like: - — items/fluff.json
+- `bladderwrack` — bladderwrack — looks_like: - — items/comestibles/raw_veggy.json
+- `blade_scythe` — scythe blade — looks_like: - — items/generic.json
+- `block_and_tackle_wood` — wooden block and tackle — looks_like: - — items/tool/workshop.json
+- `blood_acid` — toxic acidic blood — looks_like: - — items/chemicals_and_resources.json
+- `blood_acid_plant` — putrid acidic blood — looks_like: - — items/chemicals_and_resources.json
+- `blood_acid_underground` — foul acidic blood — looks_like: - — items/chemicals_and_resources.json
+- `blood_pancakes` — blodplättar — looks_like: - — items/comestibles/wheat.json
+- `blood_rice_pudding` — blood rice pudding — looks_like: - — items/comestibles/other.json
+- `blue_topaz` — topaz — looks_like: - — items/generic.json
+- `blueberries` — handful of blueberries — looks_like: - — items/comestibles/raw_fruit.json
+- `boiled_egg` — boiled egg — looks_like: - — items/comestibles/egg.json
+- `bologna` — bologna — looks_like: - — items/comestibles/meat_dishes.json
+- `bolt_ballista_steel` — ballista bolt — looks_like: - — items/ranged/ballista.json
+- `bone_dart` — bone dart — looks_like: bee_sting — monster_special_attacks/monster_ammo.json
+- `bone_dart_launcher` — bone dart launching organ — looks_like: - — monster_special_attacks/monster_gun.json
+- `bone_demihuman` — demihuman bone — looks_like: - — items/resources/bone.json
+- `bone_fossil` — bone fossil — looks_like: - — items/resources/stone.json
+- `bone_knife` — bone shiv — looks_like: - — items/melee/swords_and_blades.json
+- `bone_mi-go` — mi-go bone — looks_like: - — items/comestibles/carnivore.json
+- `bone_plaster` — bone replica — looks_like: - — items/resources/stone.json
+- `boobytrap` — booby trap — looks_like: - — items/tool/traps.json
+- `boomer_bile` — boomer bile — looks_like: - — monster_special_attacks/monster_ammo.json
+- `boomer_bile_adv` — advanced boomer bile — looks_like: - — monster_special_attacks/monster_ammo.json
+- `boomer_head` — boomer head — looks_like: - — monster_special_attacks/monster_gun.json
+- `bostonchan_wig` — Boston-Chan wig — looks_like: - — items/armor/misc.json
+- `bot_EMP_hack` — inactive EMP hack — looks_like: - — items/corpses/inactive_bots.json
+- `bot_antimateriel` — inactive M2HB autonomous CROWS II — looks_like: - — items/corpses/inactive_bots.json
+- `bot_broken_cyborg` — inactive broken cyborg — looks_like: - — items/corpses/inactive_bots.json
+- `bot_c4_hack` — inactive C-4 hack — looks_like: - — items/corpses/inactive_bots.json
+- `bot_crows_m240` — inactive autonomous M240 CROWS II — looks_like: - — items/corpses/inactive_bots.json
+- `bot_dispatch` — inactive dispatch — looks_like: - — items/corpses/inactive_bots.json
+- `bot_dispatch_military` — inactive military dispatch — looks_like: - — items/corpses/inactive_bots.json
+- `bot_flashbang_hack` — inactive flashbang hack — looks_like: - — items/corpses/inactive_bots.json
+- `bot_gasbomb_hack` — inactive tear gas hack — looks_like: - — items/corpses/inactive_bots.json
+- `bot_golden_monolith` — inactive golden monolith — looks_like: - — items/corpses/inactive_bots.json
+- `bot_grocerybot` — inactive grocery bot — looks_like: - — items/corpses/inactive_bots.json
+- `bot_grocerybot_busted` — inactive busted grocery bot — looks_like: - — items/corpses/inactive_bots.json
+- `bot_hazmatbot` — inactive cleaner bot — looks_like: - — items/corpses/inactive_bots.json
+- `bot_lab_security_drone_BM` — inactive security drone — looks_like: - — items/corpses/inactive_bots.json
+- `bot_lab_security_drone_BM2` — inactive security drone — looks_like: - — items/corpses/inactive_bots.json
+- `bot_lab_security_drone_BS` — inactive security drone — looks_like: - — items/corpses/inactive_bots.json
+- `bot_lab_security_drone_GM` — inactive security drone — looks_like: - — items/corpses/inactive_bots.json
+- `bot_lab_security_drone_GR` — inactive security drone — looks_like: - — items/corpses/inactive_bots.json
+- `bot_lab_security_drone_YM` — inactive security drone — looks_like: - — items/corpses/inactive_bots.json
+- `bot_manhack` — inactive manhack — looks_like: - — items/corpses/inactive_bots.json
+- `bot_nl_surgicalbot` — inactive surgical bonebot — looks_like: - — items/netherum/labyrinth_robots.json
+- `bot_nursebot` — inactive nurse bot — looks_like: - — items/corpses/inactive_bots.json
+- `bot_prototype_cyborg` — inactive prototype cyborg — looks_like: - — items/corpses/inactive_bots.json
+- `bot_rifleturret` — inactive autonomous M249 CROWS II — looks_like: - — items/corpses/inactive_bots.json
+- `bot_robofac_camspy` — inactive camspy — looks_like: broken_robofac_camspy — items/corpses/inactive_bots.json
+- `bot_robofac_hound` — inactive Hub 01 HOUND — looks_like: broken_skitterbot — items/corpses/inactive_bots.json
+- `bot_robofac_skittergun` — inactive exterminatron — looks_like: broken_skitterbot — items/corpses/inactive_bots.json
+- `bot_secubot` — inactive TALON UGV — looks_like: - — items/corpses/inactive_bots.json
+- `bot_secubot_liberty` — inactive TALON UGV Liberty Edition — looks_like: - — items/corpses/inactive_bots.json
+- `bot_skitterbot` — inactive skitterbot — looks_like: broken_skitterbot — items/corpses/inactive_bots.json
+- `bot_talon_m202a1` — inactive M202A1 TALON UGV — looks_like: - — items/corpses/inactive_bots.json
+- `bot_tazer_hack` — inactive taser hack — looks_like: - — items/corpses/inactive_bots.json
+- `bot_turret` — inactive turret — looks_like: - — items/corpses/inactive_bots.json
+- `bot_turret_riot` — inactive riot control turret — looks_like: - — items/corpses/inactive_bots.json
+- `bot_turret_searchlight` — inactive milspec searchlight — looks_like: - — items/corpses/inactive_bots.json
+- `bot_turret_speaker` — inactive loudspeaker — looks_like: - — items/corpses/inactive_bots.json
+- `bot_yrax_delta` — inactive delta — looks_like: - — items/corpses/inactive_bots.json
+- `bot_yrax_triakis` — inactive triakis — looks_like: - — items/corpses/inactive_bots.json
+- `bot_yrax_trifacet` — inactive trifacet — looks_like: - — items/corpses/inactive_bots.json
+- `bottle_folding` — foldable plastic bottle — looks_like: - — items/tool/container.json
+- `bottle_glass_330ml` — small glass bottle — looks_like: - — items/containers/containers.json
+- `bottle_metal` — steel bottle — looks_like: - — items/tool/container.json
+- `bottle_plastic_355ml` — small plastic bottle — looks_like: - — items/containers/containers.json
+- `bottle_plastic_glue` — plastic glue bottle — looks_like: - — items/containers/containers.json
+- `bottle_plastic_small_glue` — small plastic glue bottle — looks_like: - — items/containers/containers.json
+- `boulder_anvil` — boulder anvil — looks_like: - — items/fake.json
+- `bouquet` — withered bouquet — looks_like: - — items/generic.json
+- `bow_scope` — bow scope — looks_like: - — items/gunmod/sights.json
+- `bow_sight` — five pin bow sight — looks_like: - — items/gunmod/sights.json
+- `bow_sight_pin` — single pin bow sight — looks_like: - — items/gunmod/sights.json
+- `bow_silencer` — bow dampening kit — looks_like: - — items/gunmod/accessories.json
+- `bow_stabilizer` — bow stabilizer — looks_like: - — items/gunmod/accessories.json
+- `bow_stabilizer_set` — bow stabilizer system — looks_like: - — items/gunmod/accessories.json
+- `bp_123ln` — 12.3ln, black powder — looks_like: - — items/ammo/exodii.json
+- `bp_123ln_ap` — 12.3ln AP, black powder — looks_like: - — items/ammo/exodii.json
+- `bp_223` — .223 Remington, black powder — looks_like: - — items/ammo/223.json
+- `bp_22_fmj` — .22 LR FMJ, black powder — looks_like: - — items/ammo/22.json
+- `bp_22_lr` — .22 LR, black powder — looks_like: - — items/ammo/22.json
+- `bp_270win_fmj` — .270 Winchester FMJ, black powder — looks_like: - — items/ammo/270win.json
+- `bp_270win_jsp` — .270 Winchester JSP, black powder — looks_like: - — items/ammo/270win.json
+- `bp_3006` — .30-06 FMJ, black powder — looks_like: - — items/ammo/3006.json
+- `bp_3006_incendiary` — .30-06 tracer, black powder — looks_like: - — items/ammo/3006.json
+- `bp_3006_jsp` — .30-06 JSP, black powder — looks_like: - — items/ammo/3006.json
+- `bp_3006fmj` — .30-06 M2 AP, black powder — looks_like: - — items/ammo/3006.json
+- `bp_303fmj` — .303 British FMJ, black powder — looks_like: - — items/ammo/303.json
+- `bp_303sp` — .303 British JSP, black powder — looks_like: - — items/ammo/303.json
+- `bp_308` — .308 Winchester, black powder — looks_like: - — items/ammo/308.json
+- `bp_30carbine` — .30 Carbine FMJ, black powder — looks_like: - — items/ammo/30carbine.json
+- `bp_30carbine_jsp` — .30 Carbine JSP, black powder — looks_like: - — items/ammo/30carbine.json
+- `bp_32_acp` — .32 ACP FMJ, black powder — looks_like: - — items/ammo/32.json
+- `bp_357mag_fmj` — .357 Magnum FMJ, black powder — looks_like: - — items/ammo/357mag.json
+- `bp_357sig_fmj` — .357 SIG FMJ, black powder — looks_like: - — items/ammo/357sig.json
+- `bp_380_FMJ` — .380 ACP FMJ, black powder — looks_like: - — items/ammo/380.json
+- `bp_38_fmj` — .38 Special FMJ, black powder — looks_like: - — items/ammo/38.json
+- `bp_38super_fmj` — .38 Super FMJ, black powder — looks_like: - — items/ammo/38super.json
+- `bp_40fmj` — .40 S&W FMJ, black powder — looks_like: - — items/ammo/40.json
+- `bp_410shot_bird` — .410 birdshot, black powder — looks_like: - — items/ammo/410shot.json
+- `bp_410shot_scrap` — .410 scrap shot, black powder — looks_like: - — items/ammo/410shot.json
+- `bp_410shot_slug` — .410 slug, black powder — looks_like: - — items/ammo/410shot.json
+- `bp_44fmj` — .44 Magnum FMJ, black powder — looks_like: - — items/ammo/44.json
+- `bp_450_ftx` — .450 Bushmaster FTX, black powder — looks_like: - — items/ammo/450bushmaster.json
+- `bp_450_penetrator` — .450 Bushmaster Xtreme Hunter, black powder — looks_like: - — items/ammo/450bushmaster.json
+- `bp_454_Casull` — .454 Casull JSP, black powder — looks_like: - — items/ammo/454.json
+- `bp_458wm` — .458 Winchester Magnum JSP, black powder — looks_like: - — items/ammo/458wm.json
+- `bp_45_acp` — .45 ACP FMJ, black powder — looks_like: - — items/ammo/45.json
+- `bp_45colt_cowboy` — .45 Colt LFN, black powder — looks_like: - — items/ammo/45colt.json
+- `bp_45colt_fmj` — .45 Colt FMJ, black powder — looks_like: - — items/ammo/45colt.json
+- `bp_500_Magnum` — .500 S&W Magnum, black powder — looks_like: - — items/ammo/500.json
+- `bp_50_incendiary` — .50 BMG tracer, black powder — looks_like: - — items/ammo/50.json
+- `bp_50ae_fmj` — .50 AE FMJ, black powder — looks_like: - — items/ammo/50ae.json
+- `bp_50beowulf_penetrator` — .50 Beowulf Xtreme Penetrator, black powder — looks_like: - — items/ammo/50_beowulf.json
+- `bp_50beowulf_xtp` — .50 Beowulf XTP, black powder — looks_like: - — items/ammo/50_beowulf.json
+- `bp_50bmgfmj` — .50 BMG M33 ball, black powder — looks_like: - — items/ammo/50.json
+- `bp_50match` — .50 BMG Match, black powder — looks_like: - — items/ammo/50.json
+- `bp_50ss` — .50 BMG AP, black powder — looks_like: - — items/ammo/50.json
+- `bp_77mm_arisaka_jsp` — 7.7x58mm Arisaka JSP, black powder — looks_like: - — items/ammo/77mm_arisaka.json
+- `brandied_fruit` — brandied fruit — looks_like: - — items/comestibles/fruit_dishes.json
+- `brew_soy_sauce` — unfermented soy sauce — looks_like: - — items/comestibles/brewing.json
+- `brick_oven_pseudo` — brick oven — looks_like: - — items/tool/pseudo.json
+- `broadsword` — medium steel broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `broadsword_fake` — broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `broadsword_inferior` — broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `brogyaga` — Exodii express gun — looks_like: trexgun — items/gun/exodii.json
+- `broken_crows_m240` — broken M240 autonomous CROWS II — looks_like: - — items/generic.json
+- `broken_dispatch` — broken riot dispatch — looks_like: - — items/generic.json
+- `broken_dispatch_military` — broken military dispatch — looks_like: - — items/generic.json
+- `broken_exodii_quad` — broken Exodii quadruped — looks_like: - — items/corpses/dead_exodii.json
+- `broken_exodii_sniper_drone` — broken Exodii balloon-drone — looks_like: - — items/corpses/dead_exodii.json
+- `broken_exodii_turret` — broken Exodii turret — looks_like: - — items/corpses/dead_exodii.json
+- `broken_exodii_worker` — broken Exodii worker — looks_like: - — items/corpses/dead_exodii.json
+- `broken_flailer_radiosphere` — torn flailer — looks_like: - — items/corpses/nether.json
+- `broken_golden_monolith` — golden monolith — looks_like: - — items/corpses/dead_yrax.json
+- `broken_grenade_hack` — broken grenade hack — looks_like: - — items/generic.json
+- `broken_grocerybot` — broken grocery bot — looks_like: - — items/generic.json
+- `broken_grocerybot_busted` — broken grocery bot — looks_like: - — items/generic.json
+- `broken_lab_security_drone_BM` — broken blue maintenance security drone — looks_like: - — items/generic.json
+- `broken_lab_security_drone_BM2` — broken blue maintenance security drone — looks_like: - — items/generic.json
+- `broken_lab_security_drone_BS` — broken black security drone — looks_like: - — items/generic.json
+- `broken_lab_security_drone_GM` — broken green maintenance security drone — looks_like: - — items/generic.json
+- `broken_lab_security_drone_GR` — broken green research security drone — looks_like: - — items/generic.json
+- `broken_lab_security_drone_YM` — broken yellow maintenance security drone — looks_like: - — items/generic.json
+- `broken_mech_combat` — broken combat mech — looks_like: - — items/generic.json
+- `broken_mech_lifter` — broken mech lifter — looks_like: - — items/generic.json
+- `broken_mech_recon` — broken recon mech — looks_like: - — items/generic.json
+- `broken_nl_surgicalbot_1_1` — broken surgical bonebot — looks_like: - — items/netherum/labyrinth_robots.json
+- `broken_nl_surgicalbot_assist` — broken surgical bonebot — looks_like: - — items/netherum/labyrinth_robots.json
+- `broken_nursebot` — broken nurse bot — looks_like: - — items/generic.json
+- `broken_nursebot_defective` — broken nurse bot — looks_like: - — items/generic.json
+- `broken_robofac_camspy` — broken camspy — looks_like: - — items/generic.json
+- `broken_robofac_hound` — broken Hub 01 HOUND — looks_like: - — items/generic.json
+- `broken_robofac_laserturret_mk1` — broken laser turret — looks_like: - — items/generic.json
+- `broken_robofac_prototype` — broken prototype robot — looks_like: - — items/generic.json
+- `broken_robofac_skittergun` — broken exterminatron — looks_like: - — items/generic.json
+- `broken_secubot` — broken secubot — looks_like: - — items/generic.json
+- `broken_secubot_balthazar` — broken secubot — looks_like: - — items/generic.json
+- `broken_skitterbot` — broken skitterbot — looks_like: - — items/generic.json
+- `broken_stiltwalker_1_1` — broken stiltwalker — looks_like: - — items/netherum/labyrinth_monster_items.json
+- `broken_talon_m202a1` — broken M202A1 TALON — looks_like: - — items/generic.json
+- `broken_tazer_hack` — broken taser hack — looks_like: - — items/generic.json
+- `broken_turret` — broken turret — looks_like: - — items/generic.json
+- `broken_turret_artisans` — broken custom plated turret — looks_like: - — items/generic.json
+- `broken_turret_bmg` — broken M2 autonomous CROWS II — looks_like: - — items/generic.json
+- `broken_turret_rifle` — broken M249 autonomous CROWS II — looks_like: - — items/generic.json
+- `broken_turret_rifle_balthazar` — broken M249 autonomous CROWS II — looks_like: - — items/generic.json
+- `broken_turret_riot` — broken riot control turret — looks_like: - — items/generic.json
+- `broken_turret_searchlight` — broken milspec searchlight — looks_like: - — items/generic.json
+- `broken_turret_speaker` — broken loudspeaker — looks_like: - — items/generic.json
+- `broken_wells_machine` — destroyed warlord — looks_like: - — items/generic.json
+- `broken_wells_machine_leg` — broken warlord leg — looks_like: - — items/generic.json
+- `broken_yrax_delta` — inert delta — looks_like: - — items/corpses/dead_yrax.json
+- `broken_yrax_quadraphract` — inert quadraphract — looks_like: - — items/corpses/dead_yrax.json
+- `broken_yrax_quadraphract_leg` — inert quadraphract leg — looks_like: - — items/corpses/dead_yrax.json
+- `broken_yrax_triakis` — triakis remains — looks_like: - — items/corpses/dead_yrax.json
+- `broken_yrax_trifacet` — trifacet remains — looks_like: - — items/corpses/dead_yrax.json
+- `bronze_armor_cow` — bronze cow armor — looks_like: - — items/armor/pets_cow_armor.json
+- `bronze_armor_horse` — bronze horse armor — looks_like: - — items/armor/pets_horse_armor.json
+- `bronze_atlatl_spear` — bronze tipped atlatl spear — looks_like: - — items/ranged/atlatl.json
+- `bronze_book` — The Bronze Age Encyclopedia — looks_like: - — items/book/fabrication.json
+- `bronze_file` — bronze fileset — looks_like: - — items/tool/workshop.json
+- `bronze_mag` — Historic Warfare: The Bronze Age — looks_like: - — items/book/fabrication.json
+- `bronze_nail` — bronze nail — looks_like: - — items/ammo/nail.json
+- `brownie_weed` — 'special' brownie — looks_like: - — items/comestibles/wheat.json
+- `browning_a5` — 4-round semi-auto hunting shotgun — looks_like: - — items/gun/shot.json
+- `browning_citori_20` — double-barreled shotgun, 20 gauge — looks_like: - — items/gun/20shot.json
+- `brussels_sprout` — brussels sprout — looks_like: brussels_sprout_stalk — items/comestibles/raw_veggy.json
+- `brussels_sprout_stalk` — brussels sprout stalk — looks_like: - — items/comestibles/raw_veggy.json
+- `bucket_wood` — wooden bucket — looks_like: - — items/containers/containers.json
+- `buckle_steel` — steel buckle — looks_like: - — items/resources/fasteners.json
+- `buckwheat` — buckwheat — looks_like: - — items/comestibles/raw_grain.json
+- `buckwheat_cooked` — cooked buckwheat — looks_like: - — items/comestibles/veggy_dishes.json
+- `buckwheat_stalks` — buckwheat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `budget_steel_chunk` — chunk of budget steel — looks_like: - — items/resources/metal.json
+- `budget_steel_lump` — lump of budget steel — looks_like: - — items/resources/metal.json
+- `buffalo_sauce` — Buffalo sauce — looks_like: - — items/comestibles/spice.json
+- `buffalo_wings` — buffalo wings — looks_like: - — items/comestibles/junkfood.json
+- `bullwhip` — bullwhip — looks_like: - — items/melee/misc.json
+- `bullwhip_razor` — scourge — looks_like: - — items/melee/misc.json
+- `bunny_ears_black` — black bunny ears (pair) — looks_like: - — items/armor/jewelry.json
+- `burdock_cooked` — cooked burdock greens — looks_like: - — items/comestibles/veggy_dishes.json
+- `burdock_fried` — fried burdocks — looks_like: - — items/comestibles/veggy_dishes.json
+- `burette` — burette — looks_like: glass_tube_small — items/tool/science.json
+- `burnt_out_bionic` — burnt out bionic — looks_like: - — items/generic.json
+- `butchery_tree_pseudo` — butchery tree pseudo item — looks_like: - — items/tool/pseudo.json
+- `butt_hook` — butt hook — looks_like: - — items/gunmod/stock.json
+- `butter_churn` — pseudo butter churn — looks_like: - — items/tool/pseudo.json
+- `buttercream` — buttercream icing — looks_like: - — items/comestibles/junkfood.json
+- `buttered_toast` — buttered toast — looks_like: - — items/comestibles/bread.json
+- `butterfly_net_collapsible` — collapsible butterfly net — looks_like: - — items/fluff.json
+- `butterfly_net_collapsible_extended` — collapsible butterfly net (extended) — looks_like: - — items/fluff.json
+- `butterfly_net_makeshift` — butterfly net — looks_like: - — items/fluff.json
+- `butterfly_swords` — butterfly sword — looks_like: - — items/melee/swords_and_blades.json
+- `butternut` — butternuts — looks_like: - — items/chemicals_and_resources.json
+- `butternut_husk` — butternut husks — looks_like: - — items/chemicals_and_resources.json
+- `butternut_roasted` — Handful of roasted butternuts — looks_like: - — items/comestibles/nuts.json
+- `butternut_shelled` — Handful of shelled butternuts — looks_like: - — items/comestibles/nuts.json
+- `buylocalpamphlet` — buy local pamphlet — looks_like: - — items/book/maps.json
+- `c4` — C-4 explosive — looks_like: - — items/tool/explosives.json
+- `c4_payload` — C-4 payload — looks_like: - — items/tool/misc.json
+- `c4armed` — C-4 explosive — looks_like: - — items/tool/explosives.json
+- `c_fishspear` — carbon fiber fishing spear — looks_like: - — items/ranged/spearguns.json
+- `calming_stone` — calming anomaly — looks_like: - — items/nether.json
+- `caltrops_teeth` — loose teeth caltrops — looks_like: - — items/tool/traps.json
+- `camera_control` — security camera display — looks_like: - — items/vehicle/controls.json
+- `camp_meal_large` — prepared meal (large) — looks_like: - — items/comestibles/other.json
+- `camp_meal_medium` — prepared meal (medium) — looks_like: - — items/comestibles/other.json
+- `camp_meal_small` — prepared meal (small) — looks_like: - — items/comestibles/other.json
+- `camphine` — camphine — looks_like: - — items/fuel.json
+- `can_aluminum_250ml` — small aluminum can — looks_like: - — items/containers/containers.json
+- `can_chicken` — canned chicken — looks_like: - — items/comestibles/meat_dishes.json
+- `can_chowder` — clam chowder — looks_like: - — items/comestibles/meat_dishes.json
+- `can_clams` — canned clam — looks_like: - — items/comestibles/meat_dishes.json
+- `can_herring` — pickled herring — looks_like: - — items/comestibles/meat_dishes.json
+- `can_peach` — peaches in syrup — looks_like: - — items/comestibles/fruit_dishes.json
+- `can_salmon` — canned salmon — looks_like: - — items/comestibles/meat_dishes.json
+- `can_sardine` — canned sardine — looks_like: - — items/comestibles/meat_dishes.json
+- `can_sealer` — can sealer — looks_like: - — items/tool/cooking.json
+- `can_tuna` — canned tuna fish — looks_like: - — items/comestibles/meat_dishes.json
+- `canadian_whiskey` — Canadian whiskey — looks_like: - — items/comestibles/alcohol.json
+- `candle_lit` — burning candle — looks_like: - — items/tool/lighting.json
+- `candle_small` — small candle — looks_like: - — items/tool/lighting.json
+- `candle_small_lit` — burning small candle — looks_like: - — items/tool/lighting.json
+- `candle_wax` — candle wax — looks_like: - — items/ammo.json
+- `candy` — peanut butter candy — looks_like: - — items/comestibles/junkfood.json
+- `candy2` — chocolate candy — looks_like: - — items/comestibles/junkfood.json
+- `candy3` — chewy candy — looks_like: - — items/comestibles/junkfood.json
+- `candy3gator` — chewy reptilian candy — looks_like: - — items/comestibles/junkfood.json
+- `candy4` — gummy candy — looks_like: - — items/comestibles/junkfood.json
+- `candy5` — vegan gummy candy — looks_like: - — items/comestibles/junkfood.json
+- `candy_coated_peanuts` — candy-coated peanuts — looks_like: - — items/comestibles/junkfood.json
+- `candycigarette` — candy cigarette — looks_like: - — items/comestibles/junkfood.json
+- `canister_empty` — empty canister — looks_like: - — items/generic.json
+- `canister_goo` — goo canister — looks_like: - — items/tool/science.json
+- `canned_heart` — canned heart — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `canola_stalks` — canola stalks — looks_like: - — items/comestibles/raw_grain.json
+- `cantilever_medium` — steel boom — looks_like: - — items/vehicle/engineering.json
+- `cantilever_small` — telescopic cantilever — looks_like: - — items/vehicle/engineering.json
+- `canvas_patch` — canvas patch — looks_like: - — items/resources/tailoring.json
+- `caotel_cell` — Caotel cell — looks_like: - — items/ammo/exodii.json
+- `caotel_cell_spent` — spent Caotel cell — looks_like: caotel_cell — items/generic/casing.json
+- `cape_sci_fi` — heraldic cape — looks_like: holo_cloak — items/armor/cloaks.json
+- `car_headlight` — car headlight — looks_like: - — items/vehicle/lights.json
+- `car_wide_headlight` — wide-angle car headlight — looks_like: car_headlight — items/vehicle/lights.json
+- `caramel_apple` — caramel apple — looks_like: - — items/comestibles/junkfood.json
+- `carding_paddles` — carding paddles (pair) — looks_like: - — items/tool/workshop.json
+- `cargo_aisle` — floor trunk — looks_like: - — items/vehicle/cargo.json
+- `cargo_lock` — cargo lock set — looks_like: - — items/vehicle/cargo.json
+- `cargo_rack` — cargo carrier — looks_like: - — items/vehicle/cargo.json
+- `carrot_glazed` — glazed carrot — looks_like: - — items/comestibles/veggy_dishes.json
+- `carrot_roasted` — roasted carrot — looks_like: - — items/comestibles/veggy_dishes.json
+- `carton_284ml` — half pint carton — looks_like: - — items/containers/containers.json
+- `carton_946ml` — quart carton — looks_like: - — items/containers/containers.json
+- `carton_egg_6` — small egg carton — looks_like: - — items/containers/containers.json
+- `carton_milk` — half gallon paper carton — looks_like: - — items/containers/containers.json
+- `carver_on` — electric carver (on) — looks_like: - — items/tool/cooking.json
+- `casting_mold` — sandcasting mold — looks_like: - — items/tool/metalworking.json
+- `casting_mold_large` — large sandcasting mold — looks_like: - — items/tool/metalworking.json
+- `casting_mold_long` — long sandcasting mold — looks_like: - — items/tool/metalworking.json
+- `casting_mold_small` — small sandcasting mold — looks_like: - — items/tool/metalworking.json
+- `catalytic_cracking_handbook` — Catalytic Cracking at Home for Solarpunks — looks_like: - — items/book/chemistry.json
+- `catalytic_cracking_reactor_tool` — catalytic cracking reactor — looks_like: - — items/fake.json
+- `catfood_raw` — raw cat food — looks_like: - — items/comestibles/other.json
+- `cauliflower` — cauliflower — looks_like: - — items/comestibles/raw_veggy.json
+- `cauliflower_head` — cauliflower head — looks_like: - — items/comestibles/raw_veggy.json
+- `caviar_egg_sandwich` — caviar and egg sandwich — looks_like: - — items/comestibles/egg.json
+- `cestus` — cestus — looks_like: - — items/melee/unarmed_weapons.json
+- `ch_armguard_metal_sheets_shoulders` — hardened sheet metal pauldrons (pair) — looks_like: - — items/armor/arms_armor.json
+- `ch_aztec_spear` — hardened steel bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `ch_aztec_sword` — hardened steel bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `ch_battleaxe` — hardened steel battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `ch_brigandine_hands` — hardened brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `ch_brigandine_hands_xs` — hardened brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `ch_broadsword` — hardened steel broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `ch_chain_link` — hardened steel chain link — looks_like: - — items/ammo.json
+- `ch_chainmail_aventail` — hardened steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `ch_chainmail_face` — hardened steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `ch_chainmail_feet` — hardened steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `ch_chainmail_hands` — hardened steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `ch_chestguard_metal_sheets_light` — hardened light sheet metal chest guard — looks_like: chestguard_metal — items/armor/torso_armor.json
+- `ch_esapi_plate` — hard steel ballistic plate — looks_like: scrap_esapi_plate — items/armor/ballistic_armor.json
+- `ch_esbi_plate` — hard steel ballistic side plate — looks_like: scrap_esbi_plate — items/armor/ballistic_armor.json
+- `ch_estoc` — hardened steel estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `ch_khopesh` — hardened steel khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `ch_kukri` — hardened steel kukri — looks_like: kukri — items/melee/swords_and_blades.json
+- `ch_legguard_metal_sheets_hip` — hardened sheet metal skirt — looks_like: - — items/armor/legs_armor.json
+- `ch_link_sheet` — hardened steel chainmail sheet — looks_like: - — items/tool/metalworking.json
+- `ch_shoulder_guards` — hardened shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `ch_shoulder_guards_xs` — hardened shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `ch_steel_chunk` — chunk of hardened steel — looks_like: - — items/resources/metal.json
+- `ch_steel_facemask` — hardened steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `ch_steel_lump` — lump of hardened steel — looks_like: - — items/resources/metal.json
+- `ch_wakizashi` — hardened steel wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `ch_warhammer` — hardened steel war hammer — looks_like: - — items/melee/bludgeons.json
+- `ch_wire` — hardened steel wire — looks_like: - — items/generic.json
+- `chaff` — chaff — looks_like: - — items/comestibles/raw_grain.json
+- `chainmail_armor_cow` — chainmail cow armor — looks_like: - — items/armor/pets_cow_armor.json
+- `chainmail_armor_horse` — chainmail horse armor — looks_like: - — items/armor/pets_horse_armor.json
+- `chainmail_junk_feet` — chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `chainmail_junk_hands` — chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `chainsaw_on` — chainsaw (on) — looks_like: - — items/tool/woodworking.json
+- `chair_folding` — folding chair — looks_like: - — items/tool/deployable.json
+- `chair_plywood` — plywood chair — looks_like: - — items/furniture/seating.json
+- `chair_wood` — wooden chair — looks_like: - — items/furniture/seating.json
+- `chair_wood_black` — black wooden chair — looks_like: - — items/furniture/seating.json
+- `chair_wood_white` — white wooden chair — looks_like: - — items/furniture/seating.json
+- `chalice` — gold chalice — looks_like: - — items/generic.json
+- `chamomile` — chamomile flowers — looks_like: - — items/generic.json
+- `char_kiln` — portable charcoal kiln — looks_like: - — items/tool/metalworking.json
+- `char_purifier` — charcoal water purifier — looks_like: - — items/tool/cooking.json
+- `charcoal_cooker` — coal/charcoal cooker — looks_like: - — items/tool/cooking.json
+- `chaturanga` — chaturanga chess set — looks_like: - — items/fluff.json
+- `chaw` — chewing tobacco — looks_like: - — items/comestibles/med.json
+- `cheap_whiskey` — cheap whiskey — looks_like: - — items/comestibles/alcohol.json
+- `cheek_pad` — cheek pad — looks_like: - — items/gunmod/stock.json
+- `cheese_grits` — cheese grits — looks_like: - — items/comestibles/wheat.json
+- `cheese_powder` — powdered cheese — looks_like: - — items/comestibles/dairy.json
+- `cheese_rehydrated` — rehydrated cheese — looks_like: - — items/comestibles/dairy.json
+- `cheeseburger` — cheeseburger — looks_like: - — items/comestibles/meat_dishes.json
+- `cheesy_spinach_casserole` — piece of cheesy spinach casserole — looks_like: - — items/comestibles/casseroles.json
+- `chem_agar` — agar flake — looks_like: - — items/chemicals_and_resources.json
+- `chem_anfo` — ANFO pellets — looks_like: - — items/chemicals_and_resources.json
+- `chem_antimony_trichloride` — antimony trichloride powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_apex` — Acetone Peroxide/APEX powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_baking_soda` — baking soda — looks_like: - — items/resources/chemicals.json
+- `chem_benzene` — benzene — looks_like: - — items/chemicals_and_resources.json
+- `chem_caco3` — calcium carbonate powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_calcium_chloride` — calcium chloride — looks_like: - — items/resources/chemicals.json
+- `chem_carbide` — calcium carbide powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_compositionb` — composition B — looks_like: - — items/chemicals_and_resources.json
+- `chem_ferric_chloride` — ferric chloride powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_hexamine` — hexamine wax — looks_like: - — items/chemicals_and_resources.json
+- `chem_lead_azide` — lead azide — looks_like: - — items/resources/chemicals.json
+- `chem_mercury_fulminate` — mercury fulminate — looks_like: - — items/resources/chemicals.json
+- `chem_methanol` — methanol — looks_like: - — items/fuel.json
+- `chem_methanol_fuelcell` — methanol — looks_like: - — items/fuel.json
+- `chem_nickel_powder` — nickel powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_potassium` — potassium — looks_like: - — items/resources/chemicals.json
+- `chem_potassium_alum` — potassium alum — looks_like: - — items/resources/chemicals.json
+- `chem_potassium_chloride` — potassium chloride powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_potassium_hydroxide` — potassium hydroxide powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_rdx` — Hexogen/RDX powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_slaked_lime` — slaked lime powder — looks_like: - — items/chemicals_and_resources.json
+- `chem_sodium` — sodium — looks_like: - — items/resources/chemicals.json
+- `chem_toluene` — toluene — looks_like: - — items/chemicals_and_resources.json
+- `chem_turpentine` — turpentine — looks_like: - — items/fuel.json
+- `chestguard_metal_sheets_light` — light sheet metal chest guard — looks_like: chestguard_metal — items/armor/torso_armor.json
+- `chicken_cage` — chicken cage — looks_like: - — items/tool/pets.json
+- `chicken_fried` — fried chicken — looks_like: - — items/comestibles/meat_dishes.json
+- `chicken_fried_buttermilk` — buttermilk fried chicken — looks_like: - — items/comestibles/meat_dishes.json
+- `chicken_parm` — chicken parmesan — looks_like: - — items/comestibles/meat_dishes.json
+- `chicken_rice_hianese` — Hinanese chicken rice — looks_like: - — items/comestibles/meat_dishes.json
+- `chicken_sandwich` — chicken sandwich — looks_like: - — items/comestibles/sandwich.json
+- `chicken_tandoori` — tandoori chicken — looks_like: - — items/comestibles/meat_dishes.json
+- `chicory_leaves` — handful of chicory greens — looks_like: - — items/comestibles/raw_veggy.json
+- `childnote` — child's note — looks_like: - — items/newspaper.json
+- `chili_pepper_cut` — cut chili pepper — looks_like: - — items/comestibles/raw_veggy.json
+- `chimes` — chime loudspeakers — looks_like: - — items/vehicle/noise.json
+- `chinese_checkers` — Chinese checkers set — looks_like: - — items/fluff.json
+- `chisel_bronze` — bronze chisel — looks_like: - — items/tool/metalworking.json
+- `chitin_armor_cow` — chitin cow armor — looks_like: - — items/armor/pets_cow_armor.json
+- `chitin_armor_horse` — chitin horse armor — looks_like: - — items/armor/pets_horse_armor.json
+- `chitin_plate` — chitin armor kit — looks_like: - — items/vehicle/plating.json
+- `choc_pancakes` — chocolate pancake — looks_like: - — items/comestibles/junkfood.json
+- `choc_waffles` — chocolate waffle — looks_like: - — items/comestibles/junkfood.json
+- `chocolate` — chocolate bar — looks_like: - — items/comestibles/junkfood.json
+- `chocolate_military` — military chocolate bar — looks_like: - — items/comestibles/junkfood.json
+- `chocpretzels` — chocolate-covered pretzel — looks_like: - — items/comestibles/junkfood.json
+- `choke` — choke — looks_like: - — items/gunmod/muzzle.json
+- `chokeberries` — handful of chokeberries — looks_like: - — items/comestibles/raw_fruit.json
+- `cholla_bud` — cholla bud — looks_like: - — items/comestibles/raw_fruit.json
+- `chunk_cast_iron` — cast iron chunk — looks_like: - — items/resources/metal.json
+- `cigar_cutter` — cigar cutter — looks_like: - — items/fluff.json
+- `cigar_punch` — cigar punch — looks_like: - — items/fluff.json
+- `circuit` — circuit board — looks_like: - — items/generic.json
+- `citrine` — citrine — looks_like: - — items/generic.json
+- `claw_bar` — claw bar — looks_like: - — items/tool/workshop.json
+- `clay_cup` — clay cup — looks_like: - — items/containers/containers.json
+- `clay_urn` — clay urn — looks_like: - — items/tool/misc.json
+- `clay_watercont_no_lid` — large clay pot (no lid) — looks_like: - — items/containers/containers.json
+- `clinch_block` — clinch block — looks_like: - — items/farrier.json
+- `clinch_cutter` — clinch cutter — looks_like: - — items/farrier.json
+- `clinch_pliers` — pair of clinchers — looks_like: - — items/farrier.json
+- `clockworks` — clockworks — looks_like: - — items/generic.json
+- `closed_loop_extractor_large` — large closed loop extractor — looks_like: still — items/tool/science.json
+- `closed_loop_extractor_small` — small closed loop extractor — looks_like: still — items/tool/science.json
+- `clothes_hanger` — clothes hanger — looks_like: - — items/generic/storage.json
+- `cloutie_dumpling` — cloutie dumplings — looks_like: - — items/comestibles/wheat.json
+- `clown_nose` — clown nose — looks_like: - — items/armor/misc.json
+- `clown_wig` — clown wig — looks_like: - — items/armor/misc.json
+- `co2` — CO₂ — looks_like: - — items/ammo.json
+- `cobalt_60` — cobalt-60 pellet — looks_like: - — items/chemicals_and_resources.json
+- `cocaine_topical` — cocaine topical cream — looks_like: - — items/comestibles/med.json
+- `cocoa_powder` — cocoa powder — looks_like: - — items/comestibles/other.json
+- `cocoa_powder_milk` — instant cocoa — looks_like: - — items/comestibles/other.json
+- `coconut_flesh` — handful of coconut flesh — looks_like: - — items/comestibles/raw_fruit.json
+- `coconut_water` — coconut water — looks_like: - — items/comestibles/drink_other.json
+- `coffee_raw_kentucky` — Kentucky coffee grounds — looks_like: - — items/comestibles/other.json
+- `coffee_sweetened` — sweetened coffee — looks_like: - — items/comestibles/drink.json
+- `coin_gold` — American Buffalo coin — looks_like: - — items/generic/currency.json
+- `coin_highlands` — silver obol — looks_like: - — items/relics/highland_artifacts.json
+- `coin_silver` — Silver Eagle coin — looks_like: - — items/generic/currency.json
+- `coin_wrapper` — coin wrapper — looks_like: - — items/generic/currency.json
+- `collar_playboy` — collar with bowtie — looks_like: - — items/armor/jewelry.json
+- `combat_exoskeleton_armor_arm_heavy` — heavy combat exoskeleton arm armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_arm_heavy_reinforced` — reinforced heavy combat exoskeleton arm armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_arm_light` — light combat exoskeleton arm armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_arm_light_reinforced` — reinforced light combat exoskeleton arm armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_arm_medium` — medium combat exoskeleton arm armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_arm_medium_reinforced` — reinforced medium combat exoskeleton arm armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_head_heavy` — heavy combat exoskeleton head armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_head_heavy_reinforced` — reinforced heavy combat exoskeleton head armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_head_light` — light combat exoskeleton head armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_head_light_reinforced` — reinforced light combat exoskeleton head armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_head_medium` — medium combat exoskeleton head armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_head_medium_reinforced` — reinforced medium combat exoskeleton head armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_leg_heavy` — heavy combat exoskeleton leg armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_leg_heavy_reinforced` — reinforced heavy combat exoskeleton leg armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_leg_light` — light combat exoskeleton leg armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_leg_light_reinforced` — reinforced light combat exoskeleton leg armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_leg_medium` — medium combat exoskeleton leg armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_leg_medium_reinforced` — reinforced medium combat exoskeleton leg armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_torso_heavy` — heavy combat exoskeleton torso armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_torso_heavy_reinforced` — reinforced heavy combat exoskeleton torso armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_torso_light` — light combat exoskeleton torso armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_torso_light_reinforced` — reinforced light combat exoskeleton torso armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_torso_medium` — medium combat exoskeleton torso armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_armor_torso_medium_reinforced` — reinforced medium combat exoskeleton torso armor — looks_like: - — items/armor/combat_exoskeleton_armor.json
+- `combat_exoskeleton_heavy` — combat exoskeleton mk1 — looks_like: power_armor_heavy — items/armor/combat_exoskeleton.json
+- `combat_exoskeleton_heavy_on` — combat exoskeleton mk1 (on) — looks_like: power_armor_heavy — items/armor/combat_exoskeleton.json
+- `combat_exoskeleton_light` — combat exoskeleton mk3 — looks_like: power_armor_light — items/armor/combat_exoskeleton.json
+- `combat_exoskeleton_light_on` — combat exoskeleton mk3 (on) — looks_like: power_armor_light — items/armor/combat_exoskeleton.json
+- `combat_exoskeleton_light_salvaged` — salvaged combat exoskeleton mk3 — looks_like: power_armor_light — items/armor/combat_exoskeleton.json
+- `combat_exoskeleton_medium` — combat exoskeleton mk2 — looks_like: combat_exoskeleton_medium — items/armor/combat_exoskeleton.json
+- `combat_exoskeleton_medium_on` — combat exoskeleton mk2 (on) — looks_like: combat_exoskeleton_medium — items/armor/combat_exoskeleton.json
+- `combatnail` — flechette — looks_like: - — items/ammo/nail.json
+- `combination_gun_shotgun` — combination gun shotgun — looks_like: - — items/gunmod/underbarrel.json
+- `combo_cover` — combo cover — looks_like: - — items/tool_armor.json
+- `compensator` — compensator — looks_like: - — items/gunmod/muzzle.json
+- `compressor` — compressor — looks_like: - — items/generic/spares.json
+- `conc_paralytic` — concentrated paralytic — looks_like: - — items/chemicals_and_resources.json
+- `conc_venom` — concentrated venom — looks_like: - — items/chemicals_and_resources.json
+- `concrete_mix_tool` — concrete mixer — looks_like: - — items/fake.json
+- `condenser_pristine` — pristine condenser — looks_like: - — items/gunmod/mechanism.json
+- `condensor_coil` — condensor coil — looks_like: - — items/generic.json
+- `connect_four` — Four in a Row set — looks_like: - — items/fluff.json
+- `cooked_bell_pepper` — cooked bell pepper — looks_like: - — items/comestibles/veggy_dishes.json
+- `cooked_burdock_stalk` — cooked plant stalk — looks_like: - — items/comestibles/veggy_dishes.json
+- `cooked_cattail_stalk` — cooked cattail stalk — looks_like: - — items/comestibles/veggy_dishes.json
+- `cooked_elderberries` — cooked elderberries — looks_like: - — items/comestibles/fruit_dishes.json
+- `cooked_pumpkin` — mashed pumpkin — looks_like: - — items/comestibles/veggy_dishes.json
+- `cookies_egg` — cookie egg — looks_like: - — items/comestibles/junkfood.json
+- `copbot_chassis` — police bot chassis — looks_like: - — items/robot_parts.json
+- `copper_wire` — raw copper wire — looks_like: - — items/ammo.json
+- `cordage_36` — long cordage piece — looks_like: - — items/generic/string.json
+- `cordage_36_leather` — long leather lace — looks_like: - — items/generic/string.json
+- `cordage_6` — short cordage piece — looks_like: - — items/generic/string.json
+- `cordage_6_leather` — short leather lace — looks_like: - — items/generic/string.json
+- `corded_demolition_hammer` — demolition hammer — looks_like: - — items/tool/workshop.json
+- `corded_powerdrill` — power drill — looks_like: - — items/tool/workshop.json
+- `corn_on_cob` — corn on the cob — looks_like: - — items/comestibles/veggy_dishes.json
+- `corpse_yugg_jade` — jade yugg statue — looks_like: - — items/corpses/nether.json
+- `corpse_yugg_mutflesh` — massive fleshy tube — looks_like: - — items/corpses/nether.json
+- `corpse_yugg_rubber` — rubber yugg corpse — looks_like: - — items/corpses/nether.json
+- `cottage_cheese` — cottage cheese — looks_like: - — items/comestibles/dairy.json
+- `cottage_cheese_with_fruit` — cottage cheese with fruit — looks_like: - — items/comestibles/dairy.json
+- `cottage_cheese_with_savory_veg` — cottage cheese with savory vegetables — looks_like: - — items/comestibles/dairy.json
+- `counterweight` — counterweight — looks_like: hdhalfboard — items/vehicle/plating.json
+- `counterweight_pouch` — counterweight pouch — looks_like: - — items/armor/head_attachments.json
+- `cow_candy` — candy cattle — looks_like: - — items/comestibles/junkfood.json
+- `crab_cakes` — crab cake — looks_like: fish_fried — items/comestibles/meat_dishes.json
+- `crabapple` — crabapple — looks_like: - — items/comestibles/raw_fruit.json
+- `crack` — crack — looks_like: - — items/comestibles/med.json
+- `crackpipe` — crack pipe — looks_like: - — items/tool/smoking.json
+- `crafted_suppressor` — homemade suppressor — looks_like: - — items/gunmod/muzzle.json
+- `cranberries` — handful of cranberries — looks_like: - — items/comestibles/raw_fruit.json
+- `crane_pseudo_item` — suspending for butchering — looks_like: - — vehicleparts/engineering.json
+- `crater_bomb` — active alien bomb — looks_like: - — mapgen/crater.json
+- `credit_card` — credit card — looks_like: - — items/generic.json
+- `crossbow_trap` — crossbow trap — looks_like: - — items/tool/traps.json
+- `crowbar_warhammer` — bec de crowbar — looks_like: - — items/melee/bludgeons.json
+- `crude_40mm` — crude 40mm launcher — looks_like: - — items/gun/40x46mm.json
+- `crude_firestarter` — electric firestarter — looks_like: - — items/tool/fire.json
+- `crude_heating_element` — crude heating element — looks_like: - — items/generic.json
+- `crude_lamp_oil` — crude lamp oil — looks_like: - — items/fuel.json
+- `crutches` — crutches (pair) — looks_like: - — items/melee/bludgeons.json
+- `crystal_urn` — crystal urn — looks_like: - — items/tool/misc.json
+- `crystallizing_sugar` — crystallizing sugar (obsolete) — looks_like: - — obsoletion_and_migration_0.J/cooking.json
+- `crystallizing_sugar_active` — crystallizing sugar — looks_like: - — items/tool/cooking.json
+- `cucumber_cut` — cut salad cucumber — looks_like: - — items/comestibles/raw_veggy.json
+- `cuffs` — cuffs (pair) — looks_like: - — items/armor/jewelry.json
+- `cured_roe` — post apocalyptic 'caviar' — looks_like: - — items/comestibles/egg.json
+- `curing_roe` — curing roe (obsolete) — looks_like: - — obsoletion_and_migration_0.J/egg.json
+- `curing_roe_active` — curing roe — looks_like: - — items/comestibles/egg.json
+- `curler_hair` — hair curler — looks_like: - — items/generic/bathroom_house.json
+- `cuvettes` — set of spectrometry cuvettes — looks_like: - — items/tool/science.json
+- `cyborg_matrix` — cybernetic neural matrix — looks_like: - — items/resources/alien.json
+- `dahlia_baked` — baked dahlia root — looks_like: - — items/comestibles/veggy_dishes.json
+- `damaged_shelter_kit` — damaged shelter kit — looks_like: - — items/tool/shelters.json
+- `dandelion_cooked` — cooked dandelion greens — looks_like: - — items/comestibles/veggy_dishes.json
+- `dandelion_fried` — fried dandelions — looks_like: - — items/comestibles/veggy_dishes.json
+- `dandelionburdock_fried` — fried dandelions and burdocks — looks_like: - — items/comestibles/veggy_dishes.json
+- `dao` — dao — looks_like: - — items/melee/swords_and_blades.json
+- `dead_solar_beetle_radiosphere` — giant solar beetle corpse — looks_like: - — items/corpses/nether.json
+- `debug_apply_fault` — debug fault applier — looks_like: - — items/tool/debug_tools.json
+- `debug_calories` — unholy debug angel cake — looks_like: - — items/comestibles/junkfood.json
+- `debug_chloroform_rag` — debug chloroform soaked rag — looks_like: - — items/comestibles/med.json
+- `debug_dimension_traveller` — debug dimension traveller — looks_like: - — items/tool/debug_tools.json
+- `debug_energy_shield` — weak energy shield — looks_like: - — items/armor/cloaks.json
+- `debug_item_damager` — debug item damager (simple) — looks_like: - — items/tool/debug_tools.json
+- `debug_item_damager_adv` — debug item damager (advanced) — looks_like: - — items/tool/debug_tools.json
+- `debug_item_search` — debug item search — looks_like: - — items/fake.json
+- `debug_lux_meter` — debug lux meter — looks_like: - — items/tool/debug_tools.json
+- `debug_mortar` — debug explosion generator — looks_like: - — items/tool/debug_tools.json
+- `debug_nutrition` — holy SPAM of debugging — looks_like: - — items/comestibles/meat_dishes.json
+- `debug_template` — nanofabricator template — looks_like: - — items/generic.json
+- `debug_timer` — debug timer — looks_like: - — items/tool/debug_tools.json
+- `debug_weather_check` — debug weather reporter — looks_like: - — items/tool/debug_tools.json
+- `deck_chair` — deck chair — looks_like: - — items/tool/deployable.json
+- `default_dimension_teleport_orb` — dull brown orb — looks_like: - — items/nether.json
+- `delay_fuze` — delayed fuze — looks_like: - — items/generic.json
+- `deltoid_plates` — deltoid ballistic plates — looks_like: - — items/armor/ballistic_armor.json
+- `deluxe_beans` — baked beans — looks_like: - — items/comestibles/meat_dishes.json
+- `deluxe_beansnrice` — deluxe beans and rice — looks_like: - — items/comestibles/meat_dishes.json
+- `deluxe_cheeseburger` — deluxe cheeseburger — looks_like: - — items/comestibles/meat_dishes.json
+- `deluxe_eggs` — deluxe scrambled eggs — looks_like: - — items/comestibles/meat_dishes.json
+- `deluxe_fried_egg_sandwich` — deluxe fried egg sandwich — looks_like: - — items/comestibles/egg.json
+- `deluxe_fried_eggs` — deluxe fried eggs — looks_like: - — items/comestibles/egg.json
+- `deluxe_rice` — meat fried rice — looks_like: - — items/comestibles/meat_dishes.json
+- `deluxe_veggy_beans` — vegetarian baked beans — looks_like: - — items/comestibles/veggy_dishes.json
+- `deluxe_veggy_beansnrice` — deluxe vegetarian beans and rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `deluxe_veggy_rice` — fried rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `demihuman_cracklins` — demihuman cracklins — looks_like: - — items/comestibles/meat_dishes.json
+- `demihuman_flesh` — demihuman flesh — looks_like: - — items/comestibles/carnivore.json
+- `demihuman_heart` — piece of raw demihuman heart — looks_like: heart — items/comestibles/carnivore.json
+- `demihuman_stomach` — demihuman stomach — looks_like: - — items/comestibles/carnivore.json
+- `demihuman_stomach_large` — large demihuman stomach — looks_like: - — items/comestibles/carnivore.json
+- `denat_alcohol` — denatured alcohol — looks_like: - — items/fuel.json
+- `denim_overalls` — denim overalls — looks_like: - — items/armor/suits_clothes.json
+- `denim_patch` — denim patch — looks_like: - — items/resources/tailoring.json
+- `dental_tools` — dental tool set — looks_like: - — items/tool/med.json
+- `devil_horn_headband` — devil horns (pair) — looks_like: - — items/armor/jewelry.json
+- `devil_tail` — devil tail — looks_like: - — items/armor/jewelry.json
+- `deviled_kidney` — deviled kidney — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `diamond` — diamond — looks_like: - — items/generic.json
+- `dias` — drop-in auto sear — looks_like: - — items/gunmod/mechanism.json
+- `dimensional_perambulator` — dimensional perambulator — looks_like: - — debug/teleportation.json
+- `directed_floodlight` — directed floodlight — looks_like: - — items/vehicle/lights.json
+- `disassembly` — in-progress disassembly — looks_like: - — items/generic.json
+- `discharged_storage_battery` — discharged lithium-ion battery — looks_like: - — items/resources/misc.json
+- `discharging_battery` — discharging lithium-ion battery — looks_like: - — items/resources/misc.json
+- `disincotton_ball` — antiseptic soaked cotton balls — looks_like: - — items/tool/med.json
+- `disinfectant_makeshift` — makeshift antiseptic — looks_like: - — items/comestibles/med.json
+- `disinrag` — antiseptic soaked rag — looks_like: - — items/tool/med.json
+- `display_freezer` — display freezer — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `display_fridge` — display fridge — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `distaff_spindle` — distaff and spindle — looks_like: - — items/tool/workshop.json
+- `divemask_full_modular` — modular full-face diving mask — looks_like: mask_h20survivor — items/armor/swimming.json
+- `divemask_full_scuba_notready` — full-face diving mask — looks_like: mask_h20survivor — items/armor/swimming.json
+- `diving_flashlight_small_hipower_on` — high-power mini diving flashlight (on) — looks_like: flashlight_on — items/tool/lighting.json
+- `diving_flashlight_small_on` — mini diving flashlight (on) — looks_like: flashlight_on — items/tool/lighting.json
+- `diving_flashlight_variable_on_hi` — variable power diving flashlight (on, high) — looks_like: flashlight_on — items/tool/lighting.json
+- `diving_flashlight_variable_on_low` — variable power diving flashlight (on, low) — looks_like: flashlight_on — items/tool/lighting.json
+- `diving_flashlight_variable_on_med` — variable power diving flashlight (on, medium) — looks_like: flashlight_on — items/tool/lighting.json
+- `dog_tag` — dog tag — looks_like: - — items/armor/misc.json
+- `dog_tag_dog` — dog tag — looks_like: - — items/generic.json
+- `dogfood_raw` — raw dog food — looks_like: - — items/comestibles/other.json
+- `domino` — dominoes set — looks_like: - — items/fluff.json
+- `door_lock` — door lock set — looks_like: - — vehicleparts/utilities.json
+- `dp_12` — double-barreled pump shotgun — looks_like: - — items/gun/shot.json
+- `draw_plate` — draw plate — looks_like: - — items/tool/metalworking.json
+- `dressage_whip` — dressage whip — looks_like: - — items/tool/misc.json
+- `dried_salad` — dried salad — looks_like: - — items/comestibles/veggy_dishes.json
+- `drift` — punch & drift set — looks_like: - — items/tool/metalworking.json
+- `drill_press_tool` — drill press — looks_like: - — items/fake.json
+- `drill_rock_primitive` — primitive rock drill — looks_like: - — items/tool/stoneworking.json
+- `drink_bloody_mary` — Bloody Mary cocktail — looks_like: tomato_juice — items/comestibles/alcohol.json
+- `drink_bloody_mary_blood` — 'very' Bloody Mary cocktail — looks_like: drink_bloody_mary — items/comestibles/alcohol.json
+- `drink_virgin_mary` — Virgin Mary cocktail — looks_like: drink_bloody_mary — items/comestibles/drink.json
+- `drinking_hat` — drinking hat — looks_like: - — items/armor/hats.json
+- `drive_by_wire_controls` — drive by wire controls — looks_like: - — items/vehicle/controls.json
+- `drivebelt_makeshift` — makeshift drive belt — looks_like: - — items/generic/spares.json
+- `drum_percussion` — drum, percussion — looks_like: - — items/tool/musical_instruments.json
+- `drum_percussion_primitive` — primitive drum, percussion — looks_like: - — items/tool/musical_instruments.json
+- `drum_skin` — drum skin — looks_like: - — items/generic.json
+- `dry_barley_stalks` — dried barley stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_buckwheat_stalks` — dried buckwheat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_canola_stalks` — dried canola stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_chili` — dehydrated chili pepper — looks_like: - — items/comestibles/veggy_dishes.json
+- `dry_fish` — dehydrated fish — looks_like: - — items/comestibles/meat_dishes.json
+- `dry_froglegs` — dehydrated frog legs (pair) — looks_like: - — items/comestibles/meat_dishes.json
+- `dry_fruit` — dehydrated fruit — looks_like: - — items/comestibles/fruit_dishes.json
+- `dry_garlic` — dehydrated garlic clove — looks_like: - — items/comestibles/veggy_dishes.json
+- `dry_lentil_stalks` — dried lentil stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_lobster` — dehydrated lobster — looks_like: - — items/comestibles/meat_dishes.json
+- `dry_meat` — dehydrated meat — looks_like: - — items/comestibles/meat_dishes.json
+- `dry_mollusk` — dehydrated mollusk — looks_like: - — items/comestibles/meat_dishes.json
+- `dry_mushroom` — dried mushroom — looks_like: - — items/comestibles/mushroom.json
+- `dry_oat_stalks` — dried oat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_poultry` — dehydrated chicken — looks_like: - — items/comestibles/meat_dishes.json
+- `dry_rice` — dried rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `dry_soybean` — dried soybeans — looks_like: - — items/comestibles/other.json
+- `dry_tofu` — dehydrated tofu — looks_like: - — items/comestibles/other.json
+- `dry_veggy` — dehydrated vegetable — looks_like: - — items/comestibles/veggy_dishes.json
+- `dry_veggy_tainted` — dehydrated alien fungus chunk — looks_like: dry_mushroom — items/comestibles/veggy_dishes.json
+- `dry_wheat_stalks` — dried wheat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_wild_rice` — dry wild rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `dry_wild_rice_stalks` — dried wild rice stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dry_winter_wheat_stalks` — dried winter wheat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `dutch_oven` — cast-iron dutch oven — looks_like: - — items/generic/dining_kitchen.json
+- `dye_powder` — cloth dye powder — looks_like: - — items/resources/chemicals.json
+- `e_handcuffs` — electronic handcuffs — looks_like: - — items/tool/electronics.json
+- `ear_spool` — plug — looks_like: - — items/armor/jewelry.json
+- `earthworm_boiled` — boiled earthworms — looks_like: - — items/comestibles/other.json
+- `earthworm_dried` — dried earthworms — looks_like: - — items/comestibles/other.json
+- `earthworm_fried` — fried earthworms — looks_like: - — items/comestibles/other.json
+- `edamame_roasted` — Handful of roasted edamame — looks_like: - — items/comestibles/nuts.json
+- `effective_emitter` — effective emitter — looks_like: - — items/gunmod/laser_gunmods.json
+- `efile_junk` — junk file — looks_like: - — items/software.json
+- `efile_lore` — questionable media file — looks_like: - — items/software.json
+- `efile_map` — map cache — looks_like: - — items/software.json
+- `efile_photos` — photo gallery — looks_like: - — items/software.json
+- `efile_recipes` — recipe catalog — looks_like: - — items/software.json
+- `efile_recipes_medical` — medical recipe catalog — looks_like: - — items/software.json
+- `efile_recipes_science` — scientific recipe catalog — looks_like: - — items/software.json
+- `egg_bird_unfert` — unfertilized bird egg — looks_like: - — items/comestibles/egg.json
+- `egg_blackfish` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_bluefin_tuna` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_bluefish` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_bluejay` — blue jay egg — looks_like: - — items/comestibles/egg.json
+- `egg_bullfrog_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_cardinal` — cardinal egg — looks_like: - — items/comestibles/egg.json
+- `egg_channel_catfish` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_chickadee` — black-capped chickadee egg — looks_like: - — items/comestibles/egg.json
+- `egg_cod` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_coot` — American coot egg — looks_like: - — items/comestibles/egg.json
+- `egg_cormorant` — double-crested cormorant egg — looks_like: - — items/comestibles/egg.json
+- `egg_crow` — American crow egg — looks_like: - — items/comestibles/egg.json
+- `egg_duck` — mallard egg — looks_like: - — items/comestibles/egg.json
+- `egg_duck_domestic` — domestic duck egg — looks_like: - — items/comestibles/egg.json
+- `egg_flounder` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_foul_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_fowler_toad` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_freedom_toad` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_goose` — domestic goose egg — looks_like: - — items/comestibles/egg.json
+- `egg_goose_canadian` — Canada goose egg — looks_like: - — items/comestibles/egg.json
+- `egg_gray_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_grebe` — horned grebe egg — looks_like: - — items/comestibles/egg.json
+- `egg_green_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_grouse` — ruffed grouse egg — looks_like: - — items/comestibles/egg.json
+- `egg_guinea_fowl` — domestic guineafowl egg — looks_like: - — items/comestibles/egg.json
+- `egg_haddock` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_halibut` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_hummingbird` — ruby-throated hummingbird egg — looks_like: - — items/comestibles/egg.json
+- `egg_leo_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_mackerel` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_mink_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_moorhen` — common gallinule egg — looks_like: - — items/comestibles/egg.json
+- `egg_moth_fly` — moth fly egg — looks_like: - — items/comestibles/egg.json
+- `egg_mutant_salmon` — mutant fish roe — looks_like: - — items/comestibles/egg.json
+- `egg_odd_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_pattern_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_peeper_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_perch` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_pheasant` — ring-necked pheasant egg — looks_like: - — items/comestibles/egg.json
+- `egg_pickerel_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_pigeon` — feral pigeon egg — looks_like: - — items/comestibles/egg.json
+- `egg_pollock` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_porgy` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_proxy_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_raven` — raven egg — looks_like: - — items/comestibles/egg.json
+- `egg_robin` — American robin egg — looks_like: - — items/comestibles/egg.json
+- `egg_salad` — egg salad — looks_like: - — items/comestibles/egg.json
+- `egg_shift_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_skink_fivelined` — five-lined skink egg — looks_like: - — items/comestibles/egg.json
+- `egg_spade_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_sparrow` — sparrow egg — looks_like: - — items/comestibles/egg.json
+- `egg_strange_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_turkey` — wild turkey egg — looks_like: - — items/comestibles/egg.json
+- `egg_turkey_domestic` — domestic turkey egg — looks_like: - — items/comestibles/egg.json
+- `egg_turtle_painted` — painted turtle egg — looks_like: - — items/comestibles/egg.json
+- `egg_turtle_snapping_common` — common snapping turtle egg — looks_like: - — items/comestibles/egg.json
+- `egg_vocal_bigfrog` — cluster of giant frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_void_spider` — luminescent bead — looks_like: - — items/generic.json
+- `egg_warmouth` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_waxwing` — cedar waxwing egg — looks_like: - — items/comestibles/egg.json
+- `egg_white_catfish` — roe — looks_like: - — items/comestibles/egg.json
+- `egg_wood_frog` — cluster of frog's eggs — looks_like: - — items/comestibles/egg.json
+- `egg_woodpecker` — downy woodpecker egg — looks_like: - — items/comestibles/egg.json
+- `egg_wormsnake` — worm snake egg — looks_like: - — items/comestibles/egg.json
+- `eggplant_parmigiana` — eggplant parmigiana — looks_like: - — items/comestibles/casseroles.json
+- `eggs_ferment` — fermenting eggs jar — looks_like: - — obsoletion_and_migration_0.J/cooking.json
+- `eggs_ferment_active` — fermenting eggs jar — looks_like: - — items/tool/cooking.json
+- `eink_tablet_pc_on` — e-ink tablet PC (on) — looks_like: - — items/tool/electronics.json
+- `elec_chainsaw_cord_off` — corded electric chainsaw (off) — looks_like: elec_chainsaw_off — items/tool/woodworking.json
+- `elec_chainsaw_cord_on` — corded electric chainsaw (on) — looks_like: elec_chainsaw_on — items/tool/woodworking.json
+- `elec_chainsaw_off` — electric chainsaw (off) — looks_like: - — items/tool/woodworking.json
+- `elec_chainsaw_on` — electric chainsaw (on) — looks_like: - — items/tool/woodworking.json
+- `electric_blanket_on` — electric blanket (on) — looks_like: - — items/tool_armor.json
+- `electric_lighter` — electric lighter — looks_like: - — items/tool/fire.json
+- `electric_masonrysaw_off` — electric masonry saw (off) — looks_like: - — items/tool/masonry.json
+- `electric_masonrysaw_on` — electric masonry saw (on) — looks_like: - — items/tool/masonry.json
+- `electrolaser_conversion` — electrolaser conversion — looks_like: - — items/gunmod/laser_gunmods.json
+- `electrolysis_kit` — electrolysis kit — looks_like: - — items/tool/science.json
+- `electrolyzer_makeshift` — makeshift water electrolyzer — looks_like: - — items/tool/science.json
+- `electronics_controls` — electronics control unit — looks_like: - — items/vehicle/controls.json
+- `element` — heating element — looks_like: - — items/generic.json
+- `emerald` — emerald — looks_like: - — items/generic.json
+- `emery_board` — emery board — looks_like: - — items/tool/toiletries.json
+- `emf_detector` — EMF detector (off) — looks_like: - — items/tool/electronics.json
+- `emf_detector_on` — EMF detector (on) — looks_like: - — items/tool/electronics.json
+- `emp_frond` — electric alien frond — looks_like: - — monster_special_attacks/monster_gun.json
+- `empty_corn_cob` — empty corn cob — looks_like: - — items/comestibles/raw_grain.json
+- `enfield_bayonet` — Enfield No. 4 bayonet — looks_like: - — items/melee/swords_and_blades.json
+- `engine_1cyl_diesel_large` — 0.2 L large 1-cylinder diesel engine — looks_like: - — items/vehicle/engine.json
+- `engine_block_large` — large engine block — looks_like: - — items/vehicle/engine.json
+- `engine_block_massive` — massive engine block — looks_like: - — items/vehicle/engine.json
+- `engine_block_medium` — medium engine block — looks_like: - — items/vehicle/engine.json
+- `engine_block_small` — small engine block — looks_like: - — items/vehicle/engine.json
+- `engine_block_tiny` — tiny engine block — looks_like: - — items/vehicle/engine.json
+- `engine_container_base` — engine container base — looks_like: - — items/containers/military.json
+- `engine_container_lid` — engine container lid — looks_like: - — items/containers/military.json
+- `engineering_engine_kit` — Stirling engine kit — looks_like: - — items/tool/science.json
+- `engineering_makerspace_kit` — makerspace kit for STEM — looks_like: - — items/tool/science.json
+- `engineering_robotics_kit` — robotics kit for young learners — looks_like: - — items/tool/science.json
+- `enhanced_nvg` — enhanced night vision goggles — looks_like: - — items/armor/head_attachments.json
+- `enhanced_nvg_on` — enhanced night vision goggles (on) — looks_like: - — items/armor/head_attachments.json
+- `eod_plate` — EOD fragmentation plate — looks_like: - — items/armor/ballistic_armor.json
+- `ephemeral_gem` — ephemeral gemstone — looks_like: - — items/resources/alien.json
+- `epoxy_chunk` — epoxy chunk — looks_like: - — items/resources/plastic.json
+- `escape_stone` — portable portal — looks_like: - — items/nether.json
+- `escargot` — escargot — looks_like: - — items/comestibles/meat_dishes.json
+- `estoc` — estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `estoc_fake` — estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `estoc_inferior` — estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `estrogen` — estrogen pill — looks_like: - — items/comestibles/med.json
+- `evaporator_coil` — evaporator coil — looks_like: - — items/generic.json
+- `exodii_ac_kit` — external climate control kit — looks_like: - — items/resources/alien.json
+- `exodii_ceramic_patch` — exodii ceramic patch — looks_like: - — items/chemicals_and_resources.json
+- `exodii_chassis` — Exodii chassis — looks_like: - — items/resources/alien.json
+- `exodii_chop_shop_head` — broken red robotic head — looks_like: - — items/generic.json
+- `exodii_computer` — unfamiliar electronic thingy — looks_like: - — items/resources/alien.json
+- `exodii_drone_chassis` — Exodii drone chassis — looks_like: - — items/resources/alien.json
+- `exodii_ingot_aluminum` — enormous aluminum ingot — looks_like: - — items/resources/alien.json
+- `exodii_ingot_copper` — enormous copper ingot — looks_like: - — items/resources/alien.json
+- `exodii_ingot_lc_steel` — enormous steel ingot — looks_like: - — items/resources/alien.json
+- `exodii_ingot_lead` — enormous lead ingot — looks_like: - — items/resources/alien.json
+- `exodii_ingot_plastic` — enormous plastic block — looks_like: - — items/resources/alien.json
+- `exodii_ingot_tin` — enormous tin ingot — looks_like: - — items/resources/alien.json
+- `exodii_ingot_zinc` — enormous zinc ingot — looks_like: - — items/resources/alien.json
+- `exodii_kiln` — Exodii kiln — looks_like: - — items/tool/workshop.json
+- `exodii_micro_computer` — small unfamiliar electronic thingy — looks_like: - — items/resources/alien.json
+- `exodii_micro_module` — inscribed metal rings — looks_like: - — items/resources/alien.json
+- `exodii_module` — inscribed metal plates — looks_like: - — items/resources/alien.json
+- `exodii_motor` — rotary device — looks_like: - — items/resources/alien.json
+- `exodii_portable_tv` — Exodii TV-radio — looks_like: - — items/tool/electronics.json
+- `exodii_portalizer` — oblong device — looks_like: - — items/resources/alien.json
+- `exodii_scanner_dish` — engraved parabolic dish — looks_like: - — items/resources/alien.json
+- `exodii_sensor` — cybernetic sensor — looks_like: - — items/resources/alien.json
+- `exodii_usb_stick` — Exodii digital storage device — looks_like: - — items/tool/electronics.json
+- `exodii_usb_stick_full` — Exodii digital storage device (data) — looks_like: - — items/tool/electronics.json
+- `exodii_wire_kit` — CBM interface wire kit — looks_like: - — items/resources/alien.json
+- `exodii_wiring_kit_reference` — CBM interface wiring reference — looks_like: - — items/book/electronics.json
+- `exodii_wrist_computer` — Exodii wrist computer — looks_like: - — items/tool/electronics.json
+- `exodii_wrist_computer_on` — Exodii wrist computer (on) — looks_like: exodii_wrist_computer — items/tool/electronics.json
+- `extinguishing_agent` — extinguishing agent — looks_like: - — items/ammo.json
+- `face_shield` — face shield — looks_like: - — items/armor/head_attachments.json
+- `face_shield_eod` — EOD face shield — looks_like: - — items/armor/head_attachments.json
+- `face_shield_plastic` — plastic face shield — looks_like: - — items/armor/head_attachments.json
+- `fake_anvil` — anvil — looks_like: - — items/fake.json
+- `fake_anvil_heavy` — heavy anvil — looks_like: - — items/fake.json
+- `fake_arc_furnace` — arc furnace — looks_like: - — items/fake.json
+- `fake_beverly_shear` — Beverly shear — looks_like: - — items/fake.json
+- `fake_burrowing` — teeth and claws — looks_like: - — items/fake.json
+- `fake_butcher_rack` — fake butcher rack (pseudo item) — looks_like: - — items/tool/pseudo.json
+- `fake_char_kiln` — basecamp kiln — looks_like: - — items/basecamp.json
+- `fake_char_smoker` — basecamp charcoal smoker — looks_like: - — items/basecamp.json
+- `fake_clay_kiln` — basecamp clay kiln — looks_like: - — items/basecamp.json
+- `fake_crafting_tool` — fake crafting tool — looks_like: - — items/fake.json
+- `fake_deep_fryer` — deep fryer — looks_like: - — items/fake.json
+- `fake_digester_tank` — small anaerobic digester tank — looks_like: - — items/basecamp.json
+- `fake_drop_hammer` — basecamp drop hammer — looks_like: - — items/basecamp.json
+- `fake_dynamite_50lbs` — fake 50lbs dynamite car bomb — looks_like: - — items/fake.json
+- `fake_fireplace` — basecamp fireplace — looks_like: - — items/basecamp.json
+- `fake_firestarter` — bionic firestarter — looks_like: - — items/fake.json
+- `fake_forge` — basecamp forge — looks_like: - — items/basecamp.json
+- `fake_goggles` — bionic goggles — looks_like: - — items/fake.json
+- `fake_lathe` — lathe — looks_like: - — items/fake.json
+- `fake_lift_heavy` — heavy-duty hoist — looks_like: - — items/fake.json
+- `fake_lift_light` — light hoist — looks_like: - — items/fake.json
+- `fake_lift_medium` — sturdy hoist — looks_like: - — items/fake.json
+- `fake_mill_vertical` — vertical mill — looks_like: - — items/fake.json
+- `fake_milling_item` — semi ground grains — looks_like: - — items/fake.json
+- `fake_oil_press_industrial` — industrial oil press — looks_like: - — items/fake.json
+- `fake_power_tool` — fake power tool — looks_like: - — items/fake.json
+- `fake_radio` — bionic radio — looks_like: - — items/fake.json
+- `fake_razor` — bionic razor — looks_like: - — items/fake.json
+- `fake_sharp_metal_wreckage` — sharp piece of wreckage — looks_like: - — items/fake.json
+- `fake_smoke_plume` — smoldering embers — looks_like: - — items/fake.json
+- `fake_solar_cooker` — solar cooker — looks_like: - — items/tool/pseudo.json
+- `fake_stove` — basecamp stove — looks_like: - — items/tool/pseudo.json
+- `fake_tire_changer` — tire changer — looks_like: - — items/fake.json
+- `fake_woodstove` — basecamp stove — looks_like: - — items/basecamp.json
+- `fanblade_metal` — metal fan blade assembly — looks_like: - — items/resources/metal.json
+- `fanning_mill` — fanning mill — looks_like: - — items/tool/workshop.json
+- `fat_tainted_human` — chunk of tainted human fat — looks_like: - — items/comestibles/carnivore.json
+- `faux_fur` — faux fur patch — looks_like: - — items/resources/tailoring.json
+- `faux_fur_cat_ears` — faux fur cat ears (pair) — looks_like: - — items/armor/jewelry.json
+- `faux_fur_cat_tail` — faux fur cat tail — looks_like: - — items/armor/jewelry.json
+- `faux_fur_collar` — faux fur kitty collar — looks_like: - — items/armor/jewelry.json
+- `fchicken` — deep-fried chicken — looks_like: - — items/comestibles/junkfood.json
+- `feast_for_odin` — For Odin — looks_like: - — items/fluff.json
+- `fedora` — fedora — looks_like: - — items/tool_armor.json
+- `feeding_kit` — feeding kit — looks_like: - — items/armor/exotic.json
+- `fema_data` — FEMA data — looks_like: - — items/generic.json
+- `feral_human_thrown_rock` — hurled rubble — looks_like: - — monster_special_attacks/monster_gun.json
+- `fermentable_fish_mixture` — fermentable fish mixture (obsolete) — looks_like: - — obsoletion_and_migration_0.J/chemicals_and_resources.json
+- `fermentable_fish_mixture_active` — fermentable fish mixture — looks_like: - — items/chemicals_and_resources.json
+- `fermentable_liquid_mixture` — fermentable liquid mixture — looks_like: - — items/chemicals_and_resources.json
+- `fermented_fertilizer_liquid` — fermented fertilizer liquid — looks_like: - — items/chemicals_and_resources.json
+- `fert_supplement` — fertility supplement — looks_like: - — items/chemicals_and_resources.json
+- `fertilizer` — fertilizer — looks_like: - — items/generic.json
+- `fertilizer_commercial` — commercial fertilizer — looks_like: - — items/chemicals_and_resources.json
+- `fidget_spinner` — fidget spinner — looks_like: - — items/toy.json
+- `fields_of_arle` — Arle Lands — looks_like: - — items/fluff.json
+- `fighter_sting` — fungal fighter stinger — looks_like: - — items/resources/misc.json
+- `filter_air_makeshift` — makeshift air filter — looks_like: - — items/generic/spares.json
+- `filter_liquid_makeshift` — makeshift automotive filter — looks_like: - — items/generic/spares.json
+- `filter_port_40mm` — 40mm filter port — looks_like: - — items/resources/plastic.json
+- `filter_suppressor` — 'solvent trap' suppressor — looks_like: - — items/gunmod/muzzle.json
+- `fire` — nearby fire — looks_like: - — items/generic.json
+- `fire_brick` — fire brick — looks_like: - — items/generic.json
+- `fire_drill_large` — pump fire drill — looks_like: - — items/tool/fire.json
+- `fire_piston` — fire piston — looks_like: - — items/tool/fire.json
+- `firefighter_scba_tank` — firefighter SCBA cylinder — looks_like: smoxygen_tank — items/tool/air_tanks.json
+- `firefighter_scba_tank_on` — firefighter SCBA cylinder (open) — looks_like: smoxygen_tank — items/tool/air_tanks.json
+- `firewood` — piece of firewood — looks_like: - — items/resources/wood.json
+- `firework_cannon` — fireworks cannon — looks_like: - — monster_special_attacks/monster_gun.json
+- `fish_bowl` — fishbowl — looks_like: - — items/generic.json
+- `fish_canned` — canned fish — looks_like: - — items/comestibles/meat_dishes.json
+- `fish_fried` — batter fried fish — looks_like: - — items/comestibles/meat_dishes.json
+- `fish_pickled` — pickled fish — looks_like: - — items/comestibles/meat_dishes.json
+- `fish_scrap` — scrap of fish — looks_like: - — items/comestibles/carnivore.json
+- `fish_scrap_cooked` — cooked scrap of fish — looks_like: - — items/comestibles/carnivore.json
+- `fish_smoked` — smoked fish — looks_like: - — items/comestibles/carnivore.json
+- `fish_trap_basket` — basket fish trap — looks_like: - — items/tool/fishing.json
+- `fishspear` — wooden fishing spear — looks_like: - — items/ranged/spearguns.json
+- `fitness_band` — fitness band — looks_like: - — items/tool_armor.json
+- `five-point_harness` — 5-point harness — looks_like: - — items/generic/spares.json
+- `flare_nitrate` — flare pyrotechnic — looks_like: - — items/ammo.json
+- `flashlight_mount_wrist` — diving flashlight wrist mount — looks_like: - — items/tool_armor.json
+- `flashlight_on` — flashlight (on) — looks_like: - — items/tool/lighting.json
+- `flask_yeast_active` — sealed yeast culture — looks_like: - — items/tool/cooking.json
+- `flesh_golem_heart` — seeping heart — looks_like: - — items/comestibles/carnivore.json
+- `flint` — flint — looks_like: - — items/resources/stone.json
+- `floodlight` — floodlight — looks_like: - — items/vehicle/lights.json
+- `flour_wheat_free` — wheat-free flour — looks_like: - — items/comestibles/raw_veggy.json
+- `flower_anklet` — flower charm anklet — looks_like: - — items/armor/jewelry.json
+- `flux_ash` — ash flux — looks_like: - — items/chemicals_and_resources.json
+- `flyer_evac` — FEMA evacuation flyer — looks_like: - — items/book/maps.json
+- `focusing_lens` — focusing lens — looks_like: - — items/gunmod/laser_gunmods.json
+- `fog_machine` — fog machine — looks_like: - — items/items_holiday.json
+- `folded_bicycle` — folded Bicycle — looks_like: - — items/tool/unfoldable.json
+- `folded_skateboard_generic` — skateboard — looks_like: - — items/tool/unfoldable.json
+- `folded_wheelchair_generic` — folded wheelchair — looks_like: - — items/tool/unfoldable.json
+- `foldframe` — foldable light frame — looks_like: - — items/vehicle/frames.json
+- `folding_basket` — foldable wire basket — looks_like: - — items/vehicle/cargo.json
+- `folding_solar_panel` — small folding solar panel — looks_like: - — items/vehicle/solar.json
+- `folding_solar_panel_deployed` — deployed folding solar panel — looks_like: - — items/vehicle/solar.json
+- `folding_solar_panel_v2` — solar suitcase — looks_like: - — items/vehicle/solar.json
+- `folding_solar_panel_v2_deployed` — deployed solar suitcase — looks_like: - — items/vehicle/solar.json
+- `folding_stock` — folding stock — looks_like: - — items/gunmod/stock.json
+- `folding_stock_folded` — folding stock (folded) — looks_like: - — items/gunmod/stock.json
+- `foldwoodframe` — foldable wooden frame — looks_like: - — items/vehicle/frames.json
+- `foldxlframe` — foldable extra-light frame — looks_like: - — items/vehicle/frames.json
+- `foodplace_food` — Foodplace's delicious food™ — looks_like: - — items/comestibles/other.json
+- `foodplace_snack_bar` — Foodplace's appropriate snack™ — looks_like: - — items/comestibles/other.json
+- `foot_protectors_eod` — EOD foot protectors (pair) — looks_like: - — items/armor/boots.json
+- `forgerig` — vehicle forge rig — looks_like: - — items/vehicle/rigs.json
+- `frame_concrete_mix` — concrete mixer chassis — looks_like: - — items/vehicle/frames.json
+- `frame_wood_light` — light wooden frame — looks_like: - — items/vehicle/frames.json
+- `freeze_dried_meal` — freeze-dried breakfast meal — looks_like: - — items/comestibles/junkfood.json
+- `freeze_dried_meal_hydrated` — rehydrated freeze-dried meal — looks_like: - — items/comestibles/junkfood.json
+- `freeze_dried_stroganoff` — freeze-dried beef meal — looks_like: - — items/comestibles/junkfood.json
+- `freeze_dried_stroganoff_hydrated` — rehydrated beef meal — looks_like: - — items/comestibles/junkfood.json
+- `freeze_dried_veggypasta` — freeze-dried vegetarian meal — looks_like: - — items/comestibles/junkfood.json
+- `freeze_dried_veggypasta_hydrated` — rehydrated vegetarian meal — looks_like: - — items/comestibles/junkfood.json
+- `frenchtoast` — French toast — looks_like: - — items/comestibles/wheat.json
+- `friday` — Survival Island — looks_like: - — items/fluff.json
+- `fridgetank` — refrigerated tank (60 L) — looks_like: - — items/vehicle/utilities.json
+- `fridgetank_large` — refrigerated tank (100 L) — looks_like: fridgetank — items/vehicle/utilities.json
+- `fried_brain` — fried brain — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `fried_egg_sandwich` — fried egg sandwich — looks_like: - — items/comestibles/egg.json
+- `fried_eggs` — fried eggs — looks_like: - — items/comestibles/egg.json
+- `fried_froglegs` — fried frog legs (pair) — looks_like: - — items/comestibles/meat_dishes.json
+- `fried_mozzarella_sticks` — fried mozzarella sticks — looks_like: - — items/comestibles/dairy.json
+- `fried_spam` — fried SPAM — looks_like: - — items/comestibles/meat_dishes.json
+- `fried_tripe` — deep-fried tripe — looks_like: small_stomach_boiled — items/comestibles/offal_dishes.json
+- `fries` — fries — looks_like: - — items/comestibles/junkfood.json
+- `froglegs` — frog legs (pair) — looks_like: - — items/comestibles/carnivore.json
+- `froglegs_cooked` — cooked frog legs (pair) — looks_like: - — items/comestibles/carnivore.json
+- `froglegs_smoked` — smoked frog legs (pair) — looks_like: - — items/comestibles/carnivore.json
+- `frozen_dinner` — uncooked TV dinner — looks_like: - — items/comestibles/junkfood.json
+- `frozen_lemonade` — frozen lemonade — looks_like: - — items/comestibles/frozen.json
+- `fruit_leather` — fruit leather — looks_like: - — items/comestibles/fruit_dishes.json
+- `fruit_pancakes` — fruit pancake — looks_like: - — items/comestibles/wheat.json
+- `frybread` — frybread — looks_like: - — items/comestibles/bread.json
+- `fuel_bunker` — fuel bunker — looks_like: tank — items/vehicle/fuel_storage.json
+- `fur` — fur patch — looks_like: - — items/resources/tailoring.json
+- `fur_cat_ears` — fuzzy cat ears (pair) — looks_like: - — items/armor/jewelry.json
+- `fur_cat_tail` — fuzzy cat tail — looks_like: - — items/armor/jewelry.json
+- `fur_collar` — fur kitty collar — looks_like: - — items/armor/jewelry.json
+- `furniturebrochure` — furniture advertising brochure — looks_like: - — items/book/maps.json
+- `fursuit` — fursuit — looks_like: - — items/armor/suits_clothes.json
+- `fuse` — fuse — looks_like: - — items/resources/misc.json
+- `gag_ball` — ball gag — looks_like: - — items/tool/misc.json
+- `gambeson_batting` — gambeson batting — looks_like: - — items/resources/tailoring.json
+- `garlic_powder` — garlic powder — looks_like: - — items/comestibles/spice.json
+- `garnet` — garnet — looks_like: - — items/generic.json
+- `gas_charger` — gas-powered UPS (off) — looks_like: - — items/tool/electronics.json
+- `gas_charger_on` — gas-powered UPS (on) — looks_like: - — items/tool/electronics.json
+- `gas_forge` — gas forge — looks_like: - — items/tool/metalworking.json
+- `gasfilter_m` — activated carbon — looks_like: - — items/ammo.json
+- `gasfilter_med` — CBRN filter canister — looks_like: - — items/magazine/filter.json
+- `gasfilter_s` — filter mask cartridge — looks_like: - — items/ammo.json
+- `gasfilter_sm` — filter mask cartridge — looks_like: - — items/magazine/filter.json
+- `gasoline_cooker` — gasoline cooker — looks_like: - — items/tool/cooking.json
+- `gastropod_cooked` — cooked gastropods — looks_like: - — items/comestibles/carnivore.json
+- `gastropod_purged` — purged gastropods — looks_like: - — items/comestibles/carnivore.json
+- `gateau_st_honore` — slice of gateau St. Honore — looks_like: - — items/comestibles/baked.json
+- `gatling_mech_laser` — CMES laser cannon — looks_like: - — items/gun/ups.json
+- `gauntlet_fencing` — fencing gauntlet — looks_like: - — items/armor/gloves.json
+- `gauntlet_fencing_l` — fencing gauntlet (left) — looks_like: - — items/armor/gloves.json
+- `geiger_off` — Geiger counter (off) — looks_like: - — items/tool/electronics.json
+- `geiger_on` — Geiger counter (on) — looks_like: - — items/tool/electronics.json
+- `gelatin_dessert_powder` — gelatin dessert powder — looks_like: - — items/comestibles/junkfood.json
+- `gelatin_extracted` — extracted gelatin — looks_like: - — items/comestibles/other.json
+- `gelled_molotov` — gelled Molotov — looks_like: - — items/tool/explosives.json
+- `gene_sting_barb` — gene sting barb — looks_like: - — items/ammo/barb.json
+- `gene_sting_gun` — viscous barb launcher — looks_like: - — monster_special_attacks/monster_gun.json
+- `generic_folded_vehicle` — seeing this is a bug — looks_like: - — items/tool/unfoldable.json
+- `getactivepamphlet` — get active pamphlet — looks_like: - — items/book/maps.json
+- `gherkin` — gherkin cucumber — looks_like: - — items/comestibles/raw_veggy.json
+- `gherkin_cut` — cut gherkin cucumber — looks_like: - — items/comestibles/raw_veggy.json
+- `giant_wood_screw` — giant wooden screw — looks_like: - — items/resources/wood.json
+- `glass_boat` — broken glass boat — looks_like: - — items/fluff.json
+- `glass_cutter` — handheld glass cutter — looks_like: - — items/tool/misc.json
+- `glass_freezer` — glass door freezer — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `glass_fridge` — single glass door fridge — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `glass_fridge_double` — double glass door fridge — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `glass_macuahuitl` — glass bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `glass_prism` — glass prism — looks_like: - — items/tool/science.json
+- `glass_shiv` — glass shiv — looks_like: - — items/melee/swords_and_blades.json
+- `glass_thermometer` — glass thermometer — looks_like: - — items/tool/science.json
+- `glass_tube_small` — small glass tube — looks_like: - — items/tool/science.json
+- `glassblowers_crucible` — disconnected glassblower's crucible — looks_like: - — items/appliances.json
+- `glassblowers_crucible_tool` — glassblower's crucible — looks_like: - — items/fake.json
+- `glock17_10` — Glock 9x19mm 10-round magazine — looks_like: - — items/magazine/9mm.json
+- `glock40mag_9` — Glock 27 magazine — looks_like: - — items/magazine/40.json
+- `glock_34` — Glock 34 pistol — looks_like: - — items/gun/9mm.json
+- `glock_44` — Glock 44 pistol — looks_like: glock19 — items/gun/22.json
+- `glocksear` — Glock auto sear plate — looks_like: - — items/gunmod/mechanism.json
+- `gloomhaven` — Enigma Emporium — looks_like: - — items/fluff.json
+- `gloves_eod` — EOD overhand protectors (pair) — looks_like: - — items/armor/gloves.json
+- `glowstick_juice` — glowstick juice — looks_like: - — items/ammo.json
+- `glue_strong` — strong glue — looks_like: - — items/chemicals_and_resources.json
+- `glue_strong_metal` — steel-reinforced epoxy — looks_like: - — items/chemicals_and_resources.json
+- `glue_weak` — weak glue — looks_like: - — items/chemicals_and_resources.json
+- `go` — go set — looks_like: - — items/fluff.json
+- `godco_flier` — religious salvation flier — looks_like: - — items/book/maps.json
+- `godcotrader_accounting_records_clean` — accounting records — looks_like: - — items/generic.json
+- `godcotrader_accounting_records_dirty` — accounting records — looks_like: - — items/generic.json
+- `goedendag_bat` — goedendag bat — looks_like: - — items/melee/bludgeons.json
+- `goggles_ir` — infrared goggles — looks_like: - — items/tool_armor.json
+- `goggles_ir_on` — infrared goggles (on) — looks_like: - — items/tool_armor.json
+- `goggles_nv` — light amp goggles — looks_like: - — items/tool_armor.json
+- `goggles_nv_on` — light amp goggles (on) — looks_like: - — items/tool_armor.json
+- `gold_anklet` — gold anklet — looks_like: - — items/armor/jewelry.json
+- `gold_lip_ring_loop` — gold lip ring loop — looks_like: - — items/armor/jewelry.json
+- `gold_lip_ring_stud` — gold lip ring stud — looks_like: - — items/armor/jewelry.json
+- `gold_medal` — gold medal — looks_like: - — items/armor/jewelry.json
+- `gold_nose_ring_loop` — gold nose ring loop — looks_like: - — items/armor/jewelry.json
+- `gold_nose_ring_stud` — gold nose ring stud — looks_like: - — items/armor/jewelry.json
+- `gold_toe_ring` — gold toe ring — looks_like: - — items/armor/jewelry.json
+- `golden_hat` — golden hat — looks_like: - — items/armor/hats.json
+- `grahmcrackers` — graham cracker — looks_like: - — items/comestibles/junkfood.json
+- `grahmcrackers_roe` — graham cracker chunks — looks_like: - — items/comestibles/junkfood.json
+- `grain_boiled` — boiled grain — looks_like: buckwheat_cooked — items/comestibles/wheat.json
+- `granola` — granola — looks_like: - — items/comestibles/wheat.json
+- `grapeade_powder` — grapeade drink mix — looks_like: - — items/comestibles/fruit_dishes.json
+- `grass` — grass — looks_like: - — items/comestibles/other.json
+- `gravy_prepared` — gravy — looks_like: - — items/comestibles/other.json
+- `greatbow_meteor` — blackwood greatbow — looks_like: - — items/ranged/archery.json
+- `grinder_blade` — grinder blade — looks_like: - — items/tool/masonry.json
+- `grits` — grits — looks_like: - — items/comestibles/wheat.json
+- `grocerybrochure` — food shopping advertising brochure — looks_like: - — items/book/maps.json
+- `ground_solar_panel` — solar panel array — looks_like: - — items/vehicle/solar.json
+- `ground_solar_panel_v2` — advanced solar panel array — looks_like: - — items/vehicle/solar.json
+- `guayaba` — guava — looks_like: - — items/comestibles/raw_fruit.json
+- `gun_crossbow` — rail-mounted crossbow — looks_like: - — obsoletion_and_migration_0.I/gun.json
+- `gun_lock` — gun cable lock — looks_like: - — items/fluff.json
+- `gun_module` — gun operating system — looks_like: - — items/robot_parts.json
+- `gunnutpamphlet` — gun nut pamphlet — looks_like: - — items/book/maps.json
+- `gunpowder_artillery` — artillery propellant — looks_like: - — items/ammo.json
+- `gunpowder_large_rifle` — smokeless overbore rifle powder — looks_like: - — items/ammo.json
+- `gunpowder_magnum_pistol` — smokeless magnum powder — looks_like: - — items/ammo.json
+- `gunpowder_pistol` — smokeless pistol powder — looks_like: - — items/ammo.json
+- `gunpowder_rifle` — smokeless rifle powder — looks_like: - — items/ammo.json
+- `gunpowder_shotgun` — smokeless shotgun powder — looks_like: - — items/ammo.json
+- `haggis` — haggis — looks_like: - — items/comestibles/meat_dishes.json
+- `hair_dye_black` — black hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_blond` — blond hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_blue` — blue hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_brown` — brown hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_gray` — gray hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_green` — green hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_kit` — hair dye kit — looks_like: - — items/tool/toiletries.json
+- `hair_dye_pink` — pink hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_red` — red hair dye — looks_like: - — items/resources/chemicals.json
+- `hair_dye_white` — white hair dye — looks_like: - — items/resources/chemicals.json
+- `halberd_crude` — crude halberd — looks_like: - — items/melee/spears_and_polearms.json
+- `hallula` — hallula — looks_like: - — items/comestibles/bread.json
+- `hamburger` — hamburger — looks_like: - — items/comestibles/meat_dishes.json
+- `hammer_peen` — ball-peen hammer — looks_like: - — items/tool/workshop.json
+- `hammer_sledge_crude` — homewrecker — looks_like: - — items/melee/bludgeons.json
+- `hammock` — hammock — looks_like: - — items/generic/bedding.json
+- `hammock_net` — net hammock — looks_like: - — items/generic/bedding.json
+- `hand_controls` — hand controls — looks_like: - — items/vehicle/controls.json
+- `handcuffs_leather` — pair of leather cuffs — looks_like: - — items/tool/misc.json
+- `handflare_lit` — active flare — looks_like: - — items/tool/lighting.json
+- `hardtack` — hardtack — looks_like: - — items/comestibles/bread.json
+- `hardtack_cracker` — hardtack cracker — looks_like: - — items/comestibles/bread.json
+- `hazelnut_cake` — slice of hazelnut cake — looks_like: - — items/comestibles/baked.json
+- `hazelnut_pulp` — Hazelnut pulp — looks_like: granola — items/comestibles/nuts.json
+- `hc_aztec_spear` — high steel bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `hc_aztec_sword` — high steel bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `hc_battleaxe` — high steel battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `hc_brigandine_hands` — high steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `hc_brigandine_hands_xs` — high steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `hc_broadsword` — high steel broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `hc_chain_link` — high steel chain link — looks_like: - — items/ammo.json
+- `hc_chainmail_aventail` — high steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `hc_chainmail_face` — high steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `hc_chainmail_feet` — high steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `hc_chainmail_hands` — high steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `hc_esapi_plate` — high steel ballistic plate — looks_like: scrap_esapi_plate — items/armor/ballistic_armor.json
+- `hc_esbi_plate` — high steel ballistic side plate — looks_like: scrap_esbi_plate — items/armor/ballistic_armor.json
+- `hc_estoc` — high steel estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `hc_khopesh` — high steel khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `hc_kukri` — high steel kukri — looks_like: kukri — items/melee/swords_and_blades.json
+- `hc_link_sheet` — high steel chainmail sheet — looks_like: - — items/tool/metalworking.json
+- `hc_shoulder_guards` — high steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `hc_shoulder_guards_xs` — high steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `hc_steel_bar_flat` — high steel flat bar stock — looks_like: - — items/resources/metal.json
+- `hc_steel_bar_round` — high steel bar stock — looks_like: - — items/resources/metal.json
+- `hc_steel_chunk` — chunk of high steel — looks_like: - — items/resources/metal.json
+- `hc_steel_facemask` — high steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `hc_steel_lump` — lump of high steel — looks_like: - — items/resources/metal.json
+- `hc_wakizashi` — high steel wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `hc_warhammer` — high steel war hammer — looks_like: - — items/melee/bludgeons.json
+- `hd_compressor` — industrial compressor — looks_like: - — items/generic/spares.json
+- `hd_pipe` — heavy duty pipe — looks_like: - — items/generic/spares.json
+- `hd_pipe_fittings` — set of heavy duty pipe fittings — looks_like: - — items/generic/spares.json
+- `hd_steel_drum` — roller drum — looks_like: - — items/vehicle/wheel.json
+- `hd_valve` — heavy duty valve — looks_like: - — items/generic/spares.json
+- `hdframe` — heavy-duty frame — looks_like: - — items/vehicle/frames.json
+- `headlight_reinforced` — reinforced headlight — looks_like: - — items/vehicle/lights.json
+- `heart` — piece of raw heart — looks_like: offal — items/comestibles/carnivore.json
+- `heart_cooked` — cooked piece of heart — looks_like: offal_cooked — items/comestibles/carnivore.json
+- `heattank` — heated tank — looks_like: - — items/vehicle/utilities.json
+- `heavy_duty_freezer` — heavy-duty freezer — looks_like: - — items/appliances/appliances_refrigeration.json
+- `heavy_duty_fridge` — heavy-duty fridge — looks_like: fridge — items/appliances/appliances_refrigeration.json
+- `heavy_flashlight_on` — heavy-duty flashlight (on) — looks_like: - — items/tool/lighting.json
+- `heavy_steel_ballistic_plate` — NIJ heavy steel ballistic plate — looks_like: - — items/armor/ballistic_armor.json
+- `helmet_eod` — EOD helmet — looks_like: - — items/tool_armor.json
+- `helmet_eod_on` — EOD helmet (on) — looks_like: - — items/tool_armor.json
+- `helmet_mounting_brackets` — helmet mounting brackets — looks_like: - — items/generic.json
+- `helmet_riot` — riot helmet — looks_like: - — items/tool_armor.json
+- `helmet_riot_raised` — riot helmet (raised visor) — looks_like: - — items/tool_armor.json
+- `helmet_sci_fi` — lunar veil — looks_like: - — items/armor/helmets.json
+- `helmet_sci_fi_lowered` — lunar veil (lowered) — looks_like: - — items/armor/helmets.json
+- `hesco_mil3_cell` — HESCO MIL 3 cell — looks_like: - — items/resources/home_improvement.json
+- `hickory_nut_roasted` — Handful of roasted hickory nuts — looks_like: - — items/comestibles/nuts.json
+- `high_density_capacitor` — high density capacitor — looks_like: - — items/gunmod/laser_gunmods.json
+- `high_end_folding_stock` — adjustable folding stock — looks_like: - — items/gunmod/stock.json
+- `high_end_folding_stock_folded` — adjustable folding stock (folded) — looks_like: - — items/gunmod/stock.json
+- `highland_black_incense` — black incense — looks_like: - — items/relics/highland_censer.json
+- `highland_blue_incense` — blue incense — looks_like: - — items/relics/highland_censer.json
+- `highland_funeral_mask` — funeral mask — looks_like: - — items/relics/highland_artifacts.json
+- `highland_golden_incense` — golden incense — looks_like: - — items/relics/highland_censer.json
+- `highland_green_incense` — green incense — looks_like: - — items/relics/highland_censer.json
+- `highland_medallion` — gold medallion — looks_like: - — items/relics/highland_artifacts.json
+- `highland_purple_incense` — purple incense — looks_like: - — items/relics/highland_censer.json
+- `highland_red_incense` — red incense — looks_like: - — items/relics/highland_censer.json
+- `highland_white_incense` — white incense — looks_like: - — items/relics/highland_censer.json
+- `highland_yellow_incense` — yellow incense — looks_like: - — items/relics/highland_censer.json
+- `higlands_teleport` — landscape miniature — looks_like: - — items/relics/highland_artifacts.json
+- `hijab` — hijab — looks_like: - — items/armor/hats.json
+- `historybrochure` — history advertising brochure — looks_like: - — items/book/maps.json
+- `hnefatafl` — hnefatafl set — looks_like: - — items/fluff.json
+- `hobbleberries` — handful of hobbleberries — looks_like: - — items/comestibles/raw_fruit.json
+- `hobo_stove` — hobo stove — looks_like: - — items/tool/deployable.json
+- `hockey_stick` — hockey stick — looks_like: - — items/melee/bludgeons.json
+- `holo_cloak` — hologram cloak — looks_like: - — items/tool_armor.json
+- `holo_magnifier` — sight magnifier — looks_like: - — items/gunmod/sights.json
+- `homemade_hotdogs` — homemade hot dog — looks_like: - — items/comestibles/offal_dishes.json
+- `hominy` — hominy — looks_like: - — items/comestibles/veggy_dishes.json
+- `honey_glassed` — candied honey — looks_like: - — items/comestibles/other.json
+- `honey_scraper` — honey scraper — looks_like: - — items/tool/knives.json
+- `honeycomb` — honey comb — looks_like: - — items/comestibles/other.json
+- `hoof_nippers` — pair of nippers — looks_like: - — items/farrier.json
+- `hoof_pick` — hoof pick — looks_like: - — items/farrier.json
+- `hoof_rasp` — rasp — looks_like: - — items/farrier.json
+- `hoof_stand` — hoof stand — looks_like: - — items/farrier.json
+- `hoof_tester` — hoof tester — looks_like: - — items/farrier.json
+- `horn_big` — truck horn — looks_like: - — items/tool/misc.json
+- `horn_car` — car horn — looks_like: - — items/tool/misc.json
+- `horse_tack` — horse tack — looks_like: - — items/tool/pets.json
+- `horseradish_greens` — horseradish greens — looks_like: - — items/comestibles/raw_veggy.json
+- `horseradish_root` — horseradish root — looks_like: - — items/comestibles/raw_veggy.json
+- `horseshoe` — horseshoe — looks_like: - — items/farrier.json
+- `horseshoe_pliers` — horseshoe puller — looks_like: - — items/farrier.json
+- `horseshoes_wearable` — pair of horseshoes — looks_like: - — items/armor/mutant_clothing.json
+- `hot_corn_casserole` — piece of hot corn casserole — looks_like: - — items/comestibles/casseroles.json
+- `hot_sauce` — hot sauce — looks_like: - — items/comestibles/spice.json
+- `hotplate_induction` — induction hotplate — looks_like: - — items/tool/cooking.json
+- `household_dishwasher` — household dishwasher — looks_like: - — items/generic.json
+- `household_washing_machine` — household washing machine — looks_like: - — items/generic.json
+- `household_water_heater` — household water heater — looks_like: - — items/generic.json
+- `household_water_heater_family` — family–sized household water heater — looks_like: - — items/generic.json
+- `hstomach` — human stomach — looks_like: - — items/comestibles/carnivore.json
+- `hstomach_boiled` — boiled large human stomach — looks_like: - — items/comestibles/carnivore.json
+- `hstomach_large` — large human stomach — looks_like: - — items/comestibles/carnivore.json
+- `huckleberries` — handful of huckleberries — looks_like: - — items/comestibles/raw_fruit.json
+- `human_brain_embalmed` — embalmed human brain — looks_like: offal — items/comestibles/other.json
+- `human_cooked` — cooked creep — looks_like: - — items/comestibles/carnivore.json
+- `human_cracklins` — human cracklins — looks_like: - — items/comestibles/meat_dishes.json
+- `human_flesh` — human flesh — looks_like: - — items/comestibles/carnivore.json
+- `human_heart` — piece of raw human heart — looks_like: heart — items/comestibles/carnivore.json
+- `human_tallow` — human tallow — looks_like: - — items/comestibles/carnivore.json
+- `hydraulic_oil` — hydraulic oil — looks_like: - — items/fuel.json
+- `hydraulic_press_tool` — hydraulic press — looks_like: - — items/fake.json
+- `hydrogen` — hydrogen — looks_like: - — items/ammo.json
+- `hygrometer` — hygrometer — looks_like: - — items/tool/science.json
+- `hygroscope` — hygroscope — looks_like: - — items/tool/science.json
+- `hyperopia_contacts_daily` — hyperopia contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `hyperopia_contacts_weekly` — hyperopia contact lenses (weekly) — looks_like: - — items/comestibles/med.json
+- `hyperopia_transition_contacts_daily` — hyperopia transition contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `hyperopia_transition_contacts_weekly` — hyperopia transition contact lenses (weekly) — looks_like: - — items/comestibles/med.json
+- `i1_diesel` — 0.5 L I1 diesel engine — looks_like: - — items/vehicle/engine.json
+- `i4_diesel` — 1.6 L I4 diesel engine — looks_like: - — items/vehicle/engine.json
+- `i6_diesel` — 6 L I6 diesel engine — looks_like: - — items/vehicle/engine.json
+- `i6_diesel_multifuel` — 7.8 L I6 multifuel diesel engine — looks_like: i6_diesel — items/vehicle/engine.json
+- `ibuprofen` — ibuprofen — looks_like: - — items/comestibles/med.json
+- `ic_reference_electronics` — 101 Important Integrated Circuits — looks_like: - — items/book/electronics.json
+- `ice_utility_exoskeleton_off` — ICE utility exoskeleton — looks_like: depowered_armor — items/tool_armor.json
+- `ice_utility_exoskeleton_on` — ICE utility exoskeleton (on) — looks_like: power_armor_light — items/tool_armor.json
+- `icecream_artificial` — serving of dairy dessert — looks_like: - — items/comestibles/frozen.json
+- `icecream_candy` — serving of candy ice cream — looks_like: - — items/comestibles/frozen.json
+- `icecream_choc` — serving of chocolate ice cream — looks_like: - — items/comestibles/frozen.json
+- `icecream_custard` — serving of frozen custard — looks_like: - — items/comestibles/frozen.json
+- `icecream_fruit` — serving of fruity ice cream — looks_like: - — items/comestibles/frozen.json
+- `icecream_gelato` — serving of gelato — looks_like: - — items/comestibles/frozen.json
+- `icecream_sorbet` — serving of sorbet — looks_like: - — items/comestibles/frozen.json
+- `icecream_yogurt` — serving of frozen yogurt — looks_like: - — items/comestibles/frozen.json
+- `id_LIXA_mil` — LIXA military police badge — looks_like: id_LIXA_mil — items/id_cards.json
+- `id_anduril_ar` — Anduril Industries ID card — looks_like: - — items/id_cards.json
+- `id_exodii_string_dimension` — strange plastic key — looks_like: - — items/id_cards.json
+- `id_science_maintenance_blue` — Maintenance: blue zone badge — looks_like: - — items/id_cards.json
+- `id_science_maintenance_green` — Maintenance: green zone badge — looks_like: - — items/id_cards.json
+- `id_science_maintenance_yellow` — Maintenance: ocher zone badge — looks_like: - — items/id_cards.json
+- `id_science_medical_red` — Doctor: red zone badge — looks_like: - — items/id_cards.json
+- `id_science_mu` — System supervisor: slate zone badge — looks_like: - — items/id_cards.json
+- `id_science_mutagen_cyan` — Researcher: cyan zone badge — looks_like: - — items/id_cards.json
+- `id_science_mutagen_green` — Researcher: light green zone badge — looks_like: - — items/id_cards.json
+- `id_science_mutagen_pink` — Researcher: pink zone badge — looks_like: - — items/id_cards.json
+- `id_science_security_black` — Security: black zone badge — looks_like: - — items/id_cards.json
+- `id_science_security_magenta` — Security: magenta zone badge — looks_like: - — items/id_cards.json
+- `id_science_security_yellow` — Security: yellow zone badge — looks_like: - — items/id_cards.json
+- `id_science_transport_1` — transport freight employee badge — looks_like: - — items/id_cards.json
+- `identification_module` — identification module — looks_like: - — items/robot_parts.json
+- `impact_fuze` — impact fuze — looks_like: - — items/generic.json
+- `imperfect_doll_arms` — threadbare cotton arms — looks_like: - — items/toy.json
+- `imperfect_doll_features` — buttons and thread — looks_like: - — items/toy.json
+- `imperfect_doll_legs` — floppy cotton legs — looks_like: - — items/toy.json
+- `improve_sights` — iron sights — looks_like: - — items/gunmod/sights.json
+- `improvised_frame` — tubular steel frame — looks_like: - — items/vehicle/frames.json
+- `improvised_oven` — improvised oven — looks_like: - — items/generic/dining_kitchen.json
+- `incendiary` — incendiary — looks_like: - — items/resources/misc.json
+- `incense` — incense — looks_like: - — items/fluff.json
+- `inert_glowing_string` — glowing string — looks_like: - — items/relics/extradimensional_artifacts.json
+- `inflatable_airbag` — inflatable airbag — looks_like: - — items/vehicle/boat.json
+- `inflatable_dragon` — inflatable dragon — looks_like: - — items/items_holiday.json
+- `inflatable_ghost` — inflatable ghost — looks_like: - — items/items_holiday.json
+- `inhalation_valve` — inhalation valve — looks_like: - — items/resources/plastic.json
+- `inj_iron` — injectable iron — looks_like: - — items/comestibles/med.json
+- `inner_cabins_depths_note` — leather notebook — looks_like: - — items/book/maps.json
+- `inner_cabins_depths_note_2` — sketched map — looks_like: - — items/book/maps.json
+- `inner_cabins_depths_note_2_used` — sketched map (used) — looks_like: - — items/book/maps.json
+- `inner_cabins_depths_note_3` — strange subway map — looks_like: - — items/book/maps.json
+- `inner_cabins_depths_note_3_used` — strange subway map (used) — looks_like: - — items/book/maps.json
+- `inner_cabins_depths_note_used` — leather notebook (used) — looks_like: - — items/book/maps.json
+- `insect_dust` — chitin dust — looks_like: - — items/biosignatures.json
+- `insert_vision_correction` — vision correction assembly — looks_like: - — items/armor/head_attachments.json
+- `integrated_antlers` — antlers — looks_like: - — items/armor/integrated.json
+- `integrated_ar` — Integrated AR System — looks_like: - — items/fake.json
+- `integrated_bark` — protective bark — looks_like: - — items/armor/integrated.json
+- `integrated_bark2_a` — distributed bark — looks_like: - — items/armor/integrated.json
+- `integrated_bark2_b` — consolidated bark — looks_like: - — items/armor/integrated.json
+- `integrated_bark2_c` — latticed bark — looks_like: - — items/armor/integrated.json
+- `integrated_bio_robofac_xmarm` — Hub 01 ARM exoskeleton — looks_like: - — items/armor/robofac_bionics.json
+- `integrated_bio_robofac_xmarm_on` — Hub 01 ARM exoskeleton (on) — looks_like: - — items/armor/robofac_bionics.json
+- `integrated_bio_robofac_xmback` — Hub 01 BACK exoskeleton — looks_like: - — items/armor/robofac_bionics.json
+- `integrated_bio_robofac_xmback_on` — Hub 01 BACK exoskeleton (on) — looks_like: - — items/armor/robofac_bionics.json
+- `integrated_bio_robofac_xmleg` — Hub 01 LEG exoskeleton — looks_like: - — items/armor/robofac_bionics.json
+- `integrated_bio_robofac_xmleg_on` — Hub 01 LEG exoskeleton (on) — looks_like: - — items/armor/robofac_bionics.json
+- `integrated_carapace` — sclerotin carapace — looks_like: - — items/armor/integrated.json
+- `integrated_carapace_molted` — fresh sclerotin carapace — looks_like: - — items/armor/integrated.json
+- `integrated_chitin` — epicuticle — looks_like: - — items/armor/integrated.json
+- `integrated_chitin2` — chitin carapace — looks_like: - — items/armor/integrated.json
+- `integrated_chitin2_molted` — fresh chitin carapace — looks_like: - — items/armor/integrated.json
+- `integrated_chitin3` — sclerotin plate — looks_like: - — items/armor/integrated.json
+- `integrated_chitin3_claws` — sclerotin claws — looks_like: - — items/armor/integrated.json
+- `integrated_chitin3_molted` — fresh sclerotin plate — looks_like: - — items/armor/integrated.json
+- `integrated_claws` — claws — looks_like: - — items/armor/integrated.json
+- `integrated_claws_rat` — gnarled claws — looks_like: - — items/armor/integrated.json
+- `integrated_claws_st` — stainless claws — looks_like: - — items/armor/integrated.json
+- `integrated_cooler` — small integrated cooler — looks_like: - — items/vehicle/utilities.json
+- `integrated_electrokit` — integrated soldering iron — looks_like: - — items/tool/integrated.json
+- `integrated_fangs` — fangs — looks_like: - — items/armor/integrated.json
+- `integrated_fangs_spider` — folding fangs — looks_like: - — items/armor/integrated.json
+- `integrated_feathers` — feathers — looks_like: - — items/armor/integrated.json
+- `integrated_feline_fur` — sleek fur — looks_like: - — items/armor/integrated.json
+- `integrated_fishscales` — sleek scales — looks_like: - — items/armor/integrated.json
+- `integrated_fur` — fur — looks_like: - — items/armor/integrated.json
+- `integrated_giant_pincer` — sclerotin right pincer — looks_like: - — obsoletion_and_migration_0.I/obsolete_integrated.json
+- `integrated_horns_curled` — curled horns — looks_like: - — items/armor/integrated.json
+- `integrated_horns_pointed` — pointed horns — looks_like: - — items/armor/integrated.json
+- `integrated_horns_small` — horns — looks_like: - — items/armor/integrated.json
+- `integrated_interstice_aura` — Penumbral Interstitium — looks_like: - — items/armor/integrated.json
+- `integrated_lightfur` — light fur — looks_like: - — items/armor/integrated.json
+- `integrated_lupine_fur` — gray fur — looks_like: - — items/armor/integrated.json
+- `integrated_lupine_fur_summer` — summer coat — looks_like: - — items/armor/integrated.json
+- `integrated_lynx_fur` — lynx fur — looks_like: - — items/armor/integrated.json
+- `integrated_mandibles` — mandibles — looks_like: - — items/armor/integrated.json
+- `integrated_multimeter` — integrated multimeter — looks_like: - — items/tool/integrated.json
+- `integrated_nl_dimensional_anchor` — Dimensional Anchor — looks_like: - — items/fake.json
+- `integrated_nl_psyshield` — Cranial EMF Shielding — looks_like: - — items/fake.json
+- `integrated_pat_radio` — Infolink: Call Pat — looks_like: - — items/fake.json
+- `integrated_pat_transponder` — Infolink: Pat's Transponder (off) — looks_like: - — items/fake.json
+- `integrated_pat_transponder_on` — Infolink: Pat's Transponder (on) — looks_like: - — items/fake.json
+- `integrated_patchskin1` — jumbled skin — looks_like: - — items/armor/integrated.json
+- `integrated_patchskin2` — patchwork skin — looks_like: - — items/armor/integrated.json
+- `integrated_patchskin3` — patchwork armor — looks_like: - — items/armor/integrated.json
+- `integrated_plantskin` — phelloderm — looks_like: - — items/armor/integrated.json
+- `integrated_rabbitfur` — rabbit fur — looks_like: - — items/armor/integrated.json
+- `integrated_reptilescales` — thick scales — looks_like: - — items/armor/integrated.json
+- `integrated_saber_teeth` — saber teeth — looks_like: - — items/armor/integrated.json
+- `integrated_scales` — scales — looks_like: - — items/armor/integrated.json
+- `integrated_shark_teeth` — shark teeth — looks_like: - — items/armor/integrated.json
+- `integrated_shell` — shell — looks_like: - — items/armor/integrated.json
+- `integrated_shell2` — roomy shell — looks_like: - — items/armor/integrated.json
+- `integrated_shell3` — nacreous shell — looks_like: - — items/armor/integrated.json
+- `integrated_sparse_scales` — sparse scales — looks_like: - — items/armor/integrated.json
+- `integrated_talons` — talons — looks_like: - — items/armor/integrated.json
+- `integrated_toe_talons` — talons — looks_like: - — items/armor/integrated.json
+- `integrated_ursine_fur` — shaggy fur — looks_like: - — items/armor/integrated.json
+- `integrated_ursine_fur_summer` — scruffy fur — looks_like: - — items/armor/integrated.json
+- `integrated_vampire_fangs` — vampire fangs — looks_like: - — items/armor/integrated.json
+- `integrated_welder` — integrated welder — looks_like: - — items/tool/integrated.json
+- `inter_bayonet` — integrated bayonet — looks_like: - — items/gunmod/underbarrel.json
+- `inter_bayonet_folded` — integrated bayonet (folded) — looks_like: - — items/gunmod/underbarrel.json
+- `internal_battery_compartment` — internal battery compartment — looks_like: - — items/tool/integrated.json
+- `internal_bio_purifier` — Air Filtration System — looks_like: - — items/armor/integrated.json
+- `internal_ethanol_tank` — internal ethanol tank — looks_like: - — items/tool/integrated.json
+- `internal_gasoline_tank` — internal gasoline tank — looks_like: - — items/tool/integrated.json
+- `internal_mp3_music` — WearMan Music — looks_like: - — items/fake.json
+- `internal_mp3_radio` — WearMan Radio — looks_like: - — items/fake.json
+- `internal_oil_tank` — internal oil tank — looks_like: - — items/tool/integrated.json
+- `iodine_crystal` — iodine crystals — looks_like: - — items/chemicals_and_resources.json
+- `iotv_groin_plate` — ballistic groin protector — looks_like: - — items/armor/ballistic_armor.json
+- `iotv_neck_plate` — ballistic collar — looks_like: - — items/armor/ballistic_armor.json
+- `iotv_shoulder_plate` — ballistic shoulder protectors (pair) — looks_like: - — items/armor/ballistic_armor.json
+- `iron_armor_cow` — iron cow armor — looks_like: - — items/armor/pets_cow_armor.json
+- `iron_armor_horse` — iron horse armor — looks_like: - — items/armor/pets_horse_armor.json
+- `iron_khopesh` — khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `iron_khopesh_fake` — khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `iron_khopesh_inferior` — khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `iskender` — iskender kebab — looks_like: - — items/comestibles/meat_dishes.json
+- `it_battery_mount` — storage battery case — looks_like: - — items/vehicle/battery.json
+- `it_handheld_battery_mount` — tool battery mount — looks_like: - — items/vehicle/battery.json
+- `item_portal_storm_dimension_returner` — fragment of reality — looks_like: - — items/armor/integrated.json
+- `ithaca37` — 4-round hunting shotgun — looks_like: - — items/gun/shot.json
+- `iv_mutagen` — mutagenic catalyst — looks_like: - — items/comestibles/mutagen.json
+- `iv_mutagen_alpha` — alpha mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_batrachian` — batrachian mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_beast` — beast mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_bird` — bird mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_cattle` — cattle mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_cephalopod` — cephalopod mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_chimera` — chimera mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_chiropteran` — chiropteran mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_crustacean` — crustacean mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_elfa` — Elf-A mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_feline` — feline mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_fish` — fish mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_insect` — insect mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_lizard` — lizard mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_lupine` — lupine mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_medical` — medical mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_mouse` — mouse mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_plant` — plant mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_rabbit` — rabbit mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_raptor` — raptor mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_rat` — rat mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_slime` — slime mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_snail` — snail mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_spider` — spider mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_troglobite` — troglobite mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_mutagen_ursine` — ursine mutagenic primer — looks_like: iv_mutagen — items/comestibles/mutagen.json
+- `iv_purifier` — purifier primer — looks_like: - — items/comestibles/mutagen.json
+- `jabberwock_heart` — putrid heart — looks_like: - — items/comestibles/carnivore.json
+- `jabberwock_heart_desiccated` — desiccated putrid heart — looks_like: - — items/comestibles/carnivore.json
+- `jacket_eod` — EOD jacket — looks_like: - — items/armor/ballistic_armor.json
+- `jacket_eod_light` — tactical EOD jacket — looks_like: - — items/armor/ballistic_armor.json
+- `jacket_ninja` — ninja jacket — looks_like: jacket — items/armor/coats.json
+- `jackolantern` — jack-o'-lantern — looks_like: - — items/items_holiday.json
+- `jackolantern_lit` — lit jack-o'-lantern — looks_like: - — items/items_holiday.json
+- `jackstraws` — jackstraws set — looks_like: - — items/fluff.json
+- `jade_brooch` — jade brooch — looks_like: - — items/armor/jewelry.json
+- `jam_toast` — jam toast — looks_like: - — items/comestibles/bread.json
+- `japanese_knotweed_stem` — Japanese knotweed stems — looks_like: - — items/comestibles/raw_veggy.json
+- `javelin` — wooden javelin — looks_like: - — items/melee/spears_and_polearms.json
+- `javelin_fletched` — iron war dart — looks_like: - — items/ranged/throwing.json
+- `javelin_fletched_bronze` — bronze war dart — looks_like: - — items/ranged/throwing.json
+- `javelin_iron` — iron javelin — looks_like: - — items/melee/spears_and_polearms.json
+- `jerky` — meat jerky — looks_like: - — items/comestibles/carnivore.json
+- `jerusalem_artichoke` — Jerusalem artichoke — looks_like: - — items/comestibles/raw_veggy.json
+- `jerusalem_artichoke_boiled` — boiled Jerusalem artichoke — looks_like: - — items/comestibles/veggy_dishes.json
+- `jerusalem_artichoke_fruitmash` — Jerusalem artichoke fruit dessert — looks_like: veggy_salad — items/comestibles/fruit_dishes.json
+- `jerusalem_artichoke_sauteed` — sauteed Jerusalem artichoke — looks_like: - — items/comestibles/veggy_dishes.json
+- `jigsaw` — Jigsaw puzzle — looks_like: - — items/fluff.json
+- `johnnycake` — johnnycake — looks_like: - — items/comestibles/bread.json
+- `jointer_tool` — jointer — looks_like: - — items/fake.json
+- `jug_plastic_1892ml` — half gallon jug — looks_like: - — items/containers/containers.json
+- `juice_pulp` — juice pulp — looks_like: - — items/comestibles/raw_fruit.json
+- `jumper_cable_debug` — shiny debug cable — looks_like: - — items/tool/cables.json
+- `kale` — kale — looks_like: - — items/comestibles/raw_veggy.json
+- `kale_head` — kale head — looks_like: - — items/comestibles/raw_veggy.json
+- `karambit` — karambit — looks_like: kirpan — items/melee/swords_and_blades.json
+- `kelp_sugar` — sugar kelp — looks_like: - — items/comestibles/raw_veggy.json
+- `kernels` — popcorn kernels — looks_like: - — items/comestibles/raw_grain.json
+- `ketene_lamp` — ketene lamp — looks_like: - — items/tool/science.json
+- `kevlar_armor_cow` — Kevlar-lined cow peto — looks_like: - — items/armor/pets_cow_armor.json
+- `kevlar_armor_horse` — Kevlar-lined horse peto — looks_like: - — items/armor/pets_horse_armor.json
+- `kevlar_nape_protector` — Kevlar nape protector — looks_like: - — items/armor/head_attachments.json
+- `kevlar_patch` — Kevlar patch — looks_like: - — items/resources/tailoring.json
+- `khopesh` — bronze khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `khopesh_fake` — bronze khopesh — looks_like: khopesh — items/melee/swords_and_blades.json
+- `khopesh_inferior` — bronze khopesh — looks_like: khopesh — items/melee/swords_and_blades.json
+- `khuunaofaai_ammo_corrosive` — Khuunäöfaai corrosive payload — looks_like: - — items/ammo/exodii.json
+- `khuunaofaai_ammo_firework` — Khuunäöfaai firework payload — looks_like: - — items/ammo/exodii.json
+- `khuunaofaai_ammo_foam` — Khuunäöfaai foaming payload — looks_like: - — items/ammo/exodii.json
+- `khuunaofaai_ammo_incendiary` — Khuunäöfaai incendiary payload — looks_like: - — items/ammo/exodii.json
+- `kilnrig` — vehicle kiln — looks_like: - — items/vehicle/rigs.json
+- `kipple_object` — strange object — looks_like: - — items/netherum/labyrinth_kipple.json
+- `kipple_wrapper` — paper wrapper — looks_like: - — items/netherum/labyrinth_kipple.json
+- `kirpan` — kirpan — looks_like: kukri — items/melee/swords_and_blades.json
+- `kirpan_cheap` — kirpan — looks_like: kukri — items/melee/swords_and_blades.json
+- `kiymali_pide` — kiymali pide — looks_like: - — items/comestibles/meat_dishes.json
+- `knife_baselard` — baselard — looks_like: - — items/melee/swords_and_blades.json
+- `knife_sharpener_handheld` — handheld knife sharpener — looks_like: - — items/tool/cooking.json
+- `knight_mage` — Knight Mage — looks_like: - — items/fluff.json
+- `knit_scarf_headwrap` — knit scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `knuckle_brass` — brass knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `knuckle_impact` — impact knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `knuckle_katar` — razorbar katar — looks_like: - — items/melee/swords_and_blades.json
+- `knuckle_nail` — nail knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `knuckle_skewer` — skewer knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `knuckle_steel` — scrap knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `knuckle_steel_forged` — steel knuckles (pair) — looks_like: knuckle_brass — items/melee/unarmed_weapons.json
+- `kombu` — kombu — looks_like: - — items/comestibles/veggy_dishes.json
+- `kris` — kris — looks_like: - — items/melee/swords_and_blades.json
+- `kris_fake` — kris — looks_like: - — items/melee/swords_and_blades.json
+- `ksg25_aux_shotgun` — KSG-25 second magazine — looks_like: - — obsoletion_and_migration_0.I/gun.json
+- `kukri` — medium steel kukri — looks_like: kukri — items/melee/swords_and_blades.json
+- `lab_file_bio` — biology protocol — looks_like: - — items/newspaper.json
+- `lab_file_mutagen_guide` — production notes — looks_like: - — items/newspaper.json
+- `lab_file_mutation_testing` — production tests — looks_like: - — items/newspaper.json
+- `lab_file_portal` — metatopography protocol — looks_like: - — items/newspaper.json
+- `lab_file_psych` — psychotherapy protocol — looks_like: - — items/newspaper.json
+- `lab_file_sec` — security protocol — looks_like: - — items/newspaper.json
+- `lab_file_serum_testing` — production tests — looks_like: - — items/newspaper.json
+- `lab_postit_bio` — yellow post-it note — looks_like: - — items/newspaper.json
+- `lab_postit_blob` — gray post-it note — looks_like: - — items/newspaper.json
+- `lab_postit_migo` — pink post-it note — looks_like: - — items/newspaper.json
+- `lab_postit_portal` — orange post-it note — looks_like: - — items/newspaper.json
+- `lab_postit_tech` — red post-it note — looks_like: - — items/newspaper.json
+- `labmap` — handwritten note — looks_like: - — items/book/maps.json
+- `lahmacun` — lahmacun — looks_like: - — items/comestibles/meat_dishes.json
+- `lajatang` — lajatang — looks_like: - — items/melee/swords_and_blades.json
+- `lame_foil` — lamé (foil) — looks_like: - — items/armor/torso_armor.json
+- `lame_saber` — lamé (saber) — looks_like: - — items/armor/torso_armor.json
+- `lamellae_ch` — hardened steel lamella — looks_like: - — items/ammo.json
+- `lamellae_lc` — mild steel lamella — looks_like: - — items/ammo.json
+- `laptop_boris` — Ash's laptop computer — looks_like: - — npcs/refugee_center/surface_refugees/NPC_Boris_Borichenko.json
+- `laptop_screen_lit` — laptop computer - lit screen — looks_like: - — items/tool/electronics.json
+- `large_biogas_tank` — large biogas tank — looks_like: - — items/containers/containers.json
+- `large_bone` — large bone — looks_like: - — items/resources/bone.json
+- `large_bone_fossil` — large bone replica — looks_like: - — items/resources/stone.json
+- `large_bone_plaster` — large bone replica — looks_like: - — items/resources/stone.json
+- `large_damaged_shelter_kit` — large damaged shelter — looks_like: - — items/tool/shelters.json
+- `large_lcd_screen` — large LCD screen — looks_like: - — items/generic.json
+- `large_pressure_vessel` — large pressure vessel — looks_like: - — items/generic/spares.json
+- `large_printout_portal_storm_data` — long NRE printout — looks_like: - — items/generic.json
+- `large_repairkit` — gunsmith repair kit — looks_like: - — obsoletion_and_migration_0.J/repairkits.json
+- `large_shelter_kit` — large shelter kit — looks_like: - — items/tool/shelters.json
+- `large_stomach_sealed` — large sealed stomach — looks_like: - — items/containers/containers.json
+- `large_storage_battery` — very large storage battery — looks_like: - — items/vehicle/battery.json
+- `large_surface_pseudo` — large surface pseudo item — looks_like: - — items/tool/pseudo.json
+- `large_turbine_engine` — 119.5 L 6,000 HP gas turbine engine — looks_like: - — items/vehicle/engine.json
+- `lasagne_raw` — raw lasagne pasta — looks_like: - — items/comestibles/wheat.json
+- `laser_sight` — underbarrel laser sight — looks_like: - — items/gunmod/underbarrel.json
+- `latrunculi` — latrunculi set — looks_like: - — items/fluff.json
+- `lazy_lobster_casserole` — lazy lobster casserole — looks_like: - — items/comestibles/casseroles.json
+- `lc_aztec_spear` — mild steel bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `lc_aztec_sword` — mild steel bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `lc_battleaxe` — mild steel battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `lc_brigandine_hands` — mild steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `lc_brigandine_hands_xs` — mild steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `lc_broadsword` — mild steel broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `lc_chain_link` — mild steel chain link — looks_like: - — items/ammo.json
+- `lc_chainmail_aventail` — mild steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `lc_chainmail_face` — mild steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `lc_chainmail_feet` — mild steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `lc_chainmail_hands` — mild steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `lc_esapi_plate` — mild steel ballistic plate — looks_like: scrap_esapi_plate — items/armor/ballistic_armor.json
+- `lc_esbi_plate` — mild steel ballistic side plate — looks_like: scrap_esbi_plate — items/armor/ballistic_armor.json
+- `lc_estoc` — mild steel estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `lc_khopesh` — mild steel khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `lc_kukri` — mild steel kukri — looks_like: kukri — items/melee/swords_and_blades.json
+- `lc_link_sheet` — mild steel chainmail sheet — looks_like: - — items/tool/metalworking.json
+- `lc_shoulder_guards` — mild steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `lc_shoulder_guards_xs` — mild steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `lc_steel_bar_flat` — low steel flat bar stock — looks_like: - — items/resources/metal.json
+- `lc_steel_bar_round` — low steel bar stock — looks_like: - — items/resources/metal.json
+- `lc_steel_chunk` — chunk of mild steel — looks_like: - — items/resources/metal.json
+- `lc_steel_facemask` — mild steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `lc_steel_lump` — lump of mild steel — looks_like: - — items/resources/metal.json
+- `lc_wakizashi` — mild steel wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `lc_warhammer` — mild steel war hammer — looks_like: - — items/melee/bludgeons.json
+- `le_havre` — Le Pourt: The Inland Port — looks_like: - — items/fluff.json
+- `lead_plate_xedra_mark` — lead plate — looks_like: - — items/armor/ballistic_armor.json
+- `leather_armor_cow` — boiled leather cow barding with caparison — looks_like: - — items/armor/pets_cow_armor.json
+- `leather_armor_horse` — boiled leather horse barding with caparison — looks_like: - — items/armor/pets_horse_armor.json
+- `leather_cat_ears` — leather cat ears (pair) — looks_like: - — items/armor/jewelry.json
+- `leather_cat_tail` — leather cat tail — looks_like: - — items/armor/jewelry.json
+- `leather_filing` — sandleather — looks_like: - — items/tool/metalworking.json
+- `leatherbone_armor_cow` — boiled leather cow barding with bones — looks_like: - — items/armor/pets_cow_armor.json
+- `leatherbone_armor_horse` — boiled leather horse barding with bones — looks_like: - — items/armor/pets_horse_armor.json
+- `leech_flower` — leech flower — looks_like: - — items/comestibles/carnivore.json
+- `leg` — mutated leg — looks_like: - — items/comestibles/mutagen.json
+- `leg_bag` — drop leg bag — looks_like: legrig — items/armor/storage.json
+- `leg_zed` — tainted limb — looks_like: - — items/comestibles/carnivore.json
+- `legguard_metal_sheets_hip` — sheet metal skirt — looks_like: - — items/armor/legs_armor.json
+- `legrig` — drop leg pouch — looks_like: - — items/armor/storage.json
+- `legrig_wetsuit` — diving pouches (pair) — looks_like: - — items/armor/storage.json
+- `lens_crude` — crude glass lens — looks_like: - — items/tool/fire.json
+- `lens_small` — small high-quality lens — looks_like: - — items/generic.json
+- `leotard` — leotard — looks_like: - — items/armor/torso_clothes.json
+- `lettuce_head` — lettuce head — looks_like: - — items/comestibles/raw_veggy.json
+- `lgpistol_primer` — large pistol primer — looks_like: - — items/ammo.json
+- `lgrifle_primer` — large rifle primer — looks_like: - — items/ammo.json
+- `light_cell_rechargeable` — light battery — looks_like: - — items/battery.json
+- `light_emergency_blue` — emergency vehicle light (blue) — looks_like: - — items/vehicle/lights.json
+- `light_emergency_red` — emergency vehicle light (red) — looks_like: - — items/vehicle/lights.json
+- `light_minus_disposable_cell` — ultra-light battery (disposable) — looks_like: - — items/battery.json
+- `light_snare_kit` — light snare kit — looks_like: - — items/tool/traps.json
+- `lightstrip_inactive` — LED strip (inactive) — looks_like: - — items/tool/lighting.json
+- `liq_bandage` — liquid bandage — looks_like: - — items/ammo.json
+- `liq_bandage_spray` — spray bottle of liquid bandage — looks_like: - — items/tool/med.json
+- `liquid_soap` — liquid soap — looks_like: - — items/chemicals_and_resources.json
+- `livestock_carrier` — livestock carrier — looks_like: cargo_rack — items/vehicle/cargo.json
+- `lixa_data` — LIXA research archive backup — looks_like: - — items/generic.json
+- `llink` — lightning link — looks_like: - — items/gunmod/mechanism.json
+- `lobster` — chunk of lobster meat — looks_like: - — items/comestibles/carnivore.json
+- `lobster_cakes` — lobster cake — looks_like: fish_fried — items/comestibles/meat_dishes.json
+- `lobster_canned` — canned lobster — looks_like: - — items/comestibles/meat_dishes.json
+- `lobster_cooked` — cooked lobster — looks_like: - — items/comestibles/carnivore.json
+- `lobster_platter` — lobster platter — looks_like: - — items/comestibles/meat_dishes.json
+- `lobster_roll` — lobster roll — looks_like: - — items/comestibles/sandwich.json
+- `lobster_smoked` — smoked lobster — looks_like: - — items/comestibles/carnivore.json
+- `log_immersion27` — INCIDENT REPORT: IMMERSION-27A — looks_like: - — items/generic.json
+- `long_knit_scarf_headwrap` — long knit scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `long_patchwork_scarf_headwrap` — long patchwork scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `long_pole` — long pole — looks_like: - — items/resources/wood.json
+- `loom_frame` — frame loom — looks_like: - — items/tool/tailoring.json
+- `lotus_rhizome` — lotus root — looks_like: - — items/comestibles/raw_veggy.json
+- `lotus_rhizome_boiled` — boiled lotus root — looks_like: lotus_rhizome — items/comestibles/veggy_dishes.json
+- `louverture` — the Louverture — looks_like: - — items/gun/artisan_guns.json
+- `ls_sd_passcode` — holographic shard — looks_like: - — items/netherum/labyrinth_passcode_items.json
+- `ls_sd_passcode_used` — holographic shard (used) — looks_like: - — items/netherum/labyrinth_passcode_items.json
+- `lucern_hammerfake` — lucerne hammer — looks_like: - — items/melee/bludgeons.json
+- `ludo` — Ludo — looks_like: - — items/fluff.json
+- `lulo` — lulo — looks_like: - — items/comestibles/raw_fruit.json
+- `lump_cast_iron` — cast iron lump — looks_like: - — items/resources/metal.json
+- `lunchbox` — lunchbox — looks_like: - — items/containers/containers.json
+- `lunchmeat` — lunch meat — looks_like: - — items/comestibles/meat_dishes.json
+- `lung_provence` — lung provence — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `lutefisk` — lutefisk — looks_like: - — items/comestibles/meat_dishes.json
+- `lux_meter` — lux meter — looks_like: - — items/tool/science.json
+- `lycra_patch` — Lycra patch — looks_like: - — items/resources/plastic.json
+- `lye_potassium` — potassium lye — looks_like: - — items/chemicals_and_resources.json
+- `m1911_10mag` — Colt Delta Elite 8-round magazine — looks_like: m1911mag — items/magazine/10mm.json
+- `m1911bigmag` — M1911 10-round magazine — looks_like: - — items/magazine/45.json
+- `m1911mag` — M1911 7-round magazine — looks_like: - — items/magazine/45.json
+- `m203` — M203A1 — looks_like: - — items/gunmod/underbarrel.json
+- `m203_mod` — modified M203 — looks_like: - — items/gunmod/underbarrel.json
+- `m240semi` — M240 select fire trigger — looks_like: - — items/gunmod/mechanism.json
+- `m249semi` — M249 select fire trigger — looks_like: - — items/gunmod/mechanism.json
+- `m26_mass` — M26-MASS shotgun — looks_like: - — items/gunmod/underbarrel.json
+- `m26_mass_mag_3` — M26-MASS 3-round magazine — looks_like: - — items/magazine/shot.json
+- `m26_mass_mag_5` — M26-MASS 5-round magazine — looks_like: - — items/magazine/shot.json
+- `m26_mass_standalone` — M26-MASS standalone shotgun — looks_like: - — items/gun/shot.json
+- `m26_mass_stock` — MASS compatible stock — looks_like: - — items/gunmod/stock.json
+- `m320_mod` — M320 GLM — looks_like: - — items/gunmod/underbarrel.json
+- `m320_mod_mod` — modified M320 GLM — looks_like: - — items/gunmod/underbarrel.json
+- `m_fishspear` — metal fishing spear — looks_like: - — items/ranged/spearguns.json
+- `m_stellatum_berries` — starry false Solomon's seal berries — looks_like: - — items/comestibles/raw_fruit.json
+- `macaroni_cooked` — mac & cheese — looks_like: - — items/comestibles/wheat.json
+- `macaroni_helper` — hamburger helper — looks_like: - — items/comestibles/meat_dishes.json
+- `macaroni_raw` — raw macaroni — looks_like: - — items/comestibles/wheat.json
+- `magazine_battery_heavy_mod` — tool battery mod — looks_like: - — items/toolmod.json
+- `magazine_battery_light_mod` — light battery mod — looks_like: - — items/toolmod.json
+- `magazine_battery_medium_mod` — medium battery mod — looks_like: - — items/toolmod.json
+- `magazine_battery_mod` — battery compartment mod — looks_like: - — items/toolmod.json
+- `magnetron` — magnetron — looks_like: motor_small — items/electronics.json
+- `mahjong` — mahjong set — looks_like: - — items/fluff.json
+- `makeshift_axe` — metal axe head — looks_like: - — items/tool/woodworking.json
+- `makeshift_brazier` — makeshift brazier — looks_like: - — items/tool/deployable.json
+- `makeshift_cane` — makeshift walking cane — looks_like: - — items/melee/bludgeons.json
+- `makeshift_checkers` — makeshift checkers set — looks_like: - — items/fluff.json
+- `makeshift_crutches` — makeshift crutches (pair) — looks_like: - — items/melee/bludgeons.json
+- `makeshift_dominoes` — makeshift dominoes set — looks_like: - — items/fluff.json
+- `makeshift_ear_plugs_off` — makeshift ear plugs (out) (pair) — looks_like: - — items/tool_armor.json
+- `makeshift_ear_plugs_on` — makeshift ear plugs (in) (pair) — looks_like: - — items/tool_armor.json
+- `makeshift_pillow` — makeshift pillow — looks_like: - — items/generic.json
+- `makeshift_pressure_cooker` — makeshift pressure cooker — looks_like: - — items/tool/cooking.json
+- `makeshift_sap` — makeshift sap — looks_like: - — items/melee/bludgeons.json
+- `makeshift_sealer` — makeshift vacuum sealer — looks_like: - — items/tool/cooking.json
+- `makeshift_tree_spile` — makeshift tree spile — looks_like: - — items/generic.json
+- `makeshift_vacuum_mold` — makeshift vacuum mold — looks_like: - — items/tool/workshop.json
+- `makeshift_welding_blanket` — makeshift welding blanket — looks_like: - — items/tool/workshop.json
+- `makeup_kit` — makeup kit — looks_like: - — items/tool/toiletries.json
+- `malachite` — malachite — looks_like: - — items/generic.json
+- `mallbrochure` — mall advertising brochure — looks_like: - — items/book/maps.json
+- `maltballs` — malted milk balls — looks_like: - — items/comestibles/junkfood.json
+- `malted_grain` — malted grain — looks_like: - — items/comestibles/brewing.json
+- `malting_grain` — malting grain (obsolete) — looks_like: malted_grain — obsoletion_and_migration_0.J/brewing.json
+- `malting_grain_active` — malting grain — looks_like: malted_grain — items/comestibles/brewing.json
+- `mancala` — mancala set — looks_like: - — items/fluff.json
+- `mannequin` — mannequin — looks_like: - — items/generic/toys_and_sports.json
+- `mansions_of_madness` — Crazy Mansions — looks_like: - — items/fluff.json
+- `manual_aikido` — The Spirit of Aikido — looks_like: - — items/book/martial.json
+- `manual_barbaran` — Las Nueve Reglas de la Montante — looks_like: - — items/book/martial.json
+- `manual_bojutsu` — Bōjutsu The Matsumoto System — looks_like: - — items/book/martial.json
+- `manual_boxing` — Practical Pugilism — looks_like: - — items/book/martial.json
+- `manual_canning` — You Can Can at Home — looks_like: - — items/book/cooking.json
+- `manual_capoeira` — Capoeira 100 — looks_like: - — items/book/martial.json
+- `manual_crane` — The Red Crane — looks_like: - — items/book/martial.json
+- `manual_dragon` — The Jade Dragon — looks_like: - — items/book/martial.json
+- `manual_eskrima` — Practical Eskrima — looks_like: - — items/book/martial.json
+- `manual_fencing` — The Modern Swordsman — looks_like: - — items/book/martial.json
+- `manual_judo` — Kodokan Judo — looks_like: - — items/book/martial.json
+- `manual_karate` — The Shōtōkan Karate Handbook — looks_like: - — items/book/martial.json
+- `manual_kickboxing` — The Ultimate Guide to Kickboxing — looks_like: - — items/book/martial.json
+- `manual_krav_maga` — Complete Krav Maga — looks_like: - — items/book/martial.json
+- `manual_leopard` — The Deaf Leopard — looks_like: - — items/book/martial.json
+- `manual_medievalpole` — Fior Di Battaglia — looks_like: - — items/book/martial.json
+- `manual_muay_thai` — Ultimate Muay Thai — looks_like: - — items/book/martial.json
+- `manual_ninjutsu` — Essence of Ninjutsu — looks_like: - — items/book/martial.json
+- `manual_niten` — The Book of Five Rings — looks_like: - — items/book/martial.json
+- `manual_pankration` — The Modern Pankratiast — looks_like: - — items/book/martial.json
+- `manual_sealing` — Can Sealer Instructions — looks_like: - — items/book/cooking.json
+- `manual_silat` — The Indonesian Warrior — looks_like: - — items/book/martial.json
+- `manual_snake` — The Black Snake — looks_like: - — items/book/martial.json
+- `manual_sojutsu` — The Way of the Spear — looks_like: - — items/book/martial.json
+- `manual_swordsmanship` — Historic European Swordfighting — looks_like: - — items/book/martial.json
+- `manual_taekwondo` — Official Taekwondo Training Manual — looks_like: - — items/book/martial.json
+- `manual_tai_chi` — Becoming One with the Tao — looks_like: - — items/book/martial.json
+- `manual_tiger` — The White Tiger — looks_like: - — items/book/martial.json
+- `manual_wingchun` — Wing Chun Compendium — looks_like: - — items/book/martial.json
+- `manual_zui_quan` — Zui Quan and You — looks_like: - — items/book/martial.json
+- `maracuya` — handful of passionfruit — looks_like: - — items/comestibles/raw_fruit.json
+- `marlin60` — tube fed varmint rifle — looks_like: ruger1022 — items/gun/22.json
+- `marloss_berry` — Marloss berry — looks_like: - — items/comestibles/other.json
+- `marloss_gel` — Marloss gelatin — looks_like: - — items/comestibles/other.json
+- `marshmallow_fluff` — marshmallow fluff — looks_like: - — items/comestibles/junkfood.json
+- `mascarpone` — mascarpone — looks_like: - — items/comestibles/dairy.json
+- `mask_bunker` — firefighter respirator mask — looks_like: - — items/tool_armor.json
+- `mask_bunker_scba_on` — firefighter respirator mask (on) — looks_like: - — items/tool_armor.json
+- `mask_fsurvivor` — handmade firemask — looks_like: - — items/tool_armor.json
+- `mask_fsurvivorxl` — handmade firemask — looks_like: mask_fsurvivor — items/tool_armor.json
+- `mask_fsurvivorxs` — handmade firemask — looks_like: mask_fsurvivor — items/tool_armor.json
+- `mask_h20survivor` — handmade divemask — looks_like: - — items/tool_armor.json
+- `mask_h20survivor_on` — handmade divemask (on) — looks_like: - — items/tool_armor.json
+- `mask_h20survivorxl` — handmade divemask — looks_like: mask_h20survivor — items/tool_armor.json
+- `mask_h20survivorxl_on` — handmade divemask (on) — looks_like: mask_h20survivor — items/tool_armor.json
+- `mask_h20survivorxs` — handmade divemask — looks_like: mask_h20survivor — items/tool_armor.json
+- `mask_h20survivorxs_on` — handmade divemask (on) — looks_like: mask_h20survivor — items/tool_armor.json
+- `mask_hsurvivor` — handmade plated gas mask — looks_like: - — items/tool_armor.json
+- `mask_hsurvivorxl` — handmade plated gas mask — looks_like: mask_hsurvivor — items/tool_armor.json
+- `mask_hsurvivorxs` — handmade plated gas mask — looks_like: mask_hsurvivor — items/tool_armor.json
+- `mask_lsurvivor` — handmade half gas mask — looks_like: - — items/tool_armor.json
+- `mask_lsurvivorxl` — handmade half gas mask — looks_like: mask_lsurvivor — items/tool_armor.json
+- `mask_lsurvivorxs` — handmade half gas mask — looks_like: mask_lsurvivor — items/tool_armor.json
+- `mask_plague` — plague mask — looks_like: - — items/armor/masks.json
+- `mask_ski` — ski mask — looks_like: - — items/tool_armor.json
+- `mask_ski_loose` — ski mask (collar) — looks_like: - — items/tool_armor.json
+- `mask_survivor` — handmade gas mask — looks_like: - — items/tool_armor.json
+- `mask_survivorxl` — handmade gas mask — looks_like: mask_survivor — items/tool_armor.json
+- `mask_survivorxs` — handmade gas mask — looks_like: mask_survivor — items/tool_armor.json
+- `masterkey` — masterkey shotgun — looks_like: - — items/gunmod/underbarrel.json
+- `masterkey_mod` — modified masterkey shotgun — looks_like: - — items/gunmod/underbarrel.json
+- `match_trigger` — match trigger — looks_like: - — items/gunmod/mechanism.json
+- `matchhead_22_fmj` — .22 LR FMJ, matchhead powder — looks_like: bp_22_fmj — items/ammo/22.json
+- `matchhead_22_lr` — .22 LR, matchhead powder — looks_like: bp_22_lr — items/ammo/22.json
+- `matchhead_30carbine` — .30 Carbine FMJ, matchhead powder — looks_like: bp_30carbine — items/ammo/30carbine.json
+- `matchhead_30carbine_jsp` — .30 Carbine JSP, matchhead powder — looks_like: bp_30carbine — items/ammo/30carbine.json
+- `matchhead_32_acp` — .32 ACP FMJ, matchhead powder — looks_like: bp_32_acp — items/ammo/32.json
+- `matchhead_357mag_fmj` — .357 Magnum FMJ, matchhead powder — looks_like: bp_357mag_fmj — items/ammo/357mag.json
+- `matchhead_357sig_fmj` — .357 SIG FMJ, matchhead powder — looks_like: bp_357sig_fmj — items/ammo/357sig.json
+- `matchhead_380_FMJ` — .380 ACP FMJ, matchhead powder — looks_like: bp_380_FMJ — items/ammo/380.json
+- `matchhead_38_fmj` — .38 Special FMJ, matchhead powder — looks_like: bp_38_fmj — items/ammo/38.json
+- `matchhead_38_super_fmj` — .38 Super FMJ, matchhead powder — looks_like: bp_30carbine — items/ammo/38super.json
+- `matchhead_40fmj` — .40 S&W FMJ, matchhead powder — looks_like: bp_40fmj — items/ammo/40.json
+- `matchhead_45_acp` — .45 ACP FMJ, matchhead powder — looks_like: bp_45_acp — items/ammo/45.json
+- `matchhead_45colt_cowboy` — .45 Colt LFN, matchhead powder — looks_like: - — items/ammo/45colt.json
+- `matchhead_45colt_fmj` — .45 Colt FMJ, matchhead powder — looks_like: - — items/ammo/45colt.json
+- `matchhead_50ae_fmj` — .50 AE FMJ, matchhead powder — looks_like: bp_50ae_fmj — items/ammo/50ae.json
+- `material_niter` — niter crystal — looks_like: - — items/chemicals_and_resources.json
+- `material_styrofoam_chunk` — chunk of styrofoam — looks_like: - — items/chemicals_and_resources.json
+- `material_styrofoam_sheet` — styrofoam sheet — looks_like: - — items/chemicals_and_resources.json
+- `mc_aztec_spear` — medium steel bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `mc_aztec_sword` — medium steel bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `mc_battleaxe` — medium steel battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `mc_brigandine_hands` — medium steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `mc_brigandine_hands_xs` — medium steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `mc_chain_link` — medium steel chain link — looks_like: - — items/ammo.json
+- `mc_chainmail_aventail` — medium steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `mc_chainmail_face` — medium steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `mc_chainmail_feet` — medium steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `mc_chainmail_hands` — medium steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `mc_esapi_plate` — medium steel ballistic plate — looks_like: scrap_esapi_plate — items/armor/ballistic_armor.json
+- `mc_esbi_plate` — medium steel ballistic side plate — looks_like: scrap_esbi_plate — items/armor/ballistic_armor.json
+- `mc_estoc` — medium steel estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `mc_khopesh` — medium steel khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `mc_link_sheet` — medium steel chainmail sheet — looks_like: - — items/tool/metalworking.json
+- `mc_shoulder_guards` — medium steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `mc_shoulder_guards_xs` — medium steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `mc_steel_bar_flat` — medium steel flat bar stock — looks_like: - — items/resources/metal.json
+- `mc_steel_bar_round` — medium steel bar stock — looks_like: - — items/resources/metal.json
+- `mc_steel_chunk` — chunk of medium steel — looks_like: - — items/resources/metal.json
+- `mc_steel_facemask` — medium steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `mc_steel_lump` — lump of medium steel — looks_like: - — items/resources/metal.json
+- `mc_wakizashi` — medium steel wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `mc_wire` — medium steel wire — looks_like: - — items/generic.json
+- `meal_bone_tainted` — tainted bone meal — looks_like: - — items/resources/bone.json
+- `meat_bark` — leech bark — looks_like: - — items/comestibles/carnivore.json
+- `meat_canned` — canned meat — looks_like: - — items/comestibles/meat_dishes.json
+- `meat_fatty_cooked` — cooked fatty meat — looks_like: - — items/comestibles/carnivore.json
+- `meat_fried` — fried meat — looks_like: - — items/comestibles/carnivore.json
+- `meat_frond` — alien fronds — looks_like: - — items/comestibles/carnivore.json
+- `meat_mi-go` — chunk of mi-go meat — looks_like: - — items/comestibles/carnivore.json
+- `meat_pickled` — pickled meat — looks_like: - — items/comestibles/meat_dishes.json
+- `meat_salted` — salted meat slice — looks_like: - — items/comestibles/meat_dishes.json
+- `meat_tainted_human` — chunk of tainted human meat — looks_like: - — items/comestibles/carnivore.json
+- `medium_biogas_tank` — medium biogas tank — looks_like: - — items/containers/containers.json
+- `medium_printout_portal_storm_data` — NRE printout — looks_like: - — items/generic.json
+- `medium_storage_battery` — medium storage battery — looks_like: - — items/vehicle/battery.json
+- `medium_surface_pseudo` — medium surface pseudo item — looks_like: - — items/tool/pseudo.json
+- `medium_turbine_engine` — 38 L 1,900 HP gas turbine engine — looks_like: - — items/vehicle/engine.json
+- `melatonin_tablet` — melatonin tablet — looks_like: - — items/comestibles/med.json
+- `melchior_platter` — supercomputer platter — looks_like: - — items/electronics.json
+- `melchior_science_doc` — MELCHIOR report — looks_like: - — items/generic.json
+- `melitzanosalata` — Melitzanosalata — looks_like: - — items/comestibles/veggy_dishes.json
+- `melon` — cantaloupe melon — looks_like: - — items/comestibles/raw_fruit.json
+- `melon_chunks` — handful of cantaloupe melon chunks — looks_like: - — items/comestibles/raw_fruit.json
+- `melting_point` — melting point apparatus — looks_like: - — items/tool/science.json
+- `memory_card_older` — older memory card — looks_like: - — items/tool/electronics.json
+- `memory_card_science` — memory card (XEDRA) — looks_like: - — items/tool/electronics.json
+- `memory_card_unread` — memory card — looks_like: - — items/tool/electronics.json
+- `memory_module` — memory banks module — looks_like: - — items/robot_parts.json
+- `menemen` — menemen — looks_like: - — items/comestibles/egg.json
+- `menorah` — menorah — looks_like: - — items/tool/lighting.json
+- `mercury` — mercury — looks_like: - — items/resources/chemicals.json
+- `mesh_nape_protector` — mesh nape protector — looks_like: - — items/armor/head_attachments.json
+- `metabolism` — metabolism — looks_like: - — items/generic.json
+- `metal_butcher_rack` — metal butchering rack — looks_like: - — items/tool/deployable.json
+- `metal_casting_book` — metal casting reference manual — looks_like: - — items/book/fabrication.json
+- `metal_honing_rod` — honing rod — looks_like: - — items/tool/cooking.json
+- `metal_smoking_rack` — metal smoking rack — looks_like: - — items/tool/deployable.json
+- `metalworking_tongs_bronze` — flatjaw bronze tongs — looks_like: - — items/tool/metalworking.json
+- `metaprolol` — metaprolol — looks_like: - — items/comestibles/med.json
+- `methanol_fuel_cell` — methanol fuel cell UPS — looks_like: - — items/tool/electronics.json
+- `microscope_slide` — microscope slide — looks_like: - — items/tool/science.json
+- `microscope_slide_soil` — microscope slide of soil — looks_like: - — items/tool/science.json
+- `microscope_slide_water_murky` — microscope slide of murky water — looks_like: - — items/tool/science.json
+- `migo_bio_gun` — mi-go bio-gun — looks_like: - — monster_special_attacks/monster_gun.json
+- `migo_bio_tech` — Mi-go Biotech — looks_like: - — items/tool/science.json
+- `migo_plate` — iridescent carapace plate — looks_like: - — items/armor/exotic.json
+- `migo_plate_naked` — plate of scarred flesh — looks_like: - — items/armor/exotic.json
+- `migo_plate_overgrown` — overgrown iridescent carapace plate — looks_like: - — items/armor/exotic.json
+- `migo_plate_undergrown` — undergrown iridescent carapace plate — looks_like: - — items/armor/exotic.json
+- `migo_sideplate` — iridescent carapace side plate — looks_like: - — items/armor/exotic.json
+- `migo_sideplate_naked` — small plate of scarred flesh — looks_like: - — items/armor/exotic.json
+- `migo_sideplate_overgrown` — overgrown iridescent carapace side plate — looks_like: - — items/armor/exotic.json
+- `migo_sideplate_undergrown` — undergrown iridescent carapace side plate — looks_like: - — items/armor/exotic.json
+- `military_nvg` — night vision goggles — looks_like: - — items/armor/head_attachments.json
+- `military_nvg_on` — night vision goggles (on) — looks_like: - — items/armor/head_attachments.json
+- `military_poncho_liner` — military poncho liner — looks_like: - — items/armor/cloaks.json
+- `military_vis_aug_system` — military visual augmentation system — looks_like: - — items/tool_armor.json
+- `military_vis_aug_system_on` — military visual augmentation system (on) — looks_like: - — items/tool_armor.json
+- `militarymap` — military operations map — looks_like: - — items/book/maps.json
+- `milk_UHT` — shelf stable milk — looks_like: - — items/comestibles/dairy.json
+- `milk_choc` — chocolate milk — looks_like: - — items/comestibles/dairy.json
+- `milk_fortified` — fortified milk — looks_like: - — items/comestibles/protein.json
+- `milk_raw` — raw milk — looks_like: - — items/comestibles/dairy.json
+- `milk_reconstituted` — reconstituted milk — looks_like: - — items/comestibles/dairy.json
+- `milkshake_choc` — chocolate milkshake — looks_like: - — items/comestibles/frozen.json
+- `milkshake_deluxe` — deluxe milkshake — looks_like: - — items/comestibles/frozen.json
+- `milkshake_deluxe_choc` — deluxe chocolate milkshake — looks_like: - — items/comestibles/frozen.json
+- `milkshake_fastfood` — fast food milkshake — looks_like: - — items/comestibles/frozen.json
+- `mintpatties` — peppermint patty — looks_like: - — items/comestibles/junkfood.json
+- `mipim` — army flashlight-laser module — looks_like: - — items/gunmod/rail.json
+- `mipim_on` — army flashlight-laser module (on) — looks_like: - — items/gunmod/rail.json
+- `missing_poster_adult` — missing person poster — looks_like: - — items/newspaper.json
+- `missing_poster_cat` — missing cat poster — looks_like: - — items/newspaper.json
+- `missing_poster_child` — missing child poster — looks_like: - — items/newspaper.json
+- `missing_poster_dog` — missing dog poster — looks_like: - — items/newspaper.json
+- `mitresaw_tool` — mitre saw — looks_like: - — items/fake.json
+- `mka_1919_10` — rifle shotgun 10-round magazine — looks_like: - — items/magazine/shot.json
+- `mka_1919_5` — rifle shotgun 5-round magazine — looks_like: - — items/magazine/shot.json
+- `modern_handguard` — high end hand guard — looks_like: - — items/gunmod/underbarrel.json
+- `module_meteorologist` — drone memory bank — looks_like: - — items/generic.json
+- `moisturizer` — moisturizer — looks_like: - — items/ammo.json
+- `mollusk` — fillet of mollusk — looks_like: - — items/comestibles/carnivore.json
+- `mollusk_cooked` — cooked mollusk — looks_like: - — items/comestibles/carnivore.json
+- `mollusk_smoked` — smoked mollusk — looks_like: - — items/comestibles/carnivore.json
+- `money` — cent — looks_like: - — items/ammo.json
+- `monitoring_equipment_doc` — XEDRA document — looks_like: - — items/generic.json
+- `monkey_tool` — monkey tool — looks_like: - — items/tool/workshop.json
+- `monolith_brick` — warped brick — looks_like: - — items/relics/monolith_items.json
+- `monolith_disc` — inscribed disc — looks_like: - — items/relics/monolith_items.json
+- `mortar_m224` — light mortar — looks_like: - — items/gun/60mm.json
+- `mossberg_590m_mag_10` — magazine-fed pump shotgun 10-round magazine — looks_like: - — items/magazine/shot.json
+- `mossberg_590m_mag_15` — magazine-fed pump shotgun 15-round magazine — looks_like: - — items/magazine/shot.json
+- `mossberg_590m_mag_20` — magazine-fed pump shotgun 20-round magazine — looks_like: - — items/magazine/shot.json
+- `mossberg_590m_mag_5` — magazine-fed pump shotgun 5-round magazine — looks_like: - — items/magazine/shot.json
+- `motor_enhanced` — enhanced electric motor — looks_like: - — items/vehicle/motors.json
+- `motor_micro` — micro electric motor — looks_like: - — items/generic.json
+- `motor_small` — small electric motor — looks_like: - — items/vehicle/motors.json
+- `motor_super` — super electric motor — looks_like: - — items/vehicle/motors.json
+- `motor_train1300` — 1,300 HP electric train engine — looks_like: - — items/vehicle/motors.json
+- `motorcycle_headlight` — motorcycle headlight — looks_like: - — items/vehicle/lights.json
+- `mountable_cooler` — vehicle cooler — looks_like: - — items/vehicle/utilities.json
+- `mounted_flashlight` — mounted flashlight — looks_like: - — items/gunmod/underbarrel.json
+- `mounted_flashlight_on` — mounted flashlight (on) — looks_like: - — items/gunmod/underbarrel.json
+- `mounted_spare_tire` — mounted spare tire — looks_like: - — items/vehicle/cargo.json
+- `movie_poster` — movie poster — looks_like: - — items/newspaper.json
+- `mozzarella_cheese_smoked` — smoked mozzarella cheese — looks_like: - — items/comestibles/dairy.json
+- `mp1522_mag` — .22 10-round modern varmint rifle magazine — looks_like: - — items/magazine/22.json
+- `mp3_on` — mp3 player (on) — looks_like: - — items/tool/electronics.json
+- `mp3_on_reverberation` — red mp3 player (on) — looks_like: - — items/relics/extradimensional_artifacts.json
+- `mp3_reverberation` — red mp3 player (off) — looks_like: - — items/relics/extradimensional_artifacts.json
+- `mp5sd_suppressor` — MP5SD integral suppressor — looks_like: - — items/gunmod/muzzle.json
+- `mre_asianbeef` — Asian beef & vegetables entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_bbqbeef` — BBQ beef entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_beef` — beef brisket entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_beefstew` — beef stew entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_beeftaco` — beef taco entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_blackbeans` — black beans in sauce — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_cheesepizza` — cheese pizza entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_cheesetort` — cheese tortellini entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chicken` — chicken chunks entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chickenburritobowl` — chicken burrito bowl entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chickennoodle` — chicken noodle entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chickenpesto` — chicken pesto & pasta entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chilibeans` — chili & beans entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chilimac` — chili & macaroni entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_chocolate_cake` — MRE toaster pastry — looks_like: - — items/comestibles/mre.json
+- `mre_fried_rice` — fried rice (small portion) — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_hashbrownbacon` — hash browns & bacon entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_hotdog` — frankfurters & beans entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_lemontuna` — lemon pepper tuna entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_lobstermedley` — lobster seafood medley entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_macaronimarinara` — macaroni & marinara entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_maplesausage` — maple sausage entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_meatball` — meatballs & marinara entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_mexicanchickenstew` — Mexican chicken stew entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_mushroomfettuccine` — mushroom fettuccine entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_pepperjackbeef` — pepper jack beef entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_pizza` — pepperoni pizza entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_potato` — potatoes, Au Gratin — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_ratatouille` — ratatouille entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_ravioli` — ravioli entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_sfettuccine` — spinach fettuccine entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_southwestbeef` — southwest beef & beans entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_spaghetti` — spaghetti entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_veggy` — vegetarian taco entree — looks_like: mre_beef — items/comestibles/mre.json
+- `mre_zapplesauce` — zapplesauce — looks_like: mre_beef — items/comestibles/mre.json
+- `msu14_password` — annotated paper scrap — looks_like: - — items/generic.json
+- `muscle` — muscle — looks_like: - — items/generic.json
+- `mushroom_cooked` — cooked mushroom — looks_like: - — items/comestibles/mushroom.json
+- `mushroom_ketchup` — mushroom ketchup — looks_like: - — items/comestibles/mushroom.json
+- `mut_longpull` — Ranged pulling implement — looks_like: - — items/gun/bio.json
+- `mut_quills` — Assault barbs — looks_like: - — items/gun/bio.json
+- `mutagen` — mutagenic slurry — looks_like: - — items/comestibles/mutagen.json
+- `mutagen_alpha` — alpha mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_batrachian` — batrachian mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_beast` — beast mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_bird` — bird mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_cattle` — cattle mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_cephalopod` — cephalopod mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_chelator` — mutagen chelator — looks_like: - — items/comestibles/mutagen.json
+- `mutagen_chimera` — chimera mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_chiropteran` — chiropteran mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_crustacean` — crustacean mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_elfa` — Elf-A mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_feline` — feline mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_fish` — fish mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_insect` — insect mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_interstice` — perfectly clear water — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_jabberblood` — congealed blood — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_lizard` — lizard mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_lupine` — lupine mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_medical` — medical mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_mouse` — mouse mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_plant` — plant mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_rabbit` — rabbit mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_raptor` — raptor mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_rat` — rat mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_slime` — slime mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_snail` — snail mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_spider` — spider mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_troglobite` — troglobite mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutagen_ursine` — ursine mutagen — looks_like: mutagen — items/comestibles/mutagen.json
+- `mutant_brain_cooked` — cooked piece of mutant brain — looks_like: offal_cooked — items/comestibles/carnivore.json
+- `mutant_bug_organs_cooked` — cooked mutant bug organs — looks_like: offal_cooked — items/comestibles/carnivore.json
+- `mutant_cracklins` — mutant cracklins — looks_like: - — items/comestibles/meat_dishes.json
+- `mutant_heart` — piece of raw mutant heart — looks_like: offal — items/comestibles/carnivore.json
+- `mutant_heart_cooked` — cooked piece of mutant heart — looks_like: offal_cooked — items/comestibles/carnivore.json
+- `mutant_human_cracklins` — mutant humanoid cracklins — looks_like: - — items/comestibles/meat_dishes.json
+- `mutant_human_heart` — piece of raw mutant humanoid heart — looks_like: offal — items/comestibles/carnivore.json
+- `mutant_kidney` — piece of raw mutant kidney — looks_like: offal — items/comestibles/carnivore.json
+- `mutant_kidney_cooked` — cooked piece of mutant kidney — looks_like: offal_cooked — items/comestibles/carnivore.json
+- `mutant_liver` — piece of raw mutant liver — looks_like: offal — items/comestibles/carnivore.json
+- `mutant_lung` — piece of raw mutant lung — looks_like: offal — items/comestibles/carnivore.json
+- `mutant_lung_cooked` — cooked piece of mutant lung — looks_like: offal_cooked — items/comestibles/carnivore.json
+- `mutflesh` — chunk of mutagenic flesh — looks_like: - — items/comestibles/carnivore.json
+- `muzzle_brake` — muzzle brake — looks_like: - — items/gunmod/muzzle.json
+- `muzzle_pistol_weight` — muzzle weight — looks_like: - — items/gunmod/rail.json
+- `muzzle_weight` — muzzle weight — looks_like: - — items/gunmod/underbarrel.json
+- `mws_monster_corpse_weather_data` — alien "atmospheric" datasheet — looks_like: - — items/weather_reports.json
+- `mws_portal_storm_weather_data` — strange weather datasheet — looks_like: - — items/weather_reports.json
+- `mws_weather_data` — weather datasheet — looks_like: - — items/weather_reports.json
+- `mws_weather_data_incomplete` — unspooled thermal paper — looks_like: - — items/weather_reports.json
+- `myopia_contacts_daily` — myopia contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `myopia_transition_contacts_daily` — myopia transition contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `myopia_transition_contacts_weekly` — myopia transition contact lenses (weekly) — looks_like: - — items/comestibles/med.json
+- `naginata_machete` — machete naginata — looks_like: - — items/melee/spears_and_polearms.json
+- `naginata_machete_temp` — tempered machete naginata — looks_like: - — items/melee/spears_and_polearms.json
+- `nail_header` — nail header — looks_like: - — items/tool/workshop.json
+- `nail_header_bronze` — bronze nail header — looks_like: - — items/tool/workshop.json
+- `nail_puller` — nail puller — looks_like: - — items/farrier.json
+- `nail_puller_bronze` — bronze nail puller — looks_like: - — items/tool/workshop.json
+- `nannyberries` — handful of nannyberries — looks_like: - — items/comestibles/raw_fruit.json
+- `nano_fabricator_encryption_code` — nano-fabricator licensing USB — looks_like: - — items/generic.json
+- `nape_protector` — nape protector — looks_like: - — items/armor/head_attachments.json
+- `napkin` — napkin — looks_like: - — items/comestibles/other.json
+- `naproxen` — naproxen — looks_like: - — items/comestibles/med.json
+- `ndn_taco` — Indian taco — looks_like: - — items/comestibles/meat_dishes.json
+- `neccowafers` — Necco wafers — looks_like: - — items/comestibles/junkfood.json
+- `necklace_teeth` — teeth necklace — looks_like: - — items/armor/jewelry.json
+- `necronomicon` — grimoire — looks_like: - — items/book/misc.json
+- `nectar` — nectar — looks_like: - — items/comestibles/other.json
+- `nemo` — Nemo's Sea — looks_like: - — items/fluff.json
+- `neoprene` — neoprene patch — looks_like: - — items/generic.json
+- `net_backpack` — net backpack — looks_like: - — items/armor/storage.json
+- `nether_grub` — alien grub — looks_like: - — items/comestibles/carnivore.json
+- `nether_huntsman_arm` — huntsman appendage — looks_like: - — monster_special_attacks/monster_gun.json
+- `nether_huntsman_armorpiece_big` — alien armor plate — looks_like: - — items/resources/alien.json
+- `nether_huntsman_armorpiece_small` — alien armor fragment — looks_like: - — items/resources/alien.json
+- `nether_huntsman_javelin` — huntsman outgrowth — looks_like: - — items/ranged/throwing.json
+- `nether_huntsman_organ` — reverberating organ — looks_like: - — items/comestibles/carnivore.json
+- `nether_huntsman_spike` — undergrown alien spike — looks_like: - — items/resources/alien.json
+- `nether_huntsman_statuette` — strange statuette — looks_like: - — items/resources/alien.json
+- `newspaper_memorial` — newspaper page — looks_like: - — items/newspaper.json
+- `nic_pouch` — nicotine pouch — looks_like: - — items/comestibles/med.json
+- `nightlifepamphlet` — nightlife pamphlet — looks_like: - — items/book/maps.json
+- `niqab` — niqab — looks_like: - — items/armor/hats.json
+- `nitrogen` — nitrogen — looks_like: - — items/ammo.json
+- `nitrogen_generator` — makeshift nitrogen generator — looks_like: - — items/tool/science.json
+- `nitrogen_membrane_filter` — nitrogen membrane filter — looks_like: - — items/generic/spares.json
+- `nitrox` — nitrox — looks_like: - — items/ammo.json
+- `nl_chem_thrower_ammo` — chem charge — looks_like: - — items/gun/netherum.json
+- `nl_chem_thrower_mag` — odd charge pack — looks_like: - — items/gun/netherum.json
+- `nl_flesh_powerbox` — fleshy cube — looks_like: - — items/comestibles/carnivore.json
+- `nl_grav_aware_jig` — otherworldly clamp-set — looks_like: - — items/netherum/labyrinth_tools.json
+- `nl_kipple_scrap_alu` — odd aluminum device — looks_like: - — items/netherum/labyrinth_kipple.json
+- `nl_kipple_scrap_copper` — odd copper device — looks_like: - — items/netherum/labyrinth_kipple.json
+- `nl_kipple_scrap_nanotubes` — odd metallic device — looks_like: - — items/netherum/labyrinth_kipple.json
+- `nl_kipple_scrap_plastic` — odd plastic device — looks_like: - — items/netherum/labyrinth_kipple.json
+- `nl_kipple_scrap_steel` — odd steel device — looks_like: - — items/netherum/labyrinth_kipple.json
+- `nl_kipple_scrap_unob` — strange metal device — looks_like: - — items/netherum/labyrinth_kipple.json
+- `nl_laser_mass_indexer` — laser-guided measurement device — looks_like: - — items/netherum/labyrinth_tools.json
+- `nl_robo_surg_app` — mass of robotic arms — looks_like: - — items/netherum/labyrinth_tools.json
+- `nl_safehouse_boiler` — disconnected otherworldly boiler — looks_like: - — items/netherum/labyrinth_furniture_appliances.json
+- `nl_safehouse_boiler_plans` — graven slab — looks_like: - — items/netherum/labyrinth_items_books.json
+- `nl_shrub_glowberries` — bunch of glowberries — looks_like: - — items/comestibles/netherum.json
+- `nl_surg_int_unit` — surgical bonebot brain — looks_like: - — items/netherum/labyrinth_tools.json
+- `nm_teeth` — monster teeth — looks_like: - — items/tool/misc.json
+- `noise_emitter` — noise emitter (off) — looks_like: - — items/tool/electronics.json
+- `noise_emitter_on` — noise emitter (on) — looks_like: - — items/tool/electronics.json
+- `noise_emitter_super` — super noise emitter (off) — looks_like: - — items/tool/electronics.json
+- `noise_emitter_super_on` — super noise emitter (on) — looks_like: - — items/tool/electronics.json
+- `nomad_rig` — nomad harness — looks_like: legrig — items/armor/bespoke_armor/custom_storage.json
+- `nomad_rig_on` — nomad harness (on) — looks_like: legrig — items/armor/bespoke_armor/custom_storage.json
+- `nomex` — Nomex patch — looks_like: - — items/resources/tailoring.json
+- `noodles_fast` — fast noodles — looks_like: - — items/comestibles/wheat.json
+- `nopalitos` — nopalito — looks_like: - — items/comestibles/veggy_dishes.json
+- `nose_plate` — nose plate — looks_like: forklift_fork — items/vehicle/cargo.json
+- `notch` — notch — looks_like: - — items/ammo.json
+- `note_mutant_alpha_boss` — child's drawing — looks_like: - — items/newspaper.json
+- `nre_anomaly_printout_data` — NRE anomaly printout — looks_like: - — items/generic.json
+- `nre_recorder` — NRE recorder — looks_like: - — items/tool/electronics.json
+- `null` — none — looks_like: - — items/generic.json
+- `nun_wimple` — wimple — looks_like: - — items/armor/scarfs.json
+- `nylon` — synthetic fabric patch — looks_like: - — items/resources/plastic.json
+- `oat_pulp` — oat pulp — looks_like: granola — items/comestibles/wheat.json
+- `oat_stalks` — oat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `oatmeal` — oatmeal — looks_like: - — items/comestibles/wheat.json
+- `oats` — oats — looks_like: - — items/comestibles/raw_grain.json
+- `obi_gi` — obi — looks_like: - — items/armor/belts.json
+- `offal` — raw offal — looks_like: - — items/comestibles/carnivore.json
+- `offal_canned` — canned offal — looks_like: - — items/comestibles/carnivore.json
+- `offal_cooked` — cooked offal — looks_like: - — items/comestibles/carnivore.json
+- `offal_pickled` — pickled offal — looks_like: - — items/comestibles/carnivore.json
+- `office_letter_opener` — letter opener — looks_like: - — items/tool/stationery.json
+- `offset_grip` — offset grip — looks_like: - — items/gunmod/rail.json
+- `offset_sight_rail` — offset sight rail — looks_like: - — items/gunmod/rail.json
+- `offset_sights` — offset iron sights — looks_like: - — items/gunmod/rail.json
+- `oil_cooker` — kerosene cooker — looks_like: - — items/tool/cooking.json
+- `oil_press_manual` — manual oil press — looks_like: - — items/tool/cooking.json
+- `oil_press_primitive` — oil-powered manual oil press — looks_like: oil_press_manual — items/tool/cooking.json
+- `old_key` — key — looks_like: - — items/fluff.json
+- `omelet` — omelet — looks_like: - — items/comestibles/egg.json
+- `omni_wheel` — set of omni wheels — looks_like: - — items/robot_parts.json
+- `onion_rings` — onion rings — looks_like: - — items/comestibles/junkfood.json
+- `onion_sauteed` — sauteed onions — looks_like: - — items/comestibles/veggy_dishes.json
+- `onyx` — onyx — looks_like: - — items/generic.json
+- `opal` — opal — looks_like: - — items/generic.json
+- `openfire` — War Tanks — looks_like: - — items/fluff.json
+- `orangeade_powder` — orangeade drink mix — looks_like: - — items/comestibles/fruit_dishes.json
+- `othello` — Reversi set — looks_like: - — items/fluff.json
+- `ouija` — Ouija board — looks_like: - — items/fluff.json
+- `outfit_storage` — set of clothes — looks_like: - — items/containers/generic.json
+- `outsert_breach` — breach outsert lens — looks_like: - — items/armor/head_attachments.json
+- `outsert_clear` — clear outsert lens — looks_like: - — items/armor/head_attachments.json
+- `outsert_sunlight` — sunlight outsert lens — looks_like: - — items/armor/head_attachments.json
+- `oven_broiler_pan` — broiler pan — looks_like: - — items/resources/appliance_parts.json
+- `oven_cabinet` — stripped oven cabinet — looks_like: - — items/resources/appliance_parts.json
+- `oven_controls` — oven control panel — looks_like: - — items/resources/appliance_parts.json
+- `oven_door` — oven door — looks_like: - — items/resources/appliance_parts.json
+- `oven_stovetop` — dismantled stovetop — looks_like: - — items/resources/appliance_parts.json
+- `oven_tool` — oven — looks_like: - — items/fake.json
+- `oyster` — oyster in shell — looks_like: - — items/comestibles/carnivore.json
+- `oyster_shucked` — shucked oyster — looks_like: - — items/comestibles/carnivore.json
+- `p226mag_10rd_9x19mm` — P226 9x19mm 10-round magazine — looks_like: - — items/magazine/9mm.json
+- `p226mag_15rd_9x19mm` — P226 9x19mm 15-round magazine — looks_like: - — items/magazine/9mm.json
+- `p228mag_13rd_9x19mm` — M11 13-round magazine — looks_like: - — items/magazine/9mm.json
+- `paddle_plastic` — small plastic paddle — looks_like: - — items/tool/misc.json
+- `paella_valenciana` — Valencian paella — looks_like: - — items/comestibles/meat_dishes.json
+- `paint_black` — black paint — looks_like: - — items/resources/home_improvement.json
+- `paint_blue` — blue paint — looks_like: - — items/resources/home_improvement.json
+- `paint_brown` — brown paint — looks_like: - — items/resources/home_improvement.json
+- `paint_cyan` — cyan paint — looks_like: - — items/resources/home_improvement.json
+- `paint_gray` — gray paint — looks_like: - — items/resources/home_improvement.json
+- `paint_green` — green paint — looks_like: - — items/resources/home_improvement.json
+- `paint_orange` — orange paint — looks_like: - — items/resources/home_improvement.json
+- `paint_pink` — pink paint — looks_like: - — items/resources/home_improvement.json
+- `paint_purple` — purple paint — looks_like: - — items/resources/home_improvement.json
+- `paint_red` — red paint — looks_like: - — items/resources/home_improvement.json
+- `paint_white` — white paint — looks_like: - — items/resources/home_improvement.json
+- `paint_yellow` — yellow paint — looks_like: - — items/resources/home_improvement.json
+- `painting` — painting — looks_like: - — items/fluff.json
+- `pallet_lifter` — pallet lifter — looks_like: - — items/vehicle/engineering.json
+- `panacea` — Panaceus — looks_like: - — items/comestibles/med.json
+- `pandemic` — Pathogen — looks_like: - — items/fluff.json
+- `panoramic_eyepiece` — panoramic lens — looks_like: - — items/resources/plastic.json
+- `parkour_practice` — basecamp parkour gym — looks_like: - — items/basecamp.json
+- `pasta_carbonara` — pasta carbonara — looks_like: - — items/comestibles/junkfood.json
+- `pastaextruder` — pasta extruder — looks_like: - — items/tool/cooking.json
+- `paste_nut` — nut paste — looks_like: - — items/comestibles/other.json
+- `paste_seed` — seed paste — looks_like: - — items/comestibles/other.json
+- `pat_earpiece` — transponder earpiece (off) — looks_like: - — items/tool/radio_tools.json
+- `pat_earpiece_on` — transponder earpiece (on) — looks_like: - — items/tool/radio_tools.json
+- `patchwork_scarf_headwrap` — simple patchwork scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `pathfinding_module` — pathfinding module — looks_like: - — items/robot_parts.json
+- `pea` — pea — looks_like: - — items/comestibles/raw_veggy.json
+- `pea_pods` — pea pods — looks_like: - — items/comestibles/raw_veggy.json
+- `peanut` — peanuts — looks_like: - — items/chemicals_and_resources.json
+- `peanut_butter_toast` — peanut butter toast — looks_like: - — items/comestibles/bread.json
+- `peanut_shelled` — Handful of shelled peanuts — looks_like: - — items/comestibles/nuts.json
+- `pecorino_cheese` — pecorino — looks_like: - — items/comestibles/dairy.json
+- `pedal_extenders` — pedal extenders — looks_like: - — items/vehicle/controls.json
+- `pedal_extenders_makeshift` — makeshift pedal extenders — looks_like: - — items/vehicle/controls.json
+- `pedal_grindstone` — pedal powered grindstone — looks_like: - — items/tool/metalworking.json
+- `pekmez` — pekmez — looks_like: - — items/comestibles/drink_other.json
+- `pelmeni` — pelmeni — looks_like: - — items/comestibles/meat_dishes.json
+- `pemmican` — pemmican — looks_like: - — items/comestibles/meat_dishes.json
+- `pemmican_meat` — pemmican (meat only) — looks_like: - — items/comestibles/meat_dishes.json
+- `pemmican_veggy` — pemmican — looks_like: - — items/comestibles/meat_dishes.json
+- `peridot` — peridot — looks_like: - — items/generic.json
+- `petpamphlet` — pet pamphlet — looks_like: - — items/book/maps.json
+- `phase_immersion_cca` — phase immersion CCA — looks_like: - — items/armor/phase_immersion_suit.json
+- `phase_immersion_cca_on` — phase immersion CCA (on) — looks_like: - — items/armor/phase_immersion_suit.json
+- `phase_immersion_helmet` — phase immersion helmet — looks_like: - — items/armor/phase_immersion_suit.json
+- `phase_immersion_helmet_raised` — phase immersion helmet (raised) — looks_like: - — items/armor/phase_immersion_suit.json
+- `phase_immersion_helmet_scba_on` — phase immersion helmet (SCBA) — looks_like: - — items/armor/phase_immersion_suit.json
+- `piano` — piano — looks_like: - — items/furniture/decorative.json
+- `piano_wire` — piano wire — looks_like: - — items/generic.json
+- `pickle` — pickle — looks_like: - — items/comestibles/veggy_dishes.json
+- `pickled_egg` — pickled egg — looks_like: - — items/comestibles/egg.json
+- `pickles_ferment` — fermenting pickle jar — looks_like: - — obsoletion_and_migration_0.J/cooking.json
+- `pickles_ferment_active` — fermenting pickle jar — looks_like: - — items/tool/cooking.json
+- `pillbox` — pillbox — looks_like: - — items/containers/containers.json
+- `pillbox_large` — large pillbox — looks_like: - — items/containers/containers.json
+- `pills_sleep` — sleeping pill — looks_like: - — items/comestibles/med.json
+- `pilot_light` — pilot light — looks_like: - — items/generic.json
+- `pin_badge` — pin — looks_like: - — items/armor/jewelry.json
+- `pin_reamer` — pin reamer — looks_like: - — items/tool/workshop.json
+- `pineapple_chunks` — handful of pineapple chunks — looks_like: - — items/comestibles/raw_fruit.json
+- `pistol_bayonet` — pistol bayonet — looks_like: - — items/gunmod/underbarrel.json
+- `pistol_scope` — pistol scope — looks_like: - — items/gunmod/sights.json
+- `pistol_stock` — pistol stock — looks_like: - — items/gunmod/stock.json
+- `pizza_cutter` — pizza cutter — looks_like: - — items/generic/dining_kitchen.json
+- `planer_tool` — planer — looks_like: - — items/fake.json
+- `plank_long` — long plank — looks_like: - — items/resources/wood.json
+- `plank_short` — short plank — looks_like: - — items/resources/wood.json
+- `plano_transition_contacts_daily` — plano transition contact lenses (daily) — looks_like: - — items/comestibles/med.json
+- `plano_transition_contacts_weekly` — plano transition contact lenses (weekly) — looks_like: - — items/comestibles/med.json
+- `plant_stalk` — plant stalk — looks_like: - — items/comestibles/raw_veggy.json
+- `plantain` — cooking banana — looks_like: - — items/comestibles/raw_veggy.json
+- `plantain_cooked` — roasted cooking banana — looks_like: - — items/comestibles/veggy_dishes.json
+- `plastic_chin_guard` — plastic chin guard — looks_like: - — items/armor/head_attachments.json
+- `plastic_mandible_guard` — plastic mandible guard — looks_like: - — items/armor/head_attachments.json
+- `plastic_sheet_small` — plastic sheet — looks_like: - — items/resources/plastic.json
+- `plastic_six_dice` — plastic die — looks_like: - — items/generic.json
+- `plastron_cotton` — underarm protector — looks_like: - — items/armor/torso_armor.json
+- `plastron_plastic` — plastic chest protector — looks_like: - — items/armor/torso_armor.json
+- `platinum_dental_grill` — platinum dental grill — looks_like: - — items/armor/jewelry.json
+- `platinum_grille` — platinum grille — looks_like: lc_link_sheet — items/tool/science.json
+- `plectrum` — plectrum — looks_like: - — items/generic/music.json
+- `plutonium` — chunk of plutonium — looks_like: - — items/chemicals_and_resources.json
+- `pointed_hat` — pointed hat — looks_like: - — items/armor/hats.json
+- `pointed_rebar` — pointed rebar — looks_like: - — items/melee/spears_and_polearms.json
+- `polycarbonate_chunk` — polycarbonate chunk — looks_like: - — items/resources/plastic.json
+- `pom_poms` — pom poms (pair) — looks_like: - — items/fluff.json
+- `poncho_makeshift` — makeshift poncho — looks_like: - — items/armor/cloaks.json
+- `popcorn3` — buttered popcorn — looks_like: - — items/comestibles/raw_grain.json
+- `popcorn_cob` — popcorn cob — looks_like: - — items/comestibles/raw_grain.json
+- `popcorn_raw` — raw popcorn — looks_like: - — items/comestibles/raw_grain.json
+- `poppirate` — Pop-up Pirate — looks_like: - — items/fluff.json
+- `poppy_pain` — poppy painkiller — looks_like: - — items/comestibles/med.json
+- `poppy_sleep` — poppy sleep — looks_like: - — items/comestibles/med.json
+- `porcelain_urn` — porcelain urn — looks_like: - — items/tool/misc.json
+- `pork_beans` — pork and beans — looks_like: - — items/comestibles/meat_dishes.json
+- `porkstick` — pork stick — looks_like: - — items/comestibles/junkfood.json
+- `portable_hard_drive` — portable hard drive — looks_like: - — items/tool/electronics.json
+- `portable_stove` — portable stove — looks_like: - — items/tool/deployable.json
+- `portal` — portal generator — looks_like: - — items/tool/science.json
+- `pot_aluminum` — aluminum pot — looks_like: - — items/generic/dining_kitchen.json
+- `poultry_cooked` — cooked poultry — looks_like: - — items/comestibles/carnivore.json
+- `poultry_scrap` — scrap of poultry meat — looks_like: - — items/comestibles/carnivore.json
+- `poultry_scrap_cooked` — cooked scrap of poultry — looks_like: - — items/comestibles/carnivore.json
+- `poultry_smoked` — chicken jerky — looks_like: - — items/comestibles/carnivore.json
+- `poutine` — poutine — looks_like: - — items/comestibles/junkfood.json
+- `power_cord` — power cord — looks_like: - — items/tool/cables.json
+- `power_hammer_tool` — power hammer — looks_like: - — items/fake.json
+- `power_station_portable` — portable power station — looks_like: - — items/vehicle/battery.json
+- `power_supply` — power converter — looks_like: - — items/generic.json
+- `powered_earmuffs` — shooter's earmuffs — looks_like: - — items/tool_armor.json
+- `powered_earmuffs_on` — shooter's earmuffs (on) — looks_like: - — items/tool_armor.json
+- `powered_earplugs` — shooter's ear plugs — looks_like: - — items/tool_armor.json
+- `powered_earplugs_on` — shooter's ear plugs (on) — looks_like: - — items/tool_armor.json
+- `press_cake` — press cake — looks_like: - — items/comestibles/other.json
+- `press_dowel` — makeshift shotshell 'press' — looks_like: - — items/tool/handloading.json
+- `pressure_gauge` — pressure gauge — looks_like: - — items/generic/spares.json
+- `pressurized_canister` — pressurized canister — looks_like: - — items/containers/containers.json
+- `pressurized_tank` — 8 L pressurized fuel tank — looks_like: - — items/magazine/liquid.json
+- `pressurized_tank_chem` — 2 L pressurized chemical tank — looks_like: pressurized_tank — items/magazine/chemical_spray.json
+- `pressurized_tank_modern` — 9 L pressurized fuel tank — looks_like: pressurized_tank — items/magazine/liquid.json
+- `pretzels` — pretzels — looks_like: - — items/comestibles/junkfood.json
+- `priest_collar` — clerical collar — looks_like: - — items/armor/jewelry.json
+- `primitive_bow_silencer` — primitive bow dampening kit — looks_like: - — items/gunmod/accessories.json
+- `pritchel` — pritchel — looks_like: - — items/farrier.json
+- `processor` — processor board — looks_like: - — items/generic.json
+- `programmable_autopilot` — programmable autopilot — looks_like: cam_control — items/vehicle/utilities.json
+- `propane_torch` — propane torch — looks_like: - — items/tool/workshop.json
+- `prophylactic_antivenom` — injectable prophylactic antivenom — looks_like: - — items/comestibles/med.json
+- `protein_bar_milk` — protein bar — looks_like: - — items/comestibles/protein.json
+- `protein_bar_peanut` — protein bar — looks_like: - — items/comestibles/protein.json
+- `protein_shake` — protein shake — looks_like: - — items/comestibles/protein.json
+- `protein_shake_fortified` — fortified protein shake — looks_like: - — items/comestibles/protein.json
+- `protein_smoothie` — protein smoothie — looks_like: - — items/comestibles/protein.json
+- `prozac` — antidepressant — looks_like: - — items/comestibles/med.json
+- `pseudo_app_hd_compressor_unit` — high pressure compressor unit — looks_like: - — items/fake.json
+- `pseudo_app_oxygen_concentrator` — oxygen concentrator — looks_like: - — items/fake.json
+- `pseudo_archery_target_bale` — bale archery target — looks_like: - — items/fake.json
+- `pseudo_archery_target_box` — box archery target — looks_like: - — items/fake.json
+- `pseudo_bio_picklock` — bio lockpick — looks_like: - — items/tool/entry_tools.json
+- `pseudo_ergometer_mechanical` — mechanical ergometer — looks_like: - — items/fake.json
+- `pseudo_exercise_machine` — exercise machine — looks_like: - — items/fake.json
+- `pseudo_m203` — M203 array — looks_like: m203 — items/gun/40x46mm.json
+- `pseudo_magazine` — pseudo magazine — looks_like: - — items/fake.json
+- `pseudo_magazine_mod` — pseudo magazine mod — looks_like: - — items/toolmod.json
+- `pseudo_punching_bag` — heavy punching bag — looks_like: - — items/fake.json
+- `pseudo_training_dummy_heavy` — armored training dummy — looks_like: - — items/fake.json
+- `pseudo_training_dummy_light` — training dummy — looks_like: - — items/fake.json
+- `pseudo_treadmill_mechanical` — gravity treadmill — looks_like: - — items/fake.json
+- `psych_file` — lab report (psychology) — looks_like: - — items/newspaper.json
+- `pulverizer` — the Disorder — looks_like: - — items/gun/artisan_guns.json
+- `pump_complex` — high-pressure pump — looks_like: - — items/generic/spares.json
+- `pumpkin_cut` — cut pumpkin — looks_like: - — items/comestibles/raw_veggy.json
+- `pumpkin_mask` — pumpkin mask — looks_like: - — items/armor/masks.json
+- `pumpkin_muffins` — pumpkin muffin — looks_like: - — items/comestibles/baked.json
+- `pumpkin_yeast_bread` — pumpkin yeast bread — looks_like: - — items/comestibles/fruit_dishes.json
+- `punch_bone` — bone punch — looks_like: - — items/tool/stoneworking.json
+- `punch_dagger` — punch dagger — looks_like: - — items/melee/swords_and_blades.json
+- `purifier` — purifier — looks_like: - — items/comestibles/mutagen.json
+- `purifier_smart_shot` — purifier smart shot — looks_like: - — items/comestibles/mutagen.json
+- `pyrometer` — pyrometer — looks_like: - — items/generic/spares.json
+- `qt_aztec_spear` — tempered steel bladed tepoztopili — looks_like: - — items/melee/spears_and_polearms.json
+- `qt_aztec_sword` — tempered steel bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `qt_battleaxe` — tempered steel battle axe — looks_like: battleaxe — items/melee/bludgeons.json
+- `qt_brigandine_hands` — tempered brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `qt_brigandine_hands_xs` — tempered brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `qt_broadsword` — tempered steel broadsword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `qt_chain_link` — tempered steel chain link — looks_like: - — items/ammo.json
+- `qt_chainmail_aventail` — tempered steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `qt_chainmail_face` — tempered steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `qt_chainmail_feet` — tempered steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `qt_chainmail_hands` — tempered steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `qt_esapi_plate` — tempered steel ballistic plate — looks_like: scrap_esapi_plate — items/armor/ballistic_armor.json
+- `qt_esbi_plate` — tempered steel ballistic side plate — looks_like: scrap_esbi_plate — items/armor/ballistic_armor.json
+- `qt_estoc` — tempered steel estoc — looks_like: estoc — items/melee/swords_and_blades.json
+- `qt_khopesh` — tempered steel khopesh — looks_like: - — items/melee/swords_and_blades.json
+- `qt_kukri` — tempered steel kukri — looks_like: kukri — items/melee/swords_and_blades.json
+- `qt_link_sheet` — tempered steel chainmail sheet — looks_like: - — items/tool/metalworking.json
+- `qt_shoulder_guards` — tempered shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `qt_shoulder_guards_xs` — tempered shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `qt_steel_chunk` — chunk of tempered steel — looks_like: - — items/resources/metal.json
+- `qt_steel_facemask` — tempered steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `qt_steel_lump` — lump of tempered steel — looks_like: - — items/resources/metal.json
+- `qt_wakizashi` — tempered steel wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `qt_warhammer` — tempered steel war hammer — looks_like: - — items/melee/bludgeons.json
+- `qt_wire` — tempered steel wire — looks_like: - — items/generic.json
+- `quad_rotors` — set of rotors — looks_like: - — items/robot_parts.json
+- `rad_monitor` — radiation biomonitor — looks_like: - — items/tool_armor.json
+- `radio_mod` — radio activation mod — looks_like: - — items/tool/radio_tools.json
+- `radio_on` — radio (on) — looks_like: - — items/tool/radio_tools.json
+- `radio_repeater_mod` — radio repeater mod — looks_like: - — items/generic.json
+- `rail_bayonet_lug` — rail bayonet mount — looks_like: - — items/gunmod/mount.json
+- `rail_laser_sight` — rail laser sight — looks_like: - — items/gunmod/rail.json
+- `rail_mount` — side mount — looks_like: - — items/gunmod/mount.json
+- `railroad_track_item` — length of railroad track — looks_like: - — items/resources/metal.json
+- `railroad_track_item_half` — half-meter length of railroad track — looks_like: - — items/resources/metal.json
+- `railroad_track_small` — small railroad track — looks_like: - — items/generic.json
+- `ranger` — Patrol Leader — looks_like: - — items/fluff.json
+- `raspberries` — handful of raspberries — looks_like: - — items/comestibles/raw_fruit.json
+- `ravioli` — ravioli — looks_like: - — items/comestibles/meat_dishes.json
+- `raw_artichoke` — raw artichoke — looks_like: - — items/comestibles/raw_veggy.json
+- `raw_asparagus` — raw asparagus — looks_like: - — items/comestibles/raw_veggy.json
+- `raw_beans` — handful of raw beans — looks_like: - — items/comestibles/raw_veggy.json
+- `raw_butter` — raw butter — looks_like: - — items/comestibles/dairy.json
+- `raw_curing_fatty_meat_active` — slab of raw curing porkbelly — looks_like: - — items/comestibles/carnivore.json
+- `raw_demihumanleather` — raw demihuman skin — looks_like: - — items/comestibles/carnivore.json
+- `raw_edamame` — raw edamame — looks_like: - — items/comestibles/other.json
+- `raw_hfur` — raw human pelt — looks_like: - — items/comestibles/carnivore.json
+- `raw_hleather` — raw human skin — looks_like: - — items/comestibles/carnivore.json
+- `raw_tainted_fur` — tainted pelt — looks_like: - — items/comestibles/carnivore.json
+- `raw_tainted_leather` — tainted hide — looks_like: - — items/comestibles/carnivore.json
+- `raw_tainted_leather_scraps` — tainted skin scraps — looks_like: - — items/comestibles/carnivore.json
+- `rebar_plate` — rebar grate — looks_like: - — items/vehicle/armor.json
+- `rebreather` — rebreather mask — looks_like: - — items/tool_armor.json
+- `rebreather_cartridge_air` — rebreather scrubber cartridge, air tank — looks_like: - — items/magazine/filter.json
+- `rebreather_cartridge_o2` — rebreather scrubber cartridge, oxygen tank — looks_like: - — items/magazine/filter.json
+- `rebreather_filler_ko2` — rebreather oxygen regenerator filler — looks_like: - — items/ammo.json
+- `rebreather_filler_soda_lime` — rebreather scrubbing filler — looks_like: - — items/ammo.json
+- `rebreather_on` — rebreather mask (on) — looks_like: - — items/tool_armor.json
+- `rebreather_xl` — rebreather mask — looks_like: - — items/tool_armor.json
+- `rebreather_xl_on` — rebreather mask (on) — looks_like: - — items/tool_armor.json
+- `rebreather_xs` — rebreather mask — looks_like: - — items/tool_armor.json
+- `rebreather_xs_on` — rebreather mask (on) — looks_like: - — items/tool_armor.json
+- `recipe_migo_plate` — WX010 Living Armor Observations — looks_like: - — items/book/fabrication.json
+- `recoil_stock` — recoil stock — looks_like: - — items/gunmod/stock.json
+- `recon_mech_laser` — RMES marksman system — looks_like: - — items/gun/ups.json
+- `recovery_pump` — recovery pump — looks_like: well_pump — items/tool/science.json
+- `red_phosphorous_small` — scrapings of red phosphorous powder — looks_like: - — items/chemicals_and_resources.json
+- `red_winter_wheat_stalks` — red winter wheat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `ree_33_tripod` — heavy-duty tripod — looks_like: - — items/gunmod/underbarrel.json
+- `ref_lighter_butane` — refillable butane lighter — looks_like: - — items/tool/fire.json
+- `ref_lighter_on` — refillable lighter — looks_like: - — items/tool/fire.json
+- `refrigerant_tank` — refrigerant tank — looks_like: - — items/generic.json
+- `rehydrated_chili` — rehydrated chili pepper — looks_like: - — items/comestibles/veggy_dishes.json
+- `rehydrated_eggs` — rehydrated egg — looks_like: powder_egg — items/comestibles/egg.json
+- `rehydrated_fish` — rehydrated fish — looks_like: - — items/comestibles/meat_dishes.json
+- `rehydrated_froglegs` — rehydrated frog leg — looks_like: - — items/comestibles/meat_dishes.json
+- `rehydrated_fruit` — rehydrated fruit — looks_like: - — items/comestibles/fruit_dishes.json
+- `rehydrated_garlic` — rehydrated garlic clove — looks_like: - — items/comestibles/veggy_dishes.json
+- `rehydrated_lobster` — rehydrated lobster — looks_like: - — items/comestibles/meat_dishes.json
+- `rehydrated_meat` — rehydrated meat — looks_like: - — items/comestibles/meat_dishes.json
+- `rehydrated_mollusk` — rehydrated mollusk — looks_like: - — items/comestibles/meat_dishes.json
+- `rehydrated_poultry` — rehydrated chicken — looks_like: - — items/comestibles/meat_dishes.json
+- `rehydrated_veggy` — rehydrated vegetable — looks_like: - — items/comestibles/veggy_dishes.json
+- `reinforced_solar_panel` — vehicle reinforced solar panel — looks_like: - — items/vehicle/solar.json
+- `reinforced_solar_panel_v2` — vehicle advanced reinforced solar panel — looks_like: reinforced_solar_panel — items/vehicle/solar.json
+- `religieuse_au_chocolat` — religieuse au chocolat — looks_like: - — items/comestibles/baked.json
+- `reloaded_10mmP` — 10mm Auto +P, reloaded — looks_like: - — items/ammo/10mm.json
+- `reloaded_123ln` — 12.3ln, reloaded — looks_like: - — items/ammo/exodii.json
+- `reloaded_123ln_ap` — 12.3ln AP, reloaded — looks_like: - — items/ammo/exodii.json
+- `reloaded_223` — .223 Remington, reloaded — looks_like: - — items/ammo/223.json
+- `reloaded_22_fmj` — .22 LR FMJ, reloaded — looks_like: - — items/ammo/22.json
+- `reloaded_22_lr` — .22 LR, reloaded — looks_like: - — items/ammo/22.json
+- `reloaded_270win_fmj` — .270 Winchester FMJ, reloaded — looks_like: - — items/ammo/270win.json
+- `reloaded_270win_jsp` — .270 Winchester JSP, reloaded — looks_like: - — items/ammo/270win.json
+- `reloaded_3006` — .30-06 FMJ, reloaded — looks_like: - — items/ammo/3006.json
+- `reloaded_3006_incendiary` — .30-06 tracer, reloaded — looks_like: - — items/ammo/3006.json
+- `reloaded_3006_jsp` — .30-06 JSP, reloaded — looks_like: - — items/ammo/3006.json
+- `reloaded_3006fmj` — .30-06 M2 AP, reloaded — looks_like: - — items/ammo/3006.json
+- `reloaded_3030` — .30-30 Winchester SP, reloaded — looks_like: - — items/ammo/3030.json
+- `reloaded_3030_bp` — .30-30 Winchester SP, black powder — looks_like: - — items/ammo/3030.json
+- `reloaded_3030_fmj` — .30-30 Winchester FMJ, reloaded — looks_like: - — items/ammo/3030.json
+- `reloaded_3030_fmj_bp` — .30-30 Winchester FMJ, black powder — looks_like: - — items/ammo/3030.json
+- `reloaded_303fmj` — .303 British FMJ, reloaded — looks_like: - — items/ammo/303.json
+- `reloaded_303sp` — .303 British JSP, reloaded — looks_like: - — items/ammo/303.json
+- `reloaded_308` — .308 Winchester, reloaded — looks_like: - — items/ammo/308.json
+- `reloaded_30carbine` — .30 Carbine FMJ, reloaded — looks_like: - — items/ammo/30carbine.json
+- `reloaded_30carbine_jsp` — .30 Carbine JSP, reloaded — looks_like: - — items/ammo/30carbine.json
+- `reloaded_32_acp` — .32 ACP FMJ, reloaded — looks_like: - — items/ammo/32.json
+- `reloaded_357mag_fmj` — .357 Magnum FMJ, reloaded — looks_like: - — items/ammo/357mag.json
+- `reloaded_357sig_fmj` — .357 SIG FMJ, reloaded — looks_like: - — items/ammo/357sig.json
+- `reloaded_380_FMJ` — .380 ACP FMJ, reloaded — looks_like: - — items/ammo/380.json
+- `reloaded_38_fmj` — .38 Special FMJ, reloaded — looks_like: - — items/ammo/38.json
+- `reloaded_38super_fmj` — .38 Super FMJ, reloaded — looks_like: - — items/ammo/38super.json
+- `reloaded_40fmj` — .40 S&W FMJ, reloaded — looks_like: - — items/ammo/40.json
+- `reloaded_410shot_bird` — .410 birdshot, reloaded — looks_like: - — items/ammo/410shot.json
+- `reloaded_410shot_slug` — .410 slug, reloaded — looks_like: - — items/ammo/410shot.json
+- `reloaded_44fmj` — .44 Magnum FMJ, reloaded — looks_like: - — items/ammo/44.json
+- `reloaded_450_ftx` — .450 Bushmaster FTX, reloaded — looks_like: - — items/ammo/450bushmaster.json
+- `reloaded_450_penetrator` — .450 Bushmaster Xtreme Hunter, reloaded — looks_like: - — items/ammo/450bushmaster.json
+- `reloaded_454_Casull` — .454 Casull JSP, reloaded — looks_like: - — items/ammo/454.json
+- `reloaded_4570_bp` — .45-70 LFN, black powder — looks_like: - — items/ammo/4570.json
+- `reloaded_4570_low` — .45-70 LFN, reloaded — looks_like: - — items/ammo/4570.json
+- `reloaded_4570_pen` — .45-70 +P, reloaded — looks_like: - — items/ammo/4570.json
+- `reloaded_4570_sp` — .45-70 SP, reloaded — looks_like: - — items/ammo/4570.json
+- `reloaded_458wm` — .458 Winchester Magnum JSP, reloaded — looks_like: - — items/ammo/458wm.json
+- `reloaded_45_acp` — .45 ACP FMJ, reloaded — looks_like: - — items/ammo/45.json
+- `reloaded_45colt_cowboy` — .45 Colt LFN, reloaded — looks_like: - — items/ammo/45colt.json
+- `reloaded_45colt_fmj` — .45 Colt +P FMJ, reloaded — looks_like: - — items/ammo/45colt.json
+- `reloaded_460sw` — .460 S&W Magnum FTX, reloaded — looks_like: - — items/ammo/460sw.json
+- `reloaded_460sw_jhp` — .460 S&W Magnum JHP, reloaded — looks_like: - — items/ammo/460sw.json
+- `reloaded_500_Magnum` — .500 S&W Magnum, reloaded — looks_like: - — items/ammo/500.json
+- `reloaded_50_incendiary` — .50 BMG tracer, reloaded — looks_like: - — items/ammo/50.json
+- `reloaded_50ae_fmj` — .50 AE FMJ, reloaded — looks_like: - — items/ammo/50ae.json
+- `reloaded_50beowulf_penetrator` — .50 Beowulf Xtreme Penetrator, reloaded — looks_like: - — items/ammo/50_beowulf.json
+- `reloaded_50beowulf_xtp` — .50 Beowulf XTP, reloaded — looks_like: - — items/ammo/50_beowulf.json
+- `reloaded_50bmg` — .50 BMG Match, reloaded — looks_like: - — items/ammo/50.json
+- `reloaded_50bmgfmj` — .50 BMG M33 ball, reloaded — looks_like: - — items/ammo/50.json
+- `reloaded_50ss` — .50 BMG AP, reloaded — looks_like: - — items/ammo/50.json
+- `reloaded_77mm_arisaka_jsp` — 7.7x58mm Arisaka JSP, reloaded — looks_like: - — items/ammo/77mm_arisaka.json
+- `remington_1100` — 4-round semi-auto fowling shotgun — looks_like: - — items/gun/shot.json
+- `remington_870_20` — 4-round hunting shotgun, 20 gauge — looks_like: - — items/gun/20shot.json
+- `remotevehcontrol` — remote vehicle controller — looks_like: - — items/tool/radio_tools.json
+- `report_t_substrate` — MATERIAL: T-SUBSTRATE — looks_like: - — items/generic.json
+- `resin_chunk` — alien resin chunk — looks_like: - — items/resources/alien.json
+- `resonance_measurement_device` — Otherworldly measuring device — looks_like: - — items/tool/electronics.json
+- `restaurantbrochure` — restaurant advertising brochure — looks_like: - — items/book/maps.json
+- `restaurantmap` — restaurant guide — looks_like: - — items/book/maps.json
+- `retool_ar15_22` — .22 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_223rem` — mid-length .223 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_223rem_extended` — rifle .223 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_223rem_medium` — carbine .223 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_223rem_pistol` — pistol .223 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_223rem_short` — CQB .223 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_300blk` — mid-length .300BLK upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_300blk_medium` — CQB .300BLK upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_300blk_short` — SBR .300BLK upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_450` — rifle .450 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_450_medium` — CQB .450 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_450_short` — SBR .450 upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_50beowulf` — rifle 12.7x42mm upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_50beowulf_medium` — mid-length 12.7x42mm upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_50beowulf_short` — SBR 12.7x42mm upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_ar15_762` — 7.62x39mm upper receiver — looks_like: - — items/gunmod/conversions.json
+- `retool_axmc_300win` — AXMC .300 barrel-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_axmc_308win` — AXMC .308 barrel-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_axmc_338lapua` — AXMC .338 barrel-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_cz600_223rem` — CZ .223 barrel-assembly — looks_like: - — obsoletion_and_migration_0.J/guns.json
+- `retool_cz600_762` — CZ 7.62x39mm barrel-assembly — looks_like: - — obsoletion_and_migration_0.J/guns.json
+- `retool_deagle_357` — Desert Eagle .357 conversion kit — looks_like: - — items/gunmod/conversions.json
+- `retool_deagle_44` — Desert Eagle .44 conversion kit — looks_like: - — items/gunmod/conversions.json
+- `retool_deagle_50` — Desert Eagle .50 conversion kit — looks_like: - — items/gunmod/conversions.json
+- `retool_mdrx_223rem` — MDRX .223 extended-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_mdrx_223rem_medium` — MDRX .223 standard-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_mdrx_223rem_short` — MDRX .223 MICRON assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_mdrx_300blk` — MDRX .300BLK standard-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_mdrx_308win` — MDRX .308 extended-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_mdrx_308win_medium` — MDRX .308 standard-assembly — looks_like: - — items/gunmod/conversions.json
+- `retool_ump_40` — UMP .40 S&W conversion kit — looks_like: - — items/gunmod/conversions.json
+- `retool_ump_45` — UMP .45 ACP conversion kit — looks_like: - — items/gunmod/conversions.json
+- `retool_ump_9` — UMP 9x19mm conversion kit — looks_like: - — items/gunmod/conversions.json
+- `riding_crop` — riding crop — looks_like: - — items/tool/misc.json
+- `rifle_scope` — rifle scope — looks_like: - — items/gunmod/sights.json
+- `rifle_scope_high_end_mount` — high end rifle scope — looks_like: - — items/gunmod/sights.json
+- `rigid_kevlar_plate` — rigid Kevlar plate — looks_like: - — items/resources/tailoring.json
+- `rigid_plastic_sheet` — rigid plastic sheet — looks_like: - — items/resources/plastic.json
+- `ring_purity` — purity ring — looks_like: - — items/armor/jewelry.json
+- `ring_signet` — signet ring — looks_like: - — items/armor/jewelry.json
+- `ring_wedding` — wedding ring — looks_like: - — items/armor/jewelry.json
+- `riv_scope` — RS1219 scope — looks_like: - — items/gunmod/sights.json
+- `rivets` — rivet — looks_like: - — items/ammo/nail.json
+- `rm121aux` — caseless aux shotgun — looks_like: - — obsoletion_and_migration_0.I/gun.json
+- `rm121aux_mod` — modified RM121 aux shotgun — looks_like: - — obsoletion_and_migration_0.I/gun.json
+- `rm13_armor_on` — RM13 combat armor (on) — looks_like: - — items/armor/rm13_combat_armor.json
+- `rm13_armor_rebreather_on` — RM13 combat armor (on) (rebreather) — looks_like: - — items/armor/rm13_combat_armor.json
+- `rmi2_corpse` — desiccated corpse — looks_like: - — items/corpses/corpses.json
+- `roadmap` — road map — looks_like: - — items/book/maps.json
+- `roasted_cattail_rhizome` — roasted cattail rhizome — looks_like: - — items/comestibles/veggy_dishes.json
+- `robofac10` — HWP 10-round shotgun magazine — looks_like: shotbelt_20 — items/gun/robofac_gun.json
+- `robofac40` — HWP 40-round 5.56 magazine — looks_like: - — items/gun/robofac_gun.json
+- `robofac60` — HWP 60-round 9mm helical magazine — looks_like: - — items/gun/robofac_gun.json
+- `robofac_basic_helmet` — Hub 01 prototype helmet — looks_like: - — items/armor/robofac_armor.json
+- `robofac_basic_mantle` — Hub 01 prototype mantle — looks_like: - — items/armor/robofac_armor.json
+- `robofac_basic_skirt` — Hub 01 prototype skirt — looks_like: - — items/armor/robofac_armor.json
+- `robofac_gun_40mm_10rd` — FSP 10-round 40x46 magazine — looks_like: - — items/gun/robofac_gun.json
+- `robofac_gun_40mm_3rd` — FSP 3-round 40x46 magazine — looks_like: - — items/gun/robofac_gun.json
+- `robofac_gun_40mm_5rd` — FSP 5-round 40x46 magazine — looks_like: - — items/gun/robofac_gun.json
+- `robofac_gun_57` — HWP personal 5.7x28mm configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_gun_ar` — HWP assault configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_gun_dmr` — HWP designated marksman configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_gun_exodii` — HWP EXOTIC configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_gun_kit` — Hub 01 HWP maintenance kit — looks_like: - — items/tool/workshop.json
+- `robofac_gun_shotgun` — HWP close quarters configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_gun_shotgun_breach` — HWP breacher configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_gun_smg` — HWP personal defense configuration — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `robofac_handguard` — integrated front grip — looks_like: - — items/gun/robofac_gun.json
+- `robofac_kevlar_helmet` — Hub 01 ballistic helmet — looks_like: - — items/armor/robofac_armor.json
+- `robofac_kevlar_mantle` — Hub 01 ballistic mantle — looks_like: - — items/armor/robofac_armor.json
+- `robofac_kevlar_skirt` — Hub 01 ballistic skirt — looks_like: - — items/armor/robofac_armor.json
+- `robofac_laser_sight` — integral laser designator — looks_like: - — items/gun/robofac_gun.json
+- `robofac_military_helmet` — Hub 01 soldier helmet — looks_like: - — items/armor/robofac_armor.json
+- `robofac_military_mantle` — Hub 01 soldier mantle — looks_like: - — items/armor/robofac_armor.json
+- `robofac_military_skirt` — Hub 01 soldier skirt — looks_like: - — items/armor/robofac_armor.json
+- `robofac_nomex_helmet` — Hub 01 turnout helmet — looks_like: - — items/armor/robofac_armor.json
+- `robofac_nomex_mantle` — Hub 01 turnout mantle — looks_like: - — items/armor/robofac_armor.json
+- `robofac_nomex_skirt` — Hub 01 turnout skirt — looks_like: - — items/armor/robofac_armor.json
+- `robofac_poncho_liner` — Hub 01 MPET poncho liner — looks_like: - — items/armor/robofac_armor.json
+- `robofac_rubber_helmet` — Hub 01 kinetic helmet — looks_like: - — items/armor/robofac_armor.json
+- `robofac_rubber_mantle` — Hub 01 kinetic mantle — looks_like: - — items/armor/robofac_armor.json
+- `robofac_rubber_skirt` — Hub 01 kinetic skirt — looks_like: - — items/armor/robofac_armor.json
+- `robofac_stock` — bullpup adjustable stock — looks_like: - — items/gun/robofac_gun.json
+- `robofac_test_data` — prototype I/O recorder — looks_like: - — items/generic.json
+- `robofac_yrax_trifacet_deactivation_manual` — trifacet handling procedures — looks_like: - — items/book/electronics.json
+- `robofacmultimag` — HWP 50-round 5.7 magazine — looks_like: - — items/gun/robofac_gun.json
+- `robot_controls` — robot driving unit — looks_like: - — items/vehicle/controls.json
+- `rock_electric` — electric rock — looks_like: - — items/relics/extradimensional_artifacts.json
+- `rock_wool_bat` — fiber insulation batt — looks_like: - — items/resources/stone.json
+- `rocuronium` — rocuronium — looks_like: - — items/chemicals_and_resources.json
+- `rope_30` — long rope — looks_like: - — items/generic/string.json
+- `rope_makeshift_30` — long cordage rope — looks_like: - — items/generic/string.json
+- `rope_makeshift_6` — short cordage rope — looks_like: - — items/generic/string.json
+- `rose_hips` — handful of rose hips — looks_like: - — items/comestibles/raw_fruit.json
+- `rose_hips_cut` — cut rose hips — looks_like: - — items/comestibles/raw_fruit.json
+- `rosin` — rosin — looks_like: - — items/chemicals_and_resources.json
+- `rotovap` — rotary evaporator — looks_like: - — items/tool/science.json
+- `rough_rider_pistol` — .22 six-shooter — looks_like: - — items/gun/22.json
+- `rough_rider_pistol_9` — large .22 six-shooter — looks_like: - — items/gun/22.json
+- `router_tool` — router — looks_like: - — items/fake.json
+- `royal_beef` — royal beef — looks_like: - — items/comestibles/meat_dishes.json
+- `royal_jelly` — royal jelly — looks_like: - — items/comestibles/other.json
+- `rubber_armor_cow` — cow rain sheet — looks_like: - — items/armor/pets_cow_armor.json
+- `rubber_armor_horse` — horse rain sheet — looks_like: - — items/armor/pets_horse_armor.json
+- `rubber_slug` — rubber slug — looks_like: - — items/ammo.json
+- `rubber_tire_chunk` — thick rubber chunk — looks_like: - — items/resources/misc.json
+- `rubber_tire_strip` — rubber tire strip — looks_like: - — items/resources/misc.json
+- `rubik_farthing` — shiny farthing — looks_like: - — npcs/exodii/exodii_merchant_talk.json
+- `ruby` — ruby — looks_like: - — items/generic.json
+- `ruger_arr_mag` — Ruger American Rifle 3-round magazine — looks_like: - — items/magazine/450bushmaster.json
+- `ruler` — ruler — looks_like: - — items/fluff.json
+- `rummy` — Rummy-o set — looks_like: - — items/fluff.json
+- `rx11_stimpack` — RX11 stimulant delivery system — looks_like: - — items/tool_armor.json
+- `safe_box` — safe deposit box — looks_like: - — items/tool/misc.json
+- `saiga10mag` — assault shotgun 10-round magazine — looks_like: shotbelt_20 — items/magazine/shot.json
+- `saiga410mag_10rd` — Saiga-410 10-round magazine — looks_like: shotbelt_20 — obsoletion_and_migration_0.I/gun.json
+- `sail` — sail — looks_like: - — items/vehicle/boat.json
+- `salca` — salca — looks_like: - — items/comestibles/drink_other.json
+- `salsa` — salsa — looks_like: - — items/comestibles/veggy_dishes.json
+- `salsify_baked` — roasted salsify — looks_like: - — items/comestibles/veggy_dishes.json
+- `salsify_raw` — salsify root — looks_like: - — items/comestibles/raw_veggy.json
+- `salted_fish` — salted fish — looks_like: - — items/comestibles/carnivore.json
+- `salted_mollusk` — salted mollusk — looks_like: - — items/comestibles/carnivore.json
+- `sample_t_substrate` — t-substrate sample — looks_like: - — items/generic.json
+- `sandwich_egg_salad` — egg salad sandwich — looks_like: - — items/comestibles/sandwich.json
+- `sandwich_pbf` — fluffernutter sandwich — looks_like: - — items/comestibles/sandwich.json
+- `sandwich_reuben` — reuben sandwich — looks_like: - — items/comestibles/sandwich.json
+- `sapphire` — sapphire — looks_like: - — items/generic.json
+- `sarcophagus_access_code` — sarcophagus access code — looks_like: - — items/tool/misc.json
+- `sarma` — sarma — looks_like: - — items/comestibles/meat_dishes.json
+- `sashimi` — sashimi — looks_like: - — items/comestibles/meat_dishes.json
+- `sassafras_root` — sassafras root — looks_like: - — items/generic.json
+- `satellitemap` — satellite map — looks_like: - — items/book/maps.json
+- `sauerkraut` — sauerkraut — looks_like: - — items/comestibles/veggy_dishes.json
+- `sauerkraut_ferment` — fermenting sauerkraut jar — looks_like: - — obsoletion_and_migration_0.J/cooking.json
+- `sauerkraut_ferment_active` — fermenting sauerkraut jar — looks_like: - — items/tool/cooking.json
+- `sauerkraut_onions` — sauerkraut w/ sauteed onions — looks_like: - — items/comestibles/veggy_dishes.json
+- `sausage_casings` — sausage casing — looks_like: - — items/comestibles/offal_dishes.json
+- `sausage_casings_artificial` — artificial sausage casing — looks_like: - — items/comestibles/offal_dishes.json
+- `sausage_raw` — raw sausage — looks_like: - — items/comestibles/meat_dishes.json
+- `sausage_wasteland` — wasteland sausage — looks_like: - — items/comestibles/meat_dishes.json
+- `sausage_wasteland_raw` — raw wasteland sausage — looks_like: - — items/comestibles/meat_dishes.json
+- `sausagegravy` — sausage gravy — looks_like: - — items/comestibles/meat_dishes.json
+- `savage_220_magazine` — 2-round 20 gauge magazine — looks_like: - — items/magazine/shot.json
+- `savage_model_220` — bolt-action shotgun, 20 gauge — looks_like: - — items/gun/20shot.json
+- `scar_16s` — civilian FN SCAR-L rifle — looks_like: - — items/gun/223.json
+- `scarf_faux_fur` — faux fur scarf — looks_like: - — items/armor/scarfs.json
+- `scarf_faux_fur_headwrap` — faux fur scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `scarf_faux_fur_long` — long faux fur scarf — looks_like: - — items/armor/scarfs.json
+- `scarf_faux_fur_long_headwrap` — long faux fur scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `scarf_faux_fur_long_loose` — long faux fur scarf (loose) — looks_like: - — items/armor/scarfs.json
+- `scarf_faux_fur_loose` — faux fur scarf (loose) — looks_like: - — items/armor/scarfs.json
+- `scarf_fur_headwrap` — fur scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `scarf_fur_long_headwrap` — long fur scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `scarf_headwrap` — wool scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `scarf_long_headwrap` — long wool scarf (headwrap) — looks_like: - — items/armor/scarfs.json
+- `scout_bipod` — integral polymer bipod — looks_like: - — items/gunmod/underbarrel.json
+- `scout_bipod_deployed` — integral polymer bipod, deployed — looks_like: - — items/gunmod/underbarrel.json
+- `scout_stock` — hollow polymer stock — looks_like: - — items/gunmod/stock.json
+- `scrabble` — Scrabble Letters set — looks_like: - — items/fluff.json
+- `scrambled_eggs` — scrambled eggs — looks_like: - — items/comestibles/egg.json
+- `scrambledeggsandbrain` — scrambled eggs and brain — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `scrap_brass` — chunk of brass — looks_like: - — items/resources/metal.json
+- `scrap_canvas` — canvas scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_carpet` — scraps of carpet — looks_like: - — items/resources/tailoring.json
+- `scrap_cast_iron` — scrap cast iron — looks_like: - — items/resources/metal.json
+- `scrap_denim` — denim scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_esapi_plate` — scrap ballistic plate — looks_like: - — items/armor/ballistic_armor.json
+- `scrap_esbi_plate` — scrap ballistic side plate — looks_like: - — items/armor/ballistic_armor.json
+- `scrap_faux_fur` — faux fur scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_fur` — fur scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_kevlar` — Kevlar scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_leather` — leather scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_lycra` — Lycra scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_neoprene` — neoprene scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_nomex` — Nomex scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_nylon` — synthetic fabric scraps — looks_like: - — items/resources/tailoring.json
+- `scrap_tin` — scrap tin — looks_like: - — items/resources/metal.json
+- `scraper_steel` — steel scraper — looks_like: - — items/tool/metalworking.json
+- `scrapple` — scrapple — looks_like: offal_cooked — items/comestibles/meat_dishes.json
+- `screw_press` — screw press — looks_like: - — items/tool/cooking.json
+- `screw_press_tool` — screw press — looks_like: - — items/tool/deployable.json
+- `scuba_regulator` — SCUBA regulator — looks_like: - — items/tool_armor.json
+- `scuba_regulator_scba_on` — SCUBA regulator (on) — looks_like: - — items/tool_armor.json
+- `sculpture_clay` — clay sculpture — looks_like: - — items/fluff.json
+- `sculpture_rock` — stone sculpture — looks_like: - — items/fluff.json
+- `scutcheritem` — stationary scutcher — looks_like: - — items/fake.json
+- `scythe_fake` — scythe — looks_like: - — items/tool/landscaping.json
+- `scythe_game` — Steam Gears — looks_like: - — items/fluff.json
+- `scythe_toy` — grim reaper's scythe — looks_like: - — items/tool/landscaping.json
+- `sea_lettuce` — sea lettuce — looks_like: - — items/comestibles/raw_veggy.json
+- `seasoned_fried_eggs` — seasoned fried eggs — looks_like: - — items/comestibles/egg.json
+- `seasoned_scrambled_eggs` — seasoned scrambled eggs — looks_like: - — items/comestibles/egg.json
+- `seasoning_salt` — seasoned salt — looks_like: - — items/comestibles/spice.json
+- `seat_bench` — bench seat — looks_like: - — items/vehicle/seating.json
+- `seat_bench_leather` — leather bench seat — looks_like: - — items/vehicle/seating.json
+- `seatbelt` — seat belt — looks_like: - — items/generic/string.json
+- `seaweed` — seaweed — looks_like: - — items/comestibles/raw_veggy.json
+- `seaweed_pile` — pile of seaweed — looks_like: - — items/comestibles/raw_veggy.json
+- `security_file` — lab report (security) — looks_like: - — items/newspaper.json
+- `seed_artichoke` — artichoke seeds — looks_like: - — items/comestibles/seed.json
+- `seed_asparagus` — asparagus seeds — looks_like: - — items/comestibles/seed.json
+- `seed_bell_pepper` — bell pepper seeds — looks_like: - — items/comestibles/seed.json
+- `seed_bottle_gourd` — bottle gourd seeds — looks_like: - — items/comestibles/seed.json
+- `seed_brussels_sprout` — brussels sprout seeds — looks_like: - — items/comestibles/seed.json
+- `seed_cauliflower` — cauliflower seeds — looks_like: - — items/comestibles/seed.json
+- `seed_eggplant` — eggplant seeds — looks_like: - — items/comestibles/seed.json
+- `seed_garlic_clove` — seed garlic — looks_like: - — items/comestibles/seed.json
+- `seed_gherkin` — gherkin cucumber seeds — looks_like: - — items/comestibles/seed.json
+- `seed_groundnut` — groundnut seeds — looks_like: - — items/comestibles/seed.json
+- `seed_horseradish` — horseradish seeds — looks_like: - — items/comestibles/seed.json
+- `seed_japanese_knotweed` — Japanese knotweed stems — looks_like: - — items/comestibles/seed.json
+- `seed_jerusalem_artichoke` — Jerusalem artichoke seeds — looks_like: - — items/comestibles/seed.json
+- `seed_kale` — kale seeds — looks_like: - — items/comestibles/seed.json
+- `seed_lotus` — lotus seeds — looks_like: - — items/comestibles/seed.json
+- `seed_lotus_boiled` — boiled lotus seeds — looks_like: lotus_rhizome — items/comestibles/seed.json
+- `seed_maianthemum_stellatum` — starry false Solomon's seal seeds — looks_like: - — items/comestibles/seed.json
+- `seed_mayapple` — mayapple seeds — looks_like: - — items/comestibles/seed.json
+- `seed_melon` — cantaloupe melon seeds — looks_like: - — items/comestibles/seed.json
+- `seed_mustard` — mustard seeds — looks_like: - — items/comestibles/seed.json
+- `seed_pea` — pea seeds — looks_like: - — items/comestibles/seed.json
+- `seed_popcorn` — seed popcorn — looks_like: - — items/comestibles/seed.json
+- `seed_poppy_bud` — poppy seeds — looks_like: - — items/comestibles/seed.json
+- `seed_radish` — radish seeds — looks_like: - — items/comestibles/seed.json
+- `seed_raw_bamboo` — bamboo seeds — looks_like: - — items/comestibles/seed.json
+- `seed_raw_burdock` — burdock seeds — looks_like: - — items/comestibles/seed.json
+- `seed_red_winter_wheat` — red winter wheat seeds — looks_like: - — items/comestibles/seed.json
+- `seed_spinach` — spinach seeds — looks_like: - — items/comestibles/seed.json
+- `seed_watermelon` — watermelon seeds — looks_like: - — items/comestibles/seed.json
+- `seed_wild_garlic` — wild garlic seeds — looks_like: - — items/comestibles/seed.json
+- `seed_wild_rice` — wild rice seeds — looks_like: - — items/comestibles/seed.json
+- `seed_wild_sarsaparilla` — wild sarsaparilla seeds — looks_like: - — items/comestibles/seed.json
+- `seed_wintergreen` — wintergreen seeds — looks_like: - — items/comestibles/seed.json
+- `self_monitoring_module` — self monitoring sensors — looks_like: - — items/robot_parts.json
+- `senet` — senet set — looks_like: - — items/fluff.json
+- `sensor_module` — sensor array — looks_like: - — items/robot_parts.json
+- `serum_learning` — 76x-"Lore" — looks_like: - — items/comestibles/serums.json
+- `serum_night_operations` — 09x-"Anaximander" — looks_like: - — items/comestibles/serums.json
+- `serum_regen` — 48x-"Locutus" — looks_like: - — items/comestibles/serums.json
+- `serum_resilience` — 16x-"Armus" — looks_like: - — items/comestibles/serums.json
+- `serum_speed` — 51x-"Landru" — looks_like: - — items/comestibles/serums.json
+- `serum_super_soldier` — 29x-"Noonien" — looks_like: - — items/comestibles/serums.json
+- `service_medal` — service medal — looks_like: - — items/armor/jewelry.json
+- `sewermap` — drainage system map — looks_like: roadmap — items/book/maps.json
+- `sewing_machine` — sewing machine — looks_like: - — items/tool/tailoring.json
+- `sextant` — sextant — looks_like: - — items/tool/science.json
+- `sextoy` — sex toy — looks_like: - — items/tool/misc.json
+- `shark_suit` — sharksuit — looks_like: chainmail_suit — items/armor/swimming.json
+- `shark_suit_faraday` — faraday sharksuit — looks_like: chainmail_hauberk — items/armor/swimming.json
+- `sharp_rebar` — sharpened rebar — looks_like: - — items/melee/spears_and_polearms.json
+- `sharp_toothbrush` — plastic shank — looks_like: - — items/melee/bludgeons.json
+- `sharpened_pipe` — sharpened pipe — looks_like: - — items/melee/spears_and_polearms.json
+- `sharpener` — pencil sharpener — looks_like: - — items/fluff.json
+- `shavingkit` — shaving kit — looks_like: - — items/tool/toiletries.json
+- `shed_snakeskin` — shed snakeskin — looks_like: - — items/biosignatures.json
+- `shed_snakeskin_big` — big shed snakeskin — looks_like: - — items/biosignatures.json
+- `shed_snakeskin_giant` — gigantic shed snakeskin — looks_like: - — items/biosignatures.json
+- `shed_snakeskin_little` — shed snakeskin — looks_like: - — items/biosignatures.json
+- `shed_snakeskin_scales` — gigantic snake scales — looks_like: - — items/biosignatures.json
+- `shed_stick` — wooden shed stick — looks_like: - — items/tool/tailoring.json
+- `sheet_aluminum` — aluminum sheet — looks_like: - — items/resources/metal.json
+- `sheet_canvas` — canvas sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_canvas_patchwork` — patchwork canvas sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_cotton_patchwork` — patchwork cotton sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_denim` — denim sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_denim_patchwork` — patchwork denim sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_faux_fur` — faux fur sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_faux_fur_patchwork` — patchwork faux fur sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_fur_patchwork` — patchwork fur sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_kevlar` — Kevlar sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_kevlar_layered` — ballistic Kevlar panel — looks_like: - — items/resources/tailoring.json
+- `sheet_kevlar_patchwork` — patchwork Kevlar sheet — looks_like: sheet_kevlar — items/resources/tailoring.json
+- `sheet_leather` — leather sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_leather_patchwork` — patchwork leather sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_lycra` — Lycra sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_lycra_patchwork` — patchwork Lycra sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_neoprene` — neoprene sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_neoprene_patchwork` — patchwork neoprene sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_nomex` — Nomex sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_nomex_patchwork` — patchwork Nomex sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_nylon` — synthetic fabric sheet — looks_like: - — items/resources/tailoring.json
+- `sheet_nylon_patchwork` — patchwork synthetic fabric sheet — looks_like: - — items/resources/tailoring.json
+- `shelter_kit` — shelter kit — looks_like: - — items/tool/shelters.json
+- `shield_visor` — shield visor — looks_like: - — items/armor/head_attachments.json
+- `shogi` — shogi set — looks_like: - — items/fluff.json
+- `sholster` — fast draw holster — looks_like: - — items/armor/holster.json
+- `shot_speedloader6` — shotgun 6-round speedloader — looks_like: shotbelt_20 — items/magazine/shot.json
+- `shot_speedloader8` — shotgun 8-round speedloader — looks_like: shotbelt_20 — items/magazine/shot.json
+- `shot_suppressor` — shotgun suppressor — looks_like: - — items/gunmod/muzzle.json
+- `shotbelt_20` — 20-round shotshell belt — looks_like: - — items/magazine/shot.json
+- `shotgun_primer` — shotgun primer — looks_like: - — items/ammo.json
+- `shoulder_holster` — shoulder holster — looks_like: - — items/armor/holster.json
+- `shoulder_strap_front` — adjustable sling (front) — looks_like: - — items/gunmod/sling.json
+- `shoulder_strap_simple` — two point sling — looks_like: - — items/gunmod/sling.json
+- `shrapnel` — shrapnel — looks_like: - — items/generic.json
+- `sieve_primitive` — wicker sieve — looks_like: - — items/tool/cooking.json
+- `sieve_steel` — sieve — looks_like: - — items/tool/cooking.json
+- `sieve_steel_makeshift` — makeshift sieve — looks_like: - — items/tool/cooking.json
+- `sigflare_lit` — active flare — looks_like: - — items/tool/lighting.json
+- `sights_mount` — sights mount — looks_like: - — items/gunmod/mount.json
+- `sights_mount_launcher` — launcher sights mount — looks_like: - — items/gunmod/mount.json
+- `sights_mount_pistol` — pistol sights mount — looks_like: - — items/gunmod/mount.json
+- `signed_chit` — chit — looks_like: - — items/generic/currency.json
+- `silicone` — silicone caulk — looks_like: - — items/chemicals_and_resources.json
+- `silver_anklet` — silver anklet — looks_like: - — items/armor/jewelry.json
+- `silver_lip_ring_loop` — silver lip ring loop — looks_like: - — items/armor/jewelry.json
+- `silver_lip_ring_stud` — silver lip ring stud — looks_like: - — items/armor/jewelry.json
+- `silver_medal` — silver medal — looks_like: - — items/armor/jewelry.json
+- `silver_nose_ring_loop` — silver nose ring loop — looks_like: - — items/armor/jewelry.json
+- `silver_nose_ring_stud` — silver nose ring stud — looks_like: - — items/armor/jewelry.json
+- `silver_toe_ring` — silver toe ring — looks_like: - — items/armor/jewelry.json
+- `simple_crank` — simple crank mechanism — looks_like: - — items/generic/spares.json
+- `single_pot_whiskey` — single pot still Irish whiskey — looks_like: - — items/comestibles/alcohol.json
+- `sinister_cane` — sinister cane — looks_like: - — items/melee/bludgeons.json
+- `sippy_cup` — sippy cup — looks_like: - — items/generic/dining_kitchen.json
+- `six_pack_rings` — six-pack rings — looks_like: - — items/containers/containers.json
+- `sketch` — sketch — looks_like: - — items/fluff.json
+- `skewer_bone` — bone skewer — looks_like: - — items/resources/bone.json
+- `ski_bib` — ski bib — looks_like: denim_overalls — items/armor/suits_clothes.json
+- `ski_bib_unzipped` — ski bib (unzipped) — looks_like: denim_overalls — items/armor/suits_clothes.json
+- `skull_beaver_huge` — dambreaker skull — looks_like: - — items/resources/bone.json
+- `skull_human_tainted` — tainted human skull — looks_like: - — items/resources/bone.json
+- `skull_rabbit` — rabbit skull — looks_like: - — items/resources/bone.json
+- `skull_skunk` — skunk skull — looks_like: - — items/resources/bone.json
+- `skunk_spray_neutralizing_solution` — skunk spray neutralizing solution — looks_like: - — items/comestibles/med.json
+- `slag` — slag — looks_like: - — items/resources/metal.json
+- `small_aluminum_bar_flat` — aluminum flat bar stock — looks_like: - — items/resources/metal.json
+- `small_aluminum_bar_round` — small aluminum bar stock — looks_like: - — items/resources/metal.json
+- `small_biogas_tank` — small biogas tank — looks_like: - — items/containers/containers.json
+- `small_checkboard` — compact checkerboard — looks_like: - — items/fluff.json
+- `small_checkers` — compact checkers set — looks_like: - — items/fluff.json
+- `small_chess` — compact chess set — looks_like: - — items/fluff.json
+- `small_demihuman_stomach_boiled` — boiled demihuman stomach — looks_like: - — items/comestibles/carnivore.json
+- `small_hc_steel_bar_flat` — small high steel flat bar stock — looks_like: - — items/resources/metal.json
+- `small_hc_steel_bar_round` — small high steel bar stock — looks_like: - — items/resources/metal.json
+- `small_hstomach_boiled` — boiled human stomach — looks_like: - — items/comestibles/carnivore.json
+- `small_lc_steel_bar_flat` — small low steel flat bar stock — looks_like: - — items/resources/metal.json
+- `small_lc_steel_bar_round` — small low steel bar stock — looks_like: - — items/resources/metal.json
+- `small_lcd_screen` — small LCD screen — looks_like: - — items/generic.json
+- `small_mc_steel_bar_flat` — small medium steel flat bar stock — looks_like: - — items/resources/metal.json
+- `small_mc_steel_bar_round` — small medium steel bar stock — looks_like: - — items/resources/metal.json
+- `small_plant` — small plant — looks_like: - — items/comestibles/other.json
+- `small_pressure_vessel` — small pressure vessel — looks_like: - — items/generic/spares.json
+- `small_printout_portal_storm_data` — short NRE printout — looks_like: - — items/generic.json
+- `small_scuba_tank` — small diving cylinder — looks_like: smoxygen_tank — items/tool/air_tanks.json
+- `small_scuba_tank_on` — small diving cylinder (open) — looks_like: smoxygen_tank — items/tool/air_tanks.json
+- `small_squeeze_tube` — small glue squeeze tube — looks_like: - — items/containers/containers.json
+- `small_steel_bar_flat` — steel flat bar stock — looks_like: - — items/resources/metal.json
+- `small_steel_bar_round` — small steel bar stock — looks_like: - — items/resources/metal.json
+- `small_stomach_boiled` — boiled stomach — looks_like: - — items/comestibles/carnivore.json
+- `small_storage_battery` — small storage battery — looks_like: - — items/vehicle/battery.json
+- `small_turbine_engine` — 25 L 650 HP gas turbine engine — looks_like: - — items/vehicle/engine.json
+- `smart_watch` — smart watch — looks_like: - — items/tool_armor.json
+- `smart_watch_adv` — advanced smart watch — looks_like: - — items/tool_armor.json
+- `smart_watch_adv_music` — advanced smart watch - music — looks_like: - — items/tool_armor.json
+- `smart_watch_music` — smart watch - music — looks_like: - — items/tool_armor.json
+- `smores` — s'mores — looks_like: - — items/comestibles/junkfood.json
+- `smoxygen_tank` — small oxygen delivery kit — looks_like: - — items/tool/med.json
+- `smpistol_primer` — small pistol primer — looks_like: - — items/ammo.json
+- `smrifle_primer` — small rifle primer — looks_like: - — items/ammo.json
+- `snack_bread` — wheat snack bread — looks_like: - — items/comestibles/wheat.json
+- `snakesnladders` — Snakes and Ladders — looks_like: - — items/fluff.json
+- `snapfastener_steel` — steel snap fastener — looks_like: - — items/resources/fasteners.json
+- `snow_machine_home` — home snow machine — looks_like: - — items/tool/cooking.json
+- `snowcone` — snow cone — looks_like: - — items/comestibles/frozen.json
+- `snowcone_alcoholic` — snow cone — looks_like: - — items/comestibles/frozen.json
+- `soaked_dandelion` — soaked dandelion — looks_like: dandelion — items/comestibles/brewing.json
+- `soaking_dandelion` — soaking dandelion (obsolete) — looks_like: dandelion — obsoletion_and_migration_0.J/brewing.json
+- `soaking_dandelion_active` — soaking dandelion — looks_like: dandelion — items/comestibles/brewing.json
+- `soaking_long_pole` — soaking long pole — looks_like: - — items/resources/wood.json
+- `soft_adobe_brick_active` — soft adobe brick — looks_like: - — items/generic.json
+- `software_archived_data` — archive data — looks_like: - — items/software.json
+- `software_blood_data` — infection data — looks_like: - — items/software.json
+- `software_electronics_reference` — integrated circuit datasheet archives — looks_like: - — items/software.json
+- `software_encryption_codes` — encryption codes — looks_like: - — items/software.json
+- `software_hacking` — hackPRO — looks_like: - — items/software.json
+- `software_lab_data` — lab data — looks_like: - — items/software.json
+- `software_math` — MatheMAX — looks_like: - — items/software.json
+- `software_medical` — MediSoft — looks_like: - — items/software.json
+- `software_useless` — misc software — looks_like: - — items/software.json
+- `soggy_hardtack` — soggy hardtack — looks_like: - — items/comestibles/bread.json
+- `solar_cell_v2` — advanced solar cell — looks_like: - — items/vehicle/solar.json
+- `solar_cooker` — parabolic solar cooker — looks_like: - — items/tool/deployable.json
+- `solar_panel_v2` — vehicle advanced solar panel — looks_like: - — items/vehicle/solar.json
+- `soldering_iron_portable` — portable soldering iron — looks_like: - — items/tool/workshop.json
+- `sole_rubber` — rubber sole — looks_like: - — items/resources/misc.json
+- `soup_blood` — blood soup — looks_like: tomato_juice — items/comestibles/soup.json
+- `sourdough_split_uncovered` — freshly fed sourdough starter (obsolete) — looks_like: - — obsoletion_and_migration_0.J/bread.json
+- `sourdough_split_uncovered_active` — freshly fed sourdough starter — looks_like: - — items/comestibles/bread.json
+- `sourdough_starter_uncovered` — sourdough starter — looks_like: - — items/comestibles/bread.json
+- `sourdough_young_uncovered` — juvenile sourdough starter (obsolete) — looks_like: - — obsoletion_and_migration_0.J/bread.json
+- `sourdough_young_uncovered_active` — juvenile sourdough starter — looks_like: - — items/comestibles/bread.json
+- `soy_nuts` — Handful of roasted soy nuts — looks_like: - — items/comestibles/nuts.json
+- `soy_sauce_unstrained` — unstrained soy sauce — looks_like: - — items/comestibles/brewing.json
+- `soyang` — Soyang Farmers — looks_like: - — items/fluff.json
+- `soybean` — raw soybeans — looks_like: - — items/comestibles/other.json
+- `spare_tire_carrier` — spare tire carrier — looks_like: - — items/generic.json
+- `sparkling` — sparkling water — looks_like: water_mineral — items/comestibles/drink.json
+- `sparkling_peach` — peach sparkling water — looks_like: sparkling — items/comestibles/drink.json
+- `sparkling_pomegranate` — pomegranate sparkling water — looks_like: sparkling — items/comestibles/drink.json
+- `spear_wood_simple` — wooden spear — looks_like: - — items/melee/spears_and_polearms.json
+- `spent_lgpistol_primer` — spent large pistol primer — looks_like: - — items/ammo.json
+- `spent_lgrifle_primer` — spent large rifle primer — looks_like: - — items/ammo.json
+- `spent_shotgun_primer` — spent shotgun primer — looks_like: - — items/ammo.json
+- `spent_smpistol_primer` — spent small pistol primer — looks_like: - — items/ammo.json
+- `spent_smrifle_primer` — spent small rifle primer — looks_like: - — items/ammo.json
+- `spicebush_berries_smoked` — dry spicebush berries — looks_like: - — items/comestibles/spice.json
+- `spidery_legs_big` — set of spidery legs — looks_like: - — items/robot_parts.json
+- `spidery_legs_small` — set of tiny spidery legs — looks_like: - — items/robot_parts.json
+- `spinwheelitem` — spinning wheel — looks_like: - — items/fake.json
+- `spirit_island` — Deity Island — looks_like: - — items/fluff.json
+- `spool_small` — small spool — looks_like: - — items/containers/containers.json
+- `spool_tiny` — tiny spool — looks_like: - — items/containers/containers.json
+- `spool_welding` — wire spool — looks_like: - — items/containers/containers.json
+- `spread_peanutbutter` — peanut butter spread — looks_like: - — items/comestibles/nuts.json
+- `spring_medium` — medium spring — looks_like: - — items/generic.json
+- `spring_plate` — shock absorber — looks_like: - — items/vehicle/armor.json
+- `spring_small` — small spring — looks_like: - — items/generic.json
+- `sprinkles` — sprinkles — looks_like: - — items/comestibles/spice.json
+- `sr22` — .22 plinking handgun — looks_like: - — items/gun/22.json
+- `srm_1216_mag_16` — 16-round rotary shotgun magazine — looks_like: - — items/magazine/shot.json
+- `stab_plate` — soft stab panel — looks_like: - — items/armor/ballistic_armor.json
+- `staff_sling` — staff sling — looks_like: quarterstaff — items/ranged/slings.json
+- `staff_sling_grenade_cradle` — grenade cradle for staff sling — looks_like: - — items/gunmod/conversions.json
+- `stanag30_beowulf` — retooled STANAG 30-round magazine — looks_like: - — items/magazine/50beowulf.json
+- `stand_flyer` — flier stand — looks_like: - — items/containers/containers.json
+- `standard_template_construct` — nanofabricator template — looks_like: - — items/generic.json
+- `standard_template_construct_combat_exoskeleton` — nanofabricator exoskeleton template — looks_like: - — items/generic.json
+- `standing_directed_floodlight` — disconnected standing directed floodlight — looks_like: standing_floodlight — items/appliances.json
+- `standing_floodlight` — disconnected standing floodlight — looks_like: - — items/appliances.json
+- `starch` — starch — looks_like: - — items/comestibles/veggy_dishes.json
+- `steam_triple_medium` — medium steam engine — looks_like: v12_diesel — items/vehicle/engine.json
+- `steam_triple_small` — small steam engine — looks_like: v12_diesel — items/vehicle/engine.json
+- `steam_watts_small` — makeshift steam engine — looks_like: v12_diesel — items/vehicle/engine.json
+- `steel_armor_cow` — steel cow armor — looks_like: - — items/armor/pets_cow_armor.json
+- `steel_armor_horse` — steel horse armor — looks_like: - — items/armor/pets_horse_armor.json
+- `steel_atlatl_spear` — steel tipped atlatl spear — looks_like: - — items/ranged/atlatl.json
+- `steel_ballistic_plate` — NIJ steel ballistic plate — looks_like: - — items/armor/ballistic_armor.json
+- `steel_bar_flat` — steel flat bar stock — looks_like: - — items/resources/metal.json
+- `steel_bar_round` — steel bar stock — looks_like: - — items/resources/metal.json
+- `steel_grille` — steel grille — looks_like: lc_link_sheet — items/chemicals_and_resources.json
+- `steel_kiln` — disconnected tempering kiln — looks_like: f_kiln — items/appliances.json
+- `steel_kiln_tool` — tempering kiln — looks_like: - — items/fake.json
+- `steel_section_long` — long structural steel section — looks_like: - — items/resources/metal.json
+- `steel_section_short` — structural steel section — looks_like: - — items/resources/metal.json
+- `steroid_eyedrops` — steroid eyedrops — looks_like: - — items/comestibles/med.json
+- `stick_common` — stick — looks_like: - — items/resources/wood.json
+- `stick_fiber` — fibrous stalk — looks_like: - — items/generic/string.json
+- `still` — still — looks_like: - — items/tool/cooking.json
+- `still_lab` — fractional distillation apparatus — looks_like: glass_tube_small — items/tool/science.json
+- `stimpack_ammo` — RA10K stimulant module — looks_like: - — items/ammo.json
+- `stock_mauser` — Mauser C96 stock — looks_like: - — items/gunmod/stock.json
+- `stock_mount` — replaceable stock kit — looks_like: - — items/gunmod/mount.json
+- `stock_none` — sawn-off stock — looks_like: - — items/gunmod/stock.json
+- `stomach_sealed` — sealed stomach — looks_like: - — items/containers/containers.json
+- `stone_polishing` — polishing stone — looks_like: - — items/tool/metalworking.json
+- `stool_log` — log stool — looks_like: - — items/furniture/seating.json
+- `stool_wood` — wooden stool — looks_like: - — items/furniture/seating.json
+- `strap_cotton` — fabric strap — looks_like: - — items/resources/tailoring.json
+- `string_dimension_biocoif` — gold-latticed biocoif — looks_like: - — items/armor/masks.json
+- `string_dimension_biosuit` — gold-latticed biosuit — looks_like: - — items/armor/suits_protection.json
+- `string_dimension_computer` — otherworldly box — looks_like: - — items/resources/alien.json
+- `string_dimension_hypercube` — transparent hypercube — looks_like: - — items/relics/extradimensional_artifacts.json
+- `string_dimension_partigiana_ixwa` — partigiana-ixwa — looks_like: - — items/melee/spears_and_polearms.json
+- `string_dimension_phase_immersion_suit` — KÁ expedition harness — looks_like: - — items/tool_armor.json
+- `stuffed_heart` — stuffed heart — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `sub2000_folding_mechanism` — integral folding mechanism — looks_like: - — items/gunmod/stock.json
+- `sub2000_folding_mechanism_folded` — integral folding mechanism (folded)) — looks_like: - — items/gunmod/stock.json
+- `subwaymap` — subway maintenance map — looks_like: roadmap — items/book/maps.json
+- `subwaystationmap` — subway map — looks_like: roadmap — items/book/maps.json
+- `succotash` — succotash — looks_like: - — items/comestibles/veggy_dishes.json
+- `succotash_deluxe` — succotash deluxe — looks_like: - — items/comestibles/veggy_dishes.json
+- `sugar_beet` — sugar beet — looks_like: - — items/comestibles/raw_veggy.json
+- `sugar_fried` — caramel — looks_like: - — items/comestibles/junkfood.json
+- `sun_shield` — sun shield — looks_like: - — items/armor/head_attachments.json
+- `sundae_cup` — sundae cup — looks_like: - — items/comestibles/frozen.json
+- `sunlight` — sun light — looks_like: - — items/generic.json
+- `sunscreen` — sunscreen — looks_like: - — items/comestibles/med.json
+- `suppressor_compact` — pistol suppressor — looks_like: - — items/gunmod/muzzle.json
+- `supreme_omelet` — supreme omelet — looks_like: - — items/comestibles/egg.json
+- `survivor_hairtrimmer` — makeshift haircut kit — looks_like: - — items/tool/toiletries.json
+- `survivor_rig` — handmade distributed rigging — looks_like: legrig — items/armor/bespoke_armor/custom_storage.json
+- `survivor_shavingkit` — makeshift shaving kit — looks_like: - — items/tool/toiletries.json
+- `survivormap` — survivor's map — looks_like: - — items/book/maps.json
+- `survnote_cabin_reverberation_hint` — hastily-scribbled note — looks_like: - — snippets/reverberations.json
+- `sushi_fishroll` — fish makizushi — looks_like: - — items/comestibles/meat_dishes.json
+- `sushi_meatroll` — meat temaki — looks_like: - — items/comestibles/meat_dishes.json
+- `sushi_rice` — sushi rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `sushi_veggyroll` — vegetable hosomaki — looks_like: - — items/comestibles/veggy_dishes.json
+- `sw617` — high capacity revolver — looks_like: - — items/gun/22.json
+- `swarm_bees` — swarm of bees — looks_like: - — items/comestibles/other.json
+- `sweet_milk` — sweetened milk — looks_like: - — items/comestibles/drink.json
+- `sweet_milk_fortified` — sweetened fortified milk — looks_like: - — items/comestibles/drink.json
+- `sweet_sausage` — sweet sausage — looks_like: - — items/comestibles/meat_dishes.json
+- `swimming_kickboard` — swimming kickboard — looks_like: - — items/generic/toys_and_sports.json
+- `switchblade` — switchblade — looks_like: - — items/melee/swords_and_blades.json
+- `sword_bayonet` — sword bayonet — looks_like: - — items/melee/swords_and_blades.json
+- `sword_bronze` — bronze sword — looks_like: sword_xiphos — items/melee/swords_and_blades.json
+- `sword_crude` — scrap sword — looks_like: - — items/melee/swords_and_blades.json
+- `sword_metal` — metal sword — looks_like: broadsword — items/melee/swords_and_blades.json
+- `sword_wood` — 2-by-sword — looks_like: - — items/melee/swords_and_blades.json
+- `sword_xiphos` — xiphos — looks_like: - — items/melee/swords_and_blades.json
+- `syrup_corn` — corn syrup — looks_like: - — items/comestibles/junkfood.json
+- `syrup_simple` — simple syrup — looks_like: - — items/comestibles/junkfood.json
+- `tablesaw_tool` — table saw — looks_like: - — items/fake.json
+- `tacoma_drink_token` — Tacoma drink token — looks_like: - — items/generic/currency.json
+- `tail_hook_stock` — tail hook stock — looks_like: - — items/gunmod/stock.json
+- `tailoring_pattern_set` — tailoring pattern set — looks_like: - — items/tool/tailoring.json
+- `tainted_innards` — tainted innards — looks_like: - — items/comestibles/carnivore.json
+- `tainted_innards_human` — tainted innards — looks_like: - — items/comestibles/carnivore.json
+- `tainted_kevlar` — tainted kevlar — looks_like: - — items/resources/tailoring.json
+- `tainted_marrow_human` — portion of tainted human bone marrow — looks_like: - — items/comestibles/carnivore.json
+- `tainted_nomex` — tainted nomex — looks_like: - — items/resources/tailoring.json
+- `tallit_gadol` — tallit gadol — looks_like: - — items/armor/scarfs.json
+- `tangram` — tangram set — looks_like: - — items/fluff.json
+- `tank_tread` — set of small tank treads — looks_like: - — items/robot_parts.json
+- `tanning_hide_active` — tanning leather hide — looks_like: - — items/tool/tailoring.json
+- `tanning_pelt_active` — tanning fur pelt — looks_like: - — items/tool/tailoring.json
+- `tanto` — tanto — looks_like: - — items/melee/swords_and_blades.json
+- `tanto_fake` — tanto — looks_like: - — items/melee/swords_and_blades.json
+- `tanto_inferior` — tanto — looks_like: - — items/melee/swords_and_blades.json
+- `tape_measure` — tape measure — looks_like: - — items/tool/misc.json
+- `target_spinner` — spinner target — looks_like: - — items/tool/deployable.json
+- `targeting_module` — targeting module — looks_like: - — items/robot_parts.json
+- `tarp_raincatcher` — tarp raincatcher — looks_like: - — items/tool/raincatchers.json
+- `tear_gas_payload` — tear gas payload — looks_like: - — items/tool/misc.json
+- `tear_gas_payload_act` — active tear gas payload — looks_like: - — items/tool/misc.json
+- `tearer` — shredder — looks_like: - — items/vehicle/rams.json
+- `teargas_spray` — tear gas spray — looks_like: - — items/ammo.json
+- `teargas_sprayer` — tear gas sprayer — looks_like: - — items/tool/misc.json
+- `technologybrochure` — technology advertising brochure — looks_like: - — items/book/maps.json
+- `teeth_macuahuitl` — teeth-bladed macuahuitl — looks_like: - — items/melee/bludgeons.json
+- `tefillin_hand_l` — tefillin (left arm) — looks_like: - — items/armor/misc.json
+- `tefillin_hand_r` — tefillin (right arm) — looks_like: - — items/armor/misc.json
+- `tefillin_head` — tefillin (head) — looks_like: - — items/armor/misc.json
+- `tele_sight` — telescopic sight — looks_like: - — items/gunmod/sights.json
+- `tele_sight_pistol` — telescopic pistol sight — looks_like: - — items/gunmod/sights.json
+- `teleporter` — teleporter — looks_like: - — items/tool/science.json
+- `temper_block` — tempering block set — looks_like: - — items/tool/metalworking.json
+- `tempered_glass_sheet` — sheet of tempered glass — looks_like: - — items/resources/glass.json
+- `template_armor` — nanofabricator template (UHMWPE) — looks_like: - — items/generic.json
+- `template_photonics` — nanofabricator template (silicon photonics) — looks_like: - — items/generic.json
+- `tent_pole` — aluminum tent pole — looks_like: long_pole — items/tool/shelters.json
+- `terraforming_mercury` — Terraforming - Mercury — looks_like: - — items/fluff.json
+- `testflames` — Flaming Chunk of Steel +2 — looks_like: - — items/tool/misc.json
+- `text_gunsmith` — Ballistics: Theory, Design, and Application — looks_like: - — items/book/gun.json
+- `textbook_mesoam` — The Art of Warfare in Precolumbian Mesoamericas — looks_like: - — items/book/fabrication.json
+- `textbook_weparabic` — Tools of Warfare in the Arabic World — looks_like: - — items/book/fabrication.json
+- `thermal_gloves` — thermal electric gloves (pair) — looks_like: - — items/tool_armor.json
+- `thermal_gloves_on` — thermal electric gloves (on) (pair) — looks_like: - — items/tool_armor.json
+- `thermal_mask_on` — thermal electric balaclava (on) — looks_like: - — items/tool_armor.json
+- `thermal_outfit` — thermal electric outfit — looks_like: - — items/tool_armor.json
+- `thermal_outfit_on` — thermal electric outfit (on) — looks_like: - — items/tool_armor.json
+- `thermal_shirt` — thermal shirt — looks_like: - — items/armor/undergarment.json
+- `thermal_socks_on` — thermal electric socks (on) (pair) — looks_like: - — items/tool_armor.json
+- `thermal_suit_on` — thermal electric suit (on) — looks_like: - — items/tool_armor.json
+- `thermo_resin_chunk` — thermoplastic resin chunk — looks_like: - — items/resources/plastic.json
+- `thermostat` — bimetal thermostat — looks_like: - — items/generic.json
+- `thorazine` — antipsychotic — looks_like: - — items/comestibles/med.json
+- `thread_cutting_set` — thread cutting set — looks_like: - — items/tool/workshop.json
+- `threshed_barley` — threshed barley — looks_like: - — items/comestibles/raw_grain.json
+- `threshed_buckwheat` — threshed buckwheat — looks_like: - — items/comestibles/raw_grain.json
+- `threshed_canola` — threshed canola — looks_like: - — items/comestibles/raw_grain.json
+- `threshed_lentils` — threshed lentils — looks_like: - — items/comestibles/raw_grain.json
+- `threshed_oats` — threshed oats — looks_like: - — items/comestibles/raw_grain.json
+- `threshed_wheat` — threshed wheat — looks_like: - — items/comestibles/raw_grain.json
+- `threshed_winter_wheat` — threshed winter wheat — looks_like: - — items/comestibles/raw_grain.json
+- `throat_guard_canvas` — canvas throat guard — looks_like: iotv_neck_plate — items/armor/scarfs.json
+- `throat_guard_cut_resistant` — cut-resistant throat guard — looks_like: iotv_neck_plate — items/armor/scarfs.json
+- `throat_guard_mercenary` — mercenary throat guard — looks_like: iotv_neck_plate — items/armor/scarfs.json
+- `throat_guard_nylon` — nylon throat guard — looks_like: iotv_neck_plate — items/armor/scarfs.json
+- `throat_guard_plastic` — plastic throat guard — looks_like: iotv_neck_plate — items/armor/scarfs.json
+- `throw_extinguisher` — throwable fire extinguisher — looks_like: - — items/tool/firefighting.json
+- `throw_extinguisher_act` — active throwable fire extinguisher — looks_like: - — items/tool/firefighting.json
+- `tic_tac` — tic-tac-toe set — looks_like: - — items/fluff.json
+- `tie_necktie` — necktie — looks_like: - — items/armor/misc.json
+- `tie_skinny` — skinny tie — looks_like: - — items/armor/misc.json
+- `tindalos_whistle` — Whistle of Tindalos — looks_like: - — items/tool/misc.json
+- `tinderbox_on` — ember carrier (lit) — looks_like: - — items/tool/fire.json
+- `tiramisu` — tiramisù — looks_like: - — items/comestibles/dairy.json
+- `tire_repair_kit` — tire repair kit — looks_like: - — items/generic/spares.json
+- `tireplate` — tireplate — looks_like: armor_scrapsuit — items/armor/torso_armor.json
+- `toad_in_a_hole` — toad in a hole — looks_like: - — items/comestibles/bread.json
+- `toast` — toast — looks_like: - — items/comestibles/bread.json
+- `toastem` — toaster pastry — looks_like: - — items/comestibles/junkfood.json
+- `toasterpastryfrozen` — uncooked toaster pastry — looks_like: - — items/comestibles/junkfood.json
+- `tobacco` — rolling tobacco — looks_like: - — items/comestibles/med.json
+- `toecaps` — toecaps (pair) — looks_like: - — items/armor/boots.json
+- `tofu` — tofu — looks_like: - — items/comestibles/other.json
+- `tofu_fried` — fried tofu — looks_like: - — items/comestibles/other.json
+- `tofu_rice` — tofu fried rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `tofu_stirfry` — tofu stirfry — looks_like: - — items/comestibles/veggy_dishes.json
+- `toilet_travel` — travel toilet — looks_like: - — items/tool/misc.json
+- `toilet_travel_folded` — folded travel toilet — looks_like: - — items/tool/misc.json
+- `tomato_cut` — cut tomato — looks_like: - — items/comestibles/raw_veggy.json
+- `tomato_juice` — tomato juice — looks_like: - — items/comestibles/drink.json
+- `tonewood` — tonewood — looks_like: - — items/resources/wood.json
+- `tool_rocket_candy` — rocket candy — looks_like: - — items/tool/gas_bomb.json
+- `tool_rocket_candy_act` — rocket candy — looks_like: - — items/tool/gas_bomb.json
+- `tool_rocket_candy_primed` — rocket candy — looks_like: - — items/tool/gas_bomb.json
+- `toolset` — integrated multitool — looks_like: - — items/tool/integrated.json
+- `touch_fastener` — touch fastener — looks_like: - — items/resources/fasteners.json
+- `touristmap` — tourist guide — looks_like: - — items/book/maps.json
+- `tourmaline` — tourmaline — looks_like: - — items/generic.json
+- `towel_hanger` — towel hanger — looks_like: - — items/vehicle/utilities.json
+- `toxic_waste_labnote` — forgotten note — looks_like: - — items/newspaper.json
+- `toy_figurine_large` — large figurine — looks_like: - — items/toy.json
+- `trailmap` — trail guide — looks_like: - — items/book/maps.json
+- `train_data` — laboratory shipping records — looks_like: - — items/software.json
+- `trousers_eod` — EOD trousers — looks_like: - — items/armor/legs_armor.json
+- `trousers_eod_light` — tactical EOD trousers — looks_like: - — items/armor/legs_armor.json
+- `tube_welding_rod` — welding rod tube — looks_like: - — items/containers/containers.json
+- `tums` — antacid tablet — looks_like: melatonin_tablet — items/comestibles/med.json
+- `tuna_noodle_casserole` — piece of fish noodle casserole — looks_like: - — items/comestibles/casseroles.json
+- `tuning_pegs` — tuning peg — looks_like: - — items/resources/wood.json
+- `tupelo_fruit` — handful of tupelo fruits — looks_like: - — items/comestibles/raw_fruit.json
+- `turret_chassis` — turret interior chassis — looks_like: - — items/robot_parts.json
+- `turret_controls` — turret control unit — looks_like: - — items/vehicle/controls.json
+- `type99_scope` — Nagoya 99 gun scope — looks_like: - — items/gunmod/sights.json
+- `tÖttchen` — töttchen — looks_like: offal_cooked — items/comestibles/offal_dishes.json
+- `u_shotgun` — underslung shotgun — looks_like: - — items/gunmod/underbarrel.json
+- `ugl_buttstock` — grenade launcher buttstock — looks_like: - — items/resources/misc.json
+- `under_folding_stock` — under folding stock — looks_like: - — items/gunmod/stock.json
+- `under_folding_stock_folded` — under-folding stock (folded) — looks_like: - — items/gunmod/stock.json
+- `underbarrel_mount` — bottom mount — looks_like: - — items/gunmod/mount.json
+- `underbrush` — underbrush — looks_like: - — items/comestibles/other.json
+- `unitard` — unitard — looks_like: - — items/armor/undergarment.json
+- `unprimed_123ln_casing` — primerless 12.3ln casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_20shot_hull` — primerless 20 gauge hull — looks_like: - — items/generic/casing.json
+- `unprimed_223_casing` — primerless .223 casing — looks_like: - — items/generic/casing.json
+- `unprimed_270win_casing` — primerless .270 Winchester casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_3006_casing` — primerless .30-06 casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_300_casing` — primerless .300 Winchester Magnum casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_300blk_casing` — primerless .300 AAC Blackout casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_3030_casing` — primerless .30-30 Winchester casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_303_casing` — primerless .303 British casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_308_casing` — primerless .308 Winchester casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_30carbine_casing` — primerless .30 Carbine casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_338lapua_casing` — primerless .338 Lapua casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_450_casing` — primerless .450 Bushmaster casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_458wm_casing` — primerless .458 Winchester Magnum casing — looks_like: 50beowulf_casing — items/generic/casing.json
+- `unprimed_50_casing` — primerless .50 BMG casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_50beowulf_casing` — primerless .50 Beowulf casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_762R_casing` — primerless 7.62x54mmR casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_762_51_casing` — primerless 7.62x51mm NATO casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_762_casing` — primerless 7.62x39mm casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_77arisaka_casing` — primerless 7.7mm Arisaka casing — looks_like: 223_casing — items/generic/casing.json
+- `unprimed_9mm_casing` — primerless 9x19mm casing — looks_like: - — items/generic/casing.json
+- `unprimed_shot_hull` — primerless 12 gauge hull — looks_like: - — items/generic/casing.json
+- `unstable_rift` — unstable rift — looks_like: - — items/nether.json
+- `upstest` — UPS test — looks_like: - — items/gunmod/barrel.json
+- `uran_cell` — uranium fuel cell — looks_like: cobalt_60 — items/ammo.json
+- `uranium` — chunk of uranium — looks_like: - — items/chemicals_and_resources.json
+- `urbexmap` — urban explorer's map — looks_like: - — items/book/maps.json
+- `usb_drive_nano` — secured USB drive — looks_like: - — items/generic.json
+- `usb_drive_older` — older USB drive — looks_like: - — items/tool/electronics.json
+- `utility_exoskeleton_off` — battery powered utility exoskeleton — looks_like: depowered_armor — items/tool_armor.json
+- `utility_exoskeleton_on` — battery powered utility exoskeleton (on) — looks_like: power_armor_light — items/tool_armor.json
+- `v12_combustion` — 7 L V12 engine — looks_like: - — items/vehicle/engine.json
+- `v12_diesel` — 7 L V12 diesel engine — looks_like: - — items/vehicle/engine.json
+- `v8_diesel` — 4.5 L V8 diesel engine — looks_like: - — items/vehicle/engine.json
+- `v_airjack_item` — airjack — looks_like: - — items/vehicle/engineering.json
+- `v_motorcycle_kickstand_item` — motorcycle kickstand — looks_like: - — items/vehicle/engineering.json
+- `v_planter_item` — seed drill — looks_like: - — items/vehicle/farming.json
+- `v_planter_item_advanced` — advanced seed drill — looks_like: - — items/vehicle/farming.json
+- `v_plow_item` — plow — looks_like: - — items/vehicle/farming.json
+- `v_reaper_item` — reaper — looks_like: - — items/vehicle/farming.json
+- `v_reaper_item_advanced` — advanced reaper — looks_like: - — items/vehicle/farming.json
+- `v_table` — fancy table — looks_like: - — items/vehicle/tables.json
+- `vac_mold` — vacuum molder — looks_like: - — items/tool/workshop.json
+- `vacutainer` — blood draw kit — looks_like: - — items/tool/med.json
+- `vacuum_sealing` — Vacuum Sealer Instructions — looks_like: - — items/book/cooking.json
+- `valentine_card` — valentine card — looks_like: - — items/newspaper.json
+- `vegan_butter` — vegan butter — looks_like: - — items/comestibles/nuts.json
+- `vegetable_omelet` — vegetable omelet — looks_like: - — items/comestibles/egg.json
+- `veggy` — triffid flesh — looks_like: - — items/comestibles/raw_veggy.json
+- `veggy_aspic` — vegetable aspic — looks_like: - — items/comestibles/veggy_dishes.json
+- `veggy_canned` — canned veggy — looks_like: - — items/comestibles/veggy_dishes.json
+- `veggy_pickled` — pickled veggy — looks_like: - — items/comestibles/veggy_dishes.json
+- `veggy_pickled_fried` — fried pickled veggy — looks_like: - — items/comestibles/veggy_dishes.json
+- `veggy_salad` — vegetable salad — looks_like: - — items/comestibles/veggy_dishes.json
+- `veggy_salted` — salted veggy chunk — looks_like: - — items/comestibles/veggy_dishes.json
+- `veggy_wild_cooked` — cooked wild vegetables — looks_like: - — items/comestibles/veggy_dishes.json
+- `veh_tools_workshop` — workshop station — looks_like: welding_rig — vehicleparts/modular_tools.json
+- `vehicle_dashboard` — dashboard — looks_like: - — items/vehicle/controls.json
+- `vine_30` — long vine — looks_like: - — items/generic/string.json
+- `vine_6` — short vine — looks_like: - — items/generic/string.json
+- `vitc_fragment` — vitamin C supplement fragment — looks_like: - — items/comestibles/med.json
+- `vitc_tablet` — vitamin C supplement — looks_like: - — items/comestibles/med.json
+- `viticulture` — Vigneto — looks_like: - — items/fluff.json
+- `void_spider_test_item` — void weaver effigy — looks_like: - — monster_special_attacks/void_spider_mechanics.json
+- `vortex` — vortex device — looks_like: - — items/tool/science.json
+- `vortex_stone` — vortex stone — looks_like: - — items/tool/misc.json
+- `w_table` — wooden table — looks_like: - — items/vehicle/tables.json
+- `wakizashi` — wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `wakizashi_fake` — wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `wakizashi_inferior` — wakizashi — looks_like: wakizashi — items/melee/swords_and_blades.json
+- `wall_light` — disconnected wall light — looks_like: - — items/appliances.json
+- `wall_wiring` — wall wiring — looks_like: - — items/appliances.json
+- `wallet_photo` — photograph — looks_like: - — items/newspaper.json
+- `wallet_travel` — travel wallet — looks_like: - — items/generic.json
+- `walnut_pulp` — Walnut pulp — looks_like: granola — items/comestibles/nuts.json
+- `warehouse_rebooter` — Exodii comm rebooter — looks_like: - — items/id_cards.json
+- `warhammer_fake` — war hammer — looks_like: - — items/melee/bludgeons.json
+- `warhammer_inferior` — war hammer — looks_like: - — items/melee/bludgeons.json
+- `waste_electrolyte_slurry` — Electrolyte Slurry — looks_like: - — items/fluff.json
+- `water_clean_scarlet` — acrid water — looks_like: - — items/comestibles/drink.json
+- `water_filter_sand` — slow-sand water filter — looks_like: - — items/tool/cooking.json
+- `water_mineral` — mineral water — looks_like: - — items/comestibles/drink.json
+- `water_murky` — murky water — looks_like: - — items/comestibles/drink.json
+- `water_spring` — spring water — looks_like: - — items/comestibles/drink.json
+- `water_wheel` — water wheel — looks_like: - — items/vehicle/mills.json
+- `watermelon_wedge` — watermelon wedge — looks_like: - — items/comestibles/raw_fruit.json
+- `waterskin` — small waterskin — looks_like: canvas_bag — items/containers/containers.json
+- `waterskin2` — waterskin — looks_like: waterskin — items/containers/containers.json
+- `waterskin3` — large waterskin — looks_like: waterskin2 — items/containers/containers.json
+- `wax_slug` — wax slug — looks_like: - — items/ammo/shot.json
+- `wearable_camera` — wearable camera — looks_like: - — items/tool_armor.json
+- `wearable_camera_pro` — wearable professional camera — looks_like: - — items/tool_armor.json
+- `wearable_rx12` — wearable RX12 jet injector — looks_like: - — items/tool_armor.json
+- `weather_glass` — weather glass — looks_like: - — items/tool/science.json
+- `weighted_dart` — weighted dart — looks_like: - — items/ranged/throwing.json
+- `welding_blanket` — welding blanket — looks_like: - — items/tool/workshop.json
+- `welding_kit` — high-temperature welding kit — looks_like: - — items/tool/workshop.json
+- `welding_mask_crude` — crude welding mask — looks_like: - — items/tool_armor.json
+- `welding_mask_crude_raised` — crude welding mask (raised) — looks_like: - — items/tool_armor.json
+- `welding_mask_raised` — welding mask (raised) — looks_like: - — items/tool_armor.json
+- `welding_papr_helmet_raised` — PAPR welding helmet (raised) — looks_like: welding_mask_raised — items/tool_armor.json
+- `weldkit` — vehicle high-temperature welding kit — looks_like: - — items/vehicle/rigs.json
+- `well_pump` — mechanical pump — looks_like: - — items/generic/spares.json
+- `wheat_stalks` — wheat stalks — looks_like: - — items/comestibles/raw_grain.json
+- `wheel_caster` — set of small casters — looks_like: - — items/vehicle/wheel.json
+- `wheel_caster_large` — set of medium casters — looks_like: - — items/vehicle/wheel.json
+- `wheel_metal` — metal wheel — looks_like: - — items/vehicle/wheel.json
+- `wheel_mount_concrete_mix` — concrete mixer wheel mounts — looks_like: - — items/vehicle/wheel.json
+- `wheel_mount_heavy` — heavy wheel hub assembly — looks_like: - — items/vehicle/wheel.json
+- `wheel_mount_light` — light wheel mount — looks_like: - — items/vehicle/wheel.json
+- `wheel_mount_medium` — medium wheel hub assembly — looks_like: - — items/vehicle/wheel.json
+- `wheel_mount_skateboard` — skateboard trucks (pair) — looks_like: - — items/vehicle/wheel.json
+- `wheel_mount_wood` — wooden wheel mount — looks_like: - — items/vehicle/wheel.json
+- `wheel_rail` — rail wheel — looks_like: - — items/vehicle/wheel.json
+- `wheel_rail_small_pair` — small rail wheels (pair) — looks_like: - — items/vehicle/wheel.json
+- `wheel_rim_bicycle` — bicycle rim — looks_like: - — items/vehicle/wheel.json
+- `wheel_rim_medium` — medium steel rim — looks_like: - — items/vehicle/wheel.json
+- `wheel_rim_motorbike` — steel motorbike rim — looks_like: - — items/vehicle/wheel.json
+- `wheel_rim_wide` — wide steel rim — looks_like: - — items/vehicle/wheel.json
+- `wheel_skateboard` — set of skateboard wheels — looks_like: - — items/vehicle/wheel.json
+- `whistle_multitool` — whistle multitool — looks_like: - — items/tool/misc.json
+- `white_phosphorous` — white phosphorous powder — looks_like: - — items/chemicals_and_resources.json
+- `wide_headlight_reinforced` — reinforced wide-angle headlight — looks_like: - — items/vehicle/lights.json
+- `wild_rice` — wild rice — looks_like: - — items/comestibles/raw_grain.json
+- `wild_rice_cooked` — cooked wild rice — looks_like: - — items/comestibles/veggy_dishes.json
+- `wild_rice_stalks` — wild rice stalks — looks_like: - — items/comestibles/raw_grain.json
+- `wild_sarsaparilla_root` — wild sarsaparilla root — looks_like: - — items/comestibles/raw_veggy.json
+- `wind` — wind — looks_like: - — items/generic.json
+- `winter_wheat` — winter wheat — looks_like: - — items/comestibles/raw_grain.json
+- `wintergreen_berry` — wintergreen berries — looks_like: - — items/comestibles/raw_fruit.json
+- `wintergreen_leaves` — pile of wintergreen leaves — looks_like: - — items/comestibles/raw_veggy.json
+- `wintergreen_oil` — wintergreen oil — looks_like: - — items/comestibles/med.json
+- `wire_draw_machine` — wire draw machine — looks_like: - — items/tool/workshop.json
+- `wire_stock` — collapsing wire stock — looks_like: - — items/gunmod/stock.json
+- `wire_stock_folded` — collapsing wire stock (collapsed) — looks_like: - — items/gunmod/stock.json
+- `wizard_cane` — wizard cane (off) — looks_like: - — items/melee/bludgeons.json
+- `wizard_cane_cheap` — cheap wizard cane (off) — looks_like: - — items/melee/bludgeons.json
+- `wizard_cane_cheap_on` — cheap wizard cane (on) — looks_like: - — items/melee/bludgeons.json
+- `wizard_cane_on` — wizard cane (on) — looks_like: - — items/melee/bludgeons.json
+- `wizard_hat_costume` — wizard hat — looks_like: - — items/armor/hats.json
+- `wood_atlatl_spear` — wooden atlatl spear — looks_like: - — items/ranged/atlatl.json
+- `wood_block` — small wood block — looks_like: - — items/resources/wood.json
+- `wood_plate` — wooden armor kit — looks_like: - — items/vehicle/plating.json
+- `wooden_post` — wooden post — looks_like: - — items/resources/wood.json
+- `wooden_post_long` — long wooden post — looks_like: - — items/resources/wood.json
+- `wooden_post_short` — short wooden post — looks_like: - — items/resources/wood.json
+- `wool_staple` — wool staple — looks_like: - — items/resources/tailoring.json
+- `world_nations` — World Nations — looks_like: - — items/fluff.json
+- `woven_anklet` — woven anklet — looks_like: - — items/armor/jewelry.json
+- `wrapped_rad_badge` — wrapped radiation badge — looks_like: - — items/tool/med.json
+- `wrapper_bar` — wrapper — looks_like: - — items/containers/containers.json
+- `wrapper_foil_roll` — aluminum foil roll — looks_like: - — items/containers/containers.json
+- `wrapper_pr` — wrapper — looks_like: - — items/containers/containers.json
+- `xanax` — fast-acting sedative — looks_like: - — items/comestibles/med.json
+- `xedra10` — prototype 10-round shotgun magazine — looks_like: shotbelt_20 — items/gun/robofac_gun.json
+- `xedra40` — prototype 40-round 5.56 magazine — looks_like: - — items/gun/robofac_gun.json
+- `xedra_field_notes_used` — field notebook (used) — looks_like: - — items/book/maps.json
+- `xedra_genset` — prototype multifuel genset — looks_like: - — items/vehicle/engine.json
+- `xedra_gun_ar` — rifled barrel — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `xedra_gun_shotgun` — unrifled barrel — looks_like: retool_ar15_300blk — items/gun/robofac_gun.json
+- `xedra_microphone` — NRE microphone — looks_like: - — items/fluff.json
+- `xedra_shack_checklist` — incomplete checklist — looks_like: - — items/newspaper.json
+- `xl_biogas_tank` — extra large biogas tank — looks_like: - — items/containers/containers.json
+- `xl_boots_acidchitin` — biosilicified chitin boots (pair) — looks_like: - — items/armor/boots.json
+- `xl_boots_chitin` — chitinous scale foot covers (pair) — looks_like: - — items/armor/boots.json
+- `xl_cestus` — cestus — looks_like: - — items/melee/unarmed_weapons.json
+- `xl_ch_brigandine_hands` — hardened brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_ch_chainmail_aventail` — hardened steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_ch_chainmail_face` — hardened steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_ch_chainmail_feet` — hardened steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xl_ch_chainmail_hands` — hardened steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xl_ch_shoulder_guards` — hardened shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_ch_steel_facemask` — hardened steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xl_hc_brigandine_hands` — high steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_hc_chainmail_aventail` — high steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_hc_chainmail_face` — high steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_hc_chainmail_feet` — high steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xl_hc_chainmail_hands` — high steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xl_hc_shoulder_guards` — high steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_hc_steel_facemask` — high steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xl_knuckle_brass` — brass knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xl_knuckle_impact` — impact knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xl_knuckle_nail` — nail knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xl_knuckle_skewer` — skewer knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xl_knuckle_steel` — scrap knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xl_knuckle_steel_forged` — steel knuckles (pair) — looks_like: knuckle_brass — items/melee/unarmed_weapons.json
+- `xl_lc_brigandine_hands` — mild steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_lc_chainmail_aventail` — mild steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_lc_chainmail_face` — mild steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_lc_chainmail_feet` — mild steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xl_lc_chainmail_hands` — mild steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xl_lc_shoulder_guards` — mild steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_lc_steel_facemask` — mild steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xl_mc_brigandine_hands` — medium steel brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_mc_chainmail_aventail` — medium steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_mc_chainmail_face` — medium steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_mc_chainmail_feet` — medium steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xl_mc_chainmail_hands` — medium steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xl_mc_shoulder_guards` — medium steel shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_mc_steel_facemask` — medium steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xl_qt_brigandine_hands` — tempered brigandine gloves (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_qt_chainmail_aventail` — tempered steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_qt_chainmail_face` — tempered steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xl_qt_chainmail_feet` — tempered steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xl_qt_chainmail_hands` — tempered steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xl_qt_shoulder_guards` — tempered shoulder guards (pair) — looks_like: - — items/armor/brigandine.json
+- `xl_qt_steel_facemask` — tempered steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xl_shark_suit` — sharksuit — looks_like: chainmail_hauberk — items/armor/swimming.json
+- `xl_shark_suit_faraday` — faraday sharksuit — looks_like: chainmail_hauberk — items/armor/swimming.json
+- `xl_water_wheel` — large water wheel — looks_like: water_wheel — items/vehicle/mills.json
+- `xl_wetsuit` — wetsuit — looks_like: - — items/armor/swimming.json
+- `xlframe` — extra-light unibody frame — looks_like: - — items/vehicle/frames.json
+- `xs_boots_acidchitin` — biosilicified chitin boots (pair) — looks_like: - — items/armor/boots.json
+- `xs_cestus` — cestus — looks_like: - — items/melee/unarmed_weapons.json
+- `xs_ch_chainmail_aventail` — hardened steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_ch_chainmail_face` — hardened steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_ch_chainmail_feet` — hardened steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xs_ch_chainmail_hands` — hardened steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xs_ch_steel_facemask` — hardened steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xs_hc_chainmail_aventail` — high steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_hc_chainmail_face` — high steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_hc_chainmail_feet` — high steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xs_hc_chainmail_hands` — high steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xs_hc_steel_facemask` — high steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xs_knuckle_brass` — brass knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xs_knuckle_impact` — impact knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xs_knuckle_nail` — nail knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xs_knuckle_skewer` — skewer knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xs_knuckle_steel` — scrap knuckles (pair) — looks_like: - — items/melee/unarmed_weapons.json
+- `xs_knuckle_steel_forged` — steel knuckles (pair) — looks_like: knuckle_brass — items/melee/unarmed_weapons.json
+- `xs_lc_chainmail_aventail` — mild steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_lc_chainmail_face` — mild steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_lc_chainmail_feet` — mild steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xs_lc_chainmail_hands` — mild steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xs_lc_steel_facemask` — mild steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xs_mc_chainmail_aventail` — medium steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_mc_chainmail_face` — medium steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_mc_chainmail_feet` — medium steel chainmail chausses (pair) — looks_like: chainmail_feet — items/armor/boots.json
+- `xs_mc_chainmail_hands` — medium steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xs_mc_steel_facemask` — medium steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xs_qt_chainmail_aventail` — tempered steel chainmail aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_qt_chainmail_face` — tempered steel chainmail partial aventail — looks_like: - — items/armor/head_attachments.json
+- `xs_qt_chainmail_feet` — tempered steel chainmail chausses (pair) — looks_like: - — items/armor/boots.json
+- `xs_qt_chainmail_hands` — tempered steel chainmail gloves (pair) — looks_like: - — items/armor/gloves.json
+- `xs_qt_steel_facemask` — tempered steel armored face mask — looks_like: - — items/armor/head_attachments.json
+- `xs_shark_suit` — sharksuit — looks_like: chainmail_suit — items/armor/swimming.json
+- `xs_shark_suit_faraday` — faraday sharksuit — looks_like: chainmail_hauberk — items/armor/swimming.json
+- `xs_wetsuit` — wetsuit — looks_like: - — items/armor/swimming.json
+- `yogurt_starter_culture` — yogurt starter culture — looks_like: - — items/comestibles/other.json
+- `yoke_harness` — yoke and harness — looks_like: frame_wood_cross — items/vehicle/animals.json
+- `yoke_harness_heavyduty` — reinforced yoke and harness — looks_like: yoke_harness — items/vehicle/animals.json
+- `yoyo` — yoyo — looks_like: - — items/toy.json
+- `yrax_computer` — monolithic machine — looks_like: - — items/resources/alien.json
+- `yrax_electronics` — woven metallics — looks_like: - — items/resources/alien.json
+- `yrax_metal` — alien metal plating — looks_like: - — items/resources/alien.json
+- `yrax_robotics` — robotic innards — looks_like: - — items/resources/alien.json
+- `yrax_scrap` — alien metal scrap — looks_like: - — items/resources/alien.json
+- `yrax_sensor` — sensor assembly — looks_like: - — items/resources/alien.json
+- `yrax_trinket` — tiny golden plate — looks_like: - — items/resources/alien.json
+- `zentai` — zentai — looks_like: - — items/armor/suits_clothes.json
+- `zombie_mask` — zombie mask — looks_like: - — items/armor/masks.json
+- `zpap85mag` — ZPAP M90 30-round magazine — looks_like: - — items/magazine/223.json
+- `zucchini_cut` — cut zucchini — looks_like: - — items/comestibles/raw_veggy.json
+
+### Orphan-PNG only (--use-all in shipped game, invisible to our loader)
+- `10gal_hat` — ten-gallon hat — via looks_like -> cowboy_hat
+- `10l_aluminum` — 10 L aluminum ingot — via exact/use-all-png -> 10l_aluminum
+- `10l_brass` — 10 L brass ingot — via exact/use-all-png -> 10l_brass
+- `10l_bronze` — 10 L bronze ingot — via exact/use-all-png -> 10l_bronze
+- `10l_copper` — 10 L copper ingot — via exact/use-all-png -> 10l_copper
+- `10l_gold` — 10 L gold ingot — via exact/use-all-png -> 10l_gold
+- `10l_iron` — 10 L cast iron ingot — via exact/use-all-png -> 10l_iron
+- `10l_lead` — 10 L lead ingot — via exact/use-all-png -> 10l_lead
+- `10l_platinum` — 10 L platinum ingot — via exact/use-all-png -> 10l_platinum
+- `10l_silver` — 10 L silver ingot — via exact/use-all-png -> 10l_silver
+- `10l_steel` — 10 L steel ingot — via exact/use-all-png -> 10l_steel
+- `10l_tin` — 10 L tin ingot — via exact/use-all-png -> 10l_tin
+- `10l_zinc` — 10 L zinc ingot — via exact/use-all-png -> 10l_zinc
+- `12000_gasoline_generator` — powerful gasoline generator — via looks_like -> f_active_backup_generator
+- `1895sbl` — lever-action hunting rifle — via exact/use-all-png -> 1895sbl
+- `1st_aid_box` — first aid kit box — via exact/use-all-png -> 1st_aid_box
+- `2_shot_special` — double barrel .38 pistol — via exact/use-all-png -> 2_shot_special
+- `2byarm_guard` — 2-by-arm guards (pair) — via exact/use-all-png -> 2byarm_guard
+- `2byshin_guard` — 2-by-shin guards (pair) — via exact/use-all-png -> 2byshin_guard
+- `460_xvr` — .460 S&W Magnum revolver — via looks_like -> sw_619
+- `5l_aluminum` — 5 L aluminum ingot — via exact/use-all-png -> 5l_aluminum
+- `5l_brass` — 5 L brass ingot — via exact/use-all-png -> 5l_brass
+- `5l_bronze` — 5 L bronze ingot — via exact/use-all-png -> 5l_bronze
+- `5l_copper` — 5 L copper ingot — via exact/use-all-png -> 5l_copper
+- `5l_gold` — 5 L gold ingot — via exact/use-all-png -> 5l_gold
+- `5l_iron` — 5 L cast iron ingot — via exact/use-all-png -> 5l_iron
+- `5l_lead` — 5 L lead ingot — via exact/use-all-png -> 5l_lead
+- `5l_platinum` — 5 L platinum ingot — via exact/use-all-png -> 5l_platinum
+- `5l_silver` — 5 L silver ingot — via exact/use-all-png -> 5l_silver
+- `5l_steel` — 5 L steel ingot — via exact/use-all-png -> 5l_steel
+- `5l_tin` — 5 L tin ingot — via exact/use-all-png -> 5l_tin
+- `5l_zinc` — 5 L zinc ingot — via exact/use-all-png -> 5l_zinc
+- `AT4` — AT4 — via exact/use-all-png -> AT4
+- `Dana_sourdough_bread` — Dana's sourdough bread — via looks_like -> sourdough_bread
+- `EMPbomb` — EMP bomb — via exact/use-all-png -> EMPbomb
+- `FB_double_holster` — front-to-back double holster — via looks_like -> scabbard
+- `FB_nylon_double_holster` — nylon front-to-back double holster — via looks_like -> scabbard
+- `FMCNote` — merch — via exact/use-all-png -> FMCNote
+- `LAW` — disposable rocket launcher — via exact/use-all-png -> LAW
+- `LAW_Packed` — packed disposable rocket launcher — via exact/use-all-png -> LAW_Packed
+- `M24` — M24 rifle — via exact/use-all-png -> M24
+- `PR24-extended` — PR-24 baton (extended) — via exact/use-all-png -> PR24-extended
+- `PR24-retracted` — PR-24 baton (retracted) — via exact/use-all-png -> PR24-retracted
+- `UPS_off` — UPS — via exact/use-all-png -> UPS_off
+- `XL_holster` — large holster — via looks_like -> bscabbard
+- `XL_nylon_holster` — large nylon holster — via looks_like -> bscabbard
+- `XS_nylon_holster` — nylon holster — via looks_like -> scabbard
+- `acidchitin_harness_dog` — biosilicified chitin dog mesh harness — via looks_like -> tank_top
+- `acidchitin_piece` — chunk of biosilicified chitin — via exact/use-all-png -> acidchitin_piece
+- `acidchitin_plate` — biosilicified chitin armor kit — via exact/use-all-png -> acidchitin_plate
+- `acog_scope` — ACOG scope — via exact/use-all-png -> acog_scope
+- `acorns` — Handful of acorns — via exact/use-all-png -> acorns
+- `acorns_cooked` — Handful of cooked acorns — via exact/use-all-png -> acorns_cooked
+- `acoustic_guitar` — acoustic guitar — via exact/use-all-png -> acoustic_guitar
+- `adhesive_bandages` — adhesive bandage — via exact/use-all-png -> adhesive_bandages
+- `adobe_brick` — adobe brick — via exact/use-all-png -> adobe_brick
+- `adobe_pallet_done` — pallet of dry adobe bricks — via exact/use-all-png -> adobe_pallet_done
+- `adobe_pallet_full` — pallet of wet adobe bricks (obsolete) — via exact/use-all-png -> adobe_pallet_full
+- `adrenaline_injector` — epinephrine autoinjector — via looks_like -> flu_shot
+- `af2011a1_38super` — AF2011A1 .38 Super — via exact/use-all-png -> af2011a1_38super
+- `air_launcher` — novelty pneumatic launcher — via looks_like -> m79
+- `airgun_pellet_hunting` — air rifle hunting pellet — via looks_like -> pebble
+- `airgun_pellet_target` — air rifle target pellet — via looks_like -> pebble
+- `airhorn` — compressed air horn — via exact/use-all-png -> airhorn
+- `airspeargun` — pneumatic speargun — via exact/use-all-png -> airspeargun
+- `ak308` — PAP AK-style rifle — via looks_like -> modular_ar15
+- `ak556` — ZPAP AK-style rifle — via looks_like -> modular_ar15
+- `ak74_semi` — Russian AK rifle — via exact/use-all-png -> ak74_semi
+- `aketon_canvas` — canvas aketon — via looks_like -> coat_lab
+- `aketon_canvas_vest` — canvas aketon vest — via looks_like -> tank_top
+- `aketon_gloves_canvas` — canvas arming gloves (pair) — via looks_like -> gloves_light
+- `aketon_gloves_nylon` — nylon arming gloves (pair) — via looks_like -> gloves_light
+- `aketon_gloves_wool` — wool arming gloves (pair) — via looks_like -> gloves_light
+- `aketon_hood_nylon` — nylon coif — via looks_like -> hat_cotton
+- `aketon_nylon` — nylon aketon — via looks_like -> coat_lab
+- `aketon_nylon_vest` — nylon aketon vest — via looks_like -> tank_top
+- `aketon_pants_canvas` — canvas arming pants — via looks_like -> pants
+- `aketon_pants_nylon` — nylon arming pants — via looks_like -> pants
+- `aketon_pants_wool` — wool arming pants — via looks_like -> pants
+- `aketon_wool` — wool aketon — via looks_like -> coat_lab
+- `aketon_wool_vest` — wool aketon vest — via looks_like -> tank_top
+- `alcohol_wipes` — alcohol wipe — via exact/use-all-png -> alcohol_wipes
+- `alder_bark` — piece of alder bark — via exact/use-all-png -> alder_bark
+- `alexandrite_dental_grill` — alexandrite dental grill — via looks_like -> gold_dental_grill
+- `alexandrite_gold_bracelet` — alexandrite and gold bracelet — via exact/use-all-png -> alexandrite_gold_bracelet
+- `alexandrite_gold_cufflinks` — alexandrite and gold cufflinks — via exact/use-all-png -> alexandrite_gold_cufflinks
+- `alexandrite_gold_earring` — alexandrite and gold earrings (pair) — via exact/use-all-png -> alexandrite_gold_earring
+- `alexandrite_gold_pendant_necklace` — alexandrite and gold pendant necklace — via exact/use-all-png -> alexandrite_gold_pendant_necklace
+- `alexandrite_gold_ring` — alexandrite and gold ring — via exact/use-all-png -> alexandrite_gold_ring
+- `alexandrite_gold_tiara` — alexandrite and gold tiara — via looks_like -> crown_golden
+- `alexandrite_platinum_bracelet` — alexandrite and platinum bracelet — via exact/use-all-png -> alexandrite_platinum_bracelet
+- `alexandrite_platinum_cufflinks` — alexandrite and platinum cufflinks — via exact/use-all-png -> alexandrite_platinum_cufflinks
+- `alexandrite_platinum_earring` — alexandrite and platinum earrings (pair) — via exact/use-all-png -> alexandrite_platinum_earring
+- `alexandrite_platinum_pendant_necklace` — alexandrite and platinum pendant necklace — via exact/use-all-png -> alexandrite_platinum_pendant_necklace
+- `alexandrite_platinum_ring` — alexandrite and platinum ring — via exact/use-all-png -> alexandrite_platinum_ring
+- `alexandrite_platinum_tiara` — alexandrite and platinum tiara — via looks_like -> crown_golden
+- `alexandrite_silver_bracelet` — alexandrite and silver bracelet — via exact/use-all-png -> alexandrite_silver_bracelet
+- `alexandrite_silver_cufflinks` — alexandrite and silver cufflinks — via exact/use-all-png -> alexandrite_silver_cufflinks
+- `alexandrite_silver_earring` — alexandrite and silver earrings (pair) — via exact/use-all-png -> alexandrite_silver_earring
+- `alexandrite_silver_pendant_necklace` — alexandrite and silver pendant necklace — via exact/use-all-png -> alexandrite_silver_pendant_necklace
+- `alexandrite_silver_ring` — alexandrite and silver ring — via exact/use-all-png -> alexandrite_silver_ring
+- `alexandrite_silver_tiara` — alexandrite and silver tiara — via looks_like -> crown_golden
+- `alien_leaves` — handful of alien leaves — via looks_like -> withered
+- `alloy_plate` — superalloy plating — via exact/use-all-png -> alloy_plate
+- `almond` — almonds — via exact/use-all-png -> almond
+- `almond_roasted` — Handful of roasted almonds — via exact/use-all-png -> almond_roasted
+- `almond_shelled` — Handful of shelled almonds — via exact/use-all-png -> almond_shelled
+- `alpha_sample` — alpha sample — via exact/use-all-png -> alpha_sample
+- `altered_apron` — ambiguous apron — via looks_like -> tank_top
+- `altered_comb` — golden comb — via exact/use-all-png -> altered_comb
+- `altered_exposed_wiring_prototype` — exposed-wiring prototype — via looks_like -> scrap
+- `altered_jacket` — varsity jacket — via looks_like -> jacket_light
+- `altered_necklace` — antique silver locket — via exact/use-all-png -> altered_necklace
+- `altered_phone` — Bakelite phone — via looks_like -> toaster
+- `altered_shirt` — Hawaiian shirt — via looks_like -> tank_top
+- `altered_stopwatch` — glitching stopwatch — via looks_like -> wristwatch
+- `alternator_truck` — truck alternator — via exact/use-all-png -> alternator_truck
+- `aluminum_foil` — aluminum foil — via exact/use-all-png -> aluminum_foil
+- `american_flag` — American flag — via exact/use-all-png -> american_flag
+- `amethyst_dental_grill` — amethyst dental grill — via looks_like -> gold_dental_grill
+- `amethyst_gold_bracelet` — amethyst and gold bracelet — via exact/use-all-png -> amethyst_gold_bracelet
+- `amethyst_gold_cufflinks` — amethyst and gold cufflinks — via exact/use-all-png -> amethyst_gold_cufflinks
+- `amethyst_gold_earring` — amethyst and gold earrings (pair) — via exact/use-all-png -> amethyst_gold_earring
+- `amethyst_gold_pendant_necklace` — amethyst and gold pendant necklace — via exact/use-all-png -> amethyst_gold_pendant_necklace
+- `amethyst_gold_ring` — amethyst and gold ring — via exact/use-all-png -> amethyst_gold_ring
+- `amethyst_gold_tiara` — amethyst and gold tiara — via looks_like -> crown_golden
+- `amethyst_platinum_bracelet` — amethyst and platinum bracelet — via exact/use-all-png -> amethyst_platinum_bracelet
+- `amethyst_platinum_cufflinks` — amethyst and platinum cufflinks — via exact/use-all-png -> amethyst_platinum_cufflinks
+- `amethyst_platinum_earring` — amethyst and platinum earrings (pair) — via exact/use-all-png -> amethyst_platinum_earring
+- `amethyst_platinum_pendant_necklace` — amethyst and platinum pendant necklace — via exact/use-all-png -> amethyst_platinum_pendant_necklace
+- `amethyst_platinum_ring` — amethyst and platinum ring — via exact/use-all-png -> amethyst_platinum_ring
+- `amethyst_platinum_tiara` — amethyst and platinum tiara — via looks_like -> crown_golden
+- `amethyst_silver_bracelet` — amethyst and silver bracelet — via exact/use-all-png -> amethyst_silver_bracelet
+- `amethyst_silver_cufflinks` — amethyst and silver cufflinks — via exact/use-all-png -> amethyst_silver_cufflinks
+- `amethyst_silver_earring` — amethyst and silver earrings (pair) — via exact/use-all-png -> amethyst_silver_earring
+- `amethyst_silver_pendant_necklace` — amethyst and silver pendant necklace — via exact/use-all-png -> amethyst_silver_pendant_necklace
+- `amethyst_silver_ring` — amethyst and silver ring — via exact/use-all-png -> amethyst_silver_ring
+- `amethyst_silver_tiara` — amethyst and silver tiara — via looks_like -> crown_golden
+- `ammo_pouch` — ammo pouch — via looks_like -> holster
+- `ammo_satchel` — ammo satchel — via looks_like -> ragpouch
+- `ammo_satchel_leather` — leather ammo satchel — via looks_like -> ragpouch
+- `ammunition_box_carlgustav` — 84mm HE crate — via looks_like -> box_oversize_metal
+- `ammunition_can_30` — small ammo can — via exact/use-all-png -> ammunition_can_30
+- `ammunition_can_50` — ammo can — via exact/use-all-png -> ammunition_can_50
+- `ammunition_can_fat_50` — big ammo can — via exact/use-all-png -> ammunition_can_fat_50
+- `ammunition_can_pa120` — heavy-duty ammo can — via looks_like -> box_small_metal
+- `ammunition_can_pa124` — heavy-duty ammo can — via looks_like -> box_small_metal
+- `ammunition_crate_40x46_72` — wooden crate — via looks_like -> box_medium_wood
+- `amplifier_head` — amplifier head — via exact/use-all-png -> amplifier_head
+- `analytical_set_basic` — basic laboratory analysis kit — via exact/use-all-png -> analytical_set_basic
+- `anesthetic_kit` — anesthesia kit — via exact/use-all-png -> anesthetic_kit
+- `angel_wings` — angel wings (pair) — via looks_like -> ragpouch
+- `angle_grinder` — angle grinder — via exact/use-all-png -> angle_grinder
+- `ankle_wallet_pouch` — ankle wallet pouch — via looks_like -> ragpouch
+- `ant_egg` — ant egg — via exact/use-all-png -> ant_egg
+- `ant_egg_acid` — acid ant egg — via exact/use-all-png -> ant_egg_acid
+- `antenna` — antenna — via exact/use-all-png -> antenna
+- `anvil` — anvil — via exact/use-all-png -> anvil
+- `anvil_bronze` — bronze anvil — via exact/use-all-png -> anvil_bronze
+- `apple` — apple — via exact/use-all-png -> apple
+- `apricot` — handful of apricots — via exact/use-all-png -> apricot
+- `apron_cotton` — cotton apron — via exact/use-all-png -> apron_cotton
+- `apron_cotton_xl` — cotton apron — via looks_like -> tank_top
+- `apron_cotton_xs` — cotton apron — via looks_like -> tank_top
+- `apron_cut_resistant` — cut-resistant apron — via exact/use-all-png -> apron_cut_resistant
+- `apron_leather` — leather apron — via exact/use-all-png -> apron_leather
+- `apron_plastic` — plastic apron — via exact/use-all-png -> apron_plastic
+- `aquamarine_dental_grill` — aquamarine dental grill — via looks_like -> gold_dental_grill
+- `aquamarine_gold_bracelet` — aquamarine and gold bracelet — via exact/use-all-png -> aquamarine_gold_bracelet
+- `aquamarine_gold_cufflinks` — aquamarine and gold cufflinks — via exact/use-all-png -> aquamarine_gold_cufflinks
+- `aquamarine_gold_earring` — aquamarine and gold earrings (pair) — via exact/use-all-png -> aquamarine_gold_earring
+- `aquamarine_gold_pendant_necklace` — aquamarine and gold pendant necklace — via exact/use-all-png -> aquamarine_gold_pendant_necklace
+- `aquamarine_gold_ring` — aquamarine and gold ring — via exact/use-all-png -> aquamarine_gold_ring
+- `aquamarine_gold_tiara` — aquamarine and gold tiara — via looks_like -> crown_golden
+- `aquamarine_platinum_bracelet` — aquamarine and platinum bracelet — via exact/use-all-png -> aquamarine_platinum_bracelet
+- `aquamarine_platinum_cufflinks` — aquamarine and platinum cufflinks — via exact/use-all-png -> aquamarine_platinum_cufflinks
+- `aquamarine_platinum_earring` — aquamarine and platinum earrings (pair) — via exact/use-all-png -> aquamarine_platinum_earring
+- `aquamarine_platinum_pendant_necklace` — aquamarine and platinum pendant necklace — via exact/use-all-png -> aquamarine_platinum_pendant_necklace
+- `aquamarine_platinum_ring` — aquamarine and platinum ring — via exact/use-all-png -> aquamarine_platinum_ring
+- `aquamarine_platinum_tiara` — aquamarine and platinum tiara — via looks_like -> crown_golden
+- `aquamarine_silver_bracelet` — aquamarine and silver bracelet — via exact/use-all-png -> aquamarine_silver_bracelet
+- `aquamarine_silver_cufflinks` — aquamarine and silver cufflinks — via exact/use-all-png -> aquamarine_silver_cufflinks
+- `aquamarine_silver_earring` — aquamarine and silver earrings (pair) — via exact/use-all-png -> aquamarine_silver_earring
+- `aquamarine_silver_pendant_necklace` — aquamarine and silver pendant necklace — via exact/use-all-png -> aquamarine_silver_pendant_necklace
+- `aquamarine_silver_ring` — aquamarine and silver ring — via exact/use-all-png -> aquamarine_silver_ring
+- `aquamarine_silver_tiara` — aquamarine and silver tiara — via looks_like -> crown_golden
+- `ar10` — AR-10 rifle — via exact/use-all-png -> ar10
+- `ar12_shotgun` — rifle shotgun — via looks_like -> remington_870
+- `archery_target_box` — box archery target — via exact/use-all-png -> archery_target_box
+- `arm_splint` — arm splint — via looks_like -> arm_warmers
+- `arm_warmers` — arm warmers (pair) — via exact/use-all-png -> arm_warmers
+- `arm_xlsplint` — arm splint — via looks_like -> arm_warmers
+- `arm_xs_splint` — arm splint — via looks_like -> arm_warmers
+- `armguard_acidchitin` — biosilicified chitin arm guards (pair) — via exact/use-all-png -> armguard_acidchitin
+- `armguard_bronze` — bronze vambraces (pair) — via looks_like -> arm_warmers
+- `armguard_ch_brigandine` — hardened splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_ch_brigandine_xs` — hardened splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_chitin` — chitinous scale mail sleeves (pair) — via exact/use-all-png -> armguard_chitin
+- `armguard_cut_resistant` — cut-resistant arm sleeves (pair) — via looks_like -> arm_warmers
+- `armguard_hard` — hard arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_hc_brigandine` — high steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_hc_brigandine_xs` — high steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_larmor` — leather arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_lc_brigandine` — mild steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_lc_brigandine_xs` — mild steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_mc_brigandine` — medium steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_mc_brigandine_xs` — medium steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_metal` — sheet metal arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_metal_sheets_bracer` — mild steel sheet metal bracers (pair) — via looks_like -> arm_warmers
+- `armguard_metal_sheets_elbows` — mild steel sheet metal elbow guards (pair) — via looks_like -> elbow_pads
+- `armguard_paper` — paper arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_qt_brigandine` — tempered splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_qt_brigandine_xs` — tempered splint arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_scrap` — scrap arm guards (pair) — via looks_like -> arm_warmers
+- `armguard_soft` — neoprene arm sleeves (pair) — via exact/use-all-png -> armguard_soft
+- `armguard_tire` — tire arm guards (pair) — via looks_like -> arm_warmers
+- `armor_acidchitin` — biosilicified chitin armor — via exact/use-all-png -> armor_acidchitin
+- `armor_acidchitin_xs` — biosilicified chitin armor — via looks_like -> armor_acidchitin
+- `armor_blarmor` — boiled leather armor — via looks_like -> jumpsuit
+- `armor_cardboard` — cardboard 'plate' armor — via looks_like -> jumpsuit
+- `armor_ch_armguard` — hardened steel arm guard — via looks_like -> arm_warmers
+- `armor_ch_brigandine` — hardened brigandine — via looks_like -> chestguard_hard
+- `armor_ch_brigandine_shoulders` — hardened brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_ch_brigandine_shoulders_xs` — hardened brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_ch_brigandine_xs` — hardened brigandine — via looks_like -> chestguard_hard
+- `armor_ch_chestplate` — hardened chestplate — via looks_like -> jumpsuit
+- `armor_ch_coat_brigandine` — hardened brigandine coat — via looks_like -> coat_rain
+- `armor_ch_coat_brigandine_shoulders` — hardened brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_ch_coat_brigandine_shoulders_xs` — hardened brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_ch_coat_brigandine_xs` — hardened brigandine coat — via looks_like -> coat_rain
+- `armor_ch_heavy_chestplate` — hardened heavy chestplate — via looks_like -> jumpsuit
+- `armor_ch_heavy_leg_guard` — hardened heavy leg guard — via looks_like -> leg_warmers
+- `armor_ch_heavyarmguard` — hardened steel heavy arm guard — via looks_like -> arm_warmers
+- `armor_ch_heavyplate` — hardened steel heavy plate armor — via looks_like -> jumpsuit
+- `armor_ch_leg_guard` — hardened leg guard — via looks_like -> leg_warmers
+- `armor_ch_light_chestplate` — hardened light chestplate — via looks_like -> chestguard_hard
+- `armor_ch_light_leg_guard` — hardened light leg guard — via looks_like -> leg_warmers
+- `armor_ch_lightarmguard` — hardened steel light arm guard — via looks_like -> arm_warmers
+- `armor_ch_lightplate` — hardened steel light plate armor — via looks_like -> jumpsuit
+- `armor_ch_metal_sheets` — hardened sheet metal armor — via looks_like -> jumpsuit
+- `armor_ch_metal_sheets_chain` — hardened junkyard plate armor — via looks_like -> jumpsuit
+- `armor_ch_metal_sheets_chain_heavy` — heavy hardened junkyard plate armor — via looks_like -> jumpsuit
+- `armor_ch_metal_sheets_heavy` — heavy hardened sheet metal armor — via looks_like -> jumpsuit
+- `armor_ch_plate` — hardened steel plate armor — via looks_like -> jumpsuit
+- `armor_chitin` — chitinous scale mail suit — via exact/use-all-png -> armor_chitin
+- `armor_chitin_vest` — chitinous scale mail vest — via looks_like -> jumpsuit
+- `armor_chitin_xs` — chitinous scale mail suit — via looks_like -> armor_chitin
+- `armor_cuirass` — bell cuirass — via looks_like -> chestguard_hard
+- `armor_farmor` — fur body armor — via looks_like -> jumpsuit
+- `armor_farmor_xs` — fur body armor — via looks_like -> jumpsuit
+- `armor_faux_farmor` — faux fur body armor — via looks_like -> jumpsuit
+- `armor_faux_farmor_xs` — faux fur body armor — via looks_like -> jumpsuit
+- `armor_hc_armguard` — high steel arm guard — via looks_like -> arm_warmers
+- `armor_hc_brigandine` — high steel brigandine — via looks_like -> chestguard_hard
+- `armor_hc_brigandine_shoulders` — high steel brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_hc_brigandine_shoulders_xs` — high steel brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_hc_brigandine_xs` — high steel brigandine — via looks_like -> chestguard_hard
+- `armor_hc_chestplate` — high steel chestplate — via looks_like -> jumpsuit
+- `armor_hc_coat_brigandine` — high steel brigandine coat — via looks_like -> coat_rain
+- `armor_hc_coat_brigandine_shoulders` — high steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_hc_coat_brigandine_shoulders_xs` — high steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_hc_coat_brigandine_xs` — high steel brigandine coat — via looks_like -> coat_rain
+- `armor_hc_heavy_chestplate` — high steel heavy chestplate — via looks_like -> jumpsuit
+- `armor_hc_heavy_leg_guard` — high steel heavy leg guard — via looks_like -> leg_warmers
+- `armor_hc_heavyarmguard` — high steel heavy arm guard — via looks_like -> arm_warmers
+- `armor_hc_heavyplate` — high steel heavy plate armor — via looks_like -> jumpsuit
+- `armor_hc_leg_guard` — high steel leg guard — via looks_like -> leg_warmers
+- `armor_hc_light_chestplate` — high steel light chestplate — via looks_like -> chestguard_hard
+- `armor_hc_light_leg_guard` — high steel light leg guard — via looks_like -> leg_warmers
+- `armor_hc_lightarmguard` — high steel light arm guard — via looks_like -> arm_warmers
+- `armor_hc_lightplate` — high steel light plate armor — via looks_like -> jumpsuit
+- `armor_hc_plate` — high steel plate armor — via looks_like -> jumpsuit
+- `armor_junk_lightplate` — junk plate armor — via looks_like -> jumpsuit
+- `armor_lamellar` — leather lamellar cuirass — via looks_like -> tank_top
+- `armor_lamellar_ch` — hardened steel lamellar cuirass — via looks_like -> armor_lorica
+- `armor_lamellar_lc` — mild steel lamellar cuirass — via looks_like -> armor_lorica
+- `armor_larmor` — leather body armor — via looks_like -> jumpsuit
+- `armor_larmor_chest` — leather armor cuirass — via looks_like -> chestguard_hard
+- `armor_larmor_chest_xs` — leather armor cuirass — via looks_like -> chestguard_hard
+- `armor_larmor_xs` — leather body armor — via looks_like -> jumpsuit
+- `armor_lc_armguard` — mild steel arm guard — via looks_like -> arm_warmers
+- `armor_lc_brigandine` — mild steel brigandine — via looks_like -> chestguard_hard
+- `armor_lc_brigandine_shoulders` — mild steel brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_lc_brigandine_shoulders_xs` — mild steel brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_lc_brigandine_xs` — mild steel brigandine — via looks_like -> chestguard_hard
+- `armor_lc_chestplate` — mild steel chestplate — via looks_like -> jumpsuit
+- `armor_lc_coat_brigandine` — mild steel brigandine coat — via looks_like -> coat_rain
+- `armor_lc_coat_brigandine_shoulders` — mild steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_lc_coat_brigandine_shoulders_xs` — mild steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_lc_coat_brigandine_xs` — mild steel brigandine coat — via looks_like -> coat_rain
+- `armor_lc_heavy_chestplate` — mild steel heavy chestplate — via looks_like -> jumpsuit
+- `armor_lc_heavy_leg_guard` — mild steel heavy leg guard — via looks_like -> leg_warmers
+- `armor_lc_heavyarmguard` — mild steel heavy arm guard — via looks_like -> arm_warmers
+- `armor_lc_heavyplate` — mild steel heavy plate armor — via looks_like -> jumpsuit
+- `armor_lc_leg_guard` — mild steel leg guard — via looks_like -> leg_warmers
+- `armor_lc_light_chestplate` — mild steel light chestplate — via looks_like -> chestguard_hard
+- `armor_lc_light_leg_guard` — mild steel light leg guard — via looks_like -> leg_warmers
+- `armor_lc_lightarmguard` — mild steel light arm guard — via looks_like -> arm_warmers
+- `armor_lc_lightplate` — mild steel light plate armor — via looks_like -> jumpsuit
+- `armor_lc_plate` — mild steel plate armor — via looks_like -> jumpsuit
+- `armor_lorica` — lorica segmentata — via exact/use-all-png -> armor_lorica
+- `armor_mc_armguard` — medium steel arm guard — via looks_like -> arm_warmers
+- `armor_mc_brigandine` — medium steel brigandine — via looks_like -> chestguard_hard
+- `armor_mc_brigandine_shoulders` — medium steel brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_mc_brigandine_shoulders_xs` — medium steel brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_mc_brigandine_xs` — medium steel brigandine — via looks_like -> chestguard_hard
+- `armor_mc_chestplate` — medium steel chestplate — via looks_like -> jumpsuit
+- `armor_mc_coat_brigandine` — medium steel brigandine coat — via looks_like -> coat_rain
+- `armor_mc_coat_brigandine_shoulders` — medium steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_mc_coat_brigandine_shoulders_xs` — medium steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_mc_coat_brigandine_xs` — medium steel brigandine coat — via looks_like -> coat_rain
+- `armor_mc_heavy_chestplate` — medium steel heavy chestplate — via looks_like -> jumpsuit
+- `armor_mc_heavy_leg_guard` — medium steel heavy leg guard — via looks_like -> leg_warmers
+- `armor_mc_heavyarmguard` — medium steel heavy arm guard — via looks_like -> arm_warmers
+- `armor_mc_heavyplate` — medium steel heavy plate armor — via looks_like -> jumpsuit
+- `armor_mc_leg_guard` — medium steel leg guard — via looks_like -> leg_warmers
+- `armor_mc_light_chestplate` — medium steel light chestplate — via looks_like -> chestguard_hard
+- `armor_mc_light_leg_guard` — medium steel light leg guard — via looks_like -> leg_warmers
+- `armor_mc_lightarmguard` — medium steel light arm guard — via looks_like -> arm_warmers
+- `armor_mc_lightplate` — medium steel light plate armor — via looks_like -> jumpsuit
+- `armor_mc_plate` — medium steel plate armor — via looks_like -> jumpsuit
+- `armor_mercenary_bottom` — mercenary pants — via looks_like -> pants_cargo
+- `armor_metal_sheets` — sheet metal armor — via looks_like -> jumpsuit
+- `armor_metal_sheets_chain` — junkyard plate armor — via looks_like -> jumpsuit
+- `armor_metal_sheets_chain_heavy` — heavy junkyard plate armor — via looks_like -> jumpsuit
+- `armor_metal_sheets_heavy` — heavy sheet metal armor — via looks_like -> jumpsuit
+- `armor_nomad` — nomad jumpsuit — via looks_like -> jumpsuit
+- `armor_nomad_advanced` — advanced nomad jumpsuit — via looks_like -> jumpsuit
+- `armor_nomad_advanced_on` — advanced nomad jumpsuit (on) — via looks_like -> jumpsuit
+- `armor_nomad_chainmail` — nomad chainmail — via looks_like -> jumpsuit
+- `armor_nomad_chainmail_on` — nomad chainmail (on) — via looks_like -> jumpsuit
+- `armor_nomad_heavyplate` — nomad heavy plate armor — via looks_like -> jumpsuit
+- `armor_nomad_heavyplate_on` — nomad heavy plate armor (on) — via looks_like -> jumpsuit
+- `armor_nomad_light` — light nomad jumpsuit — via looks_like -> jumpsuit
+- `armor_nomad_lightplate` — nomad light plate armor — via looks_like -> jumpsuit
+- `armor_nomad_lightplate_on` — nomad light plate armor (on) — via looks_like -> jumpsuit
+- `armor_nomad_plate` — nomad plate armor — via looks_like -> jumpsuit
+- `armor_nomad_plate_on` — nomad plate armor (on) — via looks_like -> jumpsuit
+- `armor_pipe_vest` — pipe vest — via looks_like -> armor_lorica
+- `armor_plarmor` — plated leather armor — via looks_like -> jumpsuit
+- `armor_plarmor_xs` — plated leather armor — via looks_like -> jumpsuit
+- `armor_qt_armguard` — tempered steel arm guard — via looks_like -> arm_warmers
+- `armor_qt_brigandine` — tempered brigandine — via looks_like -> chestguard_hard
+- `armor_qt_brigandine_shoulders` — tempered brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_qt_brigandine_shoulders_xs` — tempered brigandine with shoulder guards — via looks_like -> tank_top
+- `armor_qt_brigandine_xs` — tempered brigandine — via looks_like -> chestguard_hard
+- `armor_qt_chestplate` — tempered chestplate — via looks_like -> jumpsuit
+- `armor_qt_coat_brigandine` — tempered brigandine coat — via looks_like -> coat_rain
+- `armor_qt_coat_brigandine_shoulders` — tempered brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_qt_coat_brigandine_shoulders_xs` — tempered brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `armor_qt_coat_brigandine_xs` — tempered brigandine coat — via looks_like -> coat_rain
+- `armor_qt_heavy_chestplate` — tempered heavy chestplate — via exact/use-all-png -> armor_qt_heavy_chestplate
+- `armor_qt_heavy_leg_guard` — tempered heavy leg guard — via exact/use-all-png -> armor_qt_heavy_leg_guard
+- `armor_qt_heavyarmguard` — tempered steel heavy arm guard — via exact/use-all-png -> armor_qt_heavyarmguard
+- `armor_qt_heavyplate` — tempered steel heavy plate armor — via looks_like -> jumpsuit
+- `armor_qt_leg_guard` — tempered leg guard — via looks_like -> leg_warmers
+- `armor_qt_light_chestplate` — tempered light chestplate — via looks_like -> chestguard_hard
+- `armor_qt_light_leg_guard` — tempered light leg guard — via looks_like -> leg_warmers
+- `armor_qt_lightarmguard` — tempered steel light arm guard — via looks_like -> arm_warmers
+- `armor_qt_lightplate` — tempered steel light plate armor — via looks_like -> jumpsuit
+- `armor_qt_plate` — tempered steel plate armor — via looks_like -> jumpsuit
+- `armor_riot` — riot armor suit — via exact/use-all-png -> armor_riot
+- `armor_riot_arm` — riot arm guards (pair) — via looks_like -> arm_warmers
+- `armor_riot_leg` — riot leg guards (pair) — via looks_like -> leg_warmers
+- `armor_riot_torso` — riot chest guard — via looks_like -> chestguard_hard
+- `armor_thessalonian` — cataphract armor — via exact/use-all-png -> armor_thessalonian
+- `armrig` — small armband pouch — via looks_like -> armguard_soft
+- `arrowrest` — arrow rest — via exact/use-all-png -> arrowrest
+- `art_boots` — ancient leather boots (pair) — via looks_like -> dress_shoes
+- `art_cloak` — ancient burial shroud — via looks_like -> coat_rain
+- `art_coat` — ornate fur coat — via looks_like -> coat_rain
+- `art_gloves` — ornate leather gloves (pair) — via looks_like -> gloves_light
+- `art_helm` — ancient bronze helmet — via looks_like -> helmet_barbute
+- `art_mask` — ancient stone mask — via exact/use-all-png -> art_mask
+- `as50` — .50-caliber precision rifle — via exact/use-all-png -> as50
+- `ashot` — 12 gauge pistol — via exact/use-all-png -> ashot
+- `atgm_launcher` — BGM-71E TOW — via exact/use-all-png -> atgm_launcher
+- `autumn_olive` — handful of autumn olives — via exact/use-all-png -> autumn_olive
+- `awl_bone` — bone sewing awl — via exact/use-all-png -> awl_bone
+- `awl_steel` — steel sewing awl — via exact/use-all-png -> awl_steel
+- `axe_ring` — axe ring holster — via exact/use-all-png -> axe_ring
+- `axmc` — modular sniper rifle — via looks_like -> modular_ar15
+- `b_shorts` — basketball shorts — via looks_like -> boxer_shorts
+- `back_holster` — back holster — via looks_like -> bscabbard
+- `backpack_small` — small backpack — via looks_like -> ragpouch
+- `badge_deputy` — deputy badge — via exact/use-all-png -> badge_deputy
+- `badge_detective` — detective badge — via exact/use-all-png -> badge_detective
+- `badge_doctor` — doctor badge — via exact/use-all-png -> badge_doctor
+- `badge_marshal` — marshal badge — via exact/use-all-png -> badge_marshal
+- `badge_swat` — SWAT badge — via exact/use-all-png -> badge_swat
+- `bagpipes` — bagpipes — via exact/use-all-png -> bagpipes
+- `balaclava_cut_resistant` — cut-resistant balaclava — via looks_like -> hat_cotton
+- `balance_small` — small weight scale — via exact/use-all-png -> balance_small
+- `balclava` — balaclava — via looks_like -> hat_cotton
+- `baldric` — longsword scabbard — via looks_like -> scabbard
+- `baldric_holster` — baldric holster — via looks_like -> bscabbard
+- `banana` — banana — via exact/use-all-png -> banana
+- `bandolier_pipebomb` — large grenade bandolier — via looks_like -> leather_belt
+- `bandolier_pipebomb_xl` — large grenade bandolier — via looks_like -> leather_belt
+- `bandolier_pipebomb_xs` — large grenade bandolier — via looks_like -> leather_belt
+- `bandolier_pistol` — pistol bandolier — via looks_like -> leather_belt
+- `bandolier_rifle` — rifle bandolier — via looks_like -> leather_belt
+- `bandolier_shotgun` — waist shotgun bandolier — via looks_like -> leather_belt
+- `bandolier_wrist` — wrist bandolier — via looks_like -> leather_belt
+- `banjo` — banjo — via exact/use-all-png -> banjo
+- `barley` — barley — via exact/use-all-png -> barley
+- `barometer` — barometer — via exact/use-all-png -> barometer
+- `barrette` — barrette — via exact/use-all-png -> barrette
+- `baseball` — baseball — via exact/use-all-png -> baseball
+- `basic_papr_belt_off` — PAPR blower (off) — via looks_like -> leather_belt
+- `basic_papr_belt_on` — PAPR blower (on) — via looks_like -> leather_belt
+- `basketball` — basketball — via exact/use-all-png -> basketball
+- `bastsandals` — cord sandals (pair) — via looks_like -> sneakers
+- `bat_nerf` — foam rubber bat — via exact/use-all-png -> bat_nerf
+- `bath_toy` — bath toy — via exact/use-all-png -> bath_toy
+- `baton` — expandable baton — via exact/use-all-png -> baton
+- `baton-extended` — expandable baton (extended) — via exact/use-all-png -> baton-extended
+- `batrachian_sample` — frog sample — via exact/use-all-png -> batrachian_sample
+- `battery` — battery — via exact/use-all-png -> battery
+- `battery_car` — car battery — via exact/use-all-png -> battery_car
+- `battery_charger` — battery charger — via exact/use-all-png -> battery_charger
+- `battery_motorbike` — motorbike battery — via looks_like -> battery_car
+- `battery_motorbike_small` — small motorbike battery — via looks_like -> battery_car
+- `bb` — BB — via exact/use-all-png -> bb
+- `bbgun` — BB gun — via exact/use-all-png -> bbgun
+- `beach_volleyball` — beach volleyball — via exact/use-all-png -> beach_volleyball
+- `bead_ear` — beaded earrings (pair) — via exact/use-all-png -> bead_ear
+- `beansnrice` — beans and rice — via exact/use-all-png -> beansnrice
+- `bearing` — ball bearing — via looks_like -> pebble
+- `beartrap` — bear trap — via exact/use-all-png -> beartrap
+- `beast_sample` — beast sample — via exact/use-all-png -> beast_sample
+- `beech_nuts` — Handful of beechnuts — via exact/use-all-png -> beech_nuts
+- `beekeeping_gloves` — beekeeping gloves (pair) — via looks_like -> gloves_light
+- `beekeeping_hood` — beekeeping hood — via looks_like -> cowboy_hat
+- `beekeeping_suit` — beekeeping suit — via looks_like -> hazmat_suit
+- `bell_pepper` — bell pepper — via exact/use-all-png -> bell_pepper
+- `bellyband` — belly band — via looks_like -> tshirt
+- `bellywrap` — belly wrap — via looks_like -> tshirt
+- `bellywrap_fur` — fur belly wrap — via looks_like -> tshirt
+- `bellywrap_leather` — leather belly wrap — via looks_like -> tshirt
+- `bellywrap_wool` — wool belly wrap — via looks_like -> tshirt
+- `belt_loop_large` — large belt loop — via looks_like -> holster
+- `belt_loop_medium` — medium belt loop — via looks_like -> holster
+- `belt_loop_small` — small belt loop — via looks_like -> holster
+- `benelli_m4` — 5-round auto-loading shotgun — via looks_like -> remington_870
+- `benelli_sa` — 4-round waterfowl shotgun — via looks_like -> remington_870
+- `benelli_tsa` — 6-round tactical shotgun — via variant -> benelli_tsa
+- `beret` — beret — via exact/use-all-png -> beret
+- `beret_wool` — wool beret — via looks_like -> beret
+- `beverly_shear` — Beverly shear — via exact/use-all-png -> beverly_shear
+- `bfg50` — single-shot .50-caliber rifle — via exact/use-all-png -> bfg50
+- `bfr` — hunting hand cannon — via exact/use-all-png -> bfr
+- `big_pliers` — tongue-and-groove pliers — via exact/use-all-png -> big_pliers
+- `bigframe_pack` — big pack frame — via looks_like -> golf_bag
+- `bigmirror` — standing mirror — via looks_like -> f_bigmirror
+- `bigtrapper_pack` — big trapper pack — via looks_like -> golf_bag
+- `bigun` — 12-gauge Gatling gun — via exact/use-all-png -> bigun
+- `bikini_bottom` — bikini bottoms — via variant -> bikini_bottom
+- `bikini_bottom_short` — short bikini bottoms — via looks_like -> bikini_bottom
+- `bikini_top` — bikini top — via variant -> bikini_top
+- `bikini_top_fur` — fur bikini top — via looks_like -> bikini_top
+- `bikini_top_leather` — leather bikini top — via looks_like -> bikini_top
+- `bikini_top_short` — short bikini top — via looks_like -> bikini_top
+- `bill_hook` — bill-hook — via looks_like -> glaive
+- `binder_top` — binder — via looks_like -> bikini_top
+- `bio_laser_gun` — laser finger — via looks_like -> v29
+- `bio_lightning` — Chain Lightning — via looks_like -> laser_rifle
+- `bio_shotgun_gun` — bionic shotgun — via looks_like -> remington_870
+- `birchbark` — piece of birchbark — via exact/use-all-png -> birchbark
+- `bird_sample` — bird sample — via exact/use-all-png -> bird_sample
+- `birdfood` — bird food — via exact/use-all-png -> birdfood
+- `bismuth` — bismuth — via exact/use-all-png -> bismuth
+- `bite_suit` — canine bite suit — via looks_like -> coat_rain
+- `black_box` — military black box — via exact/use-all-png -> black_box
+- `black_pen` — black pen — via looks_like -> pen
+- `blackberries` — handful of blackberries — via exact/use-all-png -> blackberries
+- `blackjack` — blackjack — via exact/use-all-png -> blackjack
+- `blacksmith_prototypes` — engineering notes — via looks_like -> paper
+- `blade` — blade — via exact/use-all-png -> blade
+- `blazer` — blazer — via looks_like -> jacket_light
+- `block_and_tackle` — block and tackle — via exact/use-all-png -> block_and_tackle
+- `blt` — BLT — via exact/use-all-png -> blt
+- `blue_pen` — blue pen — via exact/use-all-png -> blue_pen
+- `blue_topaz_dental_grill` — blue topaz dental grill — via looks_like -> gold_dental_grill
+- `blue_topaz_gold_bracelet` — blue topaz and gold bracelet — via exact/use-all-png -> blue_topaz_gold_bracelet
+- `blue_topaz_gold_cufflinks` — blue topaz and gold cufflinks — via exact/use-all-png -> blue_topaz_gold_cufflinks
+- `blue_topaz_gold_earring` — blue topaz and gold earrings (pair) — via exact/use-all-png -> blue_topaz_gold_earring
+- `blue_topaz_gold_pendant_necklace` — blue topaz and gold pendant necklace — via exact/use-all-png -> blue_topaz_gold_pendant_necklace
+- `blue_topaz_gold_ring` — blue topaz and gold ring — via exact/use-all-png -> blue_topaz_gold_ring
+- `blue_topaz_gold_tiara` — blue topaz and gold tiara — via looks_like -> crown_golden
+- `blue_topaz_platinum_bracelet` — blue topaz and platinum bracelet — via exact/use-all-png -> blue_topaz_platinum_bracelet
+- `blue_topaz_platinum_cufflinks` — blue topaz and platinum cufflinks — via exact/use-all-png -> blue_topaz_platinum_cufflinks
+- `blue_topaz_platinum_earring` — blue topaz and platinum earrings (pair) — via exact/use-all-png -> blue_topaz_platinum_earring
+- `blue_topaz_platinum_pendant_necklace` — blue topaz and platinum pendant necklace — via exact/use-all-png -> blue_topaz_platinum_pendant_necklace
+- `blue_topaz_platinum_ring` — blue topaz and platinum ring — via exact/use-all-png -> blue_topaz_platinum_ring
+- `blue_topaz_platinum_tiara` — blue topaz and platinum tiara — via looks_like -> crown_golden
+- `blue_topaz_silver_bracelet` — blue topaz and silver bracelet — via exact/use-all-png -> blue_topaz_silver_bracelet
+- `blue_topaz_silver_cufflinks` — blue topaz and silver cufflinks — via exact/use-all-png -> blue_topaz_silver_cufflinks
+- `blue_topaz_silver_earring` — blue topaz and silver earrings (pair) — via exact/use-all-png -> blue_topaz_silver_earring
+- `blue_topaz_silver_pendant_necklace` — blue topaz and silver pendant necklace — via exact/use-all-png -> blue_topaz_silver_pendant_necklace
+- `blue_topaz_silver_ring` — blue topaz and silver ring — via exact/use-all-png -> blue_topaz_silver_ring
+- `blue_topaz_silver_tiara` — blue topaz and silver tiara — via looks_like -> crown_golden
+- `blunderbuss` — blunderbuss — via exact/use-all-png -> blunderbuss
+- `blutwurst_sausage` — blutwurst — via exact/use-all-png -> blutwurst_sausage
+- `bodypillow` — body pillow — via exact/use-all-png -> bodypillow
+- `bodysuit_lycra` — Lycra bodysuit — via looks_like -> jumpsuit
+- `bokken` — bokken — via exact/use-all-png -> bokken
+- `bokken_fake` — bokken — via looks_like -> bokken
+- `bokken_inferior` — bokken — via looks_like -> bokken
+- `bolas` — bolas — via exact/use-all-png -> bolas
+- `boltcutters` — bolt cutters — via exact/use-all-png -> boltcutters
+- `bond_410` — double-barrel derringer — via exact/use-all-png -> bond_410
+- `bondage_mask` — bondage mask — via looks_like -> hat_cotton
+- `bondage_mask_zipped` — bondage mask (zipped) — via looks_like -> hat_cotton
+- `bondage_suit` — bondage suit — via looks_like -> jumpsuit
+- `bone_flute` — bone flute — via looks_like -> flute
+- `book_pieces` — pieces of books — via exact/use-all-png -> book_pieces
+- `book_ruined` — ruined book — via exact/use-all-png -> book_ruined
+- `bookplate` — bookplate — via exact/use-all-png -> bookplate
+- `bookstrap` — bookstrap — via looks_like -> leather_belt
+- `boots` — boots (pair) — via exact/use-all-png -> boots
+- `boots_acidchitin` — biosilicified chitin boots (pair) — via exact/use-all-png -> boots_acidchitin
+- `boots_bone` — occult boots (pair) — via looks_like -> boots
+- `boots_bunker` — turnout boots (pair) — via looks_like -> boots
+- `boots_chitin` — chitinous scale foot covers (pair) — via exact/use-all-png -> boots_chitin
+- `boots_combat` — combat boots (pair) — via looks_like -> boots
+- `boots_denim` — denim boots (pair) — via looks_like -> boots
+- `boots_faux_fur` — faux fur boots (pair) — via looks_like -> boots
+- `boots_fsurvivor` — survivor fireboots (pair) — via looks_like -> boots
+- `boots_fur` — fur boots (pair) — via looks_like -> boots
+- `boots_hiking` — hiking boots (pair) — via looks_like -> boots
+- `boots_hsurvivor` — heavy survivor boots (pair) — via looks_like -> boots
+- `boots_larmor` — leather armor boots (pair) — via looks_like -> boots
+- `boots_plate` — armored boots (pair) — via looks_like -> boots
+- `boots_rubber` — rubber boots (pair) — via looks_like -> boots
+- `boots_scrap` — scrap boots (pair) — via looks_like -> boots
+- `boots_steel` — steeltoed boots (pair) — via looks_like -> boots
+- `boots_survivor` — handmade hazard boots (pair) — via looks_like -> boots
+- `boots_survivor_hoof` — handmade hazard hoof boots (pair) — via looks_like -> boots
+- `boots_western` — western boots (pair) — via looks_like -> dress_shoes
+- `boots_winter` — winter boots (pair) — via looks_like -> boots
+- `boots_wsurvivor` — handmade winterized hazard boots (pair) — via looks_like -> boots
+- `boots_wsurvivor_nofur` — handmade faux fur hazard boots (pair) — via looks_like -> boots
+- `boots_xlsurvivor` — handmade hazard boots (pair) — via looks_like -> boots
+- `boots_xssurvivor` — handmade hazard boots (pair) — via looks_like -> boots
+- `bootsheath` — ankle sheath — via looks_like -> scabbard
+- `bootsheath_birchbark` — birchbark ankle sheath — via looks_like -> scabbard
+- `bootstrap` — ankle holster — via looks_like -> holster
+- `bot_science_bot` — inactive lab defense bot — via exact/use-all-png -> bot_science_bot
+- `bow_saw` — bow saw — via exact/use-all-png -> bow_saw
+- `bow_sling` — bow sling — via looks_like -> slingpack
+- `bowhat` — bowler hat — via looks_like -> hat_cotton
+- `bowling_ball` — bowling ball — via exact/use-all-png -> bowling_ball
+- `bowling_pin` — bowling pin — via exact/use-all-png -> bowling_pin
+- `box_battery_charger` — disconnected box battery charger — via exact/use-all-png -> box_battery_charger
+- `box_compact_wood` — tiny wooden box — via exact/use-all-png -> box_compact_wood
+- `box_large_folded` — large folded cardboard box — via exact/use-all-png -> box_large_folded
+- `box_large_metal` — large metal box — via exact/use-all-png -> box_large_metal
+- `box_large_wood` — large wooden box — via exact/use-all-png -> box_large_wood
+- `box_medium_folded` — folded cardboard box — via exact/use-all-png -> box_medium_folded
+- `box_medium_metal` — metal box — via exact/use-all-png -> box_medium_metal
+- `box_medium_wood` — wooden box — via exact/use-all-png -> box_medium_wood
+- `box_oversize_folded` — oversize folded cardboard box — via exact/use-all-png -> box_oversize_folded
+- `box_oversize_metal` — oversize metal box — via exact/use-all-png -> box_oversize_metal
+- `box_oversize_wood` — oversize wooden box — via exact/use-all-png -> box_oversize_wood
+- `box_small_folded` — small folded cardboard box — via exact/use-all-png -> box_small_folded
+- `box_small_metal` — small metal box — via exact/use-all-png -> box_small_metal
+- `box_small_plastic` — secured plastic box — via exact/use-all-png -> box_small_plastic
+- `box_small_wood` — small wooden box — via exact/use-all-png -> box_small_wood
+- `box_snack` — snack cardboard box — via exact/use-all-png -> box_snack
+- `boxcutter` — boxcutter knife — via exact/use-all-png -> boxcutter
+- `boxer_briefs` — boxer briefs — via exact/use-all-png -> boxer_briefs
+- `boxer_shorts` — boxer shorts — via exact/use-all-png -> boxer_shorts
+- `boxing_gloves` — boxing gloves (pair) — via exact/use-all-png -> boxing_gloves
+- `boy_shorts` — boy shorts — via exact/use-all-png -> boy_shorts
+- `bp_nomad_bodyglove` — nomad bodyglove blueprint — via looks_like -> paper
+- `bp_nomad_cowl` — nomad cowl blueprint — via looks_like -> paper
+- `bp_nomad_jumpsuit` — nomad jumpsuit blueprint — via looks_like -> paper
+- `bra` — bra — via exact/use-all-png -> bra
+- `bracelet_friendship` — friendship bracelet — via looks_like -> copper_bracelet
+- `brain` — piece of raw brain — via exact/use-all-png -> brain
+- `brain_cooked` — cooked piece of brain — via exact/use-all-png -> brain_cooked
+- `brass_catcher` — brass catcher — via exact/use-all-png -> brass_catcher
+- `bratwurst_sausage` — bratwurst — via looks_like -> sausage
+- `bread` — bread — via exact/use-all-png -> bread
+- `bread_garlic` — garlic bread — via looks_like -> bread
+- `breeches` — breeches — via looks_like -> pants
+- `bren2_556` — Bren 5.56x45mm carbine — via looks_like -> modular_ar15
+- `brew_sake_koji` — unfinished koji rice (obsolete) — via looks_like -> rice_cooked
+- `brew_sake_koji_active` — unfinished koji rice — via looks_like -> rice_cooked
+- `brick` — brick — via exact/use-all-png -> brick
+- `briefs` — briefs — via exact/use-all-png -> briefs
+- `brioche` — brioche — via exact/use-all-png -> brioche
+- `broccoli` — broccoli — via exact/use-all-png -> broccoli
+- `brogyeki` — Exodii hand mortar — via looks_like -> m79
+- `broken_EMP_hack` — broken EMP hack — via exact/use-all-png -> broken_EMP_hack
+- `broken_c4_hack` — broken C-4 hack — via exact/use-all-png -> broken_c4_hack
+- `broken_dimensional_anchor` — malfunctioning 5-point anchor — via exact/use-all-png -> broken_dimensional_anchor
+- `broken_flashbang_hack` — broken flashbang hack — via exact/use-all-png -> broken_flashbang_hack
+- `broken_gasbomb_hack` — broken tear gas hack — via exact/use-all-png -> broken_gasbomb_hack
+- `broken_kord` — Kord AK rifle (Demilled) — via looks_like -> modular_ar15
+- `broken_manhack` — broken manhack — via exact/use-all-png -> broken_manhack
+- `broken_science_bot` — broken lab defense bot — via exact/use-all-png -> broken_science_bot
+- `bronze_brush_handaxe` — bronze bill — via looks_like -> machete
+- `bronze_hoe` — bronze hoe — via exact/use-all-png -> bronze_hoe
+- `bronze_knife` — bronze knife — via exact/use-all-png -> bronze_knife
+- `bronze_medal` — bronze medal — via looks_like -> copper_locket
+- `bronze_pickaxe` — bronze pickaxe — via exact/use-all-png -> bronze_pickaxe
+- `bronze_shears` — bronze shears — via exact/use-all-png -> bronze_shears
+- `bronze_sickle` — bronze sickle — via exact/use-all-png -> bronze_sickle
+- `brown_bread` — brown bread — via exact/use-all-png -> brown_bread
+- `brownie` — brownie — via exact/use-all-png -> brownie
+- `browning_blr` — BLR lever-action hunting rifle — via exact/use-all-png -> browning_blr
+- `brush` — scrub brush — via exact/use-all-png -> brush
+- `brush_handaxe` — bill — via looks_like -> machete
+- `brush_pole` — bill pole — via looks_like -> glaive
+- `brush_toilet` — toilet brush — via exact/use-all-png -> brush_toilet
+- `bscabbard` — back scabbard — via exact/use-all-png -> bscabbard
+- `bt_apc9k` — B&T APC9 PRO K submachine gun — via exact/use-all-png -> bt_apc9k
+- `bucket_5gal` — large plastic bucket — via exact/use-all-png -> bucket_5gal
+- `bullet_crossbow` — bullet crossbow — via exact/use-all-png -> bullet_crossbow
+- `bunker_coat` — turnout coat — via looks_like -> coat_rain
+- `bunker_pants` — turnout trousers — via looks_like -> pants_cargo
+- `bunny_suit_playboy` — bunny suit — via looks_like -> wetsuit
+- `butane_tank` — butane tank — via looks_like -> oxygen_tank
+- `butchering_kit` — butchering kit — via looks_like -> knife_huge
+- `butter` — butter — via exact/use-all-png -> butter
+- `button_plastic` — button — via exact/use-all-png -> button_plastic
+- `buttonshirt` — button shirt — via looks_like -> longshirt
+- `cabbage_head` — cabbage head — via exact/use-all-png -> cabbage_head
+- `cable` — copper wire — via exact/use-all-png -> cable
+- `cable_instrument` — instrument cable — via exact/use-all-png -> cable_instrument
+- `cable_speaker` — speaker cable — via exact/use-all-png -> cable_speaker
+- `cable_xlr` — XLR cable — via exact/use-all-png -> cable_xlr
+- `cactus_pad` — handful of nopales — via exact/use-all-png -> cactus_pad
+- `caff_gum` — caffeinated chewing gum — via exact/use-all-png -> caff_gum
+- `caffeine` — caffeine pill — via exact/use-all-png -> caffeine
+- `caltrops` — loose caltrops — via exact/use-all-png -> caltrops
+- `caltrops_glass` — loose glass caltrops — via exact/use-all-png -> caltrops_glass
+- `camera` — camera — via exact/use-all-png -> camera
+- `camera_bag` — camera bag — via looks_like -> slingpack
+- `camisole` — camisole — via looks_like -> tank_top
+- `camping_multitool` — camping multitool — via looks_like -> multitool
+- `can_cheese` — cheese spread — via exact/use-all-png -> can_cheese
+- `can_corn` — canned corn — via exact/use-all-png -> can_corn
+- `can_opener` — can opener — via exact/use-all-png -> can_opener
+- `can_pineapple` — canned pineapple — via exact/use-all-png -> can_pineapple
+- `can_spam` — SPAM — via exact/use-all-png -> can_spam
+- `can_tomato` — canned tomato — via exact/use-all-png -> can_tomato
+- `candle` — candle — via exact/use-all-png -> candle
+- `candlestick` — candlestick — via exact/use-all-png -> candlestick
+- `candy_bracelet` — candy bracelet — via exact/use-all-png -> candy_bracelet
+- `cannabis` — cannabis plant — via exact/use-all-png -> cannabis
+- `canned_liver` — canned liver — via looks_like -> meat_cooked
+- `cannon_3in_ordnance` — 3-inch ordnance rifle — via looks_like -> remington_870
+- `cannonball_4lb` — cannonball — via exact/use-all-png -> cannonball_4lb
+- `canteen_pouch` — canteen pouch — via looks_like -> holster
+- `canvas_pants_padded` — cloth-padded pants — via looks_like -> pants
+- `carbon_electrode` — carbon electrode rod — via exact/use-all-png -> carbon_electrode
+- `cardboard` — piece of cardboard — via looks_like -> paper
+- `cardboard_crown` — cardboard crown — via looks_like -> crown_golden
+- `cardboard_crown_loose` — cardboard crown (loosened) — via looks_like -> crown_golden
+- `cardboard_roll` — cardboard roll — via exact/use-all-png -> cardboard_roll
+- `carpet_armguards` — carpet arm guards (pair) — via looks_like -> arm_warmers
+- `carpet_bracers` — carpet bracers (pair) — via looks_like -> arm_warmers
+- `carpet_cuirass` — carpet cuirass — via looks_like -> tunic_rag
+- `carpet_greaves` — carpet greaves (pair) — via looks_like -> leg_warmers
+- `carpet_legguards` — carpet leg guards (pair) — via looks_like -> leg_warmers
+- `carver_off` — electric carver (off) — via exact/use-all-png -> carver_off
+- `cash_register` — cash register — via exact/use-all-png -> cash_register
+- `cashews` — Handful of cashews — via exact/use-all-png -> cashews
+- `casserole` — casserole pot — via exact/use-all-png -> casserole
+- `cathod_mix` — acidic electrolyte paste — via exact/use-all-png -> cathod_mix
+- `cattail_rhizome` — cattail rhizome — via exact/use-all-png -> cattail_rhizome
+- `cattail_stalk` — cattail stalk — via exact/use-all-png -> cattail_stalk
+- `cattle_sample` — cattle sample — via exact/use-all-png -> cattle_sample
+- `cattlefodder_large` — large cattle fodder bundle — via exact/use-all-png -> cattlefodder_large
+- `cattlefodder_medium` — cattle fodder bundle — via exact/use-all-png -> cattlefodder_medium
+- `cavalry_sabre` — cavalry saber — via exact/use-all-png -> cavalry_sabre
+- `cavalry_sabre_fake` — cavalry saber — via exact/use-all-png -> cavalry_sabre_fake
+- `cell_phone` — cellphone — via exact/use-all-png -> cell_phone
+- `cell_phone_flashlight` — cellphone - Flashlight — via exact/use-all-png -> cell_phone_flashlight
+- `cephalopod_sample` — cephalopod sample — via exact/use-all-png -> cephalopod_sample
+- `ceramic_armor` — ceramic armor plate — via exact/use-all-png -> ceramic_armor
+- `ceramic_bowl` — ceramic bowl — via exact/use-all-png -> ceramic_bowl
+- `cereal` — sugary cereal — via exact/use-all-png -> cereal
+- `cereal2` — whole-grain cereal — via looks_like -> cereal
+- `cereal_fp1` — Foodplace cereal — via looks_like -> cereal
+- `cereal_fp2` — Carpenter Crunch cereal — via looks_like -> cereal
+- `cereal_fp4` — Sugar Chomps cereal — via looks_like -> cereal
+- `ch_armguard_metal` — hardened steel sheet metal arm guards (pair) — via looks_like -> arm_warmers
+- `ch_armguard_metal_sheets_bracer` — hardened steel sheet metal bracers (pair) — via looks_like -> arm_warmers
+- `ch_armguard_metal_sheets_elbows` — hardened sheet metal elbow guards (pair) — via looks_like -> elbow_pads
+- `ch_cavalry_sabre` — hardened steel cavalry saber — via looks_like -> cavalry_sabre
+- `ch_chainmail_arms` — hardened steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `ch_chainmail_half_legs` — hardened steel chainmail half-leggings — via looks_like -> leg_warmers
+- `ch_chainmail_jumpsuit` — hardened steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `ch_chainmail_jumpsuit_xs` — hardened steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `ch_chainmail_sjumpsuit` — hardened steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `ch_chainmail_sjumpsuit_xs` — hardened steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `ch_chainmail_suit` — hardened steel chainmail armor — via looks_like -> jumpsuit
+- `ch_chainmail_suit_xs` — hardened steel chainmail armor — via looks_like -> jumpsuit
+- `ch_chestguard_metal_sheets` — hardened sheet metal chest guard — via looks_like -> chestguard_hard
+- `ch_chestguard_metal_sheets_heavy` — hardened heavy sheet metal chest guard — via looks_like -> chestguard_hard
+- `ch_cutlass` — hardened steel cutlass — via looks_like -> cutlass
+- `ch_demi_gaunt` — hardened steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `ch_elbow_guards` — hardened elbow guards (pair) — via looks_like -> arm_warmers
+- `ch_elbow_guards_xs` — hardened elbow guards (pair) — via looks_like -> arm_warmers
+- `ch_greaves_brigandine` — hardened splint greaves (pair) — via looks_like -> leg_warmers
+- `ch_heavyhelm_close` — hardened steel heavy close helm — via looks_like -> helmet_barbute
+- `ch_heavyhelm_close_raised` — hardened steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `ch_helm_close` — hardened steel close helm — via looks_like -> helmet_barbute
+- `ch_helm_close_raised` — hardened steel close helm (raised) — via looks_like -> helmet_barbute
+- `ch_helmet_metal_sheets` — hardened sheet metal helmet — via looks_like -> helmet_barbute
+- `ch_helmet_metal_sheets_full` — hardened sheet metal great helm — via looks_like -> helmet_barbute
+- `ch_helmet_nasal` — hardened steel nasal helm — via looks_like -> helmet_barbute
+- `ch_helmet_turban` — hardened steel turban helmet — via looks_like -> helmet_barbute
+- `ch_knee_guards` — hardened knee guards (pair) — via looks_like -> leg_warmers
+- `ch_knee_guards_xs` — hardened knee guards (pair) — via looks_like -> leg_warmers
+- `ch_knife_rambo` — hardened steel survival knife — via looks_like -> knife_rambo
+- `ch_knife_trench` — hardened steel trench knife — via looks_like -> knife_trench
+- `ch_legguard_metal_sheets` — hardened sheet metal leg guards (pair) — via looks_like -> leg_warmers
+- `ch_legguard_metal_sheets_greaves` — hardened sheet metal greaves (pair) — via looks_like -> leg_warmers
+- `ch_legguard_metal_sheets_knees` — hardened sheet metal knee guards (pair) — via looks_like -> leg_warmers
+- `ch_lighthelm_close` — hardened steel light close helm — via looks_like -> helmet_barbute
+- `ch_lighthelm_close_raised` — hardened steel light close helm (raised) — via looks_like -> helmet_barbute
+- `ch_mirror_armor` — hardened steel mirror armor — via looks_like -> chestguard_hard
+- `ch_mitten_gaunt` — hardened steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `ch_mitten_gaunt_metal_sheets` — hardened steel sheet metal gauntlets (pair) — via looks_like -> gloves_light
+- `ch_pike` — hardened steel pike — via looks_like -> pike
+- `ch_rapier` — hardened steel rapier — via looks_like -> rapier
+- `ch_sabaton` — hardened steel sabaton — via looks_like -> boots
+- `ch_sabaton_metal_sheets` — hardened steel sheet metal sabatons (pair) — via looks_like -> boots
+- `ch_vambrace_brigandine` — hardened splint vambraces (pair) — via looks_like -> arm_warmers
+- `chainmail_harness_dog` — chainmail dog coat — via looks_like -> tank_top
+- `chainmail_junk_arms` — chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `chainmail_junk_suit` — chainmail armor — via looks_like -> jumpsuit
+- `chaplet` — chaplet — via looks_like -> hat_cotton
+- `chaps_cut_resistant` — chainsaw chaps — via looks_like -> pants
+- `chaps_leather` — leather chaps — via looks_like -> pants
+- `char_smoker` — charcoal smoker — via exact/use-all-png -> char_smoker
+- `charcoal` — charcoal — via exact/use-all-png -> charcoal
+- `cheap_ammo_pouch` — military 5.56 bandolier — via looks_like -> holster
+- `cheap_ammo_pouch_belt223` — 5.56x45 belt pouch — via looks_like -> holster
+- `cheap_ammo_pouch_belt308` — 7.62x51 belt pouch — via looks_like -> holster
+- `cheerleader_skirt` — cheerleader skirt — via looks_like -> skirt
+- `cheerleader_skirt_short` — short cheerleader skirt — via looks_like -> skirt
+- `cheerleader_top_short` — short cheerleader tank top — via looks_like -> tank_top
+- `cheese` — cheese — via exact/use-all-png -> cheese
+- `cheese_fries` — cheese fries — via exact/use-all-png -> cheese_fries
+- `cheese_hard` — hard cheese — via exact/use-all-png -> cheese_hard
+- `chem_citric_acid` — citric acid powder — via exact/use-all-png -> chem_citric_acid
+- `chem_sulphur` — sulfur — via exact/use-all-png -> chem_sulphur
+- `chem_washing_soda` — washing soda — via exact/use-all-png -> chem_washing_soda
+- `chem_zinc_oxide` — zinc oxide — via exact/use-all-png -> chem_zinc_oxide
+- `chemical_thrower` — makeshift chemical thrower — via exact/use-all-png -> chemical_thrower
+- `cherries` — handful of cherries — via exact/use-all-png -> cherries
+- `chess` — chess set — via exact/use-all-png -> chess
+- `chest_freezer` — chest freezer — via exact/use-all-png -> chest_freezer
+- `chestguard_hard` — hard chest guard — via exact/use-all-png -> chestguard_hard
+- `chestguard_metal_sheets` — sheet metal chest guard — via looks_like -> chestguard_hard
+- `chestguard_metal_sheets_heavy` — heavy sheet metal chest guard — via looks_like -> chestguard_hard
+- `chestnut` — chestnuts — via exact/use-all-png -> chestnut
+- `chestnut_roasted` — Handful of roasted chestnuts — via exact/use-all-png -> chestnut_roasted
+- `chestnut_shelled` — Handful of shelled chestnuts — via exact/use-all-png -> chestnut_shelled
+- `chestpouch` — chest ammo pouch — via looks_like -> ragpouch
+- `chestpouch_leather` — leather chest ammo pouch — via looks_like -> ragpouch
+- `chestrig` — chest rig — via exact/use-all-png -> chestrig
+- `chestwrap` — chestwrap — via looks_like -> tshirt
+- `chestwrap_fur` — fur chestwrap — via looks_like -> chestwrap_leather
+- `chestwrap_leather` — leather chestwrap — via exact/use-all-png -> chestwrap_leather
+- `chestwrap_wool` — wool chestwrap — via looks_like -> tshirt
+- `chiappa_rhino` — .357 revolver — via looks_like -> sw_619
+- `chicory_raw` — chicory root — via exact/use-all-png -> chicory_raw
+- `chili` — chili con carne — via exact/use-all-png -> chili
+- `chilidogs` — chili dog — via exact/use-all-png -> chilidogs
+- `chimera_sample` — chimera sample — via exact/use-all-png -> chimera_sample
+- `chipper` — paint chipper — via exact/use-all-png -> chipper
+- `chips` — chips — via exact/use-all-png -> chips
+- `chiropteran_sample` — chiropteran sample — via exact/use-all-png -> chiropteran_sample
+- `chisel` — metalworking chisel — via exact/use-all-png -> chisel
+- `chitin_harness_dog` — chitin dog mesh harness — via looks_like -> tank_top
+- `chitin_piece` — chunk of chitin — via exact/use-all-png -> chitin_piece
+- `choco_coffee_beans` — chocolate-covered coffee beans — via exact/use-all-png -> choco_coffee_beans
+- `chopsticks` — chopsticks (pair) — via exact/use-all-png -> chopsticks
+- `chunk_borax` — crystal of borax — via looks_like -> rock
+- `chunk_caco3` — calcite crystal — via looks_like -> rock
+- `chunk_feldspar` — chunk of feldspar — via looks_like -> rock
+- `chunk_graphite` — chunk of graphite — via looks_like -> coal_lump
+- `chunk_rubber` — chunk of rubber — via exact/use-all-png -> chunk_rubber
+- `chunk_sulfur` — chunk of sulfur — via exact/use-all-png -> chunk_sulfur
+- `cig` — cigarette — via exact/use-all-png -> cig
+- `cig_lit` — cigarette — via exact/use-all-png -> cig_lit
+- `cigar` — cigar — via exact/use-all-png -> cigar
+- `cigar_butt` — cigar butt — via exact/use-all-png -> cigar_butt
+- `cigar_lit` — cigar — via exact/use-all-png -> cigar_lit
+- `cinnamon` — cinnamon — via exact/use-all-png -> cinnamon
+- `circsaw_blade` — circular sawblade — via exact/use-all-png -> circsaw_blade
+- `circsaw_off` — circular saw (off) — via exact/use-all-png -> circsaw_off
+- `circsaw_on` — circular saw (on) — via exact/use-all-png -> circsaw_on
+- `citrine_dental_grill` — citrine dental grill — via looks_like -> gold_dental_grill
+- `citrine_gold_bracelet` — citrine and gold bracelet — via exact/use-all-png -> citrine_gold_bracelet
+- `citrine_gold_cufflinks` — citrine and gold cufflinks — via exact/use-all-png -> citrine_gold_cufflinks
+- `citrine_gold_earring` — citrine and gold earrings (pair) — via exact/use-all-png -> citrine_gold_earring
+- `citrine_gold_pendant_necklace` — citrine and gold pendant necklace — via exact/use-all-png -> citrine_gold_pendant_necklace
+- `citrine_gold_ring` — citrine and gold ring — via exact/use-all-png -> citrine_gold_ring
+- `citrine_gold_tiara` — citrine and gold tiara — via looks_like -> crown_golden
+- `citrine_platinum_bracelet` — citrine and platinum bracelet — via exact/use-all-png -> citrine_platinum_bracelet
+- `citrine_platinum_cufflinks` — citrine and platinum cufflinks — via exact/use-all-png -> citrine_platinum_cufflinks
+- `citrine_platinum_earring` — citrine and platinum earrings (pair) — via exact/use-all-png -> citrine_platinum_earring
+- `citrine_platinum_pendant_necklace` — citrine and platinum pendant necklace — via exact/use-all-png -> citrine_platinum_pendant_necklace
+- `citrine_platinum_ring` — citrine and platinum ring — via exact/use-all-png -> citrine_platinum_ring
+- `citrine_platinum_tiara` — citrine and platinum tiara — via looks_like -> crown_golden
+- `citrine_silver_bracelet` — citrine and silver bracelet — via exact/use-all-png -> citrine_silver_bracelet
+- `citrine_silver_cufflinks` — citrine and silver cufflinks — via exact/use-all-png -> citrine_silver_cufflinks
+- `citrine_silver_earring` — citrine and silver earrings (pair) — via exact/use-all-png -> citrine_silver_earring
+- `citrine_silver_pendant_necklace` — citrine and silver pendant necklace — via exact/use-all-png -> citrine_silver_pendant_necklace
+- `citrine_silver_ring` — citrine and silver ring — via exact/use-all-png -> citrine_silver_ring
+- `citrine_silver_tiara` — citrine and silver tiara — via looks_like -> crown_golden
+- `civilian_AR-15` — Cops' AR15 — via looks_like -> modular_ar15
+- `civilian_cop_glock22` — Cops' Glock 22 — via looks_like -> glock_22
+- `civilian_glock19` — Fighters' Glock 19 — via looks_like -> glock_19
+- `clamp` — clamp — via exact/use-all-png -> clamp
+- `clarinet` — clarinet — via exact/use-all-png -> clarinet
+- `clay_dutch_oven` — clay pot oven — via looks_like -> pot_canning
+- `clay_pot` — clay pot — via exact/use-all-png -> clay_pot
+- `clay_pot_flower` — clay flower pot — via exact/use-all-png -> clay_pot_flower
+- `clay_teapot` — clay teapot — via exact/use-all-png -> clay_teapot
+- `cleansuit` — cleansuit — via looks_like -> jumpsuit
+- `cleats` — cleats (pair) — via looks_like -> sneakers
+- `cloak_denim` — denim cloak — via looks_like -> coat_rain
+- `clogs` — wooden clogs (pair) — via looks_like -> sneakers
+- `cloth_arms_padded` — cloth-padded sleeves (pair) — via looks_like -> arm_warmers
+- `cloth_shirt_padded` — cloth-padded shirt — via looks_like -> sweatshirt
+- `cloth_vest_padded` — cloth-padded sleeveless shirt — via looks_like -> tank_top
+- `clown_suit` — clown suit — via looks_like -> jumpsuit
+- `clownshoes` — clown shoes (pair) — via looks_like -> sneakers
+- `coal_lump` — coal — via exact/use-all-png -> coal_lump
+- `coat_faux_fur` — faux fur coat — via looks_like -> coat_rain
+- `coat_fur` — fur coat — via looks_like -> coat_rain
+- `coat_gut` — gutskin parka — via looks_like -> coat_rain
+- `coat_lab` — lab coat — via exact/use-all-png -> coat_lab
+- `coat_lab_xedra_mark` — shielded lab coat — via looks_like -> coat_rain
+- `coat_light_winter` — shell jacket — via looks_like -> coat_rain
+- `coat_rain` — rain coat — via exact/use-all-png -> coat_rain
+- `coat_straw` — straw cape — via looks_like -> coat_rain
+- `coat_winter` — puffer jacket — via looks_like -> coat_rain
+- `coconut` — coconut — via exact/use-all-png -> coconut
+- `coffee_pod` — Kentucky coffee pod — via exact/use-all-png -> coffee_pod
+- `coffeepot` — coffee pot — via exact/use-all-png -> coffeepot
+- `coilgun` — coilgun — via exact/use-all-png -> coilgun
+- `coin_dime` — dime — via exact/use-all-png -> coin_dime
+- `coin_dollar` — dollar coin — via exact/use-all-png -> coin_dollar
+- `coin_half_dollar` — half-dollar coin — via exact/use-all-png -> coin_half_dollar
+- `coin_nickel` — nickel — via exact/use-all-png -> coin_nickel
+- `coin_penny` — penny — via exact/use-all-png -> coin_penny
+- `coin_quarter` — quarter — via exact/use-all-png -> coin_quarter
+- `colander_steel` — mesh colander — via exact/use-all-png -> colander_steel
+- `colt_anaconda_4` — .44 short barrel hunting revolver — via looks_like -> sw_619
+- `colt_anaconda_6` — .44 hunting revolver — via looks_like -> sw_619
+- `colt_anaconda_8` — .44 long barrel hunting revolver — via looks_like -> sw_619
+- `colt_army` — civil war revolver — via exact/use-all-png -> colt_army
+- `colt_lightning` — Colt Lightning .45 Carbine — via exact/use-all-png -> colt_lightning
+- `colt_navy` — civil war six-shooter — via exact/use-all-png -> colt_navy
+- `colt_python` — classic .357 revolver — via looks_like -> sw_619
+- `colt_ro635` — Colt submachine gun (Uzi) — via exact/use-all-png -> colt_ro635
+- `colt_saa` — cowboy six-shooter — via exact/use-all-png -> colt_saa
+- `comb_lice` — lice comb — via exact/use-all-png -> comb_lice
+- `comb_pocket` — comb — via exact/use-all-png -> comb_pocket
+- `combat_shirt` — combat shirt — via looks_like -> jacket_army
+- `combination_gun` — combination gun — via exact/use-all-png -> combination_gun
+- `compcrossbow` — compound crossbow — via exact/use-all-png -> compcrossbow
+- `compgreatbow` — compound greatbow — via exact/use-all-png -> compgreatbow
+- `compositebow` — composite bow (heavy) — via exact/use-all-png -> compositebow
+- `compositecrossbow` — composite crossbow — via exact/use-all-png -> compositecrossbow
+- `con_mix_foldable` — concrete mixer — via looks_like -> con_mix
+- `concrete` — dry concrete mix — via exact/use-all-png -> concrete
+- `confit_meat` — meat confit — via looks_like -> meat_cooked
+- `cooked_dinner` — cooked TV dinner — via exact/use-all-png -> cooked_dinner
+- `cooked_marrow` — roasted bone marrow — via exact/use-all-png -> cooked_marrow
+- `copper` — copper — via exact/use-all-png -> copper
+- `copper_ax` — copper hatchet — via exact/use-all-png -> copper_ax
+- `copper_bracelet` — copper bracelet — via exact/use-all-png -> copper_bracelet
+- `copper_ear` — copper earrings (pair) — via exact/use-all-png -> copper_ear
+- `copper_knife` — copper knife — via exact/use-all-png -> copper_knife
+- `copper_locket` — copper locket — via exact/use-all-png -> copper_locket
+- `copper_necklace` — copper necklace — via exact/use-all-png -> copper_necklace
+- `copper_pan` — copper frying pan — via exact/use-all-png -> copper_pan
+- `copper_ring` — copper ring — via exact/use-all-png -> copper_ring
+- `copper_rod` — copper rod — via exact/use-all-png -> copper_rod
+- `cordless_drill` — cordless drill — via exact/use-all-png -> cordless_drill
+- `cordless_impact_wrench` — cordless impact wrench — via looks_like -> cordless_drill
+- `corn` — corn cob — via exact/use-all-png -> corn
+- `cornbread` — cornbread — via exact/use-all-png -> cornbread
+- `corndogs_cooked` — cooked corn dog — via exact/use-all-png -> corndogs_cooked
+- `corndogs_frozen` — uncooked corn dog — via exact/use-all-png -> corndogs_frozen
+- `corndogs_homemade` — homemade corn dog — via exact/use-all-png -> corndogs_homemade
+- `corpse` — corpse — via exact/use-all-png -> corpse
+- `corpse_bloody` — corpse — via looks_like -> corpse_generic_human
+- `corpse_child_calm` — corpse — via looks_like -> corpse_generic_human
+- `corpse_child_gunned` — corpse — via looks_like -> corpse_generic_human
+- `corpse_dermatik_victim` — strange corpse — via looks_like -> corpse_generic_human
+- `corpse_generic_boy` — corpse — via looks_like -> corpse_generic_human
+- `corpse_generic_female` — corpse — via looks_like -> corpse_generic_human
+- `corpse_generic_girl` — corpse — via looks_like -> corpse_generic_human
+- `corpse_generic_gunned` — corpse — via looks_like -> corpse_generic_human
+- `corpse_generic_human` — corpse — via exact/use-all-png -> corpse_generic_human
+- `corpse_generic_infected` — corpse — via looks_like -> corpse_generic_human
+- `corpse_generic_male` — corpse — via looks_like -> corpse_generic_human
+- `corpse_gunned` — corpse — via looks_like -> corpse_generic_human
+- `corpse_half_beheaded` — corpse — via looks_like -> corpse_generic_human
+- `corpse_halved_upper` — corpse — via looks_like -> corpse_generic_human
+- `corpse_oldwoman_jewelry` — corpse — via looks_like -> corpse_generic_human
+- `corpse_painful` — corpse — via looks_like -> corpse_generic_human
+- `corpse_scorched` — corpse — via looks_like -> corpse_generic_human
+- `corpse_stabbed` — corpse — via looks_like -> corpse_generic_human
+- `corpse_void_mummified` — mummified corpse — via looks_like -> corpse_generic_human
+- `corset` — leather corset — via exact/use-all-png -> corset
+- `corset_loose` — leather corset (loose) — via looks_like -> tank_top
+- `corset_waist` — waist corset — via looks_like -> tank_top
+- `corset_waist_loose` — waist corset (loose) — via looks_like -> tank_top
+- `cot` — cot — via exact/use-all-png -> cot
+- `cotton_ball` — cotton balls — via exact/use-all-png -> cotton_ball
+- `cotton_boll` — cotton boll — via exact/use-all-png -> cotton_boll
+- `cotton_patchwork` — cotton patch — via exact/use-all-png -> cotton_patchwork
+- `cottonwood_tree_boll` — cottonwood tree boll — via exact/use-all-png -> cottonwood_tree_boll
+- `cow_bell` — cow bell — via exact/use-all-png -> cow_bell
+- `cowboy_hat` — cowboy hat — via exact/use-all-png -> cowboy_hat
+- `cowrie_bracelet` — cowrie bracelet — via looks_like -> copper_bracelet
+- `cowrie_hair_beads` — cowrie hair beads — via looks_like -> crown_golden
+- `cowrie_necklace` — cowrie necklace — via looks_like -> silver_necklace
+- `cracklins` — cracklins — via exact/use-all-png -> cracklins
+- `crepe` — crepe — via looks_like -> pancakes
+- `crepe_plain` — plain crepe — via looks_like -> pancakes
+- `crossbow` — wood crossbow — via exact/use-all-png -> crossbow
+- `crown_golden` — golden crown — via exact/use-all-png -> crown_golden
+- `crown_golden_survivor` — golden crown — via looks_like -> crown_golden
+- `crucible` — crucible — via exact/use-all-png -> crucible
+- `crude_picklock` — improvised lockpick — via exact/use-all-png -> crude_picklock
+- `crude_plastic_vest` — crude plastic armor vest — via looks_like -> apron_plastic
+- `crustacean_sample` — crustacean sample — via exact/use-all-png -> crustacean_sample
+- `cucumber` — salad cucumber — via exact/use-all-png -> cucumber
+- `cufflinks` — cufflinks (pair) — via exact/use-all-png -> cufflinks
+- `cufflinks_intricate` — intricate cufflinks (pair) — via exact/use-all-png -> cufflinks_intricate
+- `cuirass_bronze` — bronze cuirass — via looks_like -> chestguard_hard
+- `cuirass_lightplate` — cuirass — via looks_like -> chestguard_hard
+- `cuirass_scrap` — scrap cuirass — via looks_like -> chestguard_hard
+- `cuirass_tire` — tire cuirass — via looks_like -> chestguard_hard
+- `cup_foil` — foil cup — via exact/use-all-png -> cup_foil
+- `cured_hide` — cured hide — via exact/use-all-png -> cured_hide
+- `cured_pelt` — cured pelt — via exact/use-all-png -> cured_pelt
+- `curling_iron` — curling iron — via exact/use-all-png -> curling_iron
+- `currywurst` — currywurst — via exact/use-all-png -> currywurst
+- `cutlass` — cutlass — via exact/use-all-png -> cutlass
+- `cutlass_fake` — cutlass — via exact/use-all-png -> cutlass_fake
+- `cutlass_inferior` — cutlass — via looks_like -> cutlass
+- `cutting_board` — cutting board — via exact/use-all-png -> cutting_board
+- `cz600` — bolt-action trail carbine — via looks_like -> modular_ar15
+- `cz75` — CZ 75 B pistol — via exact/use-all-png -> cz75
+- `dahlia_root` — dahlia root — via exact/use-all-png -> dahlia_root
+- `dance_shoes` — dance shoes (pair) — via looks_like -> dress_shoes
+- `deck_of_cards` — deck of cards — via exact/use-all-png -> deck_of_cards
+- `deck_of_tarot_cards` — deck of tarot cards — via looks_like -> deck_of_cards
+- `decorative_wreath` — yule wreath — via exact/use-all-png -> decorative_wreath
+- `dehydrator` — food dehydrator — via exact/use-all-png -> dehydrator
+- `demihuman_brain` — piece of raw demihuman brain — via looks_like -> brain
+- `demihuman_cooked` — cooked mongrel — via exact/use-all-png -> demihuman_cooked
+- `demihuman_fat` — chunk of demihuman fat — via exact/use-all-png -> demihuman_fat
+- `demihuman_kidney` — piece of raw demihuman kidney — via looks_like -> kidney
+- `demihuman_liver` — piece of raw demihuman liver — via looks_like -> liver
+- `demihuman_lung` — piece of raw demihuman lung — via looks_like -> lung
+- `demihuman_meat_scrap` — scrap of demihuman flesh — via looks_like -> meat_scrap
+- `demihuman_stomach_boiled` — boiled demihuman stomach — via exact/use-all-png -> demihuman_stomach_boiled
+- `demihuman_sweetbread` — piece of raw demihuman sweetbread — via looks_like -> sweetbread
+- `demihuman_tallow` — demihuman tallow — via exact/use-all-png -> demihuman_tallow
+- `denim_shirt` — denim shirt — via looks_like -> longshirt
+- `dentures` — set of dentures — via exact/use-all-png -> dentures
+- `deployment_bag` — deployment bag — via looks_like -> holster
+- `destroyed_large_ceramic_plate` — compromised ceramic front plate — via looks_like -> esapi_plate
+- `destroyed_medium_ceramic_plate` — compromised ceramic side plate — via looks_like -> esbi_plate
+- `diamond_dental_grill` — diamond dental grill — via looks_like -> gold_dental_grill
+- `diamond_gold_bracelet` — diamond and gold bracelet — via exact/use-all-png -> diamond_gold_bracelet
+- `diamond_gold_cufflinks` — diamond and gold cufflinks — via exact/use-all-png -> diamond_gold_cufflinks
+- `diamond_gold_earring` — diamond and gold earrings (pair) — via exact/use-all-png -> diamond_gold_earring
+- `diamond_gold_pendant_necklace` — diamond and gold pendant necklace — via exact/use-all-png -> diamond_gold_pendant_necklace
+- `diamond_gold_tiara` — diamond and gold tiara — via looks_like -> crown_golden
+- `diamond_platinum_bracelet` — diamond and platinum bracelet — via exact/use-all-png -> diamond_platinum_bracelet
+- `diamond_platinum_cufflinks` — diamond and platinum cufflinks — via exact/use-all-png -> diamond_platinum_cufflinks
+- `diamond_platinum_earring` — diamond and platinum earrings (pair) — via exact/use-all-png -> diamond_platinum_earring
+- `diamond_platinum_pendant_necklace` — diamond and platinum pendant necklace — via exact/use-all-png -> diamond_platinum_pendant_necklace
+- `diamond_platinum_ring` — diamond and platinum ring — via exact/use-all-png -> diamond_platinum_ring
+- `diamond_platinum_tiara` — diamond and platinum tiara — via looks_like -> crown_golden
+- `diamond_ring` — diamond and gold ring — via exact/use-all-png -> diamond_ring
+- `diamond_silver_bracelet` — diamond and silver bracelet — via exact/use-all-png -> diamond_silver_bracelet
+- `diamond_silver_cufflinks` — diamond and silver cufflinks — via exact/use-all-png -> diamond_silver_cufflinks
+- `diamond_silver_earring` — diamond and silver earrings (pair) — via exact/use-all-png -> diamond_silver_earring
+- `diamond_silver_pendant_necklace` — diamond and silver pendant necklace — via exact/use-all-png -> diamond_silver_pendant_necklace
+- `diamond_silver_ring` — diamond and silver ring — via exact/use-all-png -> diamond_silver_ring
+- `diamond_silver_tiara` — diamond and silver tiara — via looks_like -> crown_golden
+- `diazepam` — prescription sedative — via exact/use-all-png -> diazepam
+- `diesel_generator` — diesel generator — via looks_like -> f_active_backup_generator
+- `dimensional_anchor` — 5-point anchor — via exact/use-all-png -> dimensional_anchor
+- `dimensional_anchor_on` — 5-point anchor (on) — via exact/use-all-png -> dimensional_anchor_on
+- `directional_antenna` — directional antenna — via exact/use-all-png -> directional_antenna
+- `disc_golf` — disc — via exact/use-all-png -> disc_golf
+- `dish_towel` — dish towel — via exact/use-all-png -> dish_towel
+- `diveknife` — dive knife — via exact/use-all-png -> diveknife
+- `diving_watch` — diver's watch — via exact/use-all-png -> diving_watch
+- `dog_whistle` — dog whistle — via exact/use-all-png -> dog_whistle
+- `dog_whistle_wood` — wooden dog whistle — via exact/use-all-png -> dog_whistle_wood
+- `donut_holes` — donut hole — via looks_like -> bread
+- `doormat` — doormat — via exact/use-all-png -> doormat
+- `doublespeargun` — double roller speargun — via exact/use-all-png -> doublespeargun
+- `down_feather` — handful of down feathers — via exact/use-all-png -> down_feather
+- `down_mattress` — down mattress — via exact/use-all-png -> down_mattress
+- `dremel` — dremel — via looks_like -> angle_grinder
+- `dress_shirt` — pocket shirt — via looks_like -> longshirt
+- `dress_shoes` — dress shoes (pair) — via exact/use-all-png -> dress_shoes
+- `drivebelt` — drive belt — via exact/use-all-png -> drivebelt
+- `dry_beans` — dried beans — via exact/use-all-png -> dry_beans
+- `dry_bottle_gourd` — dried bottle gourd — via looks_like -> pumpkin
+- `dry_lentils` — dried lentils — via exact/use-all-png -> dry_lentils
+- `dry_seaweed` — dried seaweed — via looks_like -> withered
+- `dry_seaweed_pile` — pile of dried seaweed — via looks_like -> withered
+- `dump_pouch` — tactical dump pouch — via looks_like -> holster
+- `duster` — duster — via looks_like -> coat_rain
+- `duster_faux_fur` — faux fur duster — via looks_like -> coat_rain
+- `duster_fur` — fur duster — via looks_like -> coat_rain
+- `duster_leather` — leather duster — via looks_like -> coat_rain
+- `dynamite` — dynamite — via exact/use-all-png -> dynamite
+- `dynamite_bomb` — dynamite bomb — via exact/use-all-png -> dynamite_bomb
+- `e_scrap` — electronic scrap — via exact/use-all-png -> e_scrap
+- `e_tool` — entrenching tool — via exact/use-all-png -> e_tool
+- `ear_plugs` — ear plugs (pair) — via exact/use-all-png -> ear_plugs
+- `earthworm` — earthworm — via exact/use-all-png -> earthworm
+- `earthworm_handful` — handful of earthworms — via exact/use-all-png -> earthworm_handful
+- `eboshi` — eboshi — via looks_like -> hat_cotton
+- `ecig` — electronic cigarette — via exact/use-all-png -> ecig
+- `egg_antlion` — antlion egg — via exact/use-all-png -> egg_antlion
+- `egg_butterfly` — butterfly egg — via exact/use-all-png -> egg_butterfly
+- `egg_centipede` — centipede egg — via exact/use-all-png -> egg_centipede
+- `egg_centipede_house` — house centipede egg — via exact/use-all-png -> egg_centipede_house
+- `egg_chicken` — chicken egg — via exact/use-all-png -> egg_chicken
+- `egg_cicada` — cicada egg — via exact/use-all-png -> egg_cicada
+- `egg_dragonfly` — dragonfly egg — via exact/use-all-png -> egg_dragonfly
+- `egg_firefly` — firefly egg — via exact/use-all-png -> egg_firefly
+- `egg_fly` — fly egg — via exact/use-all-png -> egg_fly
+- `egg_grasshopper` — grasshopper egg — via exact/use-all-png -> egg_grasshopper
+- `egg_lady_bug` — ladybug egg — via exact/use-all-png -> egg_lady_bug
+- `egg_locust` — locust egg — via exact/use-all-png -> egg_locust
+- `egg_mantis` — praying mantis egg case — via exact/use-all-png -> egg_mantis
+- `egg_mole_cricket` — mole cricket egg — via exact/use-all-png -> egg_mole_cricket
+- `egg_mosquito` — mosquito egg — via exact/use-all-png -> egg_mosquito
+- `egg_moth` — moth egg — via exact/use-all-png -> egg_moth
+- `egg_roach` — roach egg — via exact/use-all-png -> egg_roach
+- `egg_roach_plague` — plague vector egg — via exact/use-all-png -> egg_roach_plague
+- `egg_silverfish` — silverfish egg — via exact/use-all-png -> egg_silverfish
+- `egg_slug` — slug egg — via exact/use-all-png -> egg_slug
+- `egg_snail` — snail egg — via exact/use-all-png -> egg_snail
+- `egg_spider_cellar` — cellar spider egg — via exact/use-all-png -> egg_spider_cellar
+- `egg_spider_jumping` — jumping spider egg — via exact/use-all-png -> egg_spider_jumping
+- `egg_spider_trapdoor` — trapdoor spider egg — via exact/use-all-png -> egg_spider_trapdoor
+- `egg_spider_web` — web spider egg — via exact/use-all-png -> egg_spider_web
+- `egg_spider_widow` — black widow egg — via exact/use-all-png -> egg_spider_widow
+- `egg_spider_wolf` — wolf spider egg — via exact/use-all-png -> egg_spider_wolf
+- `egg_stag_beetle` — stag beetle egg — via exact/use-all-png -> egg_stag_beetle
+- `egg_strider` — water strider egg — via exact/use-all-png -> egg_strider
+- `egg_wasp` — wasp egg — via exact/use-all-png -> egg_wasp
+- `egg_water_beetle` — water beetle egg — via exact/use-all-png -> egg_water_beetle
+- `egg_water_bug` — water scorpion egg — via exact/use-all-png -> egg_water_bug
+- `egg_worm` — earthworm egg — via exact/use-all-png -> egg_worm
+- `eggplant` — eggplant — via exact/use-all-png -> eggplant
+- `eggplant_cut` — cut eggplant — via looks_like -> eggplant
+- `eink_tablet_pc` — e-ink tablet PC — via exact/use-all-png -> eink_tablet_pc
+- `elbow_pads` — elbow pads (pair) — via exact/use-all-png -> elbow_pads
+- `elderberries` — handful of elderberries — via exact/use-all-png -> elderberries
+- `elec_hairtrimmer` — electric hair trimmer — via exact/use-all-png -> elec_hairtrimmer
+- `elec_shears` — electric shears — via exact/use-all-png -> elec_shears
+- `electric_lantern` — electric lantern (off) — via exact/use-all-png -> electric_lantern
+- `electric_lantern_on` — electric lantern (on) — via exact/use-all-png -> electric_lantern_on
+- `electrohack` — electrohack — via exact/use-all-png -> electrohack
+- `elfa_sample` — Elf-A sample — via exact/use-all-png -> elfa_sample
+- `emer_blanket` — emergency blanket — via exact/use-all-png -> emer_blanket
+- `emerald_dental_grill` — emerald dental grill — via looks_like -> gold_dental_grill
+- `emerald_gold_bracelet` — emerald and gold bracelet — via exact/use-all-png -> emerald_gold_bracelet
+- `emerald_gold_cufflinks` — emerald and gold cufflinks — via exact/use-all-png -> emerald_gold_cufflinks
+- `emerald_gold_earring` — emerald and gold earrings (pair) — via exact/use-all-png -> emerald_gold_earring
+- `emerald_gold_pendant_necklace` — emerald and gold pendant necklace — via exact/use-all-png -> emerald_gold_pendant_necklace
+- `emerald_gold_ring` — emerald and gold ring — via exact/use-all-png -> emerald_gold_ring
+- `emerald_gold_tiara` — emerald and gold tiara — via looks_like -> crown_golden
+- `emerald_platinum_bracelet` — emerald and platinum bracelet — via exact/use-all-png -> emerald_platinum_bracelet
+- `emerald_platinum_cufflinks` — emerald and platinum cufflinks — via exact/use-all-png -> emerald_platinum_cufflinks
+- `emerald_platinum_earring` — emerald and platinum earrings (pair) — via exact/use-all-png -> emerald_platinum_earring
+- `emerald_platinum_pendant_necklace` — emerald and platinum pendant necklace — via exact/use-all-png -> emerald_platinum_pendant_necklace
+- `emerald_platinum_ring` — emerald and platinum ring — via exact/use-all-png -> emerald_platinum_ring
+- `emerald_platinum_tiara` — emerald and platinum tiara — via looks_like -> crown_golden
+- `emerald_silver_bracelet` — emerald and silver bracelet — via exact/use-all-png -> emerald_silver_bracelet
+- `emerald_silver_cufflinks` — emerald and silver cufflinks — via exact/use-all-png -> emerald_silver_cufflinks
+- `emerald_silver_earring` — emerald and silver earrings (pair) — via exact/use-all-png -> emerald_silver_earring
+- `emerald_silver_pendant_necklace` — emerald and silver pendant necklace — via exact/use-all-png -> emerald_silver_pendant_necklace
+- `emerald_silver_ring` — emerald and silver ring — via exact/use-all-png -> emerald_silver_ring
+- `emerald_silver_tiara` — emerald and silver tiara — via looks_like -> crown_golden
+- `emergency_lockpick` — rudimentary lockpick — via exact/use-all-png -> emergency_lockpick
+- `emp_gun` — XM34 EMP projector — via exact/use-all-png -> emp_gun
+- `endochitin` — strand of endochitin — via exact/use-all-png -> endochitin
+- `entry_suit` — entry suit — via looks_like -> jumpsuit
+- `entry_suit_xs` — entry suit — via looks_like -> jumpsuit
+- `envelope` — envelope — via looks_like -> paper
+- `eraser` — eraser — via exact/use-all-png -> eraser
+- `esapi_plate` — ESAPI ballistic plate — via exact/use-all-png -> esapi_plate
+- `esbi_plate` — ESBI ballistic plate — via exact/use-all-png -> esbi_plate
+- `espadrilles` — espadrilles — via looks_like -> sneakers
+- `etched_skull` — etched human skull — via exact/use-all-png -> etched_skull
+- `exodii_digger` — sapper — via looks_like -> circsaw_off
+- `exodii_plasma_fan` — Caotel Sr2.2 (FAN) — via looks_like -> plasma_gun
+- `exodii_plasma_projectile` — Caotel Sr2.2 (Projectile) — via looks_like -> plasma_gun
+- `exodii_prybar` — breacher — via looks_like -> halligan
+- `extension_cable` — extension cord — via exact/use-all-png -> extension_cable
+- `eyedrops` — saline eye drops — via exact/use-all-png -> eyedrops
+- `fancy_ordinance_cartridge_necklace` — refined ordnance-cartridge necklace — via looks_like -> gold_necklace
+- `fancy_pistol_cartridge_necklace` — refined pistol-cartridge necklace — via looks_like -> gold_necklace
+- `fancy_rifle_cartridge_necklace` — refined rifle-cartridge necklace — via looks_like -> gold_necklace
+- `fanny` — fanny pack — via looks_like -> holster
+- `fat` — chunk of fat — via exact/use-all-png -> fat
+- `fat_tainted` — chunk of tainted fat — via exact/use-all-png -> fat_tainted
+- `fbi_armor_vest` — FBI ballistic vest — via looks_like -> tank_top
+- `feather` — feather — via exact/use-all-png -> feather
+- `feline_sample` — feline sample — via exact/use-all-png -> feline_sample
+- `felt_patch` — felt patch — via exact/use-all-png -> felt_patch
+- `fencing_epee` — fencing épée — via exact/use-all-png -> fencing_epee
+- `fencing_epee_sharpened` — sharpened épée — via exact/use-all-png -> fencing_epee_sharpened
+- `fencing_foil` — fencing foil — via exact/use-all-png -> fencing_foil
+- `fencing_foil_sharpened` — sharpened foil — via exact/use-all-png -> fencing_foil_sharpened
+- `fencing_jacket` — fencing jacket — via looks_like -> coat_lab
+- `fencing_mask` — fencing mask — via looks_like -> hat_cotton
+- `fencing_pants` — fencing pants — via looks_like -> pants
+- `fencing_sabre` — fencing saber — via exact/use-all-png -> fencing_sabre
+- `fencing_sabre_sharpened` — sharpened saber — via exact/use-all-png -> fencing_sabre_sharpened
+- `fetus` — misshapen fetus — via exact/use-all-png -> fetus
+- `fiber_mat` — fiber mat — via exact/use-all-png -> fiber_mat
+- `fiddlehead_boiled` — boiled fiddleheads — via exact/use-all-png -> fiddlehead_boiled
+- `fiddlehead_raw` — fiddleheads — via exact/use-all-png -> fiddlehead_raw
+- `fiddlehead_sauteed` — sauteed fiddleheads — via exact/use-all-png -> fiddlehead_sauteed
+- `field_stone` — field stone — via exact/use-all-png -> field_stone
+- `filter_liquid` — automotive filter — via exact/use-all-png -> filter_liquid
+- `filter_paper_qualitative` — qualitative filter paper — via looks_like -> paper
+- `filter_paper_quantitative` — quantitative filter paper — via looks_like -> paper
+- `fire_drill` — bow fire drill — via exact/use-all-png -> fire_drill
+- `fire_gauntlets` — fire gauntlets (pair) — via looks_like -> gloves_light
+- `firecracker` — firecracker — via exact/use-all-png -> firecracker
+- `firecracker_pack` — pack of firecrackers — via exact/use-all-png -> firecracker_pack
+- `firefly_terrarium` — survivor giant firefly lamp — via looks_like -> pet_carrier
+- `firehelmet` — firefighter helmet — via looks_like -> cowboy_hat
+- `fireman_belt` — firefighter belt — via looks_like -> holster
+- `fish` — fillet of fish — via exact/use-all-png -> fish
+- `fish_bagel` — fish and spinach bagel — via exact/use-all-png -> fish_bagel
+- `fish_cooked` — cooked fish — via exact/use-all-png -> fish_cooked
+- `fish_sample` — fish sample — via exact/use-all-png -> fish_sample
+- `fish_sandwich` — fish sandwich — via exact/use-all-png -> fish_sandwich
+- `fishing_hook_basic` — fishing hook — via exact/use-all-png -> fishing_hook_basic
+- `fishing_hook_bone` — improvised fishing hook — via exact/use-all-png -> fishing_hook_bone
+- `fishing_rod_2pc_packed` — two-piece fishing rod (packed) — via looks_like -> PR24-extended
+- `fishing_rod_tele_packed` — telescoping fishing rod (packed) — via looks_like -> PR24-retracted
+- `fishing_waders` — fishing waders — via looks_like -> pants
+- `flag_jumpsuit` — flag jumpsuit — via looks_like -> jumpsuit
+- `flag_swimsuit` — swimsuit — via looks_like -> wetsuit
+- `flamethrower` — M9-7 flamethrower — via exact/use-all-png -> flamethrower
+- `flaregun` — flaregun — via exact/use-all-png -> flaregun
+- `flashbang` — flashbang — via exact/use-all-png -> flashbang
+- `flashlight_pouch` — flashlight pouch — via looks_like -> holster
+- `flask_yeast` — sealed yeast culture — via exact/use-all-png -> flask_yeast
+- `flatbread` — flatbread — via exact/use-all-png -> flatbread
+- `flint_steel` — flint and steel — via exact/use-all-png -> flint_steel
+- `flintlock_pouch` — paper cartridge pouch — via looks_like -> holster
+- `flip_flops` — flip-flops (pair) — via looks_like -> sneakers
+- `flip_flops_exp` — expensive flip-flops (pair) — via looks_like -> sneakers
+- `flotation_vest` — flotation vest — via looks_like -> tank_top
+- `flotation_vest_ms` — makeshift flotation vest — via looks_like -> tank_top
+- `flu_shot` — flu shot — via exact/use-all-png -> flu_shot
+- `flute` — flute — via exact/use-all-png -> flute
+- `fn57` — FN 5.7mm pistol — via exact/use-all-png -> fn57
+- `fn_fal_semi` — Belgian battle rifle — via exact/use-all-png -> fn_fal_semi
+- `foie_gras` — faux gras — via looks_like -> meat_cooked
+- `folded_inflatable_boat` — inflatable boat — via exact/use-all-png -> folded_inflatable_boat
+- `folding_poncho` — rain poncho — via exact/use-all-png -> folding_poncho
+- `food_processor` — food processor — via exact/use-all-png -> food_processor
+- `foot_locker_recharge_station` — disconnected foot locker recharging station — via exact/use-all-png -> foot_locker_recharge_station
+- `football` — football — via exact/use-all-png -> football
+- `football_armor` — football armor — via looks_like -> chestguard_hard
+- `footrags` — foot rags (pair) — via exact/use-all-png -> footrags
+- `footrags_faux_fur` — faux fur foot wraps (pair) — via looks_like -> socks
+- `footrags_fur` — fur foot wraps (pair) — via exact/use-all-png -> footrags_fur
+- `footrags_leather` — leather foot wraps (pair) — via exact/use-all-png -> footrags_leather
+- `footrags_wool` — wool foot wraps (pair) — via exact/use-all-png -> footrags_wool
+- `forged_shears` — forged shears — via exact/use-all-png -> forged_shears
+- `fried_heart` — fried heart — via looks_like -> meat_cooked
+- `fried_livers` — fried liver — via looks_like -> meat_cooked
+- `frisbee` — frisbee — via exact/use-all-png -> frisbee
+- `fsurvivor_suit` — survivor firesuit — via looks_like -> jumpsuit
+- `fungicidalbomb` — fungicidal gas grenade — via looks_like -> smokebomb
+- `fungicidalbomb_makeshift` — makeshift fungicidal gas grenade — via looks_like -> smokebomb
+- `g_carpet` — green carpet — via exact/use-all-png -> g_carpet
+- `g_shovel` — trowel — via exact/use-all-png -> g_shovel
+- `gadget_pouch` — gadget pouch — via looks_like -> holster
+- `gaiter_boot` — gaiters (pair) — via looks_like -> leg_warmers
+- `gaiter_boot_heavy` — heavy gaiters (pair) — via looks_like -> leg_warmers
+- `gaiter_boot_makeshift` — makeshift gaiters (pair) — via looks_like -> leg_warmers
+- `gambeson_canvas_vest` — sleeveless canvas gambeson — via looks_like -> tank_top
+- `gambeson_gloves_canvas` — canvas arming mittens (pair) — via looks_like -> gloves_light
+- `gambeson_gloves_nylon` — nylon arming mittens (pair) — via looks_like -> gloves_light
+- `gambeson_gloves_wool` — wool arming mittens (pair) — via looks_like -> gloves_light
+- `gambeson_nylon_vest` — sleeveless nylon gambeson — via looks_like -> tank_top
+- `gambeson_pants` — padded arming pants — via looks_like -> pants
+- `gambeson_pants_canvas` — canvas heavy arming pants — via looks_like -> pants
+- `gambeson_pants_nylon` — nylon heavy arming pants — via looks_like -> pants
+- `gambeson_pants_wool` — wool heavy arming pants — via looks_like -> pants
+- `gambeson_pants_xs` — padded arming pants — via looks_like -> pants
+- `gambeson_sleeve` — gambeson sleeves (pair) — via looks_like -> arm_warmers
+- `gambeson_vest` — padded gambeson vest — via looks_like -> tank_top
+- `gambeson_vest_xs` — padded gambeson vest — via looks_like -> tank_top
+- `gambeson_wool_vest` — sleeveless wool gambeson — via looks_like -> tank_top
+- `game_watch` — game watch — via exact/use-all-png -> game_watch
+- `garand` — Garand battle rifle — via exact/use-all-png -> garand
+- `garlic` — garlic bulb — via exact/use-all-png -> garlic
+- `garnet_dental_grill` — garnet dental grill — via looks_like -> gold_dental_grill
+- `garnet_gold_bracelet` — garnet and gold bracelet — via exact/use-all-png -> garnet_gold_bracelet
+- `garnet_gold_cufflinks` — garnet and gold cufflinks — via exact/use-all-png -> garnet_gold_cufflinks
+- `garnet_gold_earring` — garnet and gold earrings (pair) — via exact/use-all-png -> garnet_gold_earring
+- `garnet_gold_pendant_necklace` — garnet and gold pendant necklace — via exact/use-all-png -> garnet_gold_pendant_necklace
+- `garnet_gold_ring` — garnet and gold ring — via exact/use-all-png -> garnet_gold_ring
+- `garnet_gold_tiara` — garnet and gold tiara — via looks_like -> crown_golden
+- `garnet_platinum_bracelet` — garnet and platinum bracelet — via exact/use-all-png -> garnet_platinum_bracelet
+- `garnet_platinum_cufflinks` — garnet and platinum cufflinks — via exact/use-all-png -> garnet_platinum_cufflinks
+- `garnet_platinum_earring` — garnet and platinum earrings (pair) — via exact/use-all-png -> garnet_platinum_earring
+- `garnet_platinum_pendant_necklace` — garnet and platinum pendant necklace — via exact/use-all-png -> garnet_platinum_pendant_necklace
+- `garnet_platinum_ring` — garnet and platinum ring — via exact/use-all-png -> garnet_platinum_ring
+- `garnet_platinum_tiara` — garnet and platinum tiara — via looks_like -> crown_golden
+- `garnet_silver_bracelet` — garnet and silver bracelet — via exact/use-all-png -> garnet_silver_bracelet
+- `garnet_silver_cufflinks` — garnet and silver cufflinks — via exact/use-all-png -> garnet_silver_cufflinks
+- `garnet_silver_earring` — garnet and silver earrings (pair) — via exact/use-all-png -> garnet_silver_earring
+- `garnet_silver_pendant_necklace` — garnet and silver pendant necklace — via exact/use-all-png -> garnet_silver_pendant_necklace
+- `garnet_silver_ring` — garnet and silver ring — via exact/use-all-png -> garnet_silver_ring
+- `garnet_silver_tiara` — garnet and silver tiara — via looks_like -> crown_golden
+- `garter_belt` — garter belt — via looks_like -> panties
+- `gartersheath1` — garter sheath — via looks_like -> scabbard
+- `gartersheath2` — garter double sheath — via looks_like -> scabbard
+- `gas_mask_pouch` — gas mask pouch — via looks_like -> holster
+- `gasbomb` — tear gas grenade — via looks_like -> smokebomb
+- `gasbomb_makeshift` — makeshift toxic gas grenade — via looks_like -> smokebomb
+- `gasdiscount_gold` — gold gas discount card — via exact/use-all-png -> gasdiscount_gold
+- `gasdiscount_platinum` — platinum gas discount card — via exact/use-all-png -> gasdiscount_platinum
+- `gasdiscount_silver` — silver gas discount card — via exact/use-all-png -> gasdiscount_silver
+- `gasoline_lantern` — gasoline lantern (off) — via exact/use-all-png -> gasoline_lantern
+- `gasoline_lantern_on` — gasoline lantern (on) — via exact/use-all-png -> gasoline_lantern_on
+- `gastropod_sample` — snail sample — via exact/use-all-png -> gastropod_sample
+- `gatling_mech_laser_single` — salvaged CMES laser cannon — via looks_like -> m134
+- `gauntlets_acidchitin` — biosilicified chitin gauntlets (pair) — via exact/use-all-png -> gauntlets_acidchitin
+- `gauntlets_chitin` — chitinous scale mail gauntlets (pair) — via exact/use-all-png -> gauntlets_chitin
+- `gauntlets_larmor` — leather armor gauntlets (pair) — via looks_like -> gloves_light
+- `gelatin_dessert_base` — unflavored gelatin dessert — via exact/use-all-png -> gelatin_dessert_base
+- `gelatin_dessert_fruit` — fruit filled gelatin dessert — via exact/use-all-png -> gelatin_dessert_fruit
+- `gelatin_dessert_homemade` — homemade gelatin dessert — via exact/use-all-png -> gelatin_dessert_homemade
+- `gelatin_dessert_processed` — processed gelatin dessert — via exact/use-all-png -> gelatin_dessert_processed
+- `gelatin_dessert_vegan` — vegan gelatin dessert — via exact/use-all-png -> gelatin_dessert_vegan
+- `gelatin_dessert_vegan_fruit` — fruit filled vegan gelatin dessert — via exact/use-all-png -> gelatin_dessert_vegan_fruit
+- `gelatin_fresh` — fresh gelatin — via exact/use-all-png -> gelatin_fresh
+- `gelatin_powder` — powdered gelatin — via exact/use-all-png -> gelatin_powder
+- `gelbox` — electrophoresis tray — via exact/use-all-png -> gelbox
+- `geta` — geta (pair) — via looks_like -> sneakers
+- `gfy_1` — bullpup shotgun — via looks_like -> remington_870
+- `glaive` — glaive — via exact/use-all-png -> glaive
+- `glass_apple` — withered glass apple — via looks_like -> apple
+- `glass_bowl` — glass bowl — via exact/use-all-png -> glass_bowl
+- `glass_sheet` — sheet of glass — via exact/use-all-png -> glass_sheet
+- `glass_tinted` — tinted glass lenses (pair) — via exact/use-all-png -> glass_tinted
+- `glazed_tenderloin` — glazed tenderloins — via exact/use-all-png -> glazed_tenderloin
+- `glock_17` — Glock duty pistol — via exact/use-all-png -> glock_17
+- `glock_18c` — Glock machine pistol — via exact/use-all-png -> glock_18c
+- `glock_19` — Glock carry pistol — via exact/use-all-png -> glock_19
+- `glock_20` — Glock pistol — via exact/use-all-png -> glock_20
+- `glock_21` — Glock pistol — via exact/use-all-png -> glock_21
+- `glock_22` — Glock 22 pistol — via exact/use-all-png -> glock_22
+- `glock_23` — Glock 23 pistol — via looks_like -> glock_19
+- `glock_26` — Glock 26 pistol — via looks_like -> glock_19
+- `glock_27` — Glock 27 pistol — via looks_like -> glock_19
+- `glock_29` — compact Glock pistol — via exact/use-all-png -> glock_29
+- `glock_30` — Glock 30 pistol — via looks_like -> glock_17
+- `glock_31` — Glock 31 — via exact/use-all-png -> glock_31
+- `glock_36` — Glock 36 pistol — via looks_like -> glock_17
+- `glock_40` — hunter Glock pistol — via exact/use-all-png -> glock_40
+- `glock_42` — Glock 42 pistol — via looks_like -> glock_19
+- `glock_43` — Glock 43 pistol — via looks_like -> glock_19
+- `glock_43x` — Glock 43X pistol — via looks_like -> glock_19
+- `glock_48` — Glock 48 pistol — via looks_like -> glock_19
+- `glove_jackson` — white glove — via looks_like -> gloves_light
+- `gloves_airsoft` — airsoft gloves (pair) — via looks_like -> gloves_light
+- `gloves_black` — black gloves (pair) — via looks_like -> gloves_light
+- `gloves_claws` — claw gloves (pair) — via looks_like -> gloves_light
+- `gloves_cut_resistant` — cut-resistant gloves (pair) — via looks_like -> gloves_light
+- `gloves_denim` — denim gloves (pair) — via looks_like -> gloves_light
+- `gloves_denim_fingerless` — fingerless denim gloves (pair) — via looks_like -> gloves_light
+- `gloves_faux_fur` — faux fur gloves (pair) — via looks_like -> gloves_light
+- `gloves_fingerless` — fingerless leather gloves (pair) — via looks_like -> gloves_light
+- `gloves_fingerless_mod` — armored fingerless leather gloves (pair) — via looks_like -> gloves_light
+- `gloves_fsurvivor` — survivor firegloves (pair) — via looks_like -> gloves_light
+- `gloves_fur` — fur gloves (pair) — via looks_like -> gloves_light
+- `gloves_golf` — golfing gloves (pair) — via looks_like -> gloves_light
+- `gloves_hsurvivor` — heavy survivor gloves (pair) — via looks_like -> gloves_light
+- `gloves_leather` — leather gloves (pair) — via looks_like -> gloves_light
+- `gloves_light` — light gloves (pair) — via exact/use-all-png -> gloves_light
+- `gloves_liner` — glove liners (pair) — via looks_like -> gloves_light
+- `gloves_medical` — medical gloves (pair) — via looks_like -> gloves_light
+- `gloves_plate` — armored gauntlets (pair) — via looks_like -> gloves_light
+- `gloves_rubber` — rubber gloves (pair) — via looks_like -> gloves_light
+- `gloves_skeleton` — skeleton gloves (pair) — via looks_like -> gloves_light
+- `gloves_studded` — studded gloves (pair) — via looks_like -> gloves_light
+- `gloves_survivor` — handmade hazard gloves (pair) — via looks_like -> gloves_light
+- `gloves_tactical` — tactical gloves (pair) — via looks_like -> gloves_light
+- `gloves_white` — white gloves (pair) — via looks_like -> gloves_light
+- `gloves_winter` — winter gloves (pair) — via looks_like -> gloves_light
+- `gloves_wool` — wool gloves (pair) — via looks_like -> gloves_light
+- `gloves_wool_fingerless` — fingerless wool gloves (pair) — via looks_like -> gloves_light
+- `gloves_work` — work gloves (pair) — via looks_like -> gloves_light
+- `gloves_wraps` — hand wraps (pair) — via looks_like -> gloves_light
+- `gloves_wraps_fur` — fur hand wraps (pair) — via looks_like -> gloves_light
+- `gloves_wraps_leather` — leather hand wraps (pair) — via looks_like -> gloves_light
+- `gloves_wraps_wool` — wool hand wraps (pair) — via looks_like -> gloves_light
+- `gloves_wsurvivor` — handmade winter gauntlets (pair) — via looks_like -> gloves_light
+- `gloves_wsurvivor_nofur` — handmade faux fur winter gauntlets (pair) — via looks_like -> gloves_light
+- `glowplug` — glow plug — via exact/use-all-png -> glowplug
+- `glowstick` — glowstick — via exact/use-all-png -> glowstick
+- `glowstick_dead` — dead glowstick — via exact/use-all-png -> glowstick_dead
+- `glowstick_lit` — active glowstick — via exact/use-all-png -> glowstick_lit
+- `gold_bracelet` — gold bracelet — via exact/use-all-png -> gold_bracelet
+- `gold_dental_grill` — gold dental grill — via exact/use-all-png -> gold_dental_grill
+- `gold_ear` — gold earrings (pair) — via exact/use-all-png -> gold_ear
+- `gold_hair_beads` — gold hair beads — via looks_like -> crown_golden
+- `gold_hairpin` — gold hairpin — via exact/use-all-png -> gold_hairpin
+- `gold_locket` — gold locket — via exact/use-all-png -> gold_locket
+- `gold_necklace` — gold necklace — via exact/use-all-png -> gold_necklace
+- `gold_ring` — gold ring — via exact/use-all-png -> gold_ring
+- `gold_small` — gold — via exact/use-all-png -> gold_small
+- `gold_watch` — gold watch — via exact/use-all-png -> gold_watch
+- `golf_bag` — golf bag — via exact/use-all-png -> golf_bag
+- `golf_ball` — golf ball — via exact/use-all-png -> golf_ball
+- `golf_club` — golf club — via exact/use-all-png -> golf_club
+- `golf_shoes` — golf shoes (pair) — via looks_like -> dress_shoes
+- `golf_tee` — golf tee — via exact/use-all-png -> golf_tee
+- `grape_leaves` — grape leaves — via looks_like -> lettuce
+- `grapes` — handful of grapes — via exact/use-all-png -> grapes
+- `graphite` — graphite powder — via looks_like -> charcoal
+- `grapnel` — grappling hook — via exact/use-all-png -> grapnel
+- `grass_yarn` — grass yarn — via exact/use-all-png -> grass_yarn
+- `greatcoat` — greatcoat — via looks_like -> coat_rain
+- `green_pen` — green pen — via exact/use-all-png -> green_pen
+- `greeting_card` — greeting card — via looks_like -> paper
+- `grenade_emp` — EMP grenade — via exact/use-all-png -> grenade_emp
+- `grenade_inc` — incendiary grenade — via exact/use-all-png -> grenade_inc
+- `grenade_pouch` — grenade pouch — via looks_like -> ragpouch
+- `grenadebandolier` — large grenade pouch — via looks_like -> leather_belt
+- `grilled_sweetbread` — grilled sweetbread — via looks_like -> meat_cooked
+- `grinder_cutoff_disc` — cutoff disc — via exact/use-all-png -> grinder_cutoff_disc
+- `grinder_metal_grinding_disc` — metal grinding disc — via exact/use-all-png -> grinder_metal_grinding_disc
+- `grip` — forward grip — via exact/use-all-png -> grip
+- `grip_hook` — grip hook — via exact/use-all-png -> grip_hook
+- `grip_mod` — modified forward grip — via exact/use-all-png -> grip_mod
+- `groundnut` — handful of ground nuts — via looks_like -> potato
+- `groundnut_boiled` — boiled ground nuts — via looks_like -> potato
+- `groundnut_prepared` — prepared ground nuts — via looks_like -> potato
+- `guitar_electric` — electric guitar — via exact/use-all-png -> guitar_electric
+- `guitar_stand` — guitar stand — via exact/use-all-png -> guitar_stand
+- `gum` — chewing gum — via exact/use-all-png -> gum
+- `h20survivor_suit` — survivor wetsuit — via looks_like -> wetsuit
+- `h2o_pouch` — H2O pouch — via looks_like -> holster
+- `hair_dryer` — hair dryer — via exact/use-all-png -> hair_dryer
+- `hairbrush` — hairbrush — via exact/use-all-png -> hairbrush
+- `hairpin` — hairpin — via exact/use-all-png -> hairpin
+- `hakama` — hakama — via looks_like -> skirt
+- `hakama_gi` — hakama — via looks_like -> skirt
+- `halligan` — Halligan bar — via exact/use-all-png -> halligan
+- `halter_top` — halter top — via exact/use-all-png -> halter_top
+- `hammer_bronze` — bronze hammer — via exact/use-all-png -> hammer_bronze
+- `hammer_sledge` — sledge hammer — via exact/use-all-png -> hammer_sledge
+- `hammer_sledge_engineer` — engineer's hammer — via exact/use-all-png -> hammer_sledge_engineer
+- `hammer_sledge_heavy` — heavy sledge hammer — via exact/use-all-png -> hammer_sledge_heavy
+- `hammer_sledge_short` — short sledge hammer — via exact/use-all-png -> hammer_sledge_short
+- `hand_axe` — stone axe head — via exact/use-all-png -> hand_axe
+- `hand_crank_charger` — hand-crank charger — via exact/use-all-png -> hand_crank_charger
+- `hand_crossbow` — pistol crossbow — via exact/use-all-png -> hand_crossbow
+- `hand_drill` — hand drill — via exact/use-all-png -> hand_drill
+- `hand_paddles` — oars — via exact/use-all-png -> hand_paddles
+- `hand_pump` — hand pump — via exact/use-all-png -> hand_pump
+- `hand_rims` — set of hand rims — via exact/use-all-png -> hand_rims
+- `handflare` — flare — via exact/use-all-png -> handflare
+- `handflare_dead` — dead flare — via exact/use-all-png -> handflare_dead
+- `handrolled_cig` — hand-rolled cigarette — via exact/use-all-png -> handrolled_cig
+- `haori` — haori — via looks_like -> coat_lab
+- `hard_steel_armor` — hard steel plate — via exact/use-all-png -> hard_steel_armor
+- `harmonica_holder` — harmonica with a holder — via exact/use-all-png -> harmonica_holder
+- `hat_ball` — baseball cap — via exact/use-all-png -> hat_ball
+- `hat_boonie` — boonie hat — via exact/use-all-png -> hat_boonie
+- `hat_chef` — toque — via exact/use-all-png -> hat_chef
+- `hat_cotton` — cotton hat — via exact/use-all-png -> hat_cotton
+- `hat_faux_fur` — faux fur hat — via looks_like -> hat_fur
+- `hat_field` — patrol cap — via looks_like -> cowboy_hat
+- `hat_fur` — fur hat — via exact/use-all-png -> hat_fur
+- `hat_golf` — golf cap — via looks_like -> hat_ball
+- `hat_hard` — hard hat — via exact/use-all-png -> hat_hard
+- `hat_hard_hooded` — summer hard hat — via looks_like -> hat_hard
+- `hat_hard_modified` — modified hard hat — via looks_like -> hat_ball
+- `hat_hunting` — hunting cap — via looks_like -> hat_ball
+- `hat_knit` — knit hat — via exact/use-all-png -> hat_knit
+- `hat_navy` — eight point cap — via looks_like -> cowboy_hat
+- `hat_newsboy` — newsboy cap — via looks_like -> hat_ball
+- `hat_noise_cancelling` — noise canceling headgear — via exact/use-all-png -> hat_noise_cancelling
+- `hat_sombrero` — sombrero — via looks_like -> cowboy_hat
+- `hazelnut` — hazelnuts — via exact/use-all-png -> hazelnut
+- `hazelnut_roasted` — Handful of roasted hazelnuts — via exact/use-all-png -> hazelnut_roasted
+- `hazelnut_shelled` — Handful of shelled hazelnuts — via exact/use-all-png -> hazelnut_shelled
+- `hazmat_suit` — hazmat suit — via exact/use-all-png -> hazmat_suit
+- `hc_cavalry_sabre` — high steel cavalry saber — via looks_like -> cavalry_sabre
+- `hc_chainmail_arms` — high steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `hc_chainmail_half_legs` — high steel chainmail half-leggings — via looks_like -> leg_warmers
+- `hc_chainmail_jumpsuit` — high steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `hc_chainmail_jumpsuit_xs` — high steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `hc_chainmail_sjumpsuit` — high steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `hc_chainmail_sjumpsuit_xs` — high steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `hc_chainmail_suit` — high steel chainmail armor — via looks_like -> jumpsuit
+- `hc_chainmail_suit_xs` — high steel chainmail armor — via looks_like -> jumpsuit
+- `hc_cutlass` — high steel cutlass — via looks_like -> cutlass
+- `hc_demi_gaunt` — high steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `hc_elbow_guards` — high steel elbow guards (pair) — via looks_like -> arm_warmers
+- `hc_elbow_guards_xs` — high steel elbow guards (pair) — via looks_like -> arm_warmers
+- `hc_greaves_brigandine` — high steel splint greaves (pair) — via looks_like -> leg_warmers
+- `hc_heavyhelm_close` — high steel heavy close helm — via looks_like -> helmet_barbute
+- `hc_heavyhelm_close_raised` — high steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `hc_helm_close` — high steel close helm — via looks_like -> helmet_barbute
+- `hc_helm_close_raised` — high steel close helm (raised) — via looks_like -> helmet_barbute
+- `hc_helmet_nasal` — high steel nasal helm — via looks_like -> helmet_barbute
+- `hc_helmet_turban` — high steel turban helmet — via looks_like -> helmet_barbute
+- `hc_knee_guards` — high steel knee guards (pair) — via looks_like -> leg_warmers
+- `hc_knee_guards_xs` — high steel knee guards (pair) — via looks_like -> leg_warmers
+- `hc_knife_rambo` — high steel survival knife — via looks_like -> knife_rambo
+- `hc_knife_trench` — high steel trench knife — via looks_like -> knife_trench
+- `hc_lighthelm_close` — high steel light close helm — via looks_like -> helmet_barbute
+- `hc_lighthelm_close_raised` — high steel light close helm (raised) — via looks_like -> helmet_barbute
+- `hc_mirror_armor` — high steel mirror armor — via looks_like -> chestguard_hard
+- `hc_mitten_gaunt` — high steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `hc_pike` — high steel pike — via looks_like -> pike
+- `hc_rapier` — high steel rapier — via looks_like -> rapier
+- `hc_sabaton` — high steel sabaton — via looks_like -> boots
+- `hc_vambrace_brigandine` — high steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `hc_wire` — high steel wire — via exact/use-all-png -> hc_wire
+- `hd_compressor_unit` — high pressure compressor unit — via exact/use-all-png -> hd_compressor_unit
+- `hd_tow_cable` — heavy-duty tow cable — via exact/use-all-png -> hd_tow_cable
+- `headgear` — headgear — via looks_like -> hat_cotton
+- `headphones_circumaural` — headphones — via exact/use-all-png -> headphones_circumaural
+- `heatpack` — heat pack — via exact/use-all-png -> heatpack
+- `heatpack_used` — used heat pack — via exact/use-all-png -> heatpack_used
+- `heavy_duty_military_rotor` — heavy-duty military rotors — via looks_like -> wind_turbine
+- `heavy_load_bearing_vest` — heavy load bearing vest — via looks_like -> tank_top
+- `heavy_load_bearing_vest_breacher` — breacher load bearing vest — via looks_like -> tank_top
+- `heavy_load_bearing_vest_sling` — heavy load bearing vest with sling — via looks_like -> tank_top
+- `heavy_masonrysaw_off` — heavy masonry saw (off) — via looks_like -> masonrysaw_off
+- `heavy_masonrysaw_on` — heavy masonry saw (on) — via looks_like -> masonrysaw_off
+- `heavy_wire_rack` — heavy wire rack — via exact/use-all-png -> heavy_wire_rack
+- `heels` — heels (pair) — via looks_like -> dress_shoes
+- `helmet_acidchitin` — biosilicified chitin helmet — via exact/use-all-png -> helmet_acidchitin
+- `helmet_acidchitin_xs` — biosilicified chitin helmet — via looks_like -> helmet_acidchitin
+- `helmet_armet` — armet helm — via looks_like -> helmet_barbute
+- `helmet_armet_raised` — armet helm (raised) — via looks_like -> helmet_barbute
+- `helmet_army_stripped` — army helmet (stripped) — via looks_like -> hat_hard
+- `helmet_aztec` — eagle cuacalalatli — via looks_like -> helmet_barbute
+- `helmet_ball` — baseball helmet — via exact/use-all-png -> helmet_ball
+- `helmet_barbute` — barbute helm — via exact/use-all-png -> helmet_barbute
+- `helmet_barbute_xs` — barbute helm — via looks_like -> helmet_barbute
+- `helmet_bike` — bike helmet — via looks_like -> hat_hard
+- `helmet_bronze` — bronze helmet — via looks_like -> helmet_barbute
+- `helmet_cardboard` — cardboard 'great' helm — via looks_like -> hat_hard
+- `helmet_chitin` — chitinous scale mail hood — via exact/use-all-png -> helmet_chitin
+- `helmet_chitin_xs` — chitinous scale mail hood — via looks_like -> helmet_chitin
+- `helmet_conical` — conical helm — via looks_like -> helmet_barbute
+- `helmet_conical_xs` — conical helm — via looks_like -> helmet_barbute
+- `helmet_corinthian` — Corinthian helm — via looks_like -> helmet_barbute
+- `helmet_corinthian_xs` — Corinthian helm — via looks_like -> helmet_barbute
+- `helmet_galea` — galea — via looks_like -> helmet_barbute
+- `helmet_galea_xs` — galea — via looks_like -> helmet_barbute
+- `helmet_kabuto` — kabuto — via exact/use-all-png -> helmet_kabuto
+- `helmet_kabuto_xs` — kabuto — via looks_like -> helmet_barbute
+- `helmet_kettle` — kettle helmet — via looks_like -> helmet_barbute
+- `helmet_larmor` — leather armor helmet — via looks_like -> hat_hard
+- `helmet_larmor_xs` — leather armor helmet — via looks_like -> hat_hard
+- `helmet_liner` — helmet liner — via looks_like -> hat_cotton
+- `helmet_metal_sheets` — sheet metal helmet — via looks_like -> helmet_barbute
+- `helmet_metal_sheets_full` — sheet metal great helm — via looks_like -> helmet_barbute
+- `helmet_nasal` — nasal helm — via looks_like -> helmet_barbute
+- `helmet_nasal_xs` — nasal helm — via looks_like -> helmet_barbute
+- `helmet_nomad` — nomad cowl — via looks_like -> hat_cotton
+- `helmet_nomad_papr` — advanced nomad cowl — via looks_like -> hat_cotton
+- `helmet_plate` — great helm — via looks_like -> helmet_barbute
+- `helmet_plate_xs` — great helm — via looks_like -> helmet_barbute
+- `helmet_riding` — riding helmet — via looks_like -> hat_hard
+- `helmet_riding_peakless` — jockey skull cap — via looks_like -> hat_hard
+- `helmet_sallet` — sallet helm — via looks_like -> helmet_barbute
+- `helmet_sallet_raised` — sallet helm (raised) — via looks_like -> helmet_barbute
+- `helmet_scrap` — scrap helmet — via looks_like -> helmet_barbute
+- `helmet_scrap_xs` — scrap helmet — via looks_like -> helmet_barbute
+- `helmet_skid` — skid lid — via looks_like -> hat_hard
+- `helmet_skull` — wolf skull helmet — via exact/use-all-png -> helmet_skull
+- `henry_big_boy` — Henry Big Boy .44 rifle — via exact/use-all-png -> henry_big_boy
+- `henry_golden_boy` — small game lever-action rifle — via looks_like -> marlin_9a
+- `heroin` — heroin — via exact/use-all-png -> heroin
+- `hi_power_40` — Browning Hi-Power .40 S&W — via exact/use-all-png -> hi_power_40
+- `hi_power_9mm` — Browning Hi-Power 9x19mm handgun — via exact/use-all-png -> hi_power_9mm
+- `hickory_nut` — hickory nuts — via exact/use-all-png -> hickory_nut
+- `hickory_nut_shelled` — Handful of shelled hickory nuts — via exact/use-all-png -> hickory_nut_shelled
+- `hickory_root` — hickory root — via exact/use-all-png -> hickory_root
+- `highland_censer` — censer — via looks_like -> oil_lamp
+- `highland_shroud` — burial shroud — via looks_like -> coat_rain
+- `higlands_funeral_crown` — funeral crown — via looks_like -> hat_cotton
+- `hk417_13` — HK417 rifle — via exact/use-all-png -> hk417_13
+- `hk_g3` — G3 battle rifle — via exact/use-all-png -> hk_g3
+- `hk_g80` — H&K G80 railgun — via exact/use-all-png -> hk_g80
+- `hk_mp5_semi_pistol` — MP5 pistol — via exact/use-all-png -> hk_mp5_semi_pistol
+- `hk_mp5k` — H&K MP5K-PDW submachine gun — via exact/use-all-png -> hk_mp5k
+- `hk_mp5sd` — H&K MP5SD submachine gun — via exact/use-all-png -> hk_mp5sd
+- `hk_usc45` — H&K USC 45 carbine — via looks_like -> modular_ar15
+- `hm12` — hm12 dazzle rifle — via looks_like -> modular_ar15
+- `hoe` — hoe — via exact/use-all-png -> hoe
+- `holo_sight` — holographic sight — via exact/use-all-png -> holo_sight
+- `holster` — holster — via exact/use-all-png -> holster
+- `home_picture` — picture — via exact/use-all-png -> home_picture
+- `homemade_bomb` — homemade bomb — via exact/use-all-png -> homemade_bomb
+- `homemade_burrito` — homemade burrito — via exact/use-all-png -> homemade_burrito
+- `homemade_demolition_charge` — homemade demolition charge — via looks_like -> homemade_bomb
+- `homeopathic_pills` — homeopathic pill — via exact/use-all-png -> homeopathic_pills
+- `honeydew` — honeydew — via exact/use-all-png -> honeydew
+- `hood_fsurvivor` — survivor firehood — via looks_like -> hat_cotton
+- `hood_gut` — gutskin hood — via looks_like -> hat_cotton
+- `hood_ninja` — ninja hood — via looks_like -> hat_cotton
+- `hood_rain` — rain hood — via looks_like -> hat_cotton
+- `hood_survivor` — handmade traveler hood — via looks_like -> hat_cotton
+- `hood_wsurvivor` — handmade winter traveler hood — via looks_like -> hat_cotton
+- `hood_wsurvivor_nofur` — handmade faux fur traveler hood — via looks_like -> hat_cotton
+- `hood_xlsurvivor` — handmade traveler hood — via looks_like -> hat_cotton
+- `hood_xssurvivor` — handmade traveler hood — via looks_like -> hat_cotton
+- `hoodie` — hoodie — via variant -> hoodie
+- `hoodie_cropped` — cropped hoodie — via looks_like -> sweater
+- `hops` — hops flower — via exact/use-all-png -> hops
+- `horn_bicycle` — bicycle horn — via exact/use-all-png -> horn_bicycle
+- `hose` — rubber hose — via exact/use-all-png -> hose
+- `hose_garden` — garden hose — via looks_like -> hose
+- `hot_pants` — short shorts — via looks_like -> boxer_briefs
+- `hot_pants_fur` — fur hot pants — via looks_like -> boxer_briefs
+- `hot_pants_leather` — leather hot pants — via looks_like -> boxer_briefs
+- `hotcut` — hotcut — via exact/use-all-png -> hotcut
+- `hotcut_bronze` — hotcut — via exact/use-all-png -> hotcut_bronze
+- `hotdogs_campfire` — campfire hot dog — via exact/use-all-png -> hotdogs_campfire
+- `hotdogs_cooked` — cooked hot dog — via exact/use-all-png -> hotdogs_cooked
+- `hotdogs_frozen` — uncooked hot dog — via exact/use-all-png -> hotdogs_frozen
+- `hotdogs_newyork` — new york wiener — via exact/use-all-png -> hotdogs_newyork
+- `house_coat` — bathrobe — via looks_like -> coat_lab
+- `hpt3895` — .380 ACP pistol-caliber carbine — via looks_like -> modular_ar15
+- `hptc9` — Hi-Point C-9 pistol — via exact/use-all-png -> hptc9
+- `hptcf380` — Hi-Point CF-380 pistol — via exact/use-all-png -> hptcf380
+- `hsurvivor_jumpsuit` — handmade hazard suit — via looks_like -> jumpsuit
+- `hsurvivor_suit` — heavy survivor suit — via looks_like -> jumpsuit
+- `huge_atomic_battery_cell` — military plutonium fuel cell (disposable) — via looks_like -> battery
+- `huge_crossbow` — heavy crossbow — via exact/use-all-png -> huge_crossbow
+- `human_brain` — piece of raw human brain — via looks_like -> brain
+- `human_fat` — chunk of human fat — via exact/use-all-png -> human_fat
+- `human_kidney` — piece of raw human kidney — via looks_like -> kidney
+- `human_liver` — piece of raw human liver — via looks_like -> liver
+- `human_lung` — piece of raw human lung — via looks_like -> lung
+- `human_meat_scrap` — scrap of human flesh — via looks_like -> meat_scrap
+- `human_sample` — human sample — via exact/use-all-png -> human_sample
+- `human_sweetbread` — piece of raw human sweetbread — via looks_like -> sweetbread
+- `hybrid_sight_4x` — hybrid ACOG scope — via exact/use-all-png -> hybrid_sight_4x
+- `i4_combustion` — 1.6 L I4 engine — via exact/use-all-png -> i4_combustion
+- `iceaxe` — ice axe — via exact/use-all-png -> iceaxe
+- `icon` — icon — via exact/use-all-png -> icon
+- `id_science_visitor_1` — visitor's pass — via exact/use-all-png -> id_science_visitor_1
+- `ifak_pouch` — IFAK pouch — via exact/use-all-png -> ifak_pouch
+- `improvised_armguard_tire` — improvised tire arm guards (pair) — via looks_like -> arm_warmers
+- `improvised_legguard_tire` — improvised tire leg guards (pair) — via looks_like -> leg_warmers
+- `indoor_volleyball` — volleyball — via exact/use-all-png -> indoor_volleyball
+- `inflatable_section` — inflatable section — via exact/use-all-png -> inflatable_section
+- `insect_sample` — insect sample — via exact/use-all-png -> insect_sample
+- `insecticidalbomb` — insecticidal gas grenade — via looks_like -> smokebomb
+- `insecticidalbomb_makeshift` — makeshift insecticidal gas grenade — via looks_like -> smokebomb
+- `insta_salad` — insta-salad — via exact/use-all-png -> insta_salad
+- `ipok` — individual patrol officer kit — via looks_like -> mre_beef_box
+- `iron_pot` — cast-iron pot — via exact/use-all-png -> iron_pot
+- `iwi_tavor_x95_300blk` — IWI Tavor X95 — via exact/use-all-png -> iwi_tavor_x95_300blk
+- `jack` — bottle jack — via exact/use-all-png -> jack
+- `jack_makeshift` — makeshift jack — via exact/use-all-png -> jack_makeshift
+- `jack_small` — scissor jack — via exact/use-all-png -> jack_small
+- `jacket_army` — army jacket — via exact/use-all-png -> jacket_army
+- `jacket_army_modern` — combat blouse — via looks_like -> jacket_army
+- `jacket_chef` — chef's jacket — via looks_like -> coat_lab
+- `jacket_evac` — emergency jacket — via exact/use-all-png -> jacket_evac
+- `jacket_flannel` — flannel jacket — via looks_like -> coat_rain
+- `jacket_jean` — jean jacket — via looks_like -> jacket_light
+- `jacket_jean_mod` — armored jean jacket — via looks_like -> jacket_light
+- `jacket_jean_mod_ch` — hardened armored jean jacket — via looks_like -> jacket_light
+- `jacket_leather` — leather jacket — via looks_like -> jacket_light
+- `jacket_leather_bone` — occult bone armor — via looks_like -> jacket_light
+- `jacket_leather_mod` — armored motorcycle jacket — via looks_like -> jacket_light
+- `jacket_leather_mod_ch` — hardened armored motorcycle jacket — via looks_like -> jacket_light
+- `jacket_leather_tire` — tire motorcycle jacket — via looks_like -> jacket_light
+- `jacket_light` — light jacket — via exact/use-all-png -> jacket_light
+- `jacket_varsity` — varsity jacket — via variant -> jacket_varsity
+- `jacket_windbreaker` — windbreaker — via looks_like -> jacket_light
+- `javelin_bag` — javelin bag — via looks_like -> bscabbard
+- `jeans` — jeans — via exact/use-all-png -> jeans
+- `jeans_mod` — armored jeans — via looks_like -> jeans
+- `jeans_mod_ch` — hardened armored jeans — via looks_like -> jeans
+- `jeans_ripped` — ripped jeans — via looks_like -> jeans
+- `jeans_skinny` — skinny jeans — via looks_like -> jeans
+- `jeans_vintage` — vintage jeans — via looks_like -> jeans
+- `jersey` — sports jersey — via looks_like -> tshirt
+- `ji` — ji — via exact/use-all-png -> ji
+- `jihelucake` — slice of birthday cake — via exact/use-all-png -> jihelucake
+- `jikatabi` — jika-tabi (pair) — via looks_like -> boots
+- `jikatabi_sneakers` — jika-tabi sneakers (pair) — via looks_like -> sneakers
+- `judo_belt_black` — black belt — via exact/use-all-png -> judo_belt_black
+- `judo_belt_blue` — blue belt — via exact/use-all-png -> judo_belt_blue
+- `judo_belt_brown` — brown belt — via exact/use-all-png -> judo_belt_brown
+- `judo_belt_green` — green belt — via exact/use-all-png -> judo_belt_green
+- `judo_belt_orange` — orange belt — via exact/use-all-png -> judo_belt_orange
+- `judo_belt_white` — white belt — via exact/use-all-png -> judo_belt_white
+- `judo_belt_yellow` — yellow belt — via exact/use-all-png -> judo_belt_yellow
+- `jumper_cable` — jumper cable — via exact/use-all-png -> jumper_cable
+- `jumper_cable_heavy` — heavy-duty jumper cable — via exact/use-all-png -> jumper_cable_heavy
+- `jumpsuit` — jumpsuit — via exact/use-all-png -> jumpsuit
+- `jumpsuit_pocketless` — pocketless jumpsuit — via looks_like -> jumpsuit
+- `jumpsuit_skeleton` — skeleton jumpsuit — via looks_like -> jumpsuit
+- `jumpsuit_skeleton_zipped` — skeleton jumpsuit (zipped) — via looks_like -> jumpsuit
+- `jumpsuit_xl` — jumpsuit — via looks_like -> jumpsuit
+- `jumpsuit_xs` — jumpsuit — via looks_like -> jumpsuit
+- `juniper` — Handful of junipers — via exact/use-all-png -> juniper
+- `junk_burrito` — microwave burrito — via exact/use-all-png -> junk_burrito
+- `k_gambeson_sleeve` — Kevlar gambeson sleeves (pair) — via looks_like -> arm_warmers
+- `kantele` — kantele — via looks_like -> acoustic_guitar
+- `kettle` — kettle — via exact/use-all-png -> kettle
+- `kevlar` — Kevlar vest — via looks_like -> tank_top
+- `kevlar_harness` — Kevlar dog harness — via looks_like -> tank_top
+- `kevlar_shears` — Kevlar shears — via exact/use-all-png -> kevlar_shears
+- `khuunaofaai` — Exodii ordnance cannon — via looks_like -> m202_flash
+- `kidney` — piece of raw kidney — via exact/use-all-png -> kidney
+- `kidney_cooked` — cooked piece of kidney — via exact/use-all-png -> kidney_cooked
+- `kiln` — electric kiln — via exact/use-all-png -> kiln
+- `kilt` — kilt — via looks_like -> skirt
+- `kilt_leather` — leather kilt — via looks_like -> skirt
+- `kilt_utility` — utility kilt — via looks_like -> skirt
+- `kippah` — kippah — via looks_like -> hat_cotton
+- `knee_high_boots` — knee-high boots (pair) — via looks_like -> boots
+- `knee_pads` — knee pads (pair) — via looks_like -> leg_warmers
+- `knife_KABAR` — KA-BAR knife — via looks_like -> knife_combat
+- `knife_cleaver` — cleaver — via variant -> knife_cleaver
+- `knife_combat` — National Guard bayonet — via exact/use-all-png -> knife_combat
+- `knife_combat_army` — Bayonet — via looks_like -> knife_combat
+- `knife_combat_marine` — USMC bayonet — via looks_like -> knife_combat
+- `knife_folding` — folding knife — via exact/use-all-png -> knife_folding
+- `knife_huge` — huge kitchen knife — via variant -> knife_huge
+- `knife_hunting` — hunting knife — via exact/use-all-png -> knife_hunting
+- `knife_large` — large kitchen knife — via variant -> knife_large
+- `knife_rambo` — medium steel survival knife — via exact/use-all-png -> knife_rambo
+- `knife_rm42` — F-S fighting knife — via exact/use-all-png -> knife_rm42
+- `knife_small` — small kitchen knife — via variant -> knife_small
+- `knife_swissarmy` — Swiss Army knife — via exact/use-all-png -> knife_swissarmy
+- `knife_trench` — medium steel trench knife — via exact/use-all-png -> knife_trench
+- `knitting_needles` — knitting needles (pair) — via exact/use-all-png -> knitting_needles
+- `kord` — Kord AK rifle — via looks_like -> modular_ar15
+- `krar` — krar — via looks_like -> acoustic_guitar
+- `krar_golden` — golden krar — via looks_like -> acoustic_guitar
+- `ksg` — compact bullpup shotgun — via exact/use-all-png -> ksg
+- `ksg-25` — extended bullpup shotgun — via exact/use-all-png -> ksg-25
+- `kufi` — kufi cap — via looks_like -> hat_cotton
+- `landmine` — land mine — via exact/use-all-png -> landmine
+- `lanyard` — lanyard — via exact/use-all-png -> lanyard
+- `laptop` — laptop computer — via exact/use-all-png -> laptop
+- `large_propane_tank` — large propane tank — via exact/use-all-png -> large_propane_tank
+- `large_space_heater` — large space heater — via exact/use-all-png -> large_space_heater
+- `large_space_heater_on` — large space heater (on) — via exact/use-all-png -> large_space_heater_on
+- `large_tent_kit` — large tent — via exact/use-all-png -> large_tent_kit
+- `lasagne` — lasagne — via exact/use-all-png -> lasagne
+- `laser_rifle` — A7 laser rifle — via exact/use-all-png -> laser_rifle
+- `lawn_dart` — lawn dart — via exact/use-all-png -> lawn_dart
+- `lawnmower` — lawnmower — via exact/use-all-png -> lawnmower
+- `lc_cavalry_sabre` — mild steel cavalry saber — via looks_like -> cavalry_sabre
+- `lc_chainmail_arms` — mild steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `lc_chainmail_half_legs` — mild steel chainmail half-leggings — via looks_like -> leg_warmers
+- `lc_chainmail_jumpsuit` — mild steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `lc_chainmail_jumpsuit_xs` — mild steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `lc_chainmail_sjumpsuit` — mild steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `lc_chainmail_sjumpsuit_xs` — mild steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `lc_chainmail_suit` — mild steel chainmail armor — via looks_like -> jumpsuit
+- `lc_chainmail_suit_xs` — mild steel chainmail armor — via looks_like -> jumpsuit
+- `lc_cutlass` — mild steel cutlass — via looks_like -> cutlass
+- `lc_demi_gaunt` — mild steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `lc_elbow_guards` — mild steel elbow guards (pair) — via looks_like -> arm_warmers
+- `lc_elbow_guards_xs` — mild steel elbow guards (pair) — via looks_like -> arm_warmers
+- `lc_greaves_brigandine` — mild steel splint greaves (pair) — via looks_like -> leg_warmers
+- `lc_heavyhelm_close` — mild steel heavy close helm — via looks_like -> helmet_barbute
+- `lc_heavyhelm_close_raised` — mild steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `lc_helm_close` — mild steel close helm — via looks_like -> helmet_barbute
+- `lc_helm_close_raised` — mild steel close helm (raised) — via looks_like -> helmet_barbute
+- `lc_helmet_nasal` — mild steel nasal helm — via looks_like -> helmet_barbute
+- `lc_helmet_turban` — mild steel turban helmet — via looks_like -> helmet_barbute
+- `lc_knee_guards` — mild steel knee guards (pair) — via looks_like -> leg_warmers
+- `lc_knee_guards_xs` — mild steel knee guards (pair) — via looks_like -> leg_warmers
+- `lc_knife_rambo` — mild steel survival knife — via looks_like -> knife_rambo
+- `lc_knife_trench` — mild steel trench knife — via looks_like -> knife_trench
+- `lc_lighthelm_close` — mild steel light close helm — via looks_like -> helmet_barbute
+- `lc_lighthelm_close_raised` — mild steel light close helm (raised) — via looks_like -> helmet_barbute
+- `lc_mirror_armor` — mild steel mirror armor — via looks_like -> chestguard_hard
+- `lc_mitten_gaunt` — mild steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `lc_pike` — mild steel pike — via looks_like -> pike
+- `lc_rapier` — mild steel rapier — via looks_like -> rapier
+- `lc_sabaton` — mild steel sabaton — via looks_like -> boots
+- `lc_vambrace_brigandine` — mild steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `lead` — lead — via exact/use-all-png -> lead
+- `leather` — leather patch — via exact/use-all-png -> leather
+- `leather_bellow` — leather bellow — via exact/use-all-png -> leather_bellow
+- `leather_belt` — leather belt — via exact/use-all-png -> leather_belt
+- `leather_collar` — leather collar — via exact/use-all-png -> leather_collar
+- `leather_harness_dog` — leather dog harness — via looks_like -> tank_top
+- `leather_police_jacket` — motorcycle jacket — via looks_like -> motorbike_armor
+- `leather_pouch` — leather pouch — via looks_like -> holster
+- `leather_stone_pouch` — leather stone pouch — via looks_like -> ragpouch
+- `leatherbone_harness_dog` — leather dog harness with bones — via looks_like -> tank_top
+- `leathersandals` — leather sandals (pair) — via looks_like -> sneakers
+- `leaves` — handful of leaves — via exact/use-all-png -> leaves
+- `leg_sheath6` — throwing knives leg sheath — via looks_like -> scabbard
+- `leg_small_bag` — small leg pouch — via looks_like -> armguard_soft
+- `leg_splint` — leg splint — via looks_like -> leg_warmers
+- `leg_warmers` — leg warmers (pair) — via exact/use-all-png -> leg_warmers
+- `leg_warmers_f` — fur leggings — via looks_like -> leg_warmers
+- `leg_warmers_xl` — leg warmers (pair) — via looks_like -> leg_warmers
+- `leg_warmers_xlf` — fetlock furs (pair) — via looks_like -> leg_warmers
+- `leg_warmers_xs` — leg warmers (pair) — via looks_like -> leg_warmers
+- `leg_warmers_xsf` — fur leggings — via looks_like -> leg_warmers
+- `leg_xlsplint` — leg splint — via looks_like -> leg_warmers
+- `leg_xs_splint` — leg splint — via looks_like -> leg_warmers
+- `leggings` — leggings — via looks_like -> leg_warmers
+- `leggings_thessalonian` — cataphract leggings — via exact/use-all-png -> leggings_thessalonian
+- `legguard_acidchitin` — biosilicified chitin leg guards (pair) — via exact/use-all-png -> legguard_acidchitin
+- `legguard_bronze` — bronze greaves (pair) — via looks_like -> leg_warmers
+- `legguard_ch_brigandine` — hardened splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_ch_brigandine_xs` — hardened splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_chitin` — chitinous scale mail leggings — via exact/use-all-png -> legguard_chitin
+- `legguard_hard` — hard leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_hc_brigandine` — high steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_hc_brigandine_xs` — high steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_larmor` — leather leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_lc_brigandine` — mild steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_lc_brigandine_xs` — mild steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_mc_brigandine` — medium steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_mc_brigandine_xs` — medium steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_metal` — iron greaves (pair) — via looks_like -> leg_warmers
+- `legguard_metal_sheets` — sheet metal leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_metal_sheets_greaves` — sheet metal greaves (pair) — via looks_like -> leg_warmers
+- `legguard_metal_sheets_knees` — sheet metal knee guards (pair) — via looks_like -> leg_warmers
+- `legguard_paper` — paper leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_qt_brigandine` — tempered splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_qt_brigandine_xs` — tempered splint leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_scrap` — scrap leg guards (pair) — via looks_like -> leg_warmers
+- `legguard_tire` — tire leg guards (pair) — via looks_like -> leg_warmers
+- `legpouch` — ankle ammo pouch — via looks_like -> ragpouch
+- `legpouch_large` — leg ammo pouch — via looks_like -> ragpouch
+- `lemon` — lemon — via exact/use-all-png -> lemon
+- `lens` — high-quality lens — via exact/use-all-png -> lens
+- `lentils_cooked` — cooked lentils — via exact/use-all-png -> lentils_cooked
+- `letter` — letter — via looks_like -> paper
+- `lettuce` — handful of shredded lettuce — via exact/use-all-png -> lettuce
+- `licorice` — licorice — via exact/use-all-png -> licorice
+- `lifestraw` — lifestraw — via exact/use-all-png -> lifestraw
+- `light_bulb` — light bulb — via exact/use-all-png -> light_bulb
+- `light_detector` — light detector — via looks_like -> e_scrap
+- `light_load_bearing_vest` — light load bearing vest — via looks_like -> tank_top
+- `lightstrip` — LED strip — via exact/use-all-png -> lightstrip
+- `link_sheet` — chainmail sheet — via exact/use-all-png -> link_sheet
+- `liver` — piece of raw liver — via exact/use-all-png -> liver
+- `liver_cooked` — cooked piece of liver — via exact/use-all-png -> liver_cooked
+- `liver_onion` — liver & onions — via exact/use-all-png -> liver_onion
+- `lizard_sample` — lizard sample — via exact/use-all-png -> lizard_sample
+- `load_bearing_vest` — load bearing vest — via looks_like -> tank_top
+- `load_bearing_vest_sling` — load bearing vest with sling — via looks_like -> tank_top
+- `lock` — small lock and key — via exact/use-all-png -> lock
+- `loincloth` — loincloth — via looks_like -> briefs
+- `loincloth_fur` — fur loincloth — via looks_like -> briefs
+- `loincloth_leather` — leather loincloth — via looks_like -> briefs
+- `loincloth_wool` — wool loincloth — via looks_like -> briefs
+- `long_extension_cable` — outdoor extension cord — via exact/use-all-png -> long_extension_cable
+- `long_glove_white` — extra long white gloves (pair) — via looks_like -> gloves_light
+- `long_speargun` — long speargun — via looks_like -> glock_17
+- `long_underpants` — long underwear bottom — via looks_like -> leg_warmers
+- `long_undertop` — long underwear top — via looks_like -> longshirt
+- `long_undertop_sleeveless` — sleeveless underwear top — via looks_like -> longshirt
+- `longbow` — longbow — via exact/use-all-png -> longbow
+- `longrifle_flintlock` — flintlock rifle — via exact/use-all-png -> longrifle_flintlock
+- `longshirt` — long-sleeved shirt — via exact/use-all-png -> longshirt
+- `lotus` — lotus flower — via exact/use-all-png -> lotus
+- `lowtops` — lowtop tennis shoes (pair) — via looks_like -> sneakers
+- `lsd` — pink tab — via exact/use-all-png -> lsd
+- `lsurvivor_armor` — mercenary body armor — via looks_like -> jacket_army
+- `lsurvivor_jumpsuit` — handmade summer suit — via looks_like -> jumpsuit
+- `lsurvivor_suit` — light survivor suit — via looks_like -> jumpsuit
+- `lug_wrench` — lug wrench — via exact/use-all-png -> lug_wrench
+- `lung` — piece of raw lung — via exact/use-all-png -> lung
+- `lung_cooked` — cooked piece of lung — via exact/use-all-png -> lung_cooked
+- `lupine_sample` — lupine sample — via exact/use-all-png -> lupine_sample
+- `lws32` — micro conceal carry pistol — via looks_like -> glock_17
+- `m1014` — 7-round auto-loading combat shotgun — via looks_like -> remington_870
+- `m107a1` — semi-automatic anti-materiel rifle — via exact/use-all-png -> m107a1
+- `m11` — M11 pistol — via exact/use-all-png -> m11
+- `m110a1` — HK417 marksman's rifle — via exact/use-all-png -> m110a1
+- `m134` — M134D-H Minigun — via exact/use-all-png -> m134
+- `m14ebr` — M14 EBR-RI rifle — via exact/use-all-png -> m14ebr
+- `m17` — service handgun — via exact/use-all-png -> m17
+- `m18` — compact service handgun — via exact/use-all-png -> m18
+- `m1903` — Springfield rifle — via exact/use-all-png -> m1903
+- `m1918` — BAR rifle — via exact/use-all-png -> m1918
+- `m1a` — American battle rifle — via exact/use-all-png -> m1a
+- `m1carbine` — M1 carbine — via looks_like -> garand
+- `m2010` — M2010 ESR — via exact/use-all-png -> m2010
+- `m202_flash` — M74 rocket launcher — via exact/use-all-png -> m202_flash
+- `m240` — M240 machine gun — via exact/use-all-png -> m240
+- `m2browning` — .50-caliber heavy machine gun — via exact/use-all-png -> m2browning
+- `m2carbine` — M2 carbine — via looks_like -> garand
+- `m320` — M320 standalone launcher — via exact/use-all-png -> m320
+- `m3_carlgustav` — M3 recoilless rifle — via exact/use-all-png -> m3_carlgustav
+- `m4_carlgustav` — M3E1 recoilless rifle — via exact/use-all-png -> m4_carlgustav
+- `m79` — M79 launcher — via exact/use-all-png -> m79
+- `machete` — machete — via exact/use-all-png -> machete
+- `machete_gimmick` — machete multitool — via exact/use-all-png -> machete_gimmick
+- `magic_8_ball` — Magic 8-Ball — via exact/use-all-png -> magic_8_ball
+- `magnet` — magnet — via exact/use-all-png -> magnet
+- `magnifying_glass` — magnifying glass — via exact/use-all-png -> magnifying_glass
+- `maid_hat` — French maid hat — via exact/use-all-png -> maid_hat
+- `maid_hat_xl` — French maid hat — via looks_like -> hat_cotton
+- `maid_hat_xs` — French maid hat — via looks_like -> hat_cotton
+- `makarov` — Makarov pistol — via exact/use-all-png -> makarov
+- `maker_kit_box` — maker kit box — via exact/use-all-png -> maker_kit_box
+- `makeshift_bayonet` — makeshift bayonet — via exact/use-all-png -> makeshift_bayonet
+- `makeshift_glaive` — makeshift glaive — via exact/use-all-png -> makeshift_glaive
+- `makeshift_halberd` — simple makeshift glaive — via exact/use-all-png -> makeshift_halberd
+- `makeshift_hammer` — makeshift hammer — via exact/use-all-png -> makeshift_hammer
+- `makeshift_hand_drill` — makeshift hand drill — via looks_like -> hand_drill
+- `makeshift_hose` — leather hose — via exact/use-all-png -> makeshift_hose
+- `makeshift_knapsack` — makeshift knapsack — via looks_like -> ragpouch
+- `makeshift_knife` — makeshift knife — via exact/use-all-png -> makeshift_knife
+- `makeshift_machete` — makeshift machete — via exact/use-all-png -> makeshift_machete
+- `makeshift_metal_plate_vest` — makeshift metal plate vest — via looks_like -> armor_lorica
+- `makeshift_scythe_war` — makeshift war scythe — via exact/use-all-png -> makeshift_scythe_war
+- `makeshift_sling` — makeshift sling — via looks_like -> ragpouch
+- `makeshift_stethoscope` — makeshift stethoscope — via exact/use-all-png -> makeshift_stethoscope
+- `manhole_cover` — manhole cover — via exact/use-all-png -> manhole_cover
+- `manti` — manti — via exact/use-all-png -> manti
+- `manual_tire_changer` — manual tire changer — via exact/use-all-png -> manual_tire_changer
+- `maple_candy` — maple syrup candy — via exact/use-all-png -> maple_candy
+- `mark19` — Mark 19 grenade launcher — via exact/use-all-png -> mark19
+- `marlin_336_3030` — 6-shot lever-action rifle — via looks_like -> modular_ar15
+- `marlin_9a` — high capacity small game lever-action rifle — via exact/use-all-png -> marlin_9a
+- `marshmallow` — marshmallows — via exact/use-all-png -> marshmallow
+- `mashed_potato` — mashed potato — via looks_like -> potato
+- `masonrysaw_off` — masonry saw (off) — via exact/use-all-png -> masonrysaw_off
+- `masonrysaw_on` — masonry saw (on) — via exact/use-all-png -> masonrysaw_on
+- `match` — match — via exact/use-all-png -> match
+- `matches` — matchbook — via exact/use-all-png -> matches
+- `material_aluminium_ingot` — chunk of aluminum — via exact/use-all-png -> material_aluminium_ingot
+- `material_cement` — cement powder — via exact/use-all-png -> material_cement
+- `material_gravel` — gravel — via exact/use-all-png -> material_gravel
+- `material_limestone` — limestone — via exact/use-all-png -> material_limestone
+- `material_rhodonite` — rhodonite — via exact/use-all-png -> material_rhodonite
+- `material_rocksalt` — rock salt — via exact/use-all-png -> material_rocksalt
+- `material_shrd_limestone` — limestone shard — via exact/use-all-png -> material_shrd_limestone
+- `material_zincite` — zincite — via exact/use-all-png -> material_zincite
+- `mattress` — mattress — via exact/use-all-png -> mattress
+- `mauser_c96` — Mauser pistol — via exact/use-all-png -> mauser_c96
+- `mayapple` — mayapple — via exact/use-all-png -> mayapple
+- `mbag` — messenger bag — via exact/use-all-png -> mbag
+- `mbag_sided` — messenger bag — via looks_like -> purse
+- `mc_cavalry_sabre` — medium steel cavalry saber — via looks_like -> cavalry_sabre
+- `mc_chainmail_arms` — medium steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `mc_chainmail_half_legs` — medium steel chainmail half-leggings — via looks_like -> leg_warmers
+- `mc_chainmail_jumpsuit` — medium steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `mc_chainmail_jumpsuit_xs` — medium steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `mc_chainmail_sjumpsuit` — medium steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `mc_chainmail_sjumpsuit_xs` — medium steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `mc_chainmail_suit` — medium steel chainmail armor — via looks_like -> jumpsuit
+- `mc_chainmail_suit_xs` — medium steel chainmail armor — via looks_like -> jumpsuit
+- `mc_cutlass` — medium steel cutlass — via looks_like -> cutlass
+- `mc_demi_gaunt` — medium steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `mc_elbow_guards` — medium steel elbow guards (pair) — via looks_like -> arm_warmers
+- `mc_elbow_guards_xs` — medium steel elbow guards (pair) — via looks_like -> arm_warmers
+- `mc_greaves_brigandine` — medium steel splint greaves (pair) — via looks_like -> leg_warmers
+- `mc_heavyhelm_close` — medium steel heavy close helm — via looks_like -> helmet_barbute
+- `mc_heavyhelm_close_raised` — medium steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `mc_helm_close` — medium steel close helm — via looks_like -> helmet_barbute
+- `mc_helm_close_raised` — medium steel close helm (raised) — via looks_like -> helmet_barbute
+- `mc_helmet_nasal` — medium steel nasal helm — via looks_like -> helmet_barbute
+- `mc_helmet_turban` — medium steel turban helmet — via looks_like -> helmet_barbute
+- `mc_knee_guards` — medium steel knee guards (pair) — via looks_like -> leg_warmers
+- `mc_knee_guards_xs` — medium steel knee guards (pair) — via looks_like -> leg_warmers
+- `mc_lighthelm_close` — medium steel light close helm — via looks_like -> helmet_barbute
+- `mc_lighthelm_close_raised` — medium steel light close helm (raised) — via looks_like -> helmet_barbute
+- `mc_mirror_armor` — medium steel mirror armor — via looks_like -> chestguard_hard
+- `mc_mitten_gaunt` — medium steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `mc_sabaton` — medium steel sabaton — via looks_like -> boots
+- `mc_vambrace_brigandine` — medium steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `mdrx` — Desert Tech bullpup carbine — via looks_like -> modular_ar15
+- `meat` — chunk of meat — via exact/use-all-png -> meat
+- `meat_aspic` — aspic — via exact/use-all-png -> meat_aspic
+- `meat_cooked` — cooked meat — via exact/use-all-png -> meat_cooked
+- `meat_dolmas` — dolmas — via looks_like -> homemade_burrito
+- `meat_mutant_tainted` — chunk of tainted mutant meat — via looks_like -> meat
+- `meat_mutant_tainted_cooked` — cooked tainted mutant meat — via looks_like -> meat_cooked
+- `meat_mutant_tainted_smoked` — smoked tainted mutant meat — via looks_like -> meat_cooked
+- `meat_scrap` — scrap of meat — via exact/use-all-png -> meat_scrap
+- `meat_scrap_cooked` — cooked scrap of meat — via exact/use-all-png -> meat_scrap_cooked
+- `meat_smoked` — smoked meat — via exact/use-all-png -> meat_smoked
+- `meat_tainted` — chunk of tainted meat — via exact/use-all-png -> meat_tainted
+- `meatball` — meatball — via exact/use-all-png -> meatball
+- `meatball_raw` — raw meatball — via exact/use-all-png -> meatball_raw
+- `medical_gauze` — medical gauze — via exact/use-all-png -> medical_gauze
+- `medical_sample` — medical sample — via exact/use-all-png -> medical_sample
+- `medical_tape` — medical tape — via exact/use-all-png -> medical_tape
+- `medium_propane_tank` — medium propane tank — via exact/use-all-png -> medium_propane_tank
+- `memory_card` — memory card — via looks_like -> mobile_memory_card
+- `mess_kit` — mess kit — via exact/use-all-png -> mess_kit
+- `metal_file` — metal fileset — via exact/use-all-png -> metal_file
+- `metal_smoother` — metallic smoother — via exact/use-all-png -> metal_smoother
+- `metalworking_tongs` — flatjaw tongs — via exact/use-all-png -> metalworking_tongs
+- `meth` — low-grade methamphetamine — via exact/use-all-png -> meth
+- `mgl` — Milkor MGL — via exact/use-all-png -> mgl
+- `mic_stand_tall` — microphone stand — via exact/use-all-png -> mic_stand_tall
+- `microphone_xlr_generic` — XLR microphone — via exact/use-all-png -> microphone_xlr_generic
+- `migo_skin` — second skin — via looks_like -> jumpsuit
+- `migo_skin_off` — resonating gorget — via looks_like -> silver_necklace
+- `mil_flight_suit` — military flight suit — via looks_like -> jumpsuit
+- `mil_plate` — military composite plating — via exact/use-all-png -> mil_plate
+- `military_explosive_bomb` — military explosive bomb — via looks_like -> homemade_bomb
+- `military_explosive_pipebomb` — military explosive pipebomb — via looks_like -> pipebomb
+- `military_generator` — military diesel generator — via looks_like -> f_active_backup_generator
+- `mininuke` — SADM mininuke — via exact/use-all-png -> mininuke
+- `mininuke_act` — SADM mininuke — via exact/use-all-png -> mininuke_act
+- `mirror` — hand mirror — via exact/use-all-png -> mirror
+- `misc_repairkit` — miscellaneous repair kit — via exact/use-all-png -> misc_repairkit
+- `mitten_gaunt_metal_sheets` — sheet metal gauntlets (pair) — via looks_like -> gloves_light
+- `mittens` — mittens (pair) — via looks_like -> gloves_light
+- `mixer_music` — mixer — via exact/use-all-png -> mixer_music
+- `mk47` — American AK rifle — via looks_like -> modular_ar15
+- `mocassins` — moccasins (pair) — via looks_like -> sneakers
+- `model_10_revolver` — six-shooter — via exact/use-all-png -> model_10_revolver
+- `modular_ar15` — AR-15 — via exact/use-all-png -> modular_ar15
+- `modular_ar_pistol` — AR "pistol" — via looks_like -> modular_ar15
+- `modular_deagle` — Desert Eagle pistol — via exact/use-all-png -> modular_deagle
+- `modular_m27_assault_rifle` — M27 assault rifle — via variant -> modular_m27_assault_rifle
+- `modular_m4_carbine` — M4 carbine — via variant -> modular_m4_carbine
+- `modular_papr_strap` — modular PAPR strap — via looks_like -> holster
+- `money_bundle_FMCNote` — merch currency bundle — via looks_like -> money_one
+- `money_bundle_fifty` — fifty-dollar currency bundle — via looks_like -> money_one
+- `money_bundle_five` — five-dollar currency bundle — via looks_like -> money_one
+- `money_bundle_hundred` — hundred-dollar currency bundle — via looks_like -> money_one
+- `money_bundle_one` — one-dollar currency bundle — via looks_like -> money_one
+- `money_bundle_ten` — ten-dollar currency bundle — via looks_like -> money_one
+- `money_bundle_twenty` — twenty-dollar currency bundle — via looks_like -> money_one
+- `money_bundle_two` — two-dollar currency bundle — via looks_like -> money_one
+- `money_fifty` — fifty-dollar bill — via exact/use-all-png -> money_fifty
+- `money_five` — five-dollar bill — via exact/use-all-png -> money_five
+- `money_hundred` — hundred-dollar bill — via exact/use-all-png -> money_hundred
+- `money_one` — one-dollar bill — via exact/use-all-png -> money_one
+- `money_strap_FMCNote` — merch currency strap — via looks_like -> money_one
+- `money_strap_fifty` — fifty-dollar currency strap — via looks_like -> money_one
+- `money_strap_five` — five-dollar currency strap — via looks_like -> money_one
+- `money_strap_hundred` — hundred-dollar currency strap — via looks_like -> money_one
+- `money_strap_one` — one-dollar currency strap — via looks_like -> money_one
+- `money_strap_ten` — ten-dollar currency strap — via looks_like -> money_one
+- `money_strap_twenty` — twenty-dollar currency strap — via looks_like -> money_one
+- `money_strap_two` — two-dollar currency strap — via looks_like -> money_one
+- `money_ten` — ten-dollar bill — via exact/use-all-png -> money_ten
+- `money_twenty` — twenty-dollar bill — via exact/use-all-png -> money_twenty
+- `money_two` — two-dollar bill — via exact/use-all-png -> money_two
+- `morel_cooked` — cooked morel mushroom — via looks_like -> mushroom
+- `morel_fried` — fried morel mushroom — via looks_like -> mushroom
+- `morphine` — morphine — via exact/use-all-png -> morphine
+- `mortar_adobe` — adobe mortar — via exact/use-all-png -> mortar_adobe
+- `mortar_build` — mortar — via exact/use-all-png -> mortar_build
+- `mortar_lime` — lime mortar — via exact/use-all-png -> mortar_lime
+- `mortar_pestle` — mortar and pestle — via exact/use-all-png -> mortar_pestle
+- `mosin44` — Mosin carbine — via exact/use-all-png -> mosin44
+- `mosin91_30` — Mosin battle rifle — via exact/use-all-png -> mosin91_30
+- `mossberg_500` — 6-round combat shotgun — via exact/use-all-png -> mossberg_500
+- `mossberg_500_20` — 5-round hunting shotgun, 20 gauge — via looks_like -> remington_870
+- `mossberg_500_410` — 5-round small game shotgun — via looks_like -> mossberg_500
+- `mossberg_590` — 9-round combat shotgun — via exact/use-all-png -> mossberg_590
+- `mossberg_590_shockwave` — 5-round pistol grip shotgun — via looks_like -> mossberg_500
+- `mossberg_590m` — magazine-fed pump shotgun — via looks_like -> mossberg_590
+- `mossberg_930` — 8-round auto-loading shotgun — via exact/use-all-png -> mossberg_930
+- `motor_police_boots` — motorcycle police boots (pair) — via looks_like -> boots
+- `motor_tiny` — tiny electric motor — via exact/use-all-png -> motor_tiny
+- `motorbike_armor` — motorcycle armor — via exact/use-all-png -> motorbike_armor
+- `motorbike_boots` — motorcycle boots (pair) — via looks_like -> boots
+- `motorbike_pants` — motorcycle jeans — via looks_like -> jeans
+- `mountable_heater` — vehicle heater — via exact/use-all-png -> mountable_heater
+- `mountable_heater_small` — small vehicle heater — via exact/use-all-png -> mountable_heater_small
+- `mouse_sample` — mouse sample — via exact/use-all-png -> mouse_sample
+- `mouthpiece` — protective mouthpiece — via exact/use-all-png -> mouthpiece
+- `mozzarella_cheese` — mozzarella cheese — via exact/use-all-png -> mozzarella_cheese
+- `mp_15` — sporter AR rifle — via looks_like -> modular_ar15
+- `mp_15_22` — modern varmint rifle — via looks_like -> modular_ar15
+- `mrad_smr` — Barrett precision rifle — via looks_like -> modular_ar15
+- `mre_bag` — MRE bag — via looks_like -> mre_beef_box
+- `mre_bag_dessert` — MRE dessert bag — via looks_like -> mre_beef_box
+- `mre_bag_jam` — MRE jam bag — via looks_like -> mre_beef_box
+- `mre_bag_small` — small MRE bag — via looks_like -> mre_beef_box
+- `mre_bag_spread` — MRE spread bag — via looks_like -> mre_beef_box
+- `mre_package` — MRE package — via looks_like -> mre_beef_box
+- `mulberries` — handful of mulberries — via exact/use-all-png -> mulberries
+- `multi_cooker` — multi-cooker — via exact/use-all-png -> multi_cooker
+- `multi_cooker_filled` — multi-cooker - cooking — via exact/use-all-png -> multi_cooker_filled
+- `multimeter` — multimeter — via exact/use-all-png -> multimeter
+- `multitool` — multitool — via exact/use-all-png -> multitool
+- `mummy_jumpsuit` — mummy jumpsuit — via looks_like -> jumpsuit
+- `mushroom` — mushroom — via exact/use-all-png -> mushroom
+- `mushroom_morel` — morel mushroom — via looks_like -> mushroom
+- `mutant_brain` — piece of raw mutant brain — via looks_like -> brain
+- `mutant_bug_hydrogen_sacs` — cluster of gas sacs — via exact/use-all-png -> mutant_bug_hydrogen_sacs
+- `mutant_bug_lungs` — piece of raw mutant lung — via exact/use-all-png -> mutant_bug_lungs
+- `mutant_bug_organs` — mutant organs — via exact/use-all-png -> mutant_bug_organs
+- `mutant_fat` — chunk of mutant fat — via exact/use-all-png -> mutant_fat
+- `mutant_human_cooked` — cooked cretin — via exact/use-all-png -> mutant_human_cooked
+- `mutant_human_fat` — chunk of mutant humanoid fat — via exact/use-all-png -> mutant_human_fat
+- `mutant_human_flesh` — mutant humanoid meat — via exact/use-all-png -> mutant_human_flesh
+- `mutant_human_tallow` — mutant humanoid tallow — via exact/use-all-png -> mutant_human_tallow
+- `mutant_liver_cooked` — cooked piece of mutant liver — via looks_like -> meat_cooked
+- `mutant_meat` — chunk of mutant meat — via exact/use-all-png -> mutant_meat
+- `mutant_meat_cooked` — cooked mutant meat — via exact/use-all-png -> mutant_meat_cooked
+- `mutant_meat_scrap` — scrap of mutant meat — via looks_like -> meat_scrap
+- `mutant_meat_scrap_cooked` — cooked scrap of mutant meat — via looks_like -> meat_scrap_cooked
+- `mutant_tallow` — mutant tallow — via exact/use-all-png -> mutant_tallow
+- `mycus_fruit` — Mycus fruit — via exact/use-all-png -> mycus_fruit
+- `nachos` — tortilla chips — via exact/use-all-png -> nachos
+- `nachosc` — cheese nachos — via exact/use-all-png -> nachosc
+- `nachosm` — meat nachos — via exact/use-all-png -> nachosm
+- `nachosmc` — meat nachos with cheese — via exact/use-all-png -> nachosmc
+- `nachosv` — vegetarian nachos — via exact/use-all-png -> nachosv
+- `nachosvc` — vegetarian nachos with cheese — via exact/use-all-png -> nachosvc
+- `naginata` — naginata — via exact/use-all-png -> naginata
+- `naginata_fake` — naginata — via exact/use-all-png -> naginata_fake
+- `naginata_inferior` — naginata — via exact/use-all-png -> naginata_inferior
+- `nailgun` — nail gun — via exact/use-all-png -> nailgun
+- `nanomaterial` — nanomaterial canister — via exact/use-all-png -> nanomaterial
+- `nanoskirt` — nanoskirt — via exact/use-all-png -> nanoskirt
+- `needle_steel` — needle — via exact/use-all-png -> needle_steel
+- `net` — net — via exact/use-all-png -> net
+- `nic_gum` — nicotine gum — via exact/use-all-png -> nic_gum
+- `nitrogen_tank` — nitrogen tank — via looks_like -> oxygen_tank
+- `nl_chem_thrower` — boneclad chem rifle — via looks_like -> laser_rifle
+- `nl_destruction_ray` — destruction ray — via looks_like -> glock_17
+- `nl_overgrown_halligan` — petrified prybar — via looks_like -> halligan
+- `nl_turret_chem_thrower` — chem thrower — via looks_like -> glock_17
+- `nl_turret_phase_goo_thrower` — phase alternator — via looks_like -> glock_17
+- `nomad_bodyglove_1` — nomad bodyglove — via looks_like -> jumpsuit
+- `nomad_bodyglove_2` — nomad bodymesh — via looks_like -> jumpsuit
+- `nomad_papr_blower_273diyua_off` — nomad utility belt — via looks_like -> holster
+- `nomad_papr_blower_273diyua_on` — nomad utility belt (on) — via looks_like -> holster
+- `nomad_papr_blower_273grenade_off` — nomad utility belt — via looks_like -> holster
+- `nomad_papr_blower_273grenade_on` — nomad utility belt (on) — via looks_like -> holster
+- `nomad_papr_blower_magpouch_off` — nomad utility belt — via looks_like -> holster
+- `nomad_papr_blower_magpouch_on` — nomad utility belt (on) — via looks_like -> holster
+- `nomex_gloves` — flame-resistant gloves (pair) — via looks_like -> gloves_light
+- `nomex_hood` — flame-resistant hood — via looks_like -> hat_cotton
+- `nomex_sockmitts` — Nomex sock mitts (pair) — via looks_like -> gloves_light
+- `nomex_socks` — flame-resistant socks (pair) — via looks_like -> socks
+- `nomex_suit` — flame-resistant suit — via looks_like -> jumpsuit
+- `nomex_suit_xs` — flame-resistant suit — via looks_like -> jumpsuit
+- `number4_mki` — updated Enfield rifle — via looks_like -> modular_ar15
+- `nuts_bolts` — nut and bolt — via exact/use-all-png -> nuts_bolts
+- `ny_hook` — New York hook — via looks_like -> iceaxe
+- `nylon_holster` — nylon holster — via looks_like -> scabbard
+- `nylon_quiver` — nylon quiver — via looks_like -> bscabbard
+- `nylon_scabbard` — nylon scabbard — via looks_like -> holster
+- `oatmeal_cooked` — cooked oatmeal — via exact/use-all-png -> oatmeal_cooked
+- `oatmeal_deluxe` — deluxe cooked oatmeal — via exact/use-all-png -> oatmeal_deluxe
+- `obrez` — the Obrez — via looks_like -> modular_ar15
+- `office_holepunch` — hole puncher — via exact/use-all-png -> office_holepunch
+- `officer_uniform` — dress uniform — via looks_like -> suit
+- `oil_lamp` — kerosene lamp (off) — via exact/use-all-png -> oil_lamp
+- `oil_lamp_clay` — clay oil lamp (off) — via exact/use-all-png -> oil_lamp_clay
+- `oil_lamp_clay_on` — clay oil lamp — via exact/use-all-png -> oil_lamp_clay_on
+- `oil_lamp_on` — kerosene lamp — via exact/use-all-png -> oil_lamp_on
+- `omnicamera` — security camera — via exact/use-all-png -> omnicamera
+- `omnicamera_reinforced` — reinforced security camera — via looks_like -> omnicamera
+- `onigiri` — onigiri — via exact/use-all-png -> onigiri
+- `onion` — onion — via exact/use-all-png -> onion
+- `onyx_gold_bracelet` — onyx and gold bracelet — via exact/use-all-png -> onyx_gold_bracelet
+- `onyx_gold_cufflinks` — onyx and gold cufflinks — via exact/use-all-png -> onyx_gold_cufflinks
+- `onyx_gold_earring` — onyx and gold earrings (pair) — via looks_like -> gold_ear
+- `onyx_gold_pendant_necklace` — onyx and gold pendant necklace — via looks_like -> gold_necklace
+- `onyx_gold_ring` — onyx and gold ring — via looks_like -> gold_ring
+- `onyx_gold_tiara` — onyx and gold tiara — via looks_like -> crown_golden
+- `onyx_platinum_bracelet` — onyx and platinum bracelet — via exact/use-all-png -> onyx_platinum_bracelet
+- `onyx_platinum_cufflinks` — onyx and platinum cufflinks — via exact/use-all-png -> onyx_platinum_cufflinks
+- `onyx_platinum_earring` — onyx and platinum earrings (pair) — via looks_like -> platinum_ear
+- `onyx_platinum_pendant_necklace` — onyx and platinum pendant necklace — via looks_like -> platinum_necklace
+- `onyx_platinum_ring` — onyx and platinum ring — via looks_like -> platinum_ring
+- `onyx_platinum_tiara` — onyx and platinum tiara — via looks_like -> crown_golden
+- `onyx_silver_bracelet` — onyx and silver bracelet — via exact/use-all-png -> onyx_silver_bracelet
+- `onyx_silver_cufflinks` — onyx and silver cufflinks — via exact/use-all-png -> onyx_silver_cufflinks
+- `onyx_silver_earring` — onyx and silver earrings (pair) — via looks_like -> silver_ear
+- `onyx_silver_pendant_necklace` — onyx and silver pendant necklace — via looks_like -> silver_necklace
+- `onyx_silver_ring` — onyx and silver ring — via looks_like -> silver_ring
+- `onyx_silver_tiara` — onyx and silver tiara — via looks_like -> crown_golden
+- `opal_gold_bracelet` — opal and gold bracelet — via exact/use-all-png -> opal_gold_bracelet
+- `opal_gold_cufflinks` — opal and gold cufflinks — via exact/use-all-png -> opal_gold_cufflinks
+- `opal_gold_earring` — opal and gold earrings (pair) — via exact/use-all-png -> opal_gold_earring
+- `opal_gold_pendant_necklace` — opal and gold pendant necklace — via exact/use-all-png -> opal_gold_pendant_necklace
+- `opal_gold_ring` — opal and gold ring — via exact/use-all-png -> opal_gold_ring
+- `opal_gold_tiara` — opal and gold tiara — via looks_like -> crown_golden
+- `opal_platinum_bracelet` — opal and platinum bracelet — via exact/use-all-png -> opal_platinum_bracelet
+- `opal_platinum_cufflinks` — opal and platinum cufflinks — via exact/use-all-png -> opal_platinum_cufflinks
+- `opal_platinum_earring` — opal and platinum earrings (pair) — via exact/use-all-png -> opal_platinum_earring
+- `opal_platinum_pendant_necklace` — opal and platinum pendant necklace — via exact/use-all-png -> opal_platinum_pendant_necklace
+- `opal_platinum_ring` — opal and platinum ring — via exact/use-all-png -> opal_platinum_ring
+- `opal_platinum_tiara` — opal and platinum tiara — via looks_like -> crown_golden
+- `opal_silver_bracelet` — opal and silver bracelet — via exact/use-all-png -> opal_silver_bracelet
+- `opal_silver_cufflinks` — opal and silver cufflinks — via exact/use-all-png -> opal_silver_cufflinks
+- `opal_silver_earring` — opal and silver earrings (pair) — via exact/use-all-png -> opal_silver_earring
+- `opal_silver_pendant_necklace` — opal and silver pendant necklace — via exact/use-all-png -> opal_silver_pendant_necklace
+- `opal_silver_ring` — opal and silver ring — via exact/use-all-png -> opal_silver_ring
+- `opal_silver_tiara` — opal and silver tiara — via looks_like -> crown_golden
+- `orange` — orange — via exact/use-all-png -> orange
+- `oxy_torch` — acetylene torch — via exact/use-all-png -> oxy_torch
+- `oxygen_concentrator` — oxygen concentrator — via exact/use-all-png -> oxygen_concentrator
+- `oxygen_cylinder` — oxygen tank — via exact/use-all-png -> oxygen_cylinder
+- `oxygen_tank` — oxygen delivery kit — via exact/use-all-png -> oxygen_tank
+- `oxylamp` — acetylene lamp (off) — via exact/use-all-png -> oxylamp
+- `oxylamp_on` — acetylene lamp (on) — via exact/use-all-png -> oxylamp_on
+- `p08` — Luger P08 pistol — via exact/use-all-png -> p08
+- `p220_10` — SIG pistol — via exact/use-all-png -> p220_10
+- `p226_357sig` — SIG P226 — via exact/use-all-png -> p226_357sig
+- `p226_9mm` — SIG P226 MK25 pistol — via exact/use-all-png -> p226_9mm
+- `p320_357sig` — SIG P320 Compact — via exact/use-all-png -> p320_357sig
+- `p365` — P365 handgun — via looks_like -> glock_17
+- `p_carpet` — purple carpet — via exact/use-all-png -> p_carpet
+- `paint_brush` — paint brush — via exact/use-all-png -> paint_brush
+- `paintball` — paintball — via exact/use-all-png -> paintball
+- `pallet` — wooden pallet — via exact/use-all-png -> pallet
+- `pamd68` — Exodii battle rifle — via exact/use-all-png -> pamd68
+- `pamd68mountable` — mountable Exodii battle rifle — via looks_like -> modular_ar15
+- `pamd68rubik` — Rubik's Exodii battle rifle — via looks_like -> modular_ar15
+- `pamd71z` — Exodii zombie hunting rifle — via exact/use-all-png -> pamd71z
+- `pan` — cast-iron frying pan — via exact/use-all-png -> pan
+- `pan_roasted_corn` — pan roasted corn — via exact/use-all-png -> pan_roasted_corn
+- `pancakes` — pancake — via exact/use-all-png -> pancakes
+- `panties` — panties — via exact/use-all-png -> panties
+- `pants` — pants — via exact/use-all-png -> pants
+- `pants_army` — army pants — via looks_like -> pants_cargo
+- `pants_cargo` — cargo pants — via exact/use-all-png -> pants_cargo
+- `pants_checkered` — checkered pants — via looks_like -> pants
+- `pants_faux_fur` — faux fur pants — via looks_like -> pants
+- `pants_fur` — fur pants — via looks_like -> pants
+- `pants_hiking` — hiking pants — via looks_like -> pants
+- `pants_leather` — leather pants — via looks_like -> pants
+- `pants_ski` — ski pants — via looks_like -> pants
+- `pants_tactical` — tactical pants — via variant -> pants_tactical
+- `paper` — paper — via exact/use-all-png -> paper
+- `parachute_mil` — military parachute — via looks_like -> ragpouch
+- `peach` — peach — via exact/use-all-png -> peach
+- `peacoat` — peacoat — via looks_like -> coat_rain
+- `pear` — pear — via exact/use-all-png -> pear
+- `pearl` — pearl — via exact/use-all-png -> pearl
+- `pearl_collar` — pearl collar — via exact/use-all-png -> pearl_collar
+- `pearl_gold_bracelet` — pearl and gold bracelet — via exact/use-all-png -> pearl_gold_bracelet
+- `pearl_gold_cufflinks` — pearl and gold cufflinks — via exact/use-all-png -> pearl_gold_cufflinks
+- `pearl_gold_earring` — pearl and gold earrings (pair) — via exact/use-all-png -> pearl_gold_earring
+- `pearl_gold_pendant_necklace` — pearl and gold pendant necklace — via exact/use-all-png -> pearl_gold_pendant_necklace
+- `pearl_gold_ring` — pearl and gold ring — via exact/use-all-png -> pearl_gold_ring
+- `pearl_gold_tiara` — pearl and gold tiara — via looks_like -> crown_golden
+- `pearl_platinum_bracelet` — pearl and platinum bracelet — via exact/use-all-png -> pearl_platinum_bracelet
+- `pearl_platinum_cufflinks` — pearl and platinum cufflinks — via exact/use-all-png -> pearl_platinum_cufflinks
+- `pearl_platinum_earring` — pearl and platinum earrings (pair) — via exact/use-all-png -> pearl_platinum_earring
+- `pearl_platinum_pendant_necklace` — pearl and platinum pendant necklace — via exact/use-all-png -> pearl_platinum_pendant_necklace
+- `pearl_platinum_ring` — pearl and platinum ring — via exact/use-all-png -> pearl_platinum_ring
+- `pearl_platinum_tiara` — pearl and platinum tiara — via looks_like -> crown_golden
+- `pearl_silver_bracelet` — pearl and silver bracelet — via exact/use-all-png -> pearl_silver_bracelet
+- `pearl_silver_cufflinks` — pearl and silver cufflinks — via exact/use-all-png -> pearl_silver_cufflinks
+- `pearl_silver_earring` — pearl and silver earrings (pair) — via exact/use-all-png -> pearl_silver_earring
+- `pearl_silver_pendant_necklace` — pearl and silver pendant necklace — via exact/use-all-png -> pearl_silver_pendant_necklace
+- `pearl_silver_ring` — pearl and silver ring — via exact/use-all-png -> pearl_silver_ring
+- `pearl_silver_tiara` — pearl and silver tiara — via looks_like -> crown_golden
+- `pebble` — pebble — via exact/use-all-png -> pebble
+- `pebble_clay` — clay pellet — via exact/use-all-png -> pebble_clay
+- `pecan` — pecans — via exact/use-all-png -> pecan
+- `pecan_roasted` — Handful of roasted pecans — via exact/use-all-png -> pecan_roasted
+- `pecan_shelled` — Handful of shelled pecans — via exact/use-all-png -> pecan_shelled
+- `peephole` — peephole — via exact/use-all-png -> peephole
+- `pen` — pen — via exact/use-all-png -> pen
+- `pencil` — pencil — via exact/use-all-png -> pencil
+- `pencil_case` — pencil case — via exact/use-all-png -> pencil_case
+- `pepper` — black pepper — via exact/use-all-png -> pepper
+- `peridot_dental_grill` — peridot dental grill — via looks_like -> gold_dental_grill
+- `peridot_gold_bracelet` — peridot and gold bracelet — via exact/use-all-png -> peridot_gold_bracelet
+- `peridot_gold_cufflinks` — peridot and gold cufflinks — via exact/use-all-png -> peridot_gold_cufflinks
+- `peridot_gold_earring` — peridot and gold earrings (pair) — via exact/use-all-png -> peridot_gold_earring
+- `peridot_gold_pendant_necklace` — peridot and gold pendant necklace — via exact/use-all-png -> peridot_gold_pendant_necklace
+- `peridot_gold_ring` — peridot and gold ring — via exact/use-all-png -> peridot_gold_ring
+- `peridot_gold_tiara` — peridot and gold tiara — via looks_like -> crown_golden
+- `peridot_platinum_bracelet` — peridot and platinum bracelet — via exact/use-all-png -> peridot_platinum_bracelet
+- `peridot_platinum_cufflinks` — peridot and platinum cufflinks — via exact/use-all-png -> peridot_platinum_cufflinks
+- `peridot_platinum_earring` — peridot and platinum earrings (pair) — via exact/use-all-png -> peridot_platinum_earring
+- `peridot_platinum_pendant_necklace` — peridot and platinum pendant necklace — via exact/use-all-png -> peridot_platinum_pendant_necklace
+- `peridot_platinum_ring` — peridot and platinum ring — via exact/use-all-png -> peridot_platinum_ring
+- `peridot_platinum_tiara` — peridot and platinum tiara — via looks_like -> crown_golden
+- `peridot_silver_bracelet` — peridot and silver bracelet — via exact/use-all-png -> peridot_silver_bracelet
+- `peridot_silver_cufflinks` — peridot and silver cufflinks — via exact/use-all-png -> peridot_silver_cufflinks
+- `peridot_silver_earring` — peridot and silver earrings (pair) — via exact/use-all-png -> peridot_silver_earring
+- `peridot_silver_pendant_necklace` — peridot and silver pendant necklace — via exact/use-all-png -> peridot_silver_pendant_necklace
+- `peridot_silver_ring` — peridot and silver ring — via exact/use-all-png -> peridot_silver_ring
+- `peridot_silver_tiara` — peridot and silver tiara — via looks_like -> crown_golden
+- `pet_carrier` — pet carrier — via exact/use-all-png -> pet_carrier
+- `pet_carrier_wooden` — wooden pet carrier — via looks_like -> pet_carrier
+- `petri_dish` — Petri dish — via exact/use-all-png -> petri_dish
+- `petrified_eye` — petrified eye — via exact/use-all-png -> petrified_eye
+- `ph_meter` — pH meter — via exact/use-all-png -> ph_meter
+- `phase_immersion_suit` — phase immersion suit — via looks_like -> rm13_armor
+- `phase_immersion_suit_on` — phase immersion suit (on) — via looks_like -> rm13_armor
+- `pickelhaube` — pickelhaube — via looks_like -> helmet_barbute
+- `picklocks` — locksmith kit — via exact/use-all-png -> picklocks
+- `pike` — medium steel pike — via exact/use-all-png -> pike
+- `pike_bronze` — bronze pike — via looks_like -> pike_copper
+- `pike_copper` — copper pike — via exact/use-all-png -> pike_copper
+- `pike_fake` — pike — via exact/use-all-png -> pike_fake
+- `pike_inferior` — pike — via exact/use-all-png -> pike_inferior
+- `pike_wood` — wooden pike — via exact/use-all-png -> pike_wood
+- `pine_nuts` — Handful of pine nuts — via exact/use-all-png -> pine_nuts
+- `pine_resin` — pine resin — via exact/use-all-png -> pine_resin
+- `pipe_cleaner` — pipe cleaner — via exact/use-all-png -> pipe_cleaner
+- `pipe_double_shotgun` — double-barrel pipe shotgun — via exact/use-all-png -> pipe_double_shotgun
+- `pipe_fittings` — set of pipe fittings — via exact/use-all-png -> pipe_fittings
+- `pipe_glass` — glass pipe — via exact/use-all-png -> pipe_glass
+- `pipe_quiver` — pipe quiver — via looks_like -> bscabbard
+- `pipe_quiver_large` — large pipe quiver — via looks_like -> bscabbard
+- `pipe_shotgun` — pipe shotgun — via exact/use-all-png -> pipe_shotgun
+- `pipe_tobacco` — tobacco pipe — via exact/use-all-png -> pipe_tobacco
+- `pipebomb` — pipebomb — via exact/use-all-png -> pipebomb
+- `pistachio` — pistachios — via exact/use-all-png -> pistachio
+- `pistachio_roasted` — Handful of roasted pistachios — via exact/use-all-png -> pistachio_roasted
+- `pistachio_shelled` — Handful of shelled pistachios — via exact/use-all-png -> pistachio_shelled
+- `pistol_flintlock` — flintlock pistol — via exact/use-all-png -> pistol_flintlock
+- `pizza_supreme` — slice of supreme pizza — via exact/use-all-png -> pizza_supreme
+- `plant_sac` — fungal fluid sac — via exact/use-all-png -> plant_sac
+- `plant_sample` — plant sample — via exact/use-all-png -> plant_sample
+- `plasma_gun` — PPA-5 — via exact/use-all-png -> plasma_gun
+- `plasma_rifle` — Boeing XM-P plasma rifle — via exact/use-all-png -> plasma_rifle
+- `plastic_bowl_kids` — kiddie bowl — via exact/use-all-png -> plastic_bowl_kids
+- `plastic_bucket` — plastic tub — via exact/use-all-png -> plastic_bucket
+- `plastic_jack_o_lantern` — plastic jack o'lantern — via looks_like -> pumpkin
+- `plastic_jack_o_lantern_lit` — spooky plastic jack o'lantern — via looks_like -> pumpkin
+- `plastic_pot_flower` — plastic flower pot — via exact/use-all-png -> plastic_pot_flower
+- `plastic_straw` — plastic straw — via exact/use-all-png -> plastic_straw
+- `plastichoboreel` — plastic hand fishing reel — via looks_like -> baton
+- `platinum_bracelet` — platinum bracelet — via exact/use-all-png -> platinum_bracelet
+- `platinum_ear` — platinum earrings (pair) — via exact/use-all-png -> platinum_ear
+- `platinum_locket` — platinum locket — via exact/use-all-png -> platinum_locket
+- `platinum_necklace` — platinum necklace — via exact/use-all-png -> platinum_necklace
+- `platinum_ring` — platinum ring — via exact/use-all-png -> platinum_ring
+- `platinum_small` — platinum — via exact/use-all-png -> platinum_small
+- `platinum_watch` — platinum watch — via exact/use-all-png -> platinum_watch
+- `pliers` — pliers — via exact/use-all-png -> pliers
+- `pliers_locking` — locking pliers — via looks_like -> pliers
+- `plums` — plum — via exact/use-all-png -> plums
+- `plut_cell` — plutonium fuel cell — via exact/use-all-png -> plut_cell
+- `pockknife` — pocket knife — via exact/use-all-png -> pockknife
+- `poleaxe` — poleaxe — via exact/use-all-png -> poleaxe
+- `police_belt` — police duty belt — via looks_like -> holster
+- `police_breeches` — police breeches — via looks_like -> pants
+- `polisher` — electric polisher — via exact/use-all-png -> polisher
+- `polo_shirt` — polo shirt — via exact/use-all-png -> polo_shirt
+- `polycarbonate_sheet` — polycarbonate sheet — via exact/use-all-png -> polycarbonate_sheet
+- `pool_cue` — pool cue — via exact/use-all-png -> pool_cue
+- `popcan_stove` — soda can stove kit — via exact/use-all-png -> popcan_stove
+- `popcorn` — popcorn — via exact/use-all-png -> popcorn
+- `popcorn2` — salted popcorn — via exact/use-all-png -> popcorn2
+- `poppy_bud` — poppy bud — via exact/use-all-png -> poppy_bud
+- `porkpie` — porkpie hat — via looks_like -> hat_cotton
+- `portable_game` — handheld game system — via exact/use-all-png -> portable_game
+- `portable_generator` — portable gasoline generator — via looks_like -> f_active_backup_generator
+- `postcard` — postcard — via looks_like -> paper
+- `postman_hat` — mail carrier hat — via looks_like -> hat_ball
+- `postman_shirt` — mail carrier shirt — via looks_like -> polo_shirt
+- `postman_shorts` — mail carrier shorts — via looks_like -> boxer_shorts
+- `pot` — pot — via exact/use-all-png -> pot
+- `pot_canning` — canning pot — via exact/use-all-png -> pot_canning
+- `pot_canning_clay` — clay canning pot — via looks_like -> pot_canning
+- `pot_copper` — copper pot — via exact/use-all-png -> pot_copper
+- `pot_helmet` — pot helmet — via exact/use-all-png -> pot_helmet
+- `pot_helmet_xs` — pot helmet — via looks_like -> helmet_barbute
+- `pot_makeshift` — makeshift pot — via exact/use-all-png -> pot_makeshift
+- `pot_makeshift_copper` — makeshift copper pot — via exact/use-all-png -> pot_makeshift_copper
+- `pot_xlhelmet` — pot helmet — via looks_like -> pot_helmet
+- `potato` — raw potato — via exact/use-all-png -> potato
+- `potato_baked` — baked potato — via looks_like -> potato
+- `potato_boiled` — boiled potato — via looks_like -> potato
+- `pouch_autoclave` — autoclave pouch — via exact/use-all-png -> pouch_autoclave
+- `poultry` — chunk of poultry meat — via exact/use-all-png -> poultry
+- `press` — hand press — via exact/use-all-png -> press
+- `pressin` — the Pressin — via looks_like -> glock_17
+- `pressure_cooker` — pressure cooker — via looks_like -> pot_canning
+- `pressure_tank` — pressurized tank — via looks_like -> oxygen_tank
+- `primitive_adze` — stone adze — via exact/use-all-png -> primitive_adze
+- `primitive_axe` — stone axe — via exact/use-all-png -> primitive_axe
+- `primitive_knife` — stone knife — via exact/use-all-png -> primitive_knife
+- `primitive_shovel` — wooden shovel — via exact/use-all-png -> primitive_shovel
+- `propane_cooker` — propane cooker — via exact/use-all-png -> propane_cooker
+- `propane_lantern` — propane lantern (off) — via exact/use-all-png -> propane_lantern
+- `propane_lantern_on` — propane lantern (on) — via exact/use-all-png -> propane_lantern_on
+- `protein_bar_evac` — protein ration — via exact/use-all-png -> protein_bar_evac
+- `protein_bar_zero` — protein bar — via exact/use-all-png -> protein_bar_zero
+- `psl` — PSL rifle — via looks_like -> modular_ar15
+- `puck` — hockey puck — via exact/use-all-png -> puck
+- `puller` — kinetic bullet puller — via exact/use-all-png -> puller
+- `pumpkin` — pumpkin — via exact/use-all-png -> pumpkin
+- `punch_nail` — nail punch — via exact/use-all-png -> punch_nail
+- `pur_tablets` — water purification tablet — via exact/use-all-png -> pur_tablets
+- `pure_meth` — high-grade methamphetamine — via looks_like -> meth
+- `purse` — purse — via exact/use-all-png -> purse
+- `px4` — Beretta Px4 Storm pistol — via exact/use-all-png -> px4
+- `px4_40` — Beretta Px4 Storm .40 S&W pistol — via exact/use-all-png -> px4_40
+- `qt_cavalry_sabre` — tempered steel cavalry saber — via looks_like -> cavalry_sabre
+- `qt_chainmail_arms` — tempered steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `qt_chainmail_half_legs` — tempered steel chainmail half-leggings — via looks_like -> leg_warmers
+- `qt_chainmail_jumpsuit` — tempered steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `qt_chainmail_jumpsuit_xs` — tempered steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `qt_chainmail_sjumpsuit` — tempered steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `qt_chainmail_sjumpsuit_xs` — tempered steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `qt_chainmail_suit` — tempered steel chainmail armor — via looks_like -> jumpsuit
+- `qt_chainmail_suit_xs` — tempered steel chainmail armor — via looks_like -> jumpsuit
+- `qt_cutlass` — tempered steel cutlass — via looks_like -> cutlass
+- `qt_demi_gaunt` — tempered steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `qt_elbow_guards` — tempered elbow guards (pair) — via looks_like -> arm_warmers
+- `qt_elbow_guards_xs` — tempered elbow guards (pair) — via looks_like -> arm_warmers
+- `qt_greaves_brigandine` — tempered splint greaves (pair) — via looks_like -> leg_warmers
+- `qt_heavyhelm_close` — tempered steel heavy close helm — via looks_like -> helmet_barbute
+- `qt_heavyhelm_close_raised` — tempered steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `qt_helm_close` — tempered steel close helm — via looks_like -> helmet_barbute
+- `qt_helm_close_raised` — tempered steel close helm (raised) — via looks_like -> helmet_barbute
+- `qt_helmet_nasal` — tempered steel nasal helm — via looks_like -> helmet_barbute
+- `qt_helmet_turban` — tempered steel turban helmet — via looks_like -> helmet_barbute
+- `qt_knee_guards` — tempered knee guards (pair) — via looks_like -> leg_warmers
+- `qt_knee_guards_xs` — tempered knee guards (pair) — via looks_like -> leg_warmers
+- `qt_knife_rambo` — tempered steel survival knife — via looks_like -> knife_rambo
+- `qt_knife_trench` — tempered steel trench knife — via looks_like -> knife_trench
+- `qt_lighthelm_close` — tempered steel light close helm — via looks_like -> helmet_barbute
+- `qt_lighthelm_close_raised` — tempered steel light close helm (raised) — via looks_like -> helmet_barbute
+- `qt_mirror_armor` — tempered steel mirror armor — via looks_like -> chestguard_hard
+- `qt_mitten_gaunt` — tempered steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `qt_pike` — tempered steel pike — via looks_like -> pike
+- `qt_rapier` — tempered steel rapier — via looks_like -> rapier
+- `qt_sabaton` — tempered steel sabaton — via looks_like -> boots
+- `qt_vambrace_brigandine` — tempered splint vambraces (pair) — via looks_like -> arm_warmers
+- `quesadilla_cheese` — quesadilla — via exact/use-all-png -> quesadilla_cheese
+- `quiver` — quiver — via looks_like -> bscabbard
+- `quiver_birchbark` — birchbark quiver — via looks_like -> bscabbard
+- `quiver_large` — large quiver — via looks_like -> bscabbard
+- `quiver_large_birchbark` — large birchbark quiver — via looks_like -> bscabbard
+- `quiver_simple_cloth` — simple cloth quiver — via looks_like -> bscabbard
+- `quiver_takedown_bow` — multi-function quiver — via looks_like -> bscabbard
+- `r_carpet` — red carpet — via exact/use-all-png -> r_carpet
+- `rabbit_sample` — rabbit sample — via exact/use-all-png -> rabbit_sample
+- `rad_badge` — radiation badge — via exact/use-all-png -> rad_badge
+- `radio_car` — RC car — via exact/use-all-png -> radio_car
+- `radio_car_on` — RC car (on) — via exact/use-all-png -> radio_car_on
+- `radio_car_wheel` — RC car wheel set — via exact/use-all-png -> radio_car_wheel
+- `radio_pouch` — tactical radio pouch — via looks_like -> holster
+- `radiocontrol` — RC control — via exact/use-all-png -> radiocontrol
+- `raging_bull` — Taurus Raging Bull — via exact/use-all-png -> raging_bull
+- `raging_judge` — Taurus Raging Judge Magnum — via exact/use-all-png -> raging_judge
+- `ragpouch` — pouch — via exact/use-all-png -> ragpouch
+- `rake` — metal rake — via exact/use-all-png -> rake
+- `rake_plastic` — plastic rake — via exact/use-all-png -> rake_plastic
+- `rapier` — medium steel rapier — via exact/use-all-png -> rapier
+- `rapier_fake` — rapier — via exact/use-all-png -> rapier_fake
+- `raptor_sample` — raptor sample — via exact/use-all-png -> raptor_sample
+- `rashguard` — rashguard shirt — via looks_like -> longshirt
+- `rat_sample` — rat sample — via exact/use-all-png -> rat_sample
+- `raw_bamboo` — handful of bamboo shoots — via exact/use-all-png -> raw_bamboo
+- `raw_bottle_gourd` — raw bottle gourd — via looks_like -> pumpkin
+- `raw_burdock` — burdock — via exact/use-all-png -> raw_burdock
+- `raw_dandelion` — dandelion — via exact/use-all-png -> raw_dandelion
+- `raw_fur` — raw pelt — via exact/use-all-png -> raw_fur
+- `raw_leather` — raw hide — via exact/use-all-png -> raw_leather
+- `razor_blade` — razor blade — via exact/use-all-png -> razor_blade
+- `razor_blade_taped` — taped razorblade — via looks_like -> razor_blade
+- `razor_shaving` — shaving razor — via exact/use-all-png -> razor_shaving
+- `razorclaw_roe` — razorclaw roe — via exact/use-all-png -> razorclaw_roe
+- `rc_car_box` — radio car box — via exact/use-all-png -> rc_car_box
+- `rdb_223` — 5.56x45mm bullpup rifle — via looks_like -> modular_ar15
+- `reading_light` — reading light (off) — via exact/use-all-png -> reading_light
+- `reading_light_on` — reading light (on) — via exact/use-all-png -> reading_light_on
+- `rebreather_cartridge_regen` — rebreather oxygen regenerator cartridge — via exact/use-all-png -> rebreather_cartridge_regen
+- `receiver` — signal receiver — via exact/use-all-png -> receiver
+- `recharge_station` — recharging station — via exact/use-all-png -> recharge_station
+- `reciprocating_saw` — reciprocating saw — via exact/use-all-png -> reciprocating_saw
+- `recon_mech_laser_single` — salvaged RMES marksman laser — via looks_like -> m107a1
+- `recurbow` — modern recurve bow — via exact/use-all-png -> recurbow
+- `red_dot_sight` — red dot sight — via exact/use-all-png -> red_dot_sight
+- `red_pen` — red pen — via exact/use-all-png -> red_pen
+- `red_phosphorous` — red phosphorous powder — via exact/use-all-png -> red_phosphorous
+- `ree_33` — exodii naval rifle — via looks_like -> m2browning
+- `ref_matches` — matchbox — via looks_like -> matches
+- `reflexbow` — composite bow (light) — via exact/use-all-png -> reflexbow
+- `reflexrecurvebow` — Olympic style target bow — via exact/use-all-png -> reflexrecurvebow
+- `reinforced_glass_pane` — pane of reinforced glass — via exact/use-all-png -> reinforced_glass_pane
+- `reinforced_glass_sheet` — sheet of reinforced glass — via exact/use-all-png -> reinforced_glass_sheet
+- `remington700_270` — bolt-action hunting rifle — via exact/use-all-png -> remington700_270
+- `remington_700` — Remington 700 .30-06 rifle — via exact/use-all-png -> remington_700
+- `remington_700_308` — hunting rifle — via looks_like -> modular_ar15
+- `remington_870` — 5-round hunting shotgun — via exact/use-all-png -> remington_870
+- `remington_870_express` — 7-round riot shotgun — via exact/use-all-png -> remington_870_express
+- `rep_crossbow` — repeating crossbow — via exact/use-all-png -> rep_crossbow
+- `revolver_shotgun` — revolving shotgun — via exact/use-all-png -> revolver_shotgun
+- `rfb_308` — 7.62x51mm bullpup rifle — via looks_like -> modular_ar15
+- `rice_cooked` — cooked rice — via exact/use-all-png -> rice_cooked
+- `rifle_45_410` — .45 Colt/410 pipe rifle — via looks_like -> modular_ar15
+- `rifle_case_soft` — rifle case — via exact/use-all-png -> rifle_case_soft
+- `rifle_case_soft_2` — double rifle case — via exact/use-all-png -> rifle_case_soft_2
+- `rifle_case_soft_leather_2` — leather double rifle case — via exact/use-all-png -> rifle_case_soft_leather_2
+- `rifle_flintlock` — flintlock musket — via exact/use-all-png -> rifle_flintlock
+- `ring_engagement` — engagement ring — via exact/use-all-png -> ring_engagement
+- `rio_bravo` — small game lever-action rifle — via looks_like -> marlin_9a
+- `rm103a_pistol` — caseless automagnum — via exact/use-all-png -> rm103a_pistol
+- `rm11b_sniper_rifle` — caseless scout rifle — via looks_like -> modular_ar15
+- `rm120c` — caseless hunting shotgun — via exact/use-all-png -> rm120c
+- `rm13_armor` — RM13 combat armor — via exact/use-all-png -> rm13_armor
+- `rm13_battery` — RM13 battery pack — via looks_like -> battery
+- `rm20` — RM20 caseless autoshotgun — via exact/use-all-png -> rm20
+- `rm228` — compact caseless shotgun — via exact/use-all-png -> rm228
+- `rm451_flamethrower` — DARPA flamethrower — via exact/use-all-png -> rm451_flamethrower
+- `rm51_assault_rifle` — caseless assault rifle — via exact/use-all-png -> rm51_assault_rifle
+- `rm614_lmg` — caseless LMG — via exact/use-all-png -> rm614_lmg
+- `rm88_battle_rifle` — caseless battle rifle — via exact/use-all-png -> rm88_battle_rifle
+- `robofac_basic_greaves` — Hub 01 prototype greaves (pair) — via looks_like -> leg_warmers
+- `robofac_basic_vambraces` — Hub 01 prototype vambraces (pair) — via looks_like -> arm_warmers
+- `robofac_enviro_suit` — Hub 01 environmental suit — via looks_like -> hazmat_suit
+- `robofac_enviro_suit_casual` — Hub 01 environmental suit (casual) — via looks_like -> hazmat_suit
+- `robofac_gun_40mm` — Hub 01 FSP — via looks_like -> mark19
+- `robofac_kevlar_greaves` — Hub 01 ballistic greaves (pair) — via looks_like -> leg_warmers
+- `robofac_kevlar_vambraces` — Hub 01 ballistic vambraces (pair) — via looks_like -> arm_warmers
+- `robofac_military_greaves` — Hub 01 soldier greaves (pair) — via looks_like -> leg_warmers
+- `robofac_military_vambraces` — Hub 01 soldier vambraces (pair) — via looks_like -> arm_warmers
+- `robofac_nomex_greaves` — Hub 01 turnout greaves (pair) — via looks_like -> leg_warmers
+- `robofac_nomex_vambraces` — Hub 01 turnout vambraces (pair) — via looks_like -> arm_warmers
+- `robofac_resonance_suit` — Hub 01 hazardous materials suit — via looks_like -> hazmat_suit
+- `robofac_resonance_suit_on` — Hub 01 hazardous materials suit (on) — via looks_like -> hazmat_suit
+- `robofac_robotrig` — drone-tech harness — via looks_like -> tool_belt
+- `robofac_rubber_greaves` — Hub 01 kinetic greaves (pair) — via looks_like -> leg_warmers
+- `robofac_rubber_vambraces` — Hub 01 kinetic vambraces (pair) — via looks_like -> arm_warmers
+- `robot_kit_box` — robot kit box — via exact/use-all-png -> robot_kit_box
+- `rock` — rock — via exact/use-all-png -> rock
+- `rock_flaking` — flaking rock — via exact/use-all-png -> rock_flaking
+- `rock_large` — large rock — via exact/use-all-png -> rock_large
+- `rock_quern` — stone quern — via exact/use-all-png -> rock_quern
+- `rock_sock` — rock in a sock — via exact/use-all-png -> rock_sock
+- `roller_blades` — rollerblades (pair) — via looks_like -> rollerskates
+- `roller_shoes_off` — heelys (off) (pair) — via looks_like -> sneakers
+- `roller_shoes_on` — heelys (on) (pair) — via looks_like -> sneakers
+- `rollerskates` — rollerskates (pair) — via exact/use-all-png -> rollerskates
+- `rolling_paper` — rolling paper — via exact/use-all-png -> rolling_paper
+- `rolling_pin` — rolling pin — via exact/use-all-png -> rolling_pin
+- `rossi_gallery` — pump action varmint rifle — via looks_like -> modular_ar15
+- `rossi_r92_357_16` — .357 lever-action rifle — via looks_like -> modular_ar15
+- `rossi_r92_357_20` — long-barreled .357 lever-action rifle — via looks_like -> modular_ar15
+- `rossi_r92_44_16` — .44 lever-action rifle — via looks_like -> modular_ar15
+- `rossi_r92_44_20` — long-barreled .44 lever-action rifle — via looks_like -> modular_ar15
+- `rp63` — .357 snub-nosed revolver — via looks_like -> sw_619
+- `rubber_harness_dog` — rubber dog rainsuit — via looks_like -> tank_top
+- `ruby_dental_grill` — ruby dental grill — via looks_like -> gold_dental_grill
+- `ruby_gold_bracelet` — ruby and gold bracelet — via exact/use-all-png -> ruby_gold_bracelet
+- `ruby_gold_cufflinks` — ruby and gold cufflinks — via exact/use-all-png -> ruby_gold_cufflinks
+- `ruby_gold_earring` — ruby and gold earrings (pair) — via exact/use-all-png -> ruby_gold_earring
+- `ruby_gold_pendant_necklace` — ruby and gold pendant necklace — via exact/use-all-png -> ruby_gold_pendant_necklace
+- `ruby_gold_ring` — ruby and gold ring — via exact/use-all-png -> ruby_gold_ring
+- `ruby_gold_tiara` — ruby and gold tiara — via looks_like -> crown_golden
+- `ruby_platinum_bracelet` — ruby and platinum bracelet — via exact/use-all-png -> ruby_platinum_bracelet
+- `ruby_platinum_cufflinks` — ruby and platinum cufflinks — via exact/use-all-png -> ruby_platinum_cufflinks
+- `ruby_platinum_earring` — ruby and platinum earrings (pair) — via exact/use-all-png -> ruby_platinum_earring
+- `ruby_platinum_pendant_necklace` — ruby and platinum pendant necklace — via exact/use-all-png -> ruby_platinum_pendant_necklace
+- `ruby_platinum_ring` — ruby and platinum ring — via exact/use-all-png -> ruby_platinum_ring
+- `ruby_platinum_tiara` — ruby and platinum tiara — via looks_like -> crown_golden
+- `ruby_silver_bracelet` — ruby and silver bracelet — via exact/use-all-png -> ruby_silver_bracelet
+- `ruby_silver_cufflinks` — ruby and silver cufflinks — via exact/use-all-png -> ruby_silver_cufflinks
+- `ruby_silver_earring` — ruby and silver earrings (pair) — via exact/use-all-png -> ruby_silver_earring
+- `ruby_silver_pendant_necklace` — ruby and silver pendant necklace — via exact/use-all-png -> ruby_silver_pendant_necklace
+- `ruby_silver_ring` — ruby and silver ring — via exact/use-all-png -> ruby_silver_ring
+- `ruby_silver_tiara` — ruby and silver tiara — via looks_like -> crown_golden
+- `ruger_1022` — varmint rifle — via exact/use-all-png -> ruger_1022
+- `ruger_1022_auto` — full-auto varmint rifle — via looks_like -> modular_ar15
+- `ruger_57` — Ruger-57 handgun — via looks_like -> glock_17
+- `ruger_arr` — Ruger American Ranch Rifle — via looks_like -> modular_ar15
+- `ruger_lcr_22` — .22 caliber revolver — via exact/use-all-png -> ruger_lcr_22
+- `ruger_lcr_38` — conceal-carry five-shooter — via exact/use-all-png -> ruger_lcr_38
+- `ruger_m77` — Ruger Guide rifle — via looks_like -> modular_ar15
+- `ruger_mini` — Ruger Mini-14 carbine — via exact/use-all-png -> ruger_mini
+- `ruger_mk4` — Ruger target pistol — via looks_like -> glock_17
+- `ruger_pr` — Ruger Precision Rifle — via looks_like -> modular_ar15
+- `rugerlcp` — Ruger LCP pistol — via exact/use-all-png -> rugerlcp
+- `rugerpcc` — Glock carbine — via looks_like -> modular_ar15
+- `rx12_injector` — RX12 jet injector — via exact/use-all-png -> rx12_injector
+- `sabaton_metal_sheets` — sheet metal sabatons (pair) — via looks_like -> boots
+- `saddle` — saddle — via exact/use-all-png -> saddle
+- `saddlebag` — saddle bags (pair) — via looks_like -> holster
+- `saiga_12` — assault shotgun — via exact/use-all-png -> saiga_12
+- `saiga_410` — Saiga-410 — via exact/use-all-png -> saiga_410
+- `sake_koji_rice` — koji rice — via looks_like -> rice_cooked
+- `salt` — salt — via exact/use-all-png -> salt
+- `salt_lick` — salt lick — via looks_like -> adobe_brick
+- `sandbox_kit` — sandbox kit — via exact/use-all-png -> sandbox_kit
+- `sandpaper` — sandpaper — via exact/use-all-png -> sandpaper
+- `sandwich_cheese` — cheese sandwich — via exact/use-all-png -> sandwich_cheese
+- `sandwich_cheese_grilled` — grilled cheese sandwich — via exact/use-all-png -> sandwich_cheese_grilled
+- `sandwich_deluxe` — deluxe sandwich — via exact/use-all-png -> sandwich_deluxe
+- `sandwich_fairy` — fairy bread — via exact/use-all-png -> sandwich_fairy
+- `sandwich_pbj` — PB&J sandwich — via exact/use-all-png -> sandwich_pbj
+- `sandwich_sauce` — plain sandwich — via exact/use-all-png -> sandwich_sauce
+- `sandwich_t` — meat sandwich — via exact/use-all-png -> sandwich_t
+- `sandwich_veggy` — vegetable sandwich — via exact/use-all-png -> sandwich_veggy
+- `santa_belt` — broad belt — via looks_like -> leather_belt
+- `santa_gloves` — Santa gloves (pair) — via looks_like -> gloves_light
+- `santa_hat` — Santa hat — via looks_like -> hat_knit
+- `santa_jacket` — Santa jacket — via looks_like -> coat_rain
+- `santa_jacket_short` — short Santa jacket — via looks_like -> jacket_light
+- `santa_pants` — Santa pants — via looks_like -> pants
+- `santa_shorts` — Santa shorts — via looks_like -> boxer_shorts
+- `sapphire_dental_grill` — sapphire dental grill — via looks_like -> gold_dental_grill
+- `sapphire_gold_bracelet` — sapphire and gold bracelet — via exact/use-all-png -> sapphire_gold_bracelet
+- `sapphire_gold_cufflinks` — sapphire and gold cufflinks — via exact/use-all-png -> sapphire_gold_cufflinks
+- `sapphire_gold_earring` — sapphire and gold earrings (pair) — via exact/use-all-png -> sapphire_gold_earring
+- `sapphire_gold_pendant_necklace` — sapphire and gold pendant necklace — via exact/use-all-png -> sapphire_gold_pendant_necklace
+- `sapphire_gold_ring` — sapphire and gold ring — via exact/use-all-png -> sapphire_gold_ring
+- `sapphire_gold_tiara` — sapphire and gold tiara — via looks_like -> crown_golden
+- `sapphire_platinum_bracelet` — sapphire and platinum bracelet — via exact/use-all-png -> sapphire_platinum_bracelet
+- `sapphire_platinum_cufflinks` — sapphire and platinum cufflinks — via exact/use-all-png -> sapphire_platinum_cufflinks
+- `sapphire_platinum_earring` — sapphire and platinum earrings (pair) — via exact/use-all-png -> sapphire_platinum_earring
+- `sapphire_platinum_pendant_necklace` — sapphire and platinum pendant necklace — via exact/use-all-png -> sapphire_platinum_pendant_necklace
+- `sapphire_platinum_ring` — sapphire and platinum ring — via exact/use-all-png -> sapphire_platinum_ring
+- `sapphire_platinum_tiara` — sapphire and platinum tiara — via looks_like -> crown_golden
+- `sapphire_silver_bracelet` — sapphire and silver bracelet — via exact/use-all-png -> sapphire_silver_bracelet
+- `sapphire_silver_cufflinks` — sapphire and silver cufflinks — via exact/use-all-png -> sapphire_silver_cufflinks
+- `sapphire_silver_earring` — sapphire and silver earrings (pair) — via exact/use-all-png -> sapphire_silver_earring
+- `sapphire_silver_pendant_necklace` — sapphire and silver pendant necklace — via exact/use-all-png -> sapphire_silver_pendant_necklace
+- `sapphire_silver_ring` — sapphire and silver ring — via exact/use-all-png -> sapphire_silver_ring
+- `sapphire_silver_tiara` — sapphire and silver tiara — via looks_like -> crown_golden
+- `sapra` — Exodii Sapra grenade launcher — via looks_like -> modular_ar15
+- `sausage` — smoked sausage — via exact/use-all-png -> sausage
+- `sausage_cooked` — cooked sausage — via exact/use-all-png -> sausage_cooked
+- `savage112` — single-shot target rifle — via looks_like -> modular_ar15
+- `savage_rascal` — small game single shot rifle — via looks_like -> marlin_9a
+- `saw_bronze` — bronze wood saw — via exact/use-all-png -> saw_bronze
+- `saxophone` — saxophone — via exact/use-all-png -> saxophone
+- `scabbard` — scabbard — via exact/use-all-png -> scabbard
+- `scalpel` — scalpel — via exact/use-all-png -> scalpel
+- `scar_17s` — civilian FN SCAR-H rifle — via looks_like -> modular_ar15
+- `scar_h` — FN SCAR-H rifle — via exact/use-all-png -> scar_h
+- `scar_h_mk20` — FN SCAR-H sniper rifle — via looks_like -> modular_ar15
+- `scar_l` — FN SCAR-L — via exact/use-all-png -> scar_l
+- `scissors_child` — kiddie scissors — via exact/use-all-png -> scissors_child
+- `scissors_medical` — medical scissors — via exact/use-all-png -> scissors_medical
+- `scissors_wavy` — wavy scissors — via exact/use-all-png -> scissors_wavy
+- `scorecard` — score card — via exact/use-all-png -> scorecard
+- `scrambler` — scrambler grenade — via exact/use-all-png -> scrambler
+- `scrap` — scrap metal — via exact/use-all-png -> scrap
+- `scrap_aluminum` — scrap aluminum — via exact/use-all-png -> scrap_aluminum
+- `scrap_bronze` — chunk of bronze — via exact/use-all-png -> scrap_bronze
+- `scrap_cotton` — cotton scraps — via exact/use-all-png -> scrap_cotton
+- `scrap_felt` — felt scraps — via exact/use-all-png -> scrap_felt
+- `screen_mesh` — mesh screen — via exact/use-all-png -> screen_mesh
+- `scuba_tank` — diving cylinder — via looks_like -> oxygen_tank
+- `scuba_tank_on` — diving cylinder (open) — via looks_like -> oxygen_tank
+- `scythe` — scythe — via exact/use-all-png -> scythe
+- `scythe_war` — war scythe — via exact/use-all-png -> scythe_war
+- `seasoning_italian` — Italian seasoning — via exact/use-all-png -> seasoning_italian
+- `seat` — bucket seat — via exact/use-all-png -> seat
+- `seat_leather` — leather bucket seat — via exact/use-all-png -> seat_leather
+- `selfbow` — survival bow — via exact/use-all-png -> selfbow
+- `sf_watch` — fancy watch — via exact/use-all-png -> sf_watch
+- `shark_plushie` — shark plushie — via exact/use-all-png -> shark_plushie
+- `sharps` — breech-loading reproduction rifle — via exact/use-all-png -> sharps
+- `shears` — shears — via exact/use-all-png -> shears
+- `sheath` — sheath — via looks_like -> scabbard
+- `sheath_birchbark` — birchbark sheath — via looks_like -> scabbard
+- `sheet_cotton` — cotton sheet — via exact/use-all-png -> sheet_cotton
+- `sheet_felt` — felt sheet — via exact/use-all-png -> sheet_felt
+- `sheet_felt_patchwork` — patchwork felt sheet — via exact/use-all-png -> sheet_felt_patchwork
+- `shillelagh` — shillelagh — via exact/use-all-png -> shillelagh
+- `shillelagh_fake` — shillelagh — via looks_like -> shillelagh
+- `shillelagh_weighted` — loaded stick — via exact/use-all-png -> shillelagh_weighted
+- `shirt_straw` — grass shirt — via exact/use-all-png -> shirt_straw
+- `shock_epee` — electrified épée — via exact/use-all-png -> shock_epee
+- `shock_foil` — electrified foil — via exact/use-all-png -> shock_foil
+- `shock_sabre` — electrified saber — via exact/use-all-png -> shock_sabre
+- `shocktonfa_off` — tactical tonfa (off) — via exact/use-all-png -> shocktonfa_off
+- `shocktonfa_on` — tactical tonfa (on) — via exact/use-all-png -> shocktonfa_on
+- `shoes_birchbark` — birchbark shoes (pair) — via looks_like -> sneakers
+- `shoes_bowling` — bowling shoes (pair) — via looks_like -> dress_shoes
+- `shoes_denim` — denim sneakers (pair) — via looks_like -> sneakers
+- `shortbow` — short bow — via exact/use-all-png -> shortbow
+- `shorts` — shorts — via looks_like -> boxer_shorts
+- `shorts_cargo` — cargo shorts — via looks_like -> boxer_shorts
+- `shorts_denim` — jorts — via looks_like -> boxer_shorts
+- `shot_glass` — shot glass — via exact/use-all-png -> shot_glass
+- `shotgun_d` — double-barreled shotgun — via exact/use-all-png -> shotgun_d
+- `shotgun_s` — single barrel shotgun — via exact/use-all-png -> shotgun_s
+- `shotgun_trap` — shotgun trap — via exact/use-all-png -> shotgun_trap
+- `shotgun_triple` — triple-barreled shotgun — via looks_like -> remington_870
+- `shoulder_strap` — adjustable sling — via exact/use-all-png -> shoulder_strap
+- `shredded_rubber` — shredded rubber — via exact/use-all-png -> shredded_rubber
+- `shuttlecock` — badminton shuttlecock — via exact/use-all-png -> shuttlecock
+- `sickle` — sickle — via exact/use-all-png -> sickle
+- `sickle_stone` — stone sickle — via exact/use-all-png -> sickle_stone
+- `side_double_holster` — side-by-side double holster — via looks_like -> scabbard
+- `side_nylon_double_holster` — nylon side-by-side double holster — via looks_like -> scabbard
+- `sig_40` — SIG Pro .40 — via exact/use-all-png -> sig_40
+- `sig_assault_rifle` — SIG civilian rifle — via looks_like -> modular_ar15
+- `sig_mcx_rattler_sbr` — SIG MCX Rattler SBR — via exact/use-all-png -> sig_mcx_rattler_sbr
+- `sig_mosquito` — Firefly training pistol — via exact/use-all-png -> sig_mosquito
+- `signal_flare` — signal flare — via exact/use-all-png -> signal_flare
+- `silver_bracelet` — silver bracelet — via exact/use-all-png -> silver_bracelet
+- `silver_ear` — silver earrings (pair) — via exact/use-all-png -> silver_ear
+- `silver_hair_beads` — silver hair beads — via looks_like -> crown_golden
+- `silver_locket` — silver locket — via exact/use-all-png -> silver_locket
+- `silver_necklace` — silver necklace — via exact/use-all-png -> silver_necklace
+- `silver_ring` — silver ring — via exact/use-all-png -> silver_ring
+- `silver_small` — silver — via exact/use-all-png -> silver_small
+- `silver_watch` — silver watch — via exact/use-all-png -> silver_watch
+- `simple_ordnance_cartridge_necklace` — ordnance-cartridge necklace — via looks_like -> gold_necklace
+- `simple_pistol_cartridge_necklace` — handgun-cartridge necklace — via looks_like -> gold_necklace
+- `simple_rifle_cartridge_necklace` — rifle-cartridge necklace — via looks_like -> gold_necklace
+- `single_sling` — single point sling — via looks_like -> slingpack
+- `ski_jacket` — ski jacket — via looks_like -> coat_rain
+- `skirt` — skirt — via exact/use-all-png -> skirt
+- `skirt_bostonchan` — Boston-Chan skirt — via looks_like -> skirt
+- `skirt_denim` — jean skirt — via looks_like -> skirt
+- `skirt_grass` — grass skirt — via exact/use-all-png -> skirt_grass
+- `skirt_leather` — leather skirt — via exact/use-all-png -> skirt_leather
+- `skirt_long` — long skirt — via looks_like -> skirt
+- `sks` — SKS rifle — via exact/use-all-png -> sks
+- `skull_bear` — bear skull — via exact/use-all-png -> skull_bear
+- `skull_beaver` — beaver skull — via exact/use-all-png -> skull_beaver
+- `skull_bovine` — cow skull — via exact/use-all-png -> skull_bovine
+- `skull_canis` — large canine skull — via exact/use-all-png -> skull_canis
+- `skull_canis_medium` — small canine skull — via exact/use-all-png -> skull_canis_medium
+- `skull_canis_small` — tiny canine skull — via exact/use-all-png -> skull_canis_small
+- `skull_canis_triclopean` — triclopean canine skull — via exact/use-all-png -> skull_canis_triclopean
+- `skull_cervine` — deer skull — via exact/use-all-png -> skull_cervine
+- `skull_cervine_spideer` — spideer skull — via exact/use-all-png -> skull_cervine_spideer
+- `skull_cougar` — cougar skull — via exact/use-all-png -> skull_cougar
+- `skull_equine` — horse skull — via exact/use-all-png -> skull_equine
+- `skull_feline_medium` — medium feline skull — via exact/use-all-png -> skull_feline_medium
+- `skull_feline_small` — small feline skull — via exact/use-all-png -> skull_feline_small
+- `skull_goat` — goat skull — via exact/use-all-png -> skull_goat
+- `skull_human` — human skull — via exact/use-all-png -> skull_human
+- `skull_llama` — llama skull — via exact/use-all-png -> skull_llama
+- `skull_moose` — moose skull — via exact/use-all-png -> skull_moose
+- `skull_moose_tusked` — tusked moose skull — via exact/use-all-png -> skull_moose_tusked
+- `skull_opossum` — opossum skull — via exact/use-all-png -> skull_opossum
+- `skull_pig` — pig skull — via exact/use-all-png -> skull_pig
+- `skull_raccoon` — raccoon skull — via exact/use-all-png -> skull_raccoon
+- `skull_rodent` — rodent skull — via exact/use-all-png -> skull_rodent
+- `skull_sheep` — sheep skull — via exact/use-all-png -> skull_sheep
+- `sl8` — SL8 civilian rifle — via looks_like -> modular_ar15
+- `sleeveless_duster` — sleeveless duster — via looks_like -> coat_rain
+- `sleeveless_duster_faux_fur` — sleeveless faux fur duster — via looks_like -> coat_rain
+- `sleeveless_duster_fur` — sleeveless fur duster — via looks_like -> coat_rain
+- `sleeveless_duster_leather` — sleeveless leather duster — via looks_like -> coat_rain
+- `sleeveless_trenchcoat` — sleeveless trenchcoat — via looks_like -> coat_rain
+- `sleeveless_trenchcoat_faux_fur` — sleeveless faux fur trenchcoat — via looks_like -> coat_rain
+- `sleeveless_trenchcoat_fur` — sleeveless fur trenchcoat — via looks_like -> coat_rain
+- `sleeveless_trenchcoat_leather` — sleeveless leather trenchcoat — via looks_like -> coat_rain
+- `sleeveless_tunic` — sleeveless tunic — via looks_like -> tank_top
+- `slime_sample` — slime sample — via exact/use-all-png -> slime_sample
+- `slime_scrap` — slime glob — via exact/use-all-png -> slime_scrap
+- `slingpack` — sling pack — via exact/use-all-png -> slingpack
+- `slippers` — slippers (pair) — via looks_like -> socks
+- `sloppyjoe` — sloppy joe — via exact/use-all-png -> sloppyjoe
+- `slow_cooker` — slow cooker — via looks_like -> multi_cooker
+- `small_helicopter_rotor` — small civilian helicopter rotors — via looks_like -> wind_turbine
+- `small_propane_tank` — small propane tank — via exact/use-all-png -> small_propane_tank
+- `small_relic` — small relic — via exact/use-all-png -> small_relic
+- `small_repairkit` — firearm repair kit — via exact/use-all-png -> small_repairkit
+- `small_space_heater` — small space heater — via exact/use-all-png -> small_space_heater
+- `small_space_heater_on` — small space heater (on) — via exact/use-all-png -> small_space_heater_on
+- `smallweldtank` — small welding tank — via exact/use-all-png -> smallweldtank
+- `smart_lamp` — smart lamp (off) — via exact/use-all-png -> smart_lamp
+- `smart_lamp_on` — smart lamp (on) — via exact/use-all-png -> smart_lamp_on
+- `smart_phone` — smartphone — via exact/use-all-png -> smart_phone
+- `smart_phone_flashlight` — smartphone - Flashlight — via looks_like -> cell_phone
+- `smart_phone_locked` — smartphone (locked) — via looks_like -> cell_phone
+- `smart_phone_locked_flashlight` — smartphone (locked) - Flashlight — via looks_like -> cell_phone
+- `smartphone_music` — smartphone - music — via looks_like -> cell_phone
+- `smle_mk3` — Enfield battle rifle — via looks_like -> modular_ar15
+- `smokebomb` — smoke grenade — via exact/use-all-png -> smokebomb
+- `snail_garden` — snail — via exact/use-all-png -> snail_garden
+- `sneakers` — sneakers (pair) — via exact/use-all-png -> sneakers
+- `sneakers_steel` — steeltoed sneakers (pair) — via looks_like -> sneakers
+- `soap` — soap bar — via exact/use-all-png -> soap
+- `sockmitts` — sock mitts (pair) — via looks_like -> gloves_light
+- `socks` — socks (pair) — via exact/use-all-png -> socks
+- `socks_ankle` — ankle socks (pair) — via looks_like -> socks
+- `socks_bag` — bag socks (pair) — via looks_like -> socks
+- `socks_bowling` — disposable bowling socks (pair) — via looks_like -> socks
+- `socks_wool` — wool socks (pair) — via looks_like -> socks
+- `soft_3a_vest` — soft armor vest — via looks_like -> tank_top
+- `soft_adobe_brick` — soft adobe brick (obsolete) — via exact/use-all-png -> soft_adobe_brick
+- `solder_wire` — solder — via exact/use-all-png -> solder_wire
+- `soldering_iron` — soldering iron — via exact/use-all-png -> soldering_iron
+- `sourdough_bread` — sourdough bread — via exact/use-all-png -> sourdough_bread
+- `sp2022` — SIG Pro SP2022 9mm pistol — via exact/use-all-png -> sp2022
+- `spaghetti_bolognese` — spaghetti bolognese — via exact/use-all-png -> spaghetti_bolognese
+- `spaghetti_cooked` — boiled noodles — via exact/use-all-png -> spaghetti_cooked
+- `spaghetti_pesto` — spaghetti al pesto — via exact/use-all-png -> spaghetti_pesto
+- `spaghetti_raw` — raw spaghetti pasta — via exact/use-all-png -> spaghetti_raw
+- `spear_bronze` — bronze spear — via looks_like -> spear_dory
+- `spear_dory` — dory — via exact/use-all-png -> spear_dory
+- `spear_stone` — stone spear — via exact/use-all-png -> spear_stone
+- `spear_stone_simple` — simple stone spear — via looks_like -> spear_stone
+- `speargun` — speargun — via exact/use-all-png -> speargun
+- `spearsling` — spear strap — via exact/use-all-png -> spearsling
+- `spearsling_canvas` — canvas spear strap — via looks_like -> bscabbard
+- `spectrophotometer` — spectrophotometer — via exact/use-all-png -> spectrophotometer
+- `speedo` — speedo — via looks_like -> briefs
+- `spicebush_berries` — spicebush berries — via exact/use-all-png -> spicebush_berries
+- `spider_sample` — spider sample — via exact/use-all-png -> spider_sample
+- `spike` — spike — via exact/use-all-png -> spike
+- `spinach` — handful of spinach — via exact/use-all-png -> spinach
+- `spiral_stone` — spiral stone — via exact/use-all-png -> spiral_stone
+- `splatter_guard` — splatter guard — via exact/use-all-png -> splatter_guard
+- `sponge_cake` — slice of sponge cake — via exact/use-all-png -> sponge_cake
+- `sports_bra` — sports bra — via exact/use-all-png -> sports_bra
+- `spurge` — spurge flowers — via exact/use-all-png -> spurge
+- `squeeze_tube` — 10.1 ounce squeeze tube — via exact/use-all-png -> squeeze_tube
+- `squeeze_tube_small` — 2.8 ounce squeeze tube — via exact/use-all-png -> squeeze_tube_small
+- `srm_1216` — rotary-magazine shotgun — via looks_like -> remington_870
+- `stab_vest` — stab vest — via looks_like -> tank_top
+- `stand_ring_clamps` — set of ring stand clamps — via looks_like -> scrap
+- `stapler` — stapler — via exact/use-all-png -> stapler
+- `steel_armor` — steel plate — via exact/use-all-png -> steel_armor
+- `steel_chunk` — chunk of steel — via exact/use-all-png -> steel_chunk
+- `steel_lump` — lump of steel — via exact/use-all-png -> steel_lump
+- `steel_pan` — steel frying pan — via exact/use-all-png -> steel_pan
+- `steel_plate` — steel plating — via exact/use-all-png -> steel_plate
+- `stethoscope` — stethoscope — via exact/use-all-png -> stethoscope
+- `stewed_tripe` — stewed tripe — via exact/use-all-png -> stewed_tripe
+- `steyr_aug` — AUG assault rifle — via exact/use-all-png -> steyr_aug
+- `steyr_scout` — scout rifle — via looks_like -> modular_ar15
+- `stirling_kit_box` — STEM kit box — via exact/use-all-png -> stirling_kit_box
+- `stock_pot` — stock pot — via exact/use-all-png -> stock_pot
+- `stockings` — stockings (pair) — via exact/use-all-png -> stockings
+- `stockings_tent_arms` — tentacle sleeves (pair) — via looks_like -> arm_warmers
+- `stockings_tent_legs` — tentacle stockings (pair) — via looks_like -> leg_warmers
+- `stockpot_helmet` — pot great helm — via looks_like -> helmet_barbute
+- `stomach` — stomach — via exact/use-all-png -> stomach
+- `stomach_boiled` — large boiled stomach — via exact/use-all-png -> stomach_boiled
+- `stomach_large` — large stomach — via exact/use-all-png -> stomach_large
+- `stone_chisel` — stone chisel — via exact/use-all-png -> stone_chisel
+- `stone_chopper` — stone chopper — via exact/use-all-png -> stone_chopper
+- `stone_pouch` — stone pouch — via looks_like -> ragpouch
+- `straw_doll` — straw doll — via exact/use-all-png -> straw_doll
+- `straw_fedora` — straw fedora — via exact/use-all-png -> straw_fedora
+- `straw_hat` — straw hat — via looks_like -> cowboy_hat
+- `straw_pile` — pile of straw — via exact/use-all-png -> straw_pile
+- `straw_sandals` — straw sandals (pair) — via looks_like -> sneakers
+- `string_dimension_chainmail_suit` — zarad chainmail suit — via looks_like -> jumpsuit
+- `string_dimension_helmet_conical` — lamba khud helm — via looks_like -> helmet_barbute
+- `string_dimension_mirror_cuirass` — do-āyneh cuirass — via looks_like -> chestguard_hard
+- `string_floss` — dental floss — via exact/use-all-png -> string_floss
+- `striped_pants` — striped pants — via exact/use-all-png -> striped_pants
+- `stuffed_clams` — stuffed clams — via exact/use-all-png -> stuffed_clams
+- `suit` — suit — via exact/use-all-png -> suit
+- `sunflower` — sunflower — via exact/use-all-png -> sunflower
+- `suppressor` — suppressor — via exact/use-all-png -> suppressor
+- `surv_rocket_launcher` — crude rocket launcher — via exact/use-all-png -> surv_rocket_launcher
+- `survival_marker` — survival marker — via exact/use-all-png -> survival_marker
+- `survival_match` — survival match — via looks_like -> matches
+- `survivor_adhoc_leather_pants` — leather-padded pants — via looks_like -> pants
+- `survivor_adhoc_leather_shirt` — leather-padded shirt — via looks_like -> sweatshirt
+- `survivor_adhoc_leather_sleeves` — leather-padded sleeves — via looks_like -> armguard_soft
+- `survivor_adhoc_leather_torso` — leather-padded sleeveless shirt — via looks_like -> tank_top
+- `survivor_belt_notools` — handmade utility belt — via looks_like -> holster
+- `survivor_jumpsuit` — handmade combat suit — via looks_like -> jumpsuit
+- `survivor_machete_qt` — tempered steel combat machete — via looks_like -> machete
+- `survivor_scope` — retractable telescope — via exact/use-all-png -> survivor_scope
+- `survivor_suit` — survivor suit — via looks_like -> jumpsuit
+- `survivor_vest` — handmade harness — via looks_like -> tank_top
+- `suspenders_cloth` — suspenders — via looks_like -> leather_belt
+- `suspenders_holster` — holster suspenders — via looks_like -> leather_belt
+- `suspenders_leather` — leather suspenders — via looks_like -> leather_belt
+- `sustainment_pouch` — sustainment pouch — via looks_like -> holster
+- `sw629` — .44 revolver — via exact/use-all-png -> sw629
+- `sw642` — .38 conceal carry revolver — via looks_like -> sw_619
+- `sw_500` — .500 Magnum revolver — via exact/use-all-png -> sw_500
+- `sw_610` — 10mm/.40 revolver — via exact/use-all-png -> sw_610
+- `sw_619` — 7-shot .357 revolver — via exact/use-all-png -> sw_619
+- `swage` — swage and die set — via exact/use-all-png -> swage
+- `swbodyguard` — .380 conceal carry handgun — via looks_like -> glock_17
+- `sweater` — sweater — via exact/use-all-png -> sweater
+- `sweatshirt` — sweatshirt — via exact/use-all-png -> sweatshirt
+- `sweetbread` — piece of raw sweetbread — via exact/use-all-png -> sweetbread
+- `sweetbread_cooked` — cooked piece of sweetbread — via exact/use-all-png -> sweetbread_cooked
+- `swim_briefs` — swim briefs — via looks_like -> briefs
+- `swim_cap` — swim cap — via looks_like -> hat_cotton
+- `swim_fins` — swim fins (pair) — via looks_like -> sneakers
+- `sword_crude_large` — scrap greatsword — via exact/use-all-png -> sword_crude_large
+- `sword_metal_fencing` — metal fencing sword — via looks_like -> rapier
+- `sword_nail` — nord — via exact/use-all-png -> sword_nail
+- `sword_sheets_welded` — welded sword — via looks_like -> machete
+- `sword_wood_large` — zweitimber — via exact/use-all-png -> sword_wood_large
+- `tabi_dress` — tabi (pair) — via looks_like -> socks
+- `tabi_gi` — gi tabi (pair) — via looks_like -> socks
+- `tac338` — AI bolt-action sniper rifle — via looks_like -> modular_ar15
+- `tac50` — bolt-action anti-materiel rifle — via exact/use-all-png -> tac50
+- `tacjacket` — tactical jacket — via variant -> tacjacket
+- `taco` — taco — via exact/use-all-png -> taco
+- `tactical_grenade_pouch` — tactical grenade pouch — via looks_like -> holster
+- `tactical_holster` — tactical holster — via looks_like -> scabbard
+- `tactical_shotshell_pouch` — tactical shotshell pouch — via looks_like -> holster
+- `tacvest` — tac vest — via looks_like -> tank_top
+- `tainted_marrow` — portion of tainted bone marrow — via exact/use-all-png -> tainted_marrow
+- `takedown_recurbow` — takedown recurve bow — via looks_like -> longbow
+- `takedown_recurbow_folded` — takedown recurve bow (folded) — via looks_like -> longbow
+- `tallit_katan` — tallit katan — via looks_like -> tshirt
+- `tallow` — tallow — via exact/use-all-png -> tallow
+- `tampon` — tampon — via looks_like -> cotton_ball
+- `tanbark` — piece of tanbark — via exact/use-all-png -> tanbark
+- `tank_top` — tank top — via exact/use-all-png -> tank_top
+- `tanned_hide` — tanned hide — via exact/use-all-png -> tanned_hide
+- `tanned_pelt` — tanned pelt — via exact/use-all-png -> tanned_pelt
+- `tanning_hide` — tanning leather hide (obsolete) — via exact/use-all-png -> tanning_hide
+- `tanning_pelt` — tanning fur pelt (obsolete) — via exact/use-all-png -> tanning_pelt
+- `tattered_garment` — tattered garments — via looks_like -> cotton_patchwork
+- `taurus_judge` — .45/.410 shotshell revolver — via looks_like -> sw_619
+- `tavor_12` — auto-loading bullpup shotgun — via exact/use-all-png -> tavor_12
+- `tazer` — stun gun — via exact/use-all-png -> tazer
+- `tea_green_raw` — green tea leaves — via exact/use-all-png -> tea_green_raw
+- `tea_raw` — black tea leaves — via exact/use-all-png -> tea_raw
+- `technician_coveralls` — work coveralls — via exact/use-all-png -> technician_coveralls
+- `technician_coveralls_h` — heavy work coveralls — via looks_like -> technician_coveralls
+- `technician_pants_gray` — work pants — via looks_like -> pants
+- `technician_shirt_gray` — work t-shirt — via looks_like -> polo_shirt
+- `telepad` — teleport pad — via exact/use-all-png -> telepad
+- `teleumbrella` — telescoping umbrella (collapsed) — via exact/use-all-png -> teleumbrella
+- `teleumbrella-extended` — telescoping umbrella (extended) — via looks_like -> umbrella
+- `tent_kit` — tent — via exact/use-all-png -> tent_kit
+- `terrarium` — glass terrarium — via looks_like -> pet_carrier
+- `thermal_mask` — thermal electric balaclava — via exact/use-all-png -> thermal_mask
+- `thermal_socks` — thermal electric socks (pair) — via exact/use-all-png -> thermal_socks
+- `thermal_suit` — thermal electric suit — via exact/use-all-png -> thermal_suit
+- `thigh_high_boots` — thigh-high boots (pair) — via looks_like -> boots
+- `throwing_axe` — throwing axe — via exact/use-all-png -> throwing_axe
+- `throwing_knife` — throwing knife — via exact/use-all-png -> throwing_knife
+- `throwing_stick` — throwing stick — via exact/use-all-png -> throwing_stick
+- `tie_bow` — bow tie — via exact/use-all-png -> tie_bow
+- `tie_clipon` — clip-on tie — via exact/use-all-png -> tie_clipon
+- `tights` — tights — via exact/use-all-png -> tights
+- `tin_snips` — tin snips — via exact/use-all-png -> tin_snips
+- `tinder` — tinder — via exact/use-all-png -> tinder
+- `tinderbox` — ember carrier — via exact/use-all-png -> tinderbox
+- `tinfoil_hat` — tinfoil hat — via exact/use-all-png -> tinfoil_hat
+- `tinyweldtank` — tiny welding tank — via exact/use-all-png -> tinyweldtank
+- `tire_bicycle` — 27" bicycle tire — via looks_like -> wheel_bicycle
+- `tire_bicycle_or` — 27" off-road bicycle tire — via looks_like -> wheel_bicycle
+- `tire_medium` — 17" car tire — via looks_like -> wheel
+- `tire_medium_slick` — 16" racing tire — via looks_like -> wheel_slick
+- `tire_motorbike` — 16" motorbike tire — via looks_like -> wheel_motorbike
+- `tire_motorbike_or` — 20" off-road motorbike tire — via looks_like -> wheel_motorbike
+- `tire_wide` — 24" wide tire — via looks_like -> wheel_wide
+- `tire_wide_or` — 24" off-road wide tire — via looks_like -> wheel_wide
+- `toaster` — toaster — via exact/use-all-png -> toaster
+- `toasterpastry` — toasted pastry — via exact/use-all-png -> toasterpastry
+- `toilet_paper` — toilet paper — via exact/use-all-png -> toilet_paper
+- `tokarev` — Tokarev handgun — via exact/use-all-png -> tokarev
+- `tomato` — tomato — via exact/use-all-png -> tomato
+- `tonfa` — tonfa — via exact/use-all-png -> tonfa
+- `tonfa_wood` — wooden tonfa — via exact/use-all-png -> tonfa_wood
+- `tongs` — kitchen tongs — via exact/use-all-png -> tongs
+- `tool_belt` — tool belt — via exact/use-all-png -> tool_belt
+- `tool_pouch` — tactical tool pouch — via looks_like -> holster
+- `toothbrush_electric` — electric toothbrush — via exact/use-all-png -> toothbrush_electric
+- `tophat` — top hat — via looks_like -> hat_cotton
+- `torch` — torch — via exact/use-all-png -> torch
+- `torch_done` — burnt out torch — via exact/use-all-png -> torch_done
+- `torch_lit` — torch — via exact/use-all-png -> torch_lit
+- `torso_bandolier_grenade` — torso grenade bandolier — via looks_like -> leather_belt
+- `torso_bandolier_shotgun` — torso shotgun bandolier — via looks_like -> leather_belt
+- `tortilla_corn` — corn tortilla — via exact/use-all-png -> tortilla_corn
+- `tortilla_flour` — flour tortilla — via exact/use-all-png -> tortilla_flour
+- `touring_suit` — track touring suit — via looks_like -> jumpsuit
+- `tourist_table` — folding table — via exact/use-all-png -> tourist_table
+- `tourmaline_dental_grill` — tourmaline dental grill — via looks_like -> gold_dental_grill
+- `tourmaline_gold_bracelet` — tourmaline and gold bracelet — via exact/use-all-png -> tourmaline_gold_bracelet
+- `tourmaline_gold_cufflinks` — tourmaline and gold cufflinks — via exact/use-all-png -> tourmaline_gold_cufflinks
+- `tourmaline_gold_earring` — tourmaline and gold earrings (pair) — via exact/use-all-png -> tourmaline_gold_earring
+- `tourmaline_gold_pendant_necklace` — tourmaline and gold pendant necklace — via exact/use-all-png -> tourmaline_gold_pendant_necklace
+- `tourmaline_gold_ring` — tourmaline and gold ring — via exact/use-all-png -> tourmaline_gold_ring
+- `tourmaline_gold_tiara` — tourmaline and gold tiara — via looks_like -> crown_golden
+- `tourmaline_platinum_bracelet` — tourmaline and platinum bracelet — via exact/use-all-png -> tourmaline_platinum_bracelet
+- `tourmaline_platinum_cufflinks` — tourmaline and platinum cufflinks — via exact/use-all-png -> tourmaline_platinum_cufflinks
+- `tourmaline_platinum_earring` — tourmaline and platinum earrings (pair) — via exact/use-all-png -> tourmaline_platinum_earring
+- `tourmaline_platinum_pendant_necklace` — tourmaline and platinum pendant necklace — via exact/use-all-png -> tourmaline_platinum_pendant_necklace
+- `tourmaline_platinum_ring` — tourmaline and platinum ring — via exact/use-all-png -> tourmaline_platinum_ring
+- `tourmaline_platinum_tiara` — tourmaline and platinum tiara — via looks_like -> crown_golden
+- `tourmaline_silver_bracelet` — tourmaline and silver bracelet — via exact/use-all-png -> tourmaline_silver_bracelet
+- `tourmaline_silver_cufflinks` — tourmaline and silver cufflinks — via exact/use-all-png -> tourmaline_silver_cufflinks
+- `tourmaline_silver_earring` — tourmaline and silver earrings (pair) — via exact/use-all-png -> tourmaline_silver_earring
+- `tourmaline_silver_pendant_necklace` — tourmaline and silver pendant necklace — via exact/use-all-png -> tourmaline_silver_pendant_necklace
+- `tourmaline_silver_ring` — tourmaline and silver ring — via exact/use-all-png -> tourmaline_silver_ring
+- `tourmaline_silver_tiara` — tourmaline and silver tiara — via looks_like -> crown_golden
+- `tourniquet_lower` — tourniquet (leg) — via looks_like -> tourniquet_upper
+- `tourniquet_lower_XL` — tourniquet (leg) — via looks_like -> tourniquet_upper
+- `tourniquet_lower_XS` — tourniquet (leg) — via looks_like -> tourniquet_upper
+- `tourniquet_upper` — tourniquet (arm) — via exact/use-all-png -> tourniquet_upper
+- `tourniquet_upper_XL` — tourniquet (arm) — via looks_like -> tourniquet_upper
+- `tourniquet_upper_XS` — tourniquet (arm) — via looks_like -> tourniquet_upper
+- `towel` — towel — via exact/use-all-png -> towel
+- `towel_wet` — towel — via exact/use-all-png -> towel_wet
+- `toy_figurine` — figurine — via variant -> toy_figurine
+- `training_dummy_heavy` — armored training dummy — via exact/use-all-png -> training_dummy_heavy
+- `training_dummy_light` — training dummy — via exact/use-all-png -> training_dummy_light
+- `transponder` — transponder circuit — via exact/use-all-png -> transponder
+- `tree_spile` — tree spile — via exact/use-all-png -> tree_spile
+- `trenchcoat` — trenchcoat — via looks_like -> coat_rain
+- `trenchcoat_faux_fur` — faux fur trenchcoat — via looks_like -> trenchcoat_leather
+- `trenchcoat_fur` — fur trenchcoat — via looks_like -> trenchcoat_leather
+- `trenchcoat_leather` — leather trenchcoat — via exact/use-all-png -> trenchcoat_leather
+- `trenchcoat_steampunk` — steampunk trenchcoat — via looks_like -> coat_rain
+- `tricorne` — tricorne — via looks_like -> hat_cotton
+- `triffid_fungicide` — sac of triffid fungicide — via looks_like -> mutant_bug_hydrogen_sacs
+- `trimmer_off` — hedge trimmer (off) — via exact/use-all-png -> trimmer_off
+- `trimmer_on` — hedge trimmer (on) — via exact/use-all-png -> trimmer_on
+- `triple_stacker_pouch` — triple stacker ammo pouch — via looks_like -> holster
+- `tripwire` — tripwire trap — via exact/use-all-png -> tripwire
+- `troglobite_sample` — troglobite sample — via exact/use-all-png -> troglobite_sample
+- `trousers_ninja` — ninja trousers — via looks_like -> pants
+- `trumpet` — trumpet — via exact/use-all-png -> trumpet
+- `trunks` — swimming trunks — via looks_like -> boxer_shorts
+- `tshirt` — t-shirt — via exact/use-all-png -> tshirt
+- `tshirt_cropped` — crop top — via looks_like -> tank_top
+- `tuba` — tuba — via exact/use-all-png -> tuba
+- `tumbler_plastic` — plastic tumbler — via exact/use-all-png -> tumbler_plastic
+- `tunic` — tunic — via exact/use-all-png -> tunic
+- `tunic_rag` — rag tunic — via exact/use-all-png -> tunic_rag
+- `turban` — turban — via exact/use-all-png -> turban
+- `turtleneck` — turtleneck — via looks_like -> sweater
+- `turtleneck_rolled` — turtleneck (rolled) — via looks_like -> sweater
+- `turtleneck_shirt` — turtleneck shirt — via looks_like -> sweater
+- `turtleneck_shirt_rolled` — turtleneck shirt (rolled) — via looks_like -> sweater
+- `tux` — tuxedo — via exact/use-all-png -> tux
+- `two_way_radio` — two-way radio — via exact/use-all-png -> two_way_radio
+- `type99` — 7.7mm battle rifle — via looks_like -> modular_ar15
+- `type99_sniper` — 7.7mm sniper rifle — via looks_like -> modular_ar15
+- `uberti_1873` — reproduction .357 lever-action rifle — via looks_like -> modular_ar15
+- `ukulele` — ukulele — via looks_like -> acoustic_guitar
+- `umbrella` — umbrella — via exact/use-all-png -> umbrella
+- `under_armor` — compression top — via looks_like -> longshirt
+- `under_armor_shorts` — compression shorts — via looks_like -> boxer_shorts
+- `undershirt` — undershirt — via exact/use-all-png -> undershirt
+- `unfinished_charcoal` — unfinished charcoal — via exact/use-all-png -> unfinished_charcoal
+- `union_suit` — union suit — via looks_like -> jumpsuit
+- `ursine_sample` — ursine sample — via exact/use-all-png -> ursine_sample
+- `usp_45` — USP .45 pistol — via exact/use-all-png -> usp_45
+- `usp_9mm` — USP 9x19mm pistol — via exact/use-all-png -> usp_9mm
+- `utility_knife_folding` — utility folding knife — via looks_like -> knife_folding
+- `v29` — V29 laser pistol — via exact/use-all-png -> v29
+- `v29_turret` — mounted laser — via looks_like -> glock_17
+- `v_rockwheel_item` — rockwheel — via exact/use-all-png -> v_rockwheel_item
+- `v_scoop_item` — vehicle scoop — via exact/use-all-png -> v_scoop_item
+- `vac_sealer` — vacuum sealer — via exact/use-all-png -> vac_sealer
+- `vambrace_larmor` — leather vambraces (pair) — via looks_like -> arm_warmers
+- `vampire_fangs` — vampire fangs — via looks_like -> mouthpiece
+- `varmint_airgun` — varmint air rifle — via looks_like -> modular_ar15
+- `vegetarian_dolmas` — vegetarian dolmas — via looks_like -> homemade_burrito
+- `veggy_cooked` — cooked plant marrow — via exact/use-all-png -> veggy_cooked
+- `veggy_tainted` — alien fungus chunk — via exact/use-all-png -> veggy_tainted
+- `venom_bee` — bee venom gland — via looks_like -> mutant_bug_hydrogen_sacs
+- `venom_paralytic` — sac of paralytic venom — via looks_like -> mutant_bug_hydrogen_sacs
+- `venom_wasp` — wasp venom gland — via looks_like -> mutant_bug_hydrogen_sacs
+- `vest` — utility vest — via looks_like -> tank_top
+- `vest_jean` — jean vest — via looks_like -> tank_top
+- `vest_jean_mod` — armored jean vest — via looks_like -> jacket_light
+- `vest_jean_mod_ch` — hardened armored jean vest — via looks_like -> jacket_light
+- `vest_leather` — leather vest — via looks_like -> tank_top
+- `vest_leather_mod` — armored leather vest — via looks_like -> tank_top
+- `vest_leather_mod_ch` — hardened armored leather vest — via looks_like -> tank_top
+- `vibrator` — vibrator — via exact/use-all-png -> vibrator
+- `violin` — violin — via looks_like -> acoustic_guitar
+- `violin_golden` — golden fiddle — via looks_like -> acoustic_guitar
+- `voltmeter` — voltmeter — via exact/use-all-png -> voltmeter
+- `waist_apron_long_xl` — long waist apron — via looks_like -> tank_top
+- `waist_apron_long_xs` — long waist apron — via looks_like -> tank_top
+- `waist_apron_short_xl` — short waist apron — via looks_like -> tank_top
+- `waist_apron_short_xs` — short waist apron — via looks_like -> tank_top
+- `waistcoat` — waistcoat — via looks_like -> jacket_light
+- `walnut` — walnuts — via exact/use-all-png -> walnut
+- `walnut_roasted` — Handful of roasted walnuts — via exact/use-all-png -> walnut_roasted
+- `walnut_shelled` — Handful of shelled walnuts — via exact/use-all-png -> walnut_shelled
+- `walther_ccp` — Walther CCP pistol — via exact/use-all-png -> walther_ccp
+- `walther_p22` — Walther training pistol — via exact/use-all-png -> walther_p22
+- `walther_p38` — Walther P38 handgun — via exact/use-all-png -> walther_p38
+- `walther_ppk` — Walther PPK pistol — via looks_like -> glock_17
+- `walther_ppq_45` — PPQ pistol — via exact/use-all-png -> walther_ppq_45
+- `walther_ppq_9mm` — Walther PPQ 9mm pistol — via exact/use-all-png -> walther_ppq_9mm
+- `wasp_sting` — wasp stinger — via exact/use-all-png -> wasp_sting
+- `wastebread` — wastebread — via exact/use-all-png -> wastebread
+- `water_purifier` — water purifier — via exact/use-all-png -> water_purifier
+- `watercannon` — water cannon — via looks_like -> m79
+- `watermelon` — watermelon — via exact/use-all-png -> watermelon
+- `waterproof_camera_case` — waterproof camera case — via looks_like -> camera
+- `waterproof_gunmod` — firearm waterproofing — via exact/use-all-png -> waterproof_gunmod
+- `waterproof_smart_phone_case` — waterproof smartphone case — via looks_like -> smart_phone
+- `wax` — chunk of beeswax — via exact/use-all-png -> wax
+- `wax_paraffin` — chunk of paraffin wax — via exact/use-all-png -> wax_paraffin
+- `weatherby_5` — Weatherby Mark V — via exact/use-all-png -> weatherby_5
+- `webbing_belt` — MOLLE webbing belt — via looks_like -> leather_belt
+- `weed` — marijuana — via exact/use-all-png -> weed
+- `weldtank` — welding tank — via exact/use-all-png -> weldtank
+- `western_holster` — western gun belt — via looks_like -> scabbard
+- `wetsuit` — wetsuit — via exact/use-all-png -> wetsuit
+- `wetsuit_booties` — diving socks (pair) — via looks_like -> boots
+- `wetsuit_booties_thick` — thick diving boots (pair) — via looks_like -> boots
+- `wetsuit_gloves` — diving gloves (pair) — via looks_like -> gloves_light
+- `wetsuit_gloves_thick` — thick diving gloves (pair) — via looks_like -> gloves_light
+- `wetsuit_hood` — wetsuit hood — via looks_like -> hat_cotton
+- `wetsuit_hood_thick` — thick wetsuit hood — via looks_like -> hat_cotton
+- `wetsuit_jacket` — wetsuit jacket — via looks_like -> jacket_light
+- `wetsuit_pants` — wetsuit pants — via looks_like -> pants
+- `wetsuit_pants_thin` — thin wetsuit pants — via looks_like -> pants
+- `wetsuit_shorts` — wetsuit shorts — via looks_like -> boxer_shorts
+- `wetsuit_shorts_technical` — wetsuit technical shorts — via looks_like -> boxer_shorts
+- `wetsuit_shorts_technical_loose` — wetsuit technical shorts (loose) — via looks_like -> boxer_shorts
+- `wetsuit_spring` — spring suit — via looks_like -> wetsuit
+- `wetsuit_spring_sleeveless` — sleeveless spring suit — via looks_like -> wetsuit
+- `wetsuit_thick` — thick wetsuit — via looks_like -> wetsuit
+- `wetsuit_top` — wetsuit shirt — via looks_like -> tshirt
+- `wetsuit_top_sleeved` — wetsuit long-sleeved shirt — via looks_like -> longshirt
+- `wetsuit_top_sleeved_thin` — thin wetsuit long-sleeved shirt — via looks_like -> longshirt
+- `wheat` — wheat — via exact/use-all-png -> wheat
+- `wheel` — wheel — via exact/use-all-png -> wheel
+- `wheel_10` — set of small cart wheels — via exact/use-all-png -> wheel_10
+- `wheel_armor` — armored wheel — via exact/use-all-png -> wheel_armor
+- `wheel_barrow` — wheelbarrow wheel — via exact/use-all-png -> wheel_barrow
+- `wheel_bicycle` — bicycle wheel — via exact/use-all-png -> wheel_bicycle
+- `wheel_bicycle_or` — off-road bicycle wheel — via exact/use-all-png -> wheel_bicycle_or
+- `wheel_motorbike` — motorbike wheel — via exact/use-all-png -> wheel_motorbike
+- `wheel_motorbike_or` — off-road motorbike wheel — via exact/use-all-png -> wheel_motorbike_or
+- `wheel_set_concrete_mix` — concrete mixer wheels — via looks_like -> wheel
+- `wheel_skate` — skate wheel — via exact/use-all-png -> wheel_skate
+- `wheel_slick` — racing wheel — via exact/use-all-png -> wheel_slick
+- `wheel_small` — small wheel — via exact/use-all-png -> wheel_small
+- `wheel_tricycle` — set of tricycle wheels — via exact/use-all-png -> wheel_tricycle
+- `wheel_wheelchair` — wheelchair wheels (pair) — via exact/use-all-png -> wheel_wheelchair
+- `wheel_wide` — wide wheel — via exact/use-all-png -> wheel_wide
+- `wheel_wide_or` — off-road wide wheel — via exact/use-all-png -> wheel_wide_or
+- `whistle` — whistle — via exact/use-all-png -> whistle
+- `wicker_backpack` — wicker backpack — via exact/use-all-png -> wicker_backpack
+- `wild_garlic` — wild garlic — via exact/use-all-png -> wild_garlic
+- `willowbark` — piece of willowbark — via exact/use-all-png -> willowbark
+- `win70` — Winchester Model 70 — via exact/use-all-png -> win70
+- `win70_458` — Safari rifle — via looks_like -> win70
+- `winchester_1897` — 6-round trenchgun — via exact/use-all-png -> winchester_1897
+- `winchester_94_3030` — 8-shot lever-action rifle — via looks_like -> modular_ar15
+- `wind_turbine` — wind turbine — via exact/use-all-png -> wind_turbine
+- `wine_glass` — wine glass — via exact/use-all-png -> wine_glass
+- `winter_gloves_army` — army winter gloves (pair) — via looks_like -> gloves_light
+- `winter_jacket_army` — army winter jacket — via looks_like -> coat_rain
+- `winter_pants_army` — army winter pants — via looks_like -> pants_cargo
+- `wire_barbed` — barbed wire — via exact/use-all-png -> wire_barbed
+- `wire_mesh` — steel mesh — via exact/use-all-png -> wire_mesh
+- `withered` — withered plant — via exact/use-all-png -> withered
+- `witness_10` — EAA Witness pistol — via exact/use-all-png -> witness_10
+- `wood_smoother` — wooden smoother — via exact/use-all-png -> wood_smoother
+- `wooden_bead` — wooden bead — via looks_like -> bb
+- `wooden_grip` — wood forward grip — via exact/use-all-png -> wooden_grip
+- `wooden_hair_beads` — wooden hair beads — via looks_like -> crown_golden
+- `woodgreatbow` — wooden greatbow — via exact/use-all-png -> woodgreatbow
+- `wool_hoodie` — wool hoodie — via looks_like -> hoodie
+- `wool_sockmitts` — wool sock mitts (pair) — via looks_like -> gloves_light
+- `wool_suit` — thick wool onesie — via exact/use-all-png -> wool_suit
+- `wool_suit_devil` — devil onesie — via looks_like -> jumpsuit
+- `workbench_with_recharger` — workbench with battery recharger (folded) — via exact/use-all-png -> workbench_with_recharger
+- `wrapper_foil` — foil wrapper — via exact/use-all-png -> wrapper_foil
+- `wristwatch` — wrist watch — via exact/use-all-png -> wristwatch
+- `wsurvivor_jumpsuit` — handmade winter suit — via looks_like -> jumpsuit
+- `wsurvivor_jumpsuit_nofur` — handmade faux fur winter suit — via looks_like -> jumpsuit
+- `wsurvivor_suit` — winter survivor suit — via looks_like -> jumpsuit
+- `wsurvivor_suit_nofur` — winter survivor suit — via looks_like -> jumpsuit
+- `xacto` — X-Acto knife — via exact/use-all-png -> xacto
+- `xd_10` — XD-M pistol — via exact/use-all-png -> xd_10
+- `xedra_antenna` — deployable antenna — via looks_like -> directional_antenna
+- `xedra_artifact_cleansuit` — S02a hazmat suit — via looks_like -> hazmat_suit
+- `xedra_artifact_cleansuit_on` — S02a hazmat suit (on) — via looks_like -> hazmat_suit
+- `xedra_enviro_suit` — activity suit — via looks_like -> hazmat_suit
+- `xedra_enviro_suit_casual` — activity suit (casual) — via looks_like -> hazmat_suit
+- `xedra_gun` — prototype gun — via looks_like -> modular_ar15
+- `xl_aketon_canvas` — canvas aketon — via looks_like -> coat_lab
+- `xl_aketon_canvas_vest` — canvas aketon vest — via looks_like -> tank_top
+- `xl_aketon_gloves_canvas` — canvas arming gloves (pair) — via looks_like -> gloves_light
+- `xl_aketon_gloves_nylon` — nylon arming gloves (pair) — via looks_like -> gloves_light
+- `xl_aketon_gloves_wool` — wool arming gloves (pair) — via looks_like -> gloves_light
+- `xl_aketon_nylon` — nylon aketon — via looks_like -> coat_lab
+- `xl_aketon_nylon_vest` — nylon aketon vest — via looks_like -> tank_top
+- `xl_aketon_pants_canvas` — canvas arming pants — via looks_like -> pants
+- `xl_aketon_pants_nylon` — nylon arming pants — via looks_like -> pants
+- `xl_aketon_pants_wool` — wool arming pants — via looks_like -> pants
+- `xl_aketon_wool` — wool aketon — via looks_like -> coat_lab
+- `xl_aketon_wool_vest` — wool aketon vest — via looks_like -> tank_top
+- `xl_arm_warmers` — arm warmers (pair) — via looks_like -> arm_warmers
+- `xl_armguard_acidchitin` — biosilicified chitin arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_bronze` — bronze vambraces (pair) — via looks_like -> arm_warmers
+- `xl_armguard_ch_brigandine` — hardened splint arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_chitin` — chitinous scale mail sleeves (pair) — via looks_like -> arm_warmers
+- `xl_armguard_hard` — hard arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_hc_brigandine` — high steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_larmor` — leather arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_lc_brigandine` — mild steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_mc_brigandine` — medium steel splint arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_metal` — sheet metal arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_qt_brigandine` — tempered splint arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_scrap` — scrap arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armguard_soft` — neoprene arm sleeves (pair) — via looks_like -> arm_warmers
+- `xl_armguard_tire` — tire arm guards (pair) — via looks_like -> arm_warmers
+- `xl_armor_acidchitin` — biosilicified chitin armor — via looks_like -> armor_chitin
+- `xl_armor_ch_armguard` — hardened steel arm guard — via looks_like -> arm_warmers
+- `xl_armor_ch_brigandine` — hardened brigandine — via looks_like -> chestguard_hard
+- `xl_armor_ch_brigandine_shoulders` — hardened brigandine with shoulder guards — via looks_like -> tank_top
+- `xl_armor_ch_chestplate` — hardened chestplate — via looks_like -> jumpsuit
+- `xl_armor_ch_coat_brigandine` — hardened brigandine coat — via looks_like -> coat_rain
+- `xl_armor_ch_coat_brigandine_shoulders` — hardened brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `xl_armor_ch_heavy_chestplate` — hardened heavy chestplate — via looks_like -> jumpsuit
+- `xl_armor_ch_heavy_leg_guard` — hardened heavy leg guard — via looks_like -> leg_warmers
+- `xl_armor_ch_heavyarmguard` — hardened steel heavy arm guard — via looks_like -> arm_warmers
+- `xl_armor_ch_heavyplate` — hardened steel heavy plate armor — via looks_like -> jumpsuit
+- `xl_armor_ch_leg_guard` — hardened leg guard — via looks_like -> leg_warmers
+- `xl_armor_ch_light_chestplate` — hardened light chestplate — via looks_like -> chestguard_hard
+- `xl_armor_ch_light_leg_guard` — hardened light leg guard — via looks_like -> leg_warmers
+- `xl_armor_ch_lightarmguard` — hardened steel light arm guard — via looks_like -> arm_warmers
+- `xl_armor_ch_lightplate` — hardened steel light plate armor — via looks_like -> jumpsuit
+- `xl_armor_ch_plate` — hardened steel plate armor — via looks_like -> jumpsuit
+- `xl_armor_chitin` — chitinous scale mail suit — via looks_like -> jumpsuit
+- `xl_armor_chitin_vest` — chitinous scale mail vest — via looks_like -> jumpsuit
+- `xl_armor_cuirass` — bell cuirass — via looks_like -> chestguard_hard
+- `xl_armor_farmor` — fur body armor — via looks_like -> jumpsuit
+- `xl_armor_faux_farmor` — faux fur body armor — via looks_like -> jumpsuit
+- `xl_armor_hc_armguard` — high steel arm guard — via looks_like -> arm_warmers
+- `xl_armor_hc_brigandine` — high steel brigandine — via looks_like -> chestguard_hard
+- `xl_armor_hc_brigandine_shoulders` — high steel brigandine with shoulder guards — via looks_like -> tank_top
+- `xl_armor_hc_chestplate` — high steel chestplate — via looks_like -> jumpsuit
+- `xl_armor_hc_coat_brigandine` — high steel brigandine coat — via looks_like -> coat_rain
+- `xl_armor_hc_coat_brigandine_shoulders` — high steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `xl_armor_hc_heavy_chestplate` — high steel heavy chestplate — via looks_like -> jumpsuit
+- `xl_armor_hc_heavy_leg_guard` — high steel heavy leg guard — via looks_like -> leg_warmers
+- `xl_armor_hc_heavyarmguard` — high steel heavy arm guard — via looks_like -> arm_warmers
+- `xl_armor_hc_heavyplate` — high steel heavy plate armor — via looks_like -> jumpsuit
+- `xl_armor_hc_leg_guard` — high steel leg guard — via looks_like -> leg_warmers
+- `xl_armor_hc_light_chestplate` — high steel light chestplate — via looks_like -> chestguard_hard
+- `xl_armor_hc_light_leg_guard` — high steel light leg guard — via looks_like -> leg_warmers
+- `xl_armor_hc_lightarmguard` — high steel light arm guard — via looks_like -> arm_warmers
+- `xl_armor_hc_lightplate` — high steel light plate armor — via looks_like -> jumpsuit
+- `xl_armor_hc_plate` — high steel plate armor — via looks_like -> jumpsuit
+- `xl_armor_lamellar` — leather lamellar cuirass — via looks_like -> tank_top
+- `xl_armor_lamellar_ch` — hardened steel lamellar cuirass — via looks_like -> armor_lorica
+- `xl_armor_lamellar_lc` — mild steel lamellar cuirass — via looks_like -> armor_lorica
+- `xl_armor_larmor` — leather body armor — via looks_like -> jumpsuit
+- `xl_armor_larmor_chest` — leather armor cuirass — via looks_like -> chestguard_hard
+- `xl_armor_lc_armguard` — mild steel arm guard — via looks_like -> arm_warmers
+- `xl_armor_lc_brigandine` — mild steel brigandine — via looks_like -> chestguard_hard
+- `xl_armor_lc_brigandine_shoulders` — mild steel brigandine with shoulder guards — via looks_like -> tank_top
+- `xl_armor_lc_chestplate` — mild steel chestplate — via looks_like -> jumpsuit
+- `xl_armor_lc_coat_brigandine` — mild steel brigandine coat — via looks_like -> coat_rain
+- `xl_armor_lc_coat_brigandine_shoulders` — mild steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `xl_armor_lc_heavy_chestplate` — mild steel heavy chestplate — via looks_like -> jumpsuit
+- `xl_armor_lc_heavy_leg_guard` — mild steel heavy leg guard — via looks_like -> leg_warmers
+- `xl_armor_lc_heavyarmguard` — mild steel heavy arm guard — via looks_like -> arm_warmers
+- `xl_armor_lc_heavyplate` — mild steel heavy plate armor — via looks_like -> jumpsuit
+- `xl_armor_lc_leg_guard` — mild steel leg guard — via looks_like -> leg_warmers
+- `xl_armor_lc_light_chestplate` — mild steel light chestplate — via looks_like -> chestguard_hard
+- `xl_armor_lc_light_leg_guard` — mild steel light leg guard — via looks_like -> leg_warmers
+- `xl_armor_lc_lightarmguard` — mild steel light arm guard — via looks_like -> arm_warmers
+- `xl_armor_lc_lightplate` — mild steel light plate armor — via looks_like -> jumpsuit
+- `xl_armor_lc_plate` — mild steel plate armor — via looks_like -> jumpsuit
+- `xl_armor_lorica` — lorica segmentata — via looks_like -> tank_top
+- `xl_armor_mc_armguard` — medium steel arm guard — via looks_like -> arm_warmers
+- `xl_armor_mc_brigandine` — medium steel brigandine — via looks_like -> chestguard_hard
+- `xl_armor_mc_brigandine_shoulders` — medium steel brigandine with shoulder guards — via looks_like -> tank_top
+- `xl_armor_mc_chestplate` — medium steel chestplate — via looks_like -> jumpsuit
+- `xl_armor_mc_coat_brigandine` — medium steel brigandine coat — via looks_like -> coat_rain
+- `xl_armor_mc_coat_brigandine_shoulders` — medium steel brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `xl_armor_mc_heavy_chestplate` — medium steel heavy chestplate — via looks_like -> jumpsuit
+- `xl_armor_mc_heavy_leg_guard` — medium steel heavy leg guard — via looks_like -> leg_warmers
+- `xl_armor_mc_heavyarmguard` — medium steel heavy arm guard — via looks_like -> arm_warmers
+- `xl_armor_mc_heavyplate` — medium steel heavy plate armor — via looks_like -> jumpsuit
+- `xl_armor_mc_leg_guard` — medium steel leg guard — via looks_like -> leg_warmers
+- `xl_armor_mc_light_chestplate` — medium steel light chestplate — via looks_like -> chestguard_hard
+- `xl_armor_mc_light_leg_guard` — medium steel light leg guard — via looks_like -> leg_warmers
+- `xl_armor_mc_lightarmguard` — medium steel light arm guard — via looks_like -> arm_warmers
+- `xl_armor_mc_lightplate` — medium steel light plate armor — via looks_like -> jumpsuit
+- `xl_armor_mc_plate` — medium steel plate armor — via looks_like -> jumpsuit
+- `xl_armor_plarmor` — plated leather armor — via looks_like -> jumpsuit
+- `xl_armor_qt_armguard` — tempered steel arm guard — via looks_like -> arm_warmers
+- `xl_armor_qt_brigandine` — tempered brigandine — via looks_like -> chestguard_hard
+- `xl_armor_qt_brigandine_shoulders` — tempered brigandine with shoulder guards — via looks_like -> tank_top
+- `xl_armor_qt_chestplate` — tempered chestplate — via looks_like -> jumpsuit
+- `xl_armor_qt_coat_brigandine` — tempered brigandine coat — via looks_like -> coat_rain
+- `xl_armor_qt_coat_brigandine_shoulders` — tempered brigandine coat with shoulder guards — via looks_like -> coat_rain
+- `xl_armor_qt_heavy_chestplate` — tempered heavy chestplate — via looks_like -> jumpsuit
+- `xl_armor_qt_heavy_leg_guard` — tempered heavy leg guard — via looks_like -> leg_warmers
+- `xl_armor_qt_heavyarmguard` — tempered steel heavy arm guard — via looks_like -> arm_warmers
+- `xl_armor_qt_heavyplate` — tempered steel heavy plate armor — via looks_like -> jumpsuit
+- `xl_armor_qt_leg_guard` — tempered leg guard — via looks_like -> leg_warmers
+- `xl_armor_qt_light_chestplate` — tempered light chestplate — via looks_like -> chestguard_hard
+- `xl_armor_qt_light_leg_guard` — tempered light leg guard — via looks_like -> leg_warmers
+- `xl_armor_qt_lightarmguard` — tempered steel light arm guard — via looks_like -> arm_warmers
+- `xl_armor_qt_lightplate` — tempered steel light plate armor — via looks_like -> jumpsuit
+- `xl_armor_qt_plate` — tempered steel plate armor — via looks_like -> jumpsuit
+- `xl_binder_top` — binder — via looks_like -> bikini_top
+- `xl_boots` — boots (pair) — via looks_like -> dress_shoes
+- `xl_boots_faux_fur` — faux fur boots (pair) — via looks_like -> boots
+- `xl_boots_fsurvivor` — survivor fireboots (pair) — via looks_like -> boots
+- `xl_boots_fur` — fur boots (pair) — via looks_like -> boots
+- `xl_boots_hsurvivor` — heavy survivor boots (pair) — via looks_like -> boots
+- `xl_boots_larmor` — leather armor boots (pair) — via looks_like -> boots
+- `xl_boots_plate` — armored boots (pair) — via looks_like -> boots
+- `xl_boots_scrap` — scrap boots (pair) — via looks_like -> boots
+- `xl_boots_winter` — winter boots (pair) — via looks_like -> boots
+- `xl_boots_wsurvivor` — handmade winterized hazard boots (pair) — via looks_like -> boots
+- `xl_boots_wsurvivor_nofur` — handmade faux fur hazard boots (pair) — via looks_like -> boots
+- `xl_bra` — bra — via looks_like -> tank_top
+- `xl_ch_chainmail_arms` — hardened steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xl_ch_chainmail_half_legs` — hardened steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xl_ch_chainmail_jumpsuit` — hardened steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `xl_ch_chainmail_sjumpsuit` — hardened steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `xl_ch_chainmail_suit` — hardened steel chainmail armor — via looks_like -> jumpsuit
+- `xl_ch_demi_gaunt` — hardened steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `xl_ch_elbow_guards` — hardened elbow guards (pair) — via looks_like -> arm_warmers
+- `xl_ch_greaves_brigandine` — hardened splint greaves (pair) — via looks_like -> leg_warmers
+- `xl_ch_heavyhelm_close` — hardened steel heavy close helm — via looks_like -> helmet_barbute
+- `xl_ch_heavyhelm_close_raised` — hardened steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `xl_ch_helm_close` — hardened steel close helm — via looks_like -> helmet_barbute
+- `xl_ch_helm_close_raised` — hardened steel close helm (raised) — via looks_like -> helmet_barbute
+- `xl_ch_helmet_nasal` — hardened steel nasal helm — via looks_like -> helmet_barbute
+- `xl_ch_helmet_turban` — hardened steel turban helmet — via looks_like -> helmet_barbute
+- `xl_ch_knee_guards` — hardened knee guards (pair) — via looks_like -> leg_warmers
+- `xl_ch_lighthelm_close` — hardened steel light close helm — via looks_like -> helmet_barbute
+- `xl_ch_lighthelm_close_raised` — hardened steel light close helm (raised) — via looks_like -> helmet_barbute
+- `xl_ch_mirror_armor` — hardened steel mirror armor — via looks_like -> chestguard_hard
+- `xl_ch_mitten_gaunt` — hardened steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `xl_ch_sabaton` — hardened steel sabaton — via looks_like -> boots
+- `xl_ch_vambrace_brigandine` — hardened splint vambraces (pair) — via looks_like -> arm_warmers
+- `xl_chestrig` — chest rig — via exact/use-all-png -> xl_chestrig
+- `xl_coat_faux_fur` — faux fur coat — via looks_like -> coat_rain
+- `xl_coat_fur` — fur coat — via looks_like -> coat_rain
+- `xl_cuirass_bronze` — bronze cuirass — via looks_like -> chestguard_hard
+- `xl_cuirass_lightplate` — cuirass — via looks_like -> chestguard_hard
+- `xl_cuirass_scrap` — scrap cuirass — via looks_like -> chestguard_hard
+- `xl_cuirass_tire` — tire cuirass — via looks_like -> chestguard_hard
+- `xl_duster` — duster — via looks_like -> coat_rain
+- `xl_duster_faux_fur` — faux fur duster — via looks_like -> coat_rain
+- `xl_duster_fur` — fur duster — via looks_like -> coat_rain
+- `xl_duster_leather` — leather duster — via looks_like -> coat_rain
+- `xl_entry_suit` — entry suit — via looks_like -> jumpsuit
+- `xl_espadrilles` — espadrilles — via looks_like -> sneakers
+- `xl_fsurvivor_suit` — survivor firesuit — via looks_like -> jumpsuit
+- `xl_gambeson_canvas_vest` — sleeveless canvas gambeson — via looks_like -> tank_top
+- `xl_gambeson_gloves_canvas` — canvas arming mittens (pair) — via looks_like -> gloves_light
+- `xl_gambeson_gloves_nylon` — nylon arming mittens (pair) — via looks_like -> gloves_light
+- `xl_gambeson_gloves_wool` — wool arming mittens (pair) — via looks_like -> gloves_light
+- `xl_gambeson_nylon_vest` — sleeveless nylon gambeson — via looks_like -> tank_top
+- `xl_gambeson_pants` — padded arming pants — via looks_like -> pants
+- `xl_gambeson_pants_canvas` — canvas heavy arming pants — via looks_like -> pants
+- `xl_gambeson_pants_nylon` — nylon heavy arming pants — via looks_like -> pants
+- `xl_gambeson_pants_wool` — wool heavy arming pants — via looks_like -> pants
+- `xl_gambeson_sleeve` — gambeson sleeves (pair) — via looks_like -> arm_warmers
+- `xl_gambeson_vest` — padded gambeson vest — via looks_like -> tank_top
+- `xl_gambeson_wool_vest` — sleeveless wool gambeson — via looks_like -> tank_top
+- `xl_gauntlets_acidchitin` — biosilicified chitin gauntlets (pair) — via looks_like -> gloves_light
+- `xl_gauntlets_chitin` — chitinous scale mail gauntlets (pair) — via looks_like -> gloves_light
+- `xl_gauntlets_larmor` — leather armor gauntlets (pair) — via looks_like -> gloves_light
+- `xl_gloves_faux_fur` — faux fur gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_fsurvivor` — survivor firegloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_fur` — fur gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_hsurvivor` — heavy survivor gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_leather` — leather gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_light` — light gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_liner` — glove liners (pair) — via looks_like -> gloves_light
+- `xl_gloves_plate` — armored gauntlets (pair) — via looks_like -> gloves_light
+- `xl_gloves_studded` — studded gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_survivor` — handmade hazard gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_wool` — wool gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_wool_fingerless` — fingerless wool gloves (pair) — via looks_like -> gloves_light
+- `xl_gloves_wsurvivor` — handmade winter gauntlets (pair) — via looks_like -> gloves_light
+- `xl_gloves_wsurvivor_nofur` — handmade faux fur winter gauntlets (pair) — via looks_like -> gloves_light
+- `xl_hc_chainmail_arms` — high steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xl_hc_chainmail_half_legs` — high steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xl_hc_chainmail_jumpsuit` — high steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `xl_hc_chainmail_sjumpsuit` — high steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `xl_hc_chainmail_suit` — high steel chainmail armor — via looks_like -> jumpsuit
+- `xl_hc_demi_gaunt` — high steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `xl_hc_elbow_guards` — high steel elbow guards (pair) — via looks_like -> arm_warmers
+- `xl_hc_greaves_brigandine` — high steel splint greaves (pair) — via looks_like -> leg_warmers
+- `xl_hc_heavyhelm_close` — high steel heavy close helm — via looks_like -> helmet_barbute
+- `xl_hc_heavyhelm_close_raised` — high steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `xl_hc_helm_close` — high steel close helm — via looks_like -> helmet_barbute
+- `xl_hc_helm_close_raised` — high steel close helm (raised) — via looks_like -> helmet_barbute
+- `xl_hc_helmet_nasal` — high steel nasal helm — via looks_like -> helmet_barbute
+- `xl_hc_helmet_turban` — high steel turban helmet — via looks_like -> helmet_barbute
+- `xl_hc_knee_guards` — high steel knee guards (pair) — via looks_like -> leg_warmers
+- `xl_hc_lighthelm_close` — high steel light close helm — via looks_like -> helmet_barbute
+- `xl_hc_lighthelm_close_raised` — high steel light close helm (raised) — via looks_like -> helmet_barbute
+- `xl_hc_mirror_armor` — high steel mirror armor — via looks_like -> chestguard_hard
+- `xl_hc_mitten_gaunt` — high steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `xl_hc_sabaton` — high steel sabaton — via looks_like -> boots
+- `xl_hc_vambrace_brigandine` — high steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `xl_helmet_acidchitin` — biosilicified chitin helmet — via looks_like -> helmet_acidchitin
+- `xl_helmet_barbute` — barbute helm — via exact/use-all-png -> xl_helmet_barbute
+- `xl_helmet_bronze` — bronze helmet — via looks_like -> helmet_barbute
+- `xl_helmet_chitin` — chitinous scale mail hood — via looks_like -> helmet_chitin
+- `xl_helmet_conical` — conical helm — via looks_like -> helmet_barbute
+- `xl_helmet_corinthian` — Corinthian helm — via looks_like -> helmet_barbute
+- `xl_helmet_galea` — galea — via looks_like -> helmet_barbute
+- `xl_helmet_kabuto` — kabuto — via looks_like -> helmet_barbute
+- `xl_helmet_kettle` — kettle helmet — via looks_like -> helmet_barbute
+- `xl_helmet_larmor` — leather armor helmet — via looks_like -> hat_hard
+- `xl_helmet_nasal` — nasal helm — via looks_like -> helmet_barbute
+- `xl_helmet_nomad` — nomad cowl — via looks_like -> hat_cotton
+- `xl_helmet_plate` — great helm — via looks_like -> helmet_barbute
+- `xl_helmet_scrap` — scrap helmet — via looks_like -> helmet_barbute
+- `xl_hood_fsurvivor` — survivor firehood — via looks_like -> hat_cotton
+- `xl_hood_wsurvivor` — handmade winter traveler hood — via looks_like -> hat_cotton
+- `xl_hood_wsurvivor_nofur` — handmade faux fur traveler hood — via looks_like -> hat_cotton
+- `xl_hsurvivor_jumpsuit` — handmade hazard suit — via looks_like -> jumpsuit
+- `xl_k_gambeson_sleeve` — Kevlar gambeson sleeves (pair) — via looks_like -> arm_warmers
+- `xl_lc_chainmail_arms` — mild steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xl_lc_chainmail_half_legs` — mild steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xl_lc_chainmail_jumpsuit` — mild steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `xl_lc_chainmail_sjumpsuit` — mild steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `xl_lc_chainmail_suit` — mild steel chainmail armor — via looks_like -> jumpsuit
+- `xl_lc_demi_gaunt` — mild steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `xl_lc_elbow_guards` — mild steel elbow guards (pair) — via looks_like -> arm_warmers
+- `xl_lc_greaves_brigandine` — mild steel splint greaves (pair) — via looks_like -> leg_warmers
+- `xl_lc_heavyhelm_close` — mild steel heavy close helm — via looks_like -> helmet_barbute
+- `xl_lc_heavyhelm_close_raised` — mild steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `xl_lc_helm_close` — mild steel close helm — via looks_like -> helmet_barbute
+- `xl_lc_helm_close_raised` — mild steel close helm (raised) — via looks_like -> helmet_barbute
+- `xl_lc_helmet_nasal` — mild steel nasal helm — via looks_like -> helmet_barbute
+- `xl_lc_helmet_turban` — mild steel turban helmet — via looks_like -> helmet_barbute
+- `xl_lc_knee_guards` — mild steel knee guards (pair) — via looks_like -> leg_warmers
+- `xl_lc_lighthelm_close` — mild steel light close helm — via looks_like -> helmet_barbute
+- `xl_lc_lighthelm_close_raised` — mild steel light close helm (raised) — via looks_like -> helmet_barbute
+- `xl_lc_mirror_armor` — mild steel mirror armor — via looks_like -> chestguard_hard
+- `xl_lc_mitten_gaunt` — mild steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `xl_lc_sabaton` — mild steel sabaton — via looks_like -> boots
+- `xl_lc_vambrace_brigandine` — mild steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `xl_legguard_acidchitin` — biosilicified chitin leg guards (pair) — via looks_like -> legguard_chitin
+- `xl_legguard_bronze` — bronze greaves (pair) — via looks_like -> leg_warmers
+- `xl_legguard_ch_brigandine` — hardened splint leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_chitin` — chitinous scale mail leggings — via looks_like -> leg_warmers
+- `xl_legguard_hc_brigandine` — high steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_larmor` — leather leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_lc_brigandine` — mild steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_mc_brigandine` — medium steel splint leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_metal` — iron greaves (pair) — via looks_like -> leg_warmers
+- `xl_legguard_metal_sheets` — sheet metal leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_qt_brigandine` — tempered splint leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_scrap` — scrap leg guards (pair) — via looks_like -> leg_warmers
+- `xl_legguard_tire` — tire leg guards (pair) — via looks_like -> leg_warmers
+- `xl_lsurvivor_armor` — mercenary body armor — via looks_like -> jacket_army
+- `xl_lsurvivor_jumpsuit` — handmade summer suit — via looks_like -> jumpsuit
+- `xl_lsurvivor_suit` — light survivor suit — via looks_like -> jumpsuit
+- `xl_mc_chainmail_arms` — medium steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xl_mc_chainmail_half_legs` — medium steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xl_mc_chainmail_jumpsuit` — medium steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `xl_mc_chainmail_sjumpsuit` — medium steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `xl_mc_chainmail_suit` — medium steel chainmail armor — via looks_like -> jumpsuit
+- `xl_mc_demi_gaunt` — medium steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `xl_mc_elbow_guards` — medium steel elbow guards (pair) — via looks_like -> arm_warmers
+- `xl_mc_greaves_brigandine` — medium steel splint greaves (pair) — via looks_like -> leg_warmers
+- `xl_mc_heavyhelm_close` — medium steel heavy close helm — via looks_like -> helmet_barbute
+- `xl_mc_heavyhelm_close_raised` — medium steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `xl_mc_helm_close` — medium steel close helm — via looks_like -> helmet_barbute
+- `xl_mc_helm_close_raised` — medium steel close helm (raised) — via looks_like -> helmet_barbute
+- `xl_mc_helmet_nasal` — medium steel nasal helm — via looks_like -> helmet_barbute
+- `xl_mc_helmet_turban` — medium steel turban helmet — via looks_like -> helmet_barbute
+- `xl_mc_knee_guards` — medium steel knee guards (pair) — via looks_like -> leg_warmers
+- `xl_mc_lighthelm_close` — medium steel light close helm — via looks_like -> helmet_barbute
+- `xl_mc_lighthelm_close_raised` — medium steel light close helm (raised) — via looks_like -> helmet_barbute
+- `xl_mc_mirror_armor` — medium steel mirror armor — via looks_like -> chestguard_hard
+- `xl_mc_mitten_gaunt` — medium steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `xl_mc_sabaton` — medium steel sabaton — via looks_like -> boots
+- `xl_mc_vambrace_brigandine` — medium steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `xl_nomex_suit` — flame-resistant suit — via looks_like -> jumpsuit
+- `xl_propane_tank` — extra large propane tank — via exact/use-all-png -> xl_propane_tank
+- `xl_qt_chainmail_arms` — tempered steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xl_qt_chainmail_half_legs` — tempered steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xl_qt_chainmail_jumpsuit` — tempered steel chainmail jumpsuit — via looks_like -> jumpsuit
+- `xl_qt_chainmail_sjumpsuit` — tempered steel chainmail sleeveless jumpsuit — via looks_like -> jumpsuit
+- `xl_qt_chainmail_suit` — tempered steel chainmail armor — via looks_like -> jumpsuit
+- `xl_qt_demi_gaunt` — tempered steel demi-gauntlets (pair) — via looks_like -> gloves_light
+- `xl_qt_elbow_guards` — tempered elbow guards (pair) — via looks_like -> arm_warmers
+- `xl_qt_greaves_brigandine` — tempered splint greaves (pair) — via looks_like -> leg_warmers
+- `xl_qt_heavyhelm_close` — tempered steel heavy close helm — via looks_like -> helmet_barbute
+- `xl_qt_heavyhelm_close_raised` — tempered steel heavy close helm (raised) — via looks_like -> helmet_barbute
+- `xl_qt_helm_close` — tempered steel close helm — via looks_like -> helmet_barbute
+- `xl_qt_helm_close_raised` — tempered steel close helm (raised) — via looks_like -> helmet_barbute
+- `xl_qt_helmet_nasal` — tempered steel nasal helm — via looks_like -> helmet_barbute
+- `xl_qt_helmet_turban` — tempered steel turban helmet — via looks_like -> helmet_barbute
+- `xl_qt_knee_guards` — tempered knee guards (pair) — via looks_like -> leg_warmers
+- `xl_qt_lighthelm_close` — tempered steel light close helm — via looks_like -> helmet_barbute
+- `xl_qt_lighthelm_close_raised` — tempered steel light close helm (raised) — via looks_like -> helmet_barbute
+- `xl_qt_mirror_armor` — tempered steel mirror armor — via looks_like -> chestguard_hard
+- `xl_qt_mitten_gaunt` — tempered steel mitten gauntlets (pair) — via looks_like -> gloves_light
+- `xl_qt_sabaton` — tempered steel sabaton — via looks_like -> boots
+- `xl_qt_vambrace_brigandine` — tempered splint vambraces (pair) — via looks_like -> arm_warmers
+- `xl_survivor_vest` — handmade harness — via looks_like -> tank_top
+- `xl_tacvest` — tac vest — via looks_like -> tank_top
+- `xl_vambrace_larmor` — leather vambraces (pair) — via looks_like -> arm_warmers
+- `xl_wetsuit_booties` — diving socks (pair) — via looks_like -> boots
+- `xl_wetsuit_booties_thick` — thick diving boots (pair) — via looks_like -> boots
+- `xl_wetsuit_gloves` — diving gloves (pair) — via looks_like -> gloves_light
+- `xl_wetsuit_gloves_thick` — thick diving gloves (pair) — via looks_like -> gloves_light
+- `xl_wetsuit_hood` — wetsuit hood — via looks_like -> hat_cotton
+- `xl_wetsuit_hood_thick` — thick wetsuit hood — via looks_like -> hat_cotton
+- `xl_wetsuit_jacket` — wetsuit jacket — via looks_like -> jacket_light
+- `xl_wetsuit_pants` — wetsuit pants — via looks_like -> pants
+- `xl_wetsuit_pants_thin` — thin wetsuit pants — via looks_like -> pants
+- `xl_wetsuit_shorts` — wetsuit shorts — via looks_like -> boxer_shorts
+- `xl_wetsuit_shorts_technical` — wetsuit technical shorts — via looks_like -> boxer_shorts
+- `xl_wetsuit_shorts_technical_loose` — wetsuit technical shorts (loose) — via looks_like -> boxer_shorts
+- `xl_wetsuit_spring` — spring suit — via looks_like -> wetsuit
+- `xl_wetsuit_spring_sleeveless` — sleeveless spring suit — via looks_like -> wetsuit
+- `xl_wetsuit_thick` — thick wetsuit — via looks_like -> wetsuit
+- `xl_wetsuit_top` — wetsuit shirt — via looks_like -> tshirt
+- `xl_wetsuit_top_sleeved` — wetsuit long-sleeved shirt — via looks_like -> longshirt
+- `xl_wetsuit_top_sleeved_thin` — thin wetsuit long-sleeved shirt — via looks_like -> longshirt
+- `xl_wind_turbine` — large wind turbine — via looks_like -> wind_turbine
+- `xl_wsurvivor_jumpsuit` — handmade winter suit — via looks_like -> jumpsuit
+- `xl_wsurvivor_jumpsuit_nofur` — handmade faux fur winter suit — via looks_like -> jumpsuit
+- `xl_wsurvivor_suit` — winter survivor suit — via looks_like -> jumpsuit
+- `xl_wsurvivor_suit_nofur` — winter survivor suit — via looks_like -> jumpsuit
+- `xlboxer_briefs` — boxer briefs — via looks_like -> boxer_shorts
+- `xlboxer_shorts` — boxer shorts — via looks_like -> boxer_briefs
+- `xlboy_shorts` — boy shorts — via looks_like -> boxer_briefs
+- `xlhsurvivor_suit` — heavy survivor suit — via looks_like -> jumpsuit
+- `xlkevlar` — Kevlar vest — via looks_like -> tank_top
+- `xlnomex_socks` — flame-resistant socks (pair) — via looks_like -> socks
+- `xlsocks` — socks (pair) — via looks_like -> socks
+- `xlsocks_wool` — wool socks (pair) — via looks_like -> socks
+- `xlsports_bra` — sports bra — via looks_like -> bra
+- `xlsurvivor_jumpsuit` — handmade combat suit — via looks_like -> jumpsuit
+- `xlsurvivor_suit` — survivor suit — via looks_like -> jumpsuit
+- `xs_aketon_canvas` — canvas aketon — via looks_like -> coat_lab
+- `xs_aketon_canvas_vest` — canvas aketon vest — via looks_like -> tank_top
+- `xs_aketon_gloves_canvas` — canvas arming gloves (pair) — via looks_like -> gloves_light
+- `xs_aketon_gloves_nylon` — nylon arming gloves (pair) — via looks_like -> gloves_light
+- `xs_aketon_gloves_wool` — wool arming gloves (pair) — via looks_like -> gloves_light
+- `xs_aketon_nylon` — nylon aketon — via looks_like -> coat_lab
+- `xs_aketon_nylon_vest` — nylon aketon vest — via looks_like -> tank_top
+- `xs_aketon_pants_canvas` — canvas arming pants — via looks_like -> pants
+- `xs_aketon_pants_nylon` — nylon arming pants — via looks_like -> pants
+- `xs_aketon_pants_wool` — wool arming pants — via looks_like -> pants
+- `xs_aketon_wool` — wool aketon — via looks_like -> coat_lab
+- `xs_aketon_wool_vest` — wool aketon vest — via looks_like -> tank_top
+- `xs_arm_warmers` — arm warmers (pair) — via looks_like -> arm_warmers
+- `xs_armguard_acidchitin` — biosilicified chitin arm guards (pair) — via looks_like -> arm_warmers
+- `xs_armguard_bronze` — bronze vambraces (pair) — via looks_like -> arm_warmers
+- `xs_armguard_chitin` — chitinous scale mail sleeves (pair) — via looks_like -> arm_warmers
+- `xs_armguard_hard` — hard arm guards (pair) — via looks_like -> arm_warmers
+- `xs_armguard_larmor` — leather arm guards (pair) — via looks_like -> arm_warmers
+- `xs_armguard_metal` — sheet metal arm guards (pair) — via looks_like -> arm_warmers
+- `xs_armguard_scrap` — scrap arm guards (pair) — via looks_like -> arm_warmers
+- `xs_armguard_soft` — neoprene arm sleeves (pair) — via looks_like -> arm_warmers
+- `xs_armguard_tire` — tire arm guards (pair) — via looks_like -> arm_warmers
+- `xs_armor_chitin_vest` — chitinous scale mail vest — via looks_like -> jumpsuit
+- `xs_armor_cuirass` — bell cuirass — via looks_like -> chestguard_hard
+- `xs_armor_lamellar` — leather lamellar cuirass — via looks_like -> tank_top
+- `xs_armor_lamellar_ch` — hardened steel lamellar cuirass — via looks_like -> armor_lorica
+- `xs_armor_lamellar_lc` — mild steel lamellar cuirass — via looks_like -> armor_lorica
+- `xs_armor_lorica` — lorica segmentata — via looks_like -> tank_top
+- `xs_binder_top` — binder — via looks_like -> bikini_top
+- `xs_boots` — boots (pair) — via looks_like -> boots
+- `xs_boots_chitin` — chitinous scale foot covers (pair) — via looks_like -> boots_chitin
+- `xs_boots_faux_fur` — faux fur boots (pair) — via looks_like -> boots
+- `xs_boots_fsurvivor` — survivor fireboots (pair) — via looks_like -> boots
+- `xs_boots_fur` — fur boots (pair) — via looks_like -> boots
+- `xs_boots_hsurvivor` — heavy survivor boots (pair) — via looks_like -> boots
+- `xs_boots_larmor` — leather armor boots (pair) — via looks_like -> boots
+- `xs_boots_plate` — armored boots (pair) — via looks_like -> boots
+- `xs_boots_scrap` — scrap boots (pair) — via looks_like -> boots
+- `xs_boots_winter` — winter boots (pair) — via looks_like -> boots
+- `xs_boots_wsurvivor` — handmade winterized hazard boots (pair) — via looks_like -> boots
+- `xs_boots_wsurvivor_nofur` — handmade faux fur hazard boots (pair) — via looks_like -> boots
+- `xs_bra` — bra — via looks_like -> tank_top
+- `xs_ch_chainmail_arms` — hardened steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xs_ch_chainmail_half_legs` — hardened steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xs_ch_greaves_brigandine` — hardened splint greaves (pair) — via looks_like -> leg_warmers
+- `xs_ch_helmet_nasal` — hardened steel nasal helm — via looks_like -> helmet_barbute
+- `xs_ch_helmet_turban` — hardened steel turban helmet — via looks_like -> helmet_barbute
+- `xs_ch_mirror_armor` — hardened steel mirror armor — via looks_like -> chestguard_hard
+- `xs_ch_vambrace_brigandine` — hardened splint vambraces (pair) — via looks_like -> arm_warmers
+- `xs_chestrig` — chest rig — via looks_like -> tool_belt
+- `xs_coat_faux_fur` — faux fur coat — via looks_like -> coat_rain
+- `xs_coat_fur` — fur coat — via looks_like -> coat_rain
+- `xs_cuirass_bronze` — bronze cuirass — via looks_like -> chestguard_hard
+- `xs_cuirass_lightplate` — cuirass — via looks_like -> chestguard_hard
+- `xs_cuirass_scrap` — scrap cuirass — via looks_like -> chestguard_hard
+- `xs_cuirass_tire` — tire cuirass — via looks_like -> chestguard_hard
+- `xs_duster` — duster — via looks_like -> coat_rain
+- `xs_duster_faux_fur` — faux fur duster — via looks_like -> coat_rain
+- `xs_duster_fur` — fur duster — via looks_like -> coat_rain
+- `xs_duster_leather` — leather duster — via looks_like -> coat_rain
+- `xs_espadrilles` — espadrilles — via looks_like -> sneakers
+- `xs_fsurvivor_suit` — survivor firesuit — via looks_like -> jumpsuit
+- `xs_gambeson_canvas_vest` — sleeveless canvas gambeson — via looks_like -> tank_top
+- `xs_gambeson_gloves_canvas` — canvas arming mittens (pair) — via looks_like -> gloves_light
+- `xs_gambeson_gloves_nylon` — nylon arming mittens (pair) — via looks_like -> gloves_light
+- `xs_gambeson_gloves_wool` — wool arming mittens (pair) — via looks_like -> gloves_light
+- `xs_gambeson_nylon_vest` — sleeveless nylon gambeson — via looks_like -> tank_top
+- `xs_gambeson_pants_canvas` — canvas heavy arming pants — via looks_like -> pants
+- `xs_gambeson_pants_nylon` — nylon heavy arming pants — via looks_like -> pants
+- `xs_gambeson_pants_wool` — wool heavy arming pants — via looks_like -> pants
+- `xs_gambeson_sleeve` — gambeson sleeves (pair) — via looks_like -> arm_warmers
+- `xs_gambeson_wool_vest` — sleeveless wool gambeson — via looks_like -> tank_top
+- `xs_gauntlets_acidchitin` — biosilicified chitin gauntlets (pair) — via looks_like -> gloves_light
+- `xs_gauntlets_chitin` — chitinous scale mail gauntlets (pair) — via looks_like -> gloves_light
+- `xs_gauntlets_larmor` — leather armor gauntlets (pair) — via looks_like -> gloves_light
+- `xs_gloves_faux_fur` — faux fur gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_fsurvivor` — survivor firegloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_fur` — fur gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_hsurvivor` — heavy survivor gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_leather` — leather gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_light` — light gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_liner` — glove liners (pair) — via looks_like -> gloves_light
+- `xs_gloves_plate` — armored gauntlets (pair) — via looks_like -> gloves_light
+- `xs_gloves_studded` — studded gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_survivor` — handmade hazard gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_wool` — wool gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_wool_fingerless` — fingerless wool gloves (pair) — via looks_like -> gloves_light
+- `xs_gloves_wsurvivor` — handmade winter gauntlets (pair) — via looks_like -> gloves_light
+- `xs_gloves_wsurvivor_nofur` — handmade faux fur winter gauntlets (pair) — via looks_like -> gloves_light
+- `xs_hc_chainmail_arms` — high steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xs_hc_chainmail_half_legs` — high steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xs_hc_greaves_brigandine` — high steel splint greaves (pair) — via looks_like -> leg_warmers
+- `xs_hc_helmet_nasal` — high steel nasal helm — via looks_like -> helmet_barbute
+- `xs_hc_helmet_turban` — high steel turban helmet — via looks_like -> helmet_barbute
+- `xs_hc_mirror_armor` — high steel mirror armor — via looks_like -> chestguard_hard
+- `xs_hc_vambrace_brigandine` — high steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `xs_helmet_bronze` — bronze helmet — via looks_like -> helmet_barbute
+- `xs_helmet_nomad` — nomad cowl — via looks_like -> hat_cotton
+- `xs_hood_fsurvivor` — survivor firehood — via looks_like -> hat_cotton
+- `xs_hood_wsurvivor` — handmade winter traveler hood — via looks_like -> hat_cotton
+- `xs_hood_wsurvivor_nofur` — handmade faux fur traveler hood — via looks_like -> hat_cotton
+- `xs_hsurvivor_jumpsuit` — handmade hazard suit — via looks_like -> jumpsuit
+- `xs_k_gambeson_sleeve` — Kevlar gambeson sleeves (pair) — via looks_like -> arm_warmers
+- `xs_lc_chainmail_arms` — mild steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xs_lc_chainmail_half_legs` — mild steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xs_lc_greaves_brigandine` — mild steel splint greaves (pair) — via looks_like -> leg_warmers
+- `xs_lc_helmet_nasal` — mild steel nasal helm — via looks_like -> helmet_barbute
+- `xs_lc_helmet_turban` — mild steel turban helmet — via looks_like -> helmet_barbute
+- `xs_lc_mirror_armor` — mild steel mirror armor — via looks_like -> chestguard_hard
+- `xs_lc_vambrace_brigandine` — mild steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `xs_legguard_acidchitin` — biosilicified chitin leg guards (pair) — via looks_like -> legguard_chitin
+- `xs_legguard_bronze` — bronze greaves (pair) — via looks_like -> leg_warmers
+- `xs_legguard_chitin` — chitinous scale mail leggings — via looks_like -> leg_warmers
+- `xs_legguard_larmor` — leather leg guards (pair) — via looks_like -> leg_warmers
+- `xs_legguard_metal` — iron greaves (pair) — via looks_like -> leg_warmers
+- `xs_legguard_metal_sheets` — sheet metal leg guards (pair) — via looks_like -> leg_warmers
+- `xs_legguard_scrap` — scrap leg guards (pair) — via looks_like -> leg_warmers
+- `xs_legguard_tire` — tire leg guards (pair) — via looks_like -> leg_warmers
+- `xs_lsurvivor_armor` — mercenary body armor — via looks_like -> jacket_army
+- `xs_lsurvivor_jumpsuit` — handmade summer suit — via looks_like -> jumpsuit
+- `xs_mc_chainmail_arms` — medium steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xs_mc_chainmail_half_legs` — medium steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xs_mc_greaves_brigandine` — medium steel splint greaves (pair) — via looks_like -> leg_warmers
+- `xs_mc_helmet_nasal` — medium steel nasal helm — via looks_like -> helmet_barbute
+- `xs_mc_helmet_turban` — medium steel turban helmet — via looks_like -> helmet_barbute
+- `xs_mc_mirror_armor` — medium steel mirror armor — via looks_like -> chestguard_hard
+- `xs_mc_vambrace_brigandine` — medium steel splint vambraces (pair) — via looks_like -> arm_warmers
+- `xs_qt_chainmail_arms` — tempered steel chainmail sleeves (pair) — via looks_like -> arm_warmers
+- `xs_qt_chainmail_half_legs` — tempered steel chainmail half-leggings — via looks_like -> leg_warmers
+- `xs_qt_greaves_brigandine` — tempered splint greaves (pair) — via looks_like -> leg_warmers
+- `xs_qt_helmet_nasal` — tempered steel nasal helm — via looks_like -> helmet_barbute
+- `xs_qt_helmet_turban` — tempered steel turban helmet — via looks_like -> helmet_barbute
+- `xs_qt_mirror_armor` — tempered steel mirror armor — via looks_like -> chestguard_hard
+- `xs_qt_vambrace_brigandine` — tempered splint vambraces (pair) — via looks_like -> arm_warmers
+- `xs_survivor_vest` — handmade harness — via looks_like -> tank_top
+- `xs_tacvest` — tac vest — via looks_like -> tank_top
+- `xs_vambrace_larmor` — leather vambraces (pair) — via looks_like -> arm_warmers
+- `xs_wetsuit_booties` — diving socks (pair) — via looks_like -> boots
+- `xs_wetsuit_booties_thick` — thick diving boots (pair) — via looks_like -> boots
+- `xs_wetsuit_gloves` — diving gloves (pair) — via looks_like -> gloves_light
+- `xs_wetsuit_gloves_thick` — thick diving gloves (pair) — via looks_like -> gloves_light
+- `xs_wetsuit_hood` — wetsuit hood — via looks_like -> hat_cotton
+- `xs_wetsuit_hood_thick` — thick wetsuit hood — via looks_like -> hat_cotton
+- `xs_wetsuit_jacket` — wetsuit jacket — via looks_like -> jacket_light
+- `xs_wetsuit_pants` — wetsuit pants — via looks_like -> pants
+- `xs_wetsuit_pants_thin` — thin wetsuit pants — via looks_like -> pants
+- `xs_wetsuit_shorts` — wetsuit shorts — via looks_like -> boxer_shorts
+- `xs_wetsuit_shorts_technical` — wetsuit technical shorts — via looks_like -> boxer_shorts
+- `xs_wetsuit_shorts_technical_loose` — wetsuit technical shorts (loose) — via looks_like -> boxer_shorts
+- `xs_wetsuit_spring` — spring suit — via looks_like -> wetsuit
+- `xs_wetsuit_spring_sleeveless` — sleeveless spring suit — via looks_like -> wetsuit
+- `xs_wetsuit_thick` — thick wetsuit — via looks_like -> wetsuit
+- `xs_wetsuit_top` — wetsuit shirt — via looks_like -> tshirt
+- `xs_wetsuit_top_sleeved` — wetsuit long-sleeved shirt — via looks_like -> longshirt
+- `xs_wetsuit_top_sleeved_thin` — thin wetsuit long-sleeved shirt — via looks_like -> longshirt
+- `xs_wsurvivor_jumpsuit` — handmade winter suit — via looks_like -> jumpsuit
+- `xs_wsurvivor_jumpsuit_nofur` — handmade faux fur winter suit — via looks_like -> jumpsuit
+- `xsboxer_briefs` — boxer briefs — via looks_like -> boxer_shorts
+- `xsboxer_shorts` — boxer shorts — via looks_like -> boxer_briefs
+- `xsboy_shorts` — boy shorts — via looks_like -> boxer_briefs
+- `xshsurvivor_suit` — heavy survivor suit — via looks_like -> jumpsuit
+- `xsnomex_socks` — flame-resistant socks (pair) — via looks_like -> socks
+- `xssocks` — socks (pair) — via looks_like -> socks
+- `xssocks_wool` — wool socks (pair) — via looks_like -> socks
+- `xssports_bra` — sports bra — via looks_like -> bra
+- `xssurvivor_jumpsuit` — handmade combat suit — via looks_like -> jumpsuit
+- `y_carpet` — yellow carpet — via exact/use-all-png -> y_carpet
+- `young_koji` — growing wild koji mold (obsolete) — via looks_like -> rice_cooked
+- `young_koji_active` — growing wild koji mold — via looks_like -> rice_cooked
+- `young_koji_done` — grown wild koji mold — via looks_like -> rice_cooked
+- `young_leaves` — handful of young leaves — via exact/use-all-png -> young_leaves
+- `yrax_delta_laser_gun` — deterrent laser weapon — via looks_like -> v29
+- `yrax_deterrent_laser` — deterrent laser weapon — via looks_like -> glock_17
+- `yrax_metaljet_cannon` — ferro-hydraulic cannon — via looks_like -> glock_17
+- `zinc_metal` — zinc — via exact/use-all-png -> zinc_metal
+- `zipper_long_plastic` — long plastic zipper — via exact/use-all-png -> zipper_long_plastic
+- `zipper_short_plastic` — short plastic zipper — via exact/use-all-png -> zipper_short_plastic
+- `zubon_gi` — zubon — via looks_like -> pants

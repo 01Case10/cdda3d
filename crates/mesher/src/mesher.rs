@@ -54,6 +54,46 @@ pub fn face_visible(src: Block, neighbor: Block) -> bool {
     }
 }
 
+/// Texture-array layer for face direction `di` of `block` (Phase 2f):
+/// +Z samples the top layer, -Z the bottom layer, every side face the
+/// side layer — the same selection the RT shader's `tex_albedo` makes.
+/// `None` when the block is untextured (flat shading).
+fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
+    let layers = block.tex_layers?;
+    Some(match di {
+        4 => layers[0], // +Z (up): top
+        5 => layers[2], // -Z (down): bottom
+        _ => layers[1], // sides
+    })
+}
+
+/// UV for a grid-space point `p` on face `di`, given the quad's
+/// per-axis grid minimum and extent (Phase 2f). Mirrors the RT
+/// shader's `tex_albedo` mapping exactly: top and bottom faces use
+/// `(x_fraction, y_fraction)`; side faces use
+/// `(horizontal_fraction, 1 - z_fraction)` so v = 0 is the texture's
+/// top row at the top of the voxel. Fractions are relative to the
+/// (possibly greedy-merged) quad, so a quad's UVs span [0,1]² across
+/// its whole extent.
+fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], quad_ext: [f32; 3]) -> [f32; 2] {
+    let dir = FACE_DIRS[di];
+    let axis = (0..3).find(|&a| dir[a] != 0).unwrap();
+    if axis == 2 {
+        [
+            (p[0] - quad_min[0]) / quad_ext[0],
+            (p[1] - quad_min[1]) / quad_ext[1],
+        ]
+    } else {
+        // The horizontal axis is the one that is neither the face
+        // axis nor z.
+        let h = (0..3).find(|&a| a != axis && a != 2).unwrap();
+        [
+            (p[h] - quad_min[h]) / quad_ext[h],
+            1.0 - (p[2] - quad_min[2]) / quad_ext[2],
+        ]
+    }
+}
+
 /// Grid-space point -> Y-up world point. This is a rotation about X
 /// (grid `(x, y_south, z_up)` -> world `(x, z_up, -y_south)`), NOT a plain
 /// axis swap: a swap is a reflection and would flip triangle winding.
@@ -88,18 +128,23 @@ pub fn mesh_naive(
                 }
                 let mesh = &mut out.meshes[block.pass.index()];
                 for (di, dir) in FACE_DIRS.iter().enumerate() {
-                    let neighbor =
-                        sampler.block_at(gx + dir[0], gy + dir[1], gz + dir[2]);
+                    let neighbor = sampler.block_at(gx + dir[0], gy + dir[1], gz + dir[2]);
                     if !face_visible(block, neighbor) {
                         continue;
                     }
-                    let corners = FACE_CORNERS[di].map(|c| {
-                        to_world(
-                            [gx as f32 + c[0], gy as f32 + c[1], gz as f32 + c[2]],
-                            scale,
-                        )
-                    });
-                    mesh.push_quad(corners, normal_to_world(*dir), block.color);
+                    let grid_corners = FACE_CORNERS[di]
+                        .map(|c| [gx as f32 + c[0], gy as f32 + c[1], gz as f32 + c[2]]);
+                    let corners = grid_corners.map(|g| to_world(g, scale));
+                    let normal = normal_to_world(*dir);
+                    match layer_for_dir(block, di) {
+                        Some(layer) => {
+                            let quad_min = [gx as f32, gy as f32, gz as f32];
+                            let uvs =
+                                grid_corners.map(|g| face_uv(di, g, quad_min, [1.0, 1.0, 1.0]));
+                            mesh.push_quad_textured(corners, normal, block.color, uvs, layer);
+                        }
+                        None => mesh.push_quad(corners, normal, block.color),
+                    }
                 }
             }
         }
@@ -142,8 +187,7 @@ pub fn mesh_greedy(
                         if block.is_air() || block.pass != pass {
                             continue;
                         }
-                        let neighbor =
-                            sampler.block_at(gx + dir[0], gy + dir[1], gz + dir[2]);
+                        let neighbor = sampler.block_at(gx + dir[0], gy + dir[1], gz + dir[2]);
                         if face_visible(block, neighbor) {
                             mask[v * u_len + u] = Some(block);
                         }
@@ -183,8 +227,20 @@ pub fn mesh_greedy(
                             }
                         }
                         emit_greedy_quad(
-                            mesh, origin, axis, u_ax, v_ax, slice as i32, u as i32,
-                            v as i32, w as i32, h as i32, *dir, di, key, scale,
+                            mesh,
+                            origin,
+                            axis,
+                            u_ax,
+                            v_ax,
+                            slice as i32,
+                            u as i32,
+                            v as i32,
+                            w as i32,
+                            h as i32,
+                            *dir,
+                            di,
+                            key,
+                            scale,
                         );
                     }
                 }
@@ -207,25 +263,26 @@ fn emit_greedy_quad(
     w: i32,
     h: i32,
     dir: [i32; 3],
-    _di: usize,
+    di: usize,
     block: Block,
     scale: WorldScale,
 ) {
     // Plane coordinate along the axis: top of the cell for positive faces.
     let plane = if dir[axis] > 0 { slice + 1 } else { slice };
-    let corner = |u: i32, v: i32| -> [f32; 3] {
+    let grid_corner = |u: i32, v: i32| -> [f32; 3] {
         let mut g = [0f32; 3];
         g[axis] = (origin[axis] + plane) as f32;
         g[u_ax] = (origin[u_ax] + u) as f32;
         g[v_ax] = (origin[v_ax] + v) as f32;
-        to_world(g, scale)
+        g
     };
-    let mut corners = [
-        corner(u0, v0),
-        corner(u0 + w, v0),
-        corner(u0 + w, v0 + h),
-        corner(u0, v0 + h),
+    let mut grid_corners = [
+        grid_corner(u0, v0),
+        grid_corner(u0 + w, v0),
+        grid_corner(u0 + w, v0 + h),
+        grid_corner(u0, v0 + h),
     ];
+    let mut corners = grid_corners.map(|g| to_world(g, scale));
     // Guarantee outward winding: flip the order if the geometric normal
     // disagrees with the face normal.
     let n = normal_to_world(dir);
@@ -246,6 +303,21 @@ fn emit_greedy_quad(
     ];
     if cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2] < 0.0 {
         corners.swap(1, 3);
+        grid_corners.swap(1, 3);
     }
-    mesh.push_quad(corners, n, block.color);
+    match layer_for_dir(block, di) {
+        Some(layer) => {
+            // UV fractions are relative to the merged quad's minimum
+            // and extent along its two in-plane axes.
+            let mut quad_min = [0f32; 3];
+            let mut quad_ext = [1f32; 3];
+            quad_min[u_ax] = (origin[u_ax] + u0) as f32;
+            quad_ext[u_ax] = w as f32;
+            quad_min[v_ax] = (origin[v_ax] + v0) as f32;
+            quad_ext[v_ax] = h as f32;
+            let uvs = grid_corners.map(|g| face_uv(di, g, quad_min, quad_ext));
+            mesh.push_quad_textured(corners, n, block.color, uvs, layer);
+        }
+        None => mesh.push_quad(corners, n, block.color),
+    }
 }

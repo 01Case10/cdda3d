@@ -214,12 +214,21 @@ impl App {
             // windowed RT path rebuilds renderer+scene per remesh;
             // cutaway changes are rare, per-frame rendering reuses
             // the scene).
-            let voxel_world = engine::rt::world_for_levels(&visible);
+            let mut voxel_world = engine::rt::world_for_levels(&visible);
+            // Phase 2d: variant-prepare the world before the tree
+            // build when textures are on (same flow as the capture
+            // path); a prepare failure leaves the base world, and
+            // the attach below reports the underlying error.
+            let assignments = match &self.textures_dir {
+                Some(dir) => engine::rt::prepare_fake_variants(&mut voxel_world, dir)
+                    .unwrap_or_default(),
+                None => Vec::new(),
+            };
             match treebuild::build::build_tree(&voxel_world, treebuild::build::BuildConfig::default()) {
                 Ok(built) => {
                     let (renderer, mut scene) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
                     if let Some(dir) = &self.textures_dir {
-                        match engine::rt::attach_fake_textures(&gpu.device, &gpu.queue, &mut scene, dir) {
+                        match engine::rt::attach_fake_textures(&gpu.device, &gpu.queue, &mut scene, dir, &assignments) {
                             Ok(stats) => eprintln!(
                                 "voxel-engine: RT textures: {} materials, {} layers",
                                 stats.textured_materials, stats.layers_uploaded

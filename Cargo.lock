@@ -2269,6 +2269,7 @@ name = "voxelizer"
 version = "0.1.0"
 dependencies = [
  "image",
+ "mesher",
  "serde",
  "serde_json",
  "tileset",
