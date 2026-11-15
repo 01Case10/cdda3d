@@ -393,17 +393,22 @@ fn smoke_shade(f: FieldInst, p: vec3<f32>, dir_l: vec3<f32>, t0: f32, t1: f32) -
         // Hot smoke is THIN at the base (still mostly flame and
         // hot gas there) and builds as it climbs.
         sdens *= mix(1.0, 0.25 + 0.75 * smoothstep(0.05, 0.6, lp.y), f.heat);
-        let a = clamp(1.0 - exp(-sdens * 1.9 * step_len), 0.0, 1.0);
+        let a = clamp(1.0 - exp(-sdens * 2.6 * step_len), 0.0, 1.0);
         if (a > 0.001) {
             // Flat color gradient, dark base to light top; heat
             // darkens fresh smoke and underlights it orange.
-            let g = clamp(curve * (0.55 + 0.45 * lp.y), 0.0, 1.0);
+            let g = clamp(curve * 0.45 + lp.y * 0.35, 0.0, 1.0); // height-driven; curve only modulates (less marbling)
             var dark = f.base_color * vec3<f32>(0.10, 0.095, 0.095);
             dark *= 1.0 - 0.5 * f.heat * pow(1.0 - lp.y, 1.5);
-            let light = f.base_color * 0.52;
+            let light = f.base_color * 0.42;
             var scol = mix(dark, light, g);
             let uflick = 0.6 + 0.4 * vnoise(vec3<f32>(f.seed * 5.0, u.time * 4.0, 3.0));
-            scol += vec3<f32>(1.0, 0.42, 0.10) * (f.heat * pow(1.0 - lp.y, 2.0) * 1.15 * uflick);
+            // Underlight falls off with WORLD height above the
+            // ground, not per-volume y — otherwise every stacked
+            // tile re-lights its own base mid-column.
+            let world_y = f.center.y + lp.y * (f.size * 1.35);
+            let ufall = exp(-max(world_y - 0.55, 0.0) / 1.4);
+            scol += vec3<f32>(1.0, 0.42, 0.10) * (f.heat * ufall * 1.15 * uflick);
             acc += (1.0 - acc_a) * a * scol;
             acc_a += (1.0 - acc_a) * a;
             if (acc_a > 0.98) { break; }

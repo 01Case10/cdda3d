@@ -130,16 +130,16 @@ pub fn voronoi_f1(p: Vec3) -> f32 {
 /// by the alpha-curve value and height — the source shader's
 /// gradient map, as math.
 pub fn smoke_color(def: &EffectDef, curve: f32, y: f32) -> [f32; 3] {
-    let g = (curve * (0.55 + 0.45 * y)).clamp(0.0, 1.0);
+    let g = (curve * 0.45 + y * 0.35).clamp(0.0, 1.0);
     let dark = [
         def.base_color[0] * 0.10,
         def.base_color[1] * 0.095,
         def.base_color[2] * 0.095,
     ];
     let light = [
-        def.base_color[0] * 0.52,
-        def.base_color[1] * 0.52,
-        def.base_color[2] * 0.52,
+        def.base_color[0] * 0.42,
+        def.base_color[1] * 0.42,
+        def.base_color[2] * 0.42,
     ];
     mix3(dark, light, g)
 }

@@ -287,3 +287,44 @@ reference screenshots. Gates: 2b.2/2b.3/2b.5 re-verified against
 the new smoke path (obscurance is now voronoi-modulated but keeps
 its floor term, so intensity ordering and the white-backdrop
 deltas hold); fx 12 lib + 7 gate tests pass.
+
+## 10. Smoke-over-fire coupling (2026-11-15, Joey's call)
+
+Joey rejected the §9 smoke over fire: fully-formed light-grey
+puffs stacked as discrete cubes directly on the flames. His
+question — "do we need a combined smoke + fire shader?" — answer:
+not one merged shader, but the two cannot be independent either.
+Fire and smoke are one phenomenon at the base; what was missing
+is **coupling data**, in three parts (all computed at instance
+upload in `render.rs`, like the flame light):
+
+- **`heat`** (reuses the instance buffer's pad slot): for smoke,
+  the strongest fire on the same tile (full) or below it
+  (×(1 − 0.35·Δz)). Heated smoke rises faster, is **eroded at its
+  base** by detail noise, is **thin at the base** (density builds
+  with height — near the fire it's still mostly hot gas), is
+  **darker** (fresh smoke is near-black), and is **underlit
+  orange** with a falloff in *world* height (a per-volume falloff
+  re-lit every stacked tile's base mid-column — caught in
+  capture review).
+- **`link`** (column links, buffer grew a row): smoke directly
+  below/above in the same column. Linked faces skip the base
+  pinch / top round-off, so a vertical column shades as one
+  plume instead of a stack of blobs with a waist per tile.
+- **Marched shading**: smoke is now integrated in 4 steps along
+  the view chord (front-to-back) instead of one mid-chord sample,
+  which had read as a marbled glass slab with hard box edges.
+  Silhouette chords are short and fade naturally; the body is
+  properly opaque at intensity 3.
+
+The gradient also moved into shadow range (×0.10 → ×0.42 of the
+extracted color, height-driven with the curve only modulating):
+measured against the fire scene, the first §10 cut left the
+column ~2× brighter than the flame-lit wall behind it. The
+showcase plume was recomposed as one column (full z=1 layer over
+the blaze, narrower z=2, one leaning z=3 tile). Unheated smoke
+(the gates' case: 2b.3/2b.5) is unchanged in behavior — heat and
+link are 0 and the march reduces to the same density law. fx
+13 lib + 7 gate tests pass; the CPU reference stays the
+single-sample, uncoupled baseline (`smoke_underlight` mirrors
+the underlight term).
