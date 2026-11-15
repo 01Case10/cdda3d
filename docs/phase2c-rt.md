@@ -210,8 +210,8 @@ Added on Joey's word after the 2c gate, RT path only:
 ## Follow-ups (not 2c scope)
 
 - 2c.9 on the RX 9070 XT (above).
-- Texture mipmaps in the RT shader; multitile layer selection;
-  raster-path textures (mesher UV follow-up, still open).
+- Texture mipmaps in the RT shader (Phase 2e); multitile layer
+  selection (Phase 2d); raster-path textures (Phase 2f).
 - fx (Phase 2b) wiring into the engine renderer: the post stack
   composites over whichever renderer produced the frame; RT frames
   currently bypass it.
