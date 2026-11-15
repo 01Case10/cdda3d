@@ -1066,6 +1066,17 @@ folders, overlay count).
   pictograms, armor body-part shells, deployed blade/claws,
   the Exodii cyberlimbs and Cyberframes, the brass Cree'yn
   heart. Items 3,742 → 3,690. `draw_item01.py`.
+- **ITEM03** — bionics 3/3 (46): deployed razors/scalpels,
+  synthetic lungs, the Hub 01 XM exo interfaces as hardware,
+  faulty units cracked/glitched. Items → 3,644. `draw_item03.py`.
+- **ITEM02** — bionics 2/3 (52): emitters, sensors, power
+  storage graded by charge, probability travel half through a
+  wall. **Bionics cluster complete (150).** Items → 3,592.
+  `draw_item02.py`.
+- **ITEM04** — generic 1/3 (52): the broken_* wreck family
+  parameterized by weapon/form (drones, turrets, humanoid bots,
+  superalloy mech wrecks), faceted gems, XEDRA documents.
+  Items → 3,540. `draw_item04.py`.
 
 ## Status
 
