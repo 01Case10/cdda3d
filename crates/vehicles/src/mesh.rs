@@ -28,6 +28,17 @@ use crate::model::VehicleModel;
 /// ids end at 9; real material ids arrive with TileDefs).
 pub const VEHICLE_BLOCK_ID: u32 = 1000;
 
+/// The state subtile a part's texture selection uses, from its
+/// exported flags — the canonical table in `mesher::connect`
+/// (the game's vpart renderer: open wins over broken; a part
+/// with neither flag has no state subtile and selects by its
+/// base entry). The engine's spec builder turns this name into
+/// the variant's side layer
+/// (`build_texture_spec_state_variants`).
+pub fn part_state_subtile(part: &crate::model::PartModel) -> Option<&'static str> {
+    mesher::connect::state_subtile(part.open, part.broken)
+}
+
 fn part_block(model: &VehicleModel, index: usize) -> Block {
     let part = &model.parts[index];
     // Role by flags/key: roof parts are stamped from the roof

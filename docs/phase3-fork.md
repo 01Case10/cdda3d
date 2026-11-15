@@ -94,16 +94,25 @@ only; FlatBuffers is header-only as vendored).
    depends on H7.
 2. **Connect-group names**: bitset indices are exact, but the pinned
    source has no index→name reverse lookup (`get_connect_group` maps
-   name→group). The adapter currently exports `group_<index>` names;
-   the load-bearing data (per-def indices) is exact. A name mirror
-   recorded at `connect_group::load` time is the clean fix.
+   name→group). **Mirror wired (2026-11-15 follow-up):** hook H8
+   records each name at `connect_group::load` into the registry in
+   `voxel_ipc/voxel_refs.*`, and the adapter's
+   `connect_group_table()` reads it back; an unrecorded index keeps
+   the stable `group_<index>` placeholder. Harness gate 3.22.
 3. **Seen float**: no public per-tile `seen_cache` getter exists in the
    pinned source. The adapter quantizes from `lit_level` (BLANK=0,
    MEMORIZED=64, visible=255). Test 3.5's seen-tolerance check in-game
    will show whether that suffices or a cache accessor hook is needed.
-4. **fg/bg sprite refs**: TileDefs export `fg_ref/bg_ref = -1` until the
-   composed `tile_config.json` index mapping is wired (Phase 5 owns the
-   composed config; the exporter must not invent indices).
+4. **fg/bg sprite refs**: **wired (2026-11-15 follow-up).** The
+   tileset crate's `fg_refs` tool derives the table from the composed
+   `tile_config.json` (primary sprite per entry: highest weight,
+   ties by order; absent slot = -1) and writes a TSV; the adapter
+   loads it once from the `CDDA_VOXEL_FG_REFS` env path into
+   `voxel_ipc::FgBgRefs` and fills every def's refs by string id in
+   a post-pass. No table = every def keeps -1 (nothing invented).
+   Refs are section-local composed indices, matching the schema's
+   single-int fields. Harness gate 3.21; tool gate in the tileset
+   crate's `fg_refs_tool` test.
 5. **`TileChange` carries no `displayed_field`** (schema observation,
    reported to the parent — schema/ is read-only for Phase 3): after a
    delta, the engine cannot know the game's newly displayed field from

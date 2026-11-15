@@ -102,8 +102,21 @@ pub fn attach_fake_textures(
 
 /// The fake-house voxel world for a set of visible game z-levels.
 pub fn world_for_levels(visible_levels: &[i32]) -> VoxelWorld {
+    world_for_levels_v(visible_levels, None)
+}
+
+/// [`world_for_levels`] with a vehicle scene stamped into the
+/// filtered map before conversion (Phase 8 wiring — the RT path
+/// consumes the same stamped blocks the raster path meshes).
+pub fn world_for_levels_v(
+    visible_levels: &[i32],
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> VoxelWorld {
     let map = world::build_fake_house(mesher::scale::WorldScale::default());
-    let filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    if let Some(v) = vehicles {
+        crate::scene_prep::stamp_vehicles(&mut filtered, v);
+    }
     VoxelWorld::from_chunk_map(&filtered)
 }
 
@@ -132,7 +145,19 @@ pub fn world_for_levels_lit(
     visible_levels: &[i32],
     lit: &crate::frame::LightingScene,
 ) -> VoxelWorld {
-    let base = world_for_levels(visible_levels);
+    world_for_levels_lit_v(visible_levels, lit, None)
+}
+
+/// [`world_for_levels_lit`] with a vehicle scene: the vehicles
+/// are stamped into the base world first, so the visibility
+/// contract below governs their voxels exactly like terrain
+/// (a part on a BLANK tile never enters the tree).
+pub fn world_for_levels_lit_v(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> VoxelWorld {
+    let base = world_for_levels_v(visible_levels, vehicles);
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
     let mut out = VoxelWorld::new();
@@ -236,8 +261,8 @@ pub fn render_rt_frame(
     // the render is exactly the pre-2d one.
     let levels = capture_visible_levels(args.cutaway_z);
     let mut voxel_world = match &args.lighting {
-        Some(lit) => world_for_levels_lit(&levels, lit),
-        None => world_for_levels(&levels),
+        Some(lit) => world_for_levels_lit_v(&levels, lit, args.vehicles.as_ref()),
+        None => world_for_levels_v(&levels, args.vehicles.as_ref()),
     };
     let assignments = match &args.textures {
         Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,

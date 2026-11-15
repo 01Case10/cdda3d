@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "voxel_adapter.h"
+#include "voxel_refs.h"
 
 namespace mock
 {

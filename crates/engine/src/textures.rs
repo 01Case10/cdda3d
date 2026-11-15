@@ -208,6 +208,65 @@ pub fn build_texture_spec_multitile(
     Ok((builder.finish(material_layers, &mut stats), stats))
 }
 
+/// One state-variant allocation (Phase 2d follow-up): voxels
+/// carrying state (`open` / `broken`) for base material
+/// `base_id` are rewritten to `virtual_id` — the state analogue
+/// of `treebuild::connect::VariantAssignment`'s (base, mask)
+/// pairs. The consumer is the vehicle renderer: a vpart's state
+/// comes from its exported flags, never from its neighbors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StateVariantAssignment {
+    pub base_id: u32,
+    pub virtual_id: u32,
+    pub open: bool,
+    pub broken: bool,
+}
+
+/// The base spec plus one state-variant entry per assignment.
+/// Each variant keeps its base material's top/bottom layers and
+/// takes the side layer `Material::side_layer_for_state`
+/// selects, so a stateful part (an open vehicle door) samples
+/// its state picture. Assignments whose base material doesn't
+/// resolve are skipped, like the multitile builder's.
+pub fn build_texture_spec_state_variants(
+    table: &MaterialTable,
+    dir: &Path,
+    id_map: &HashMap<u32, String>,
+    assignments: &[StateVariantAssignment],
+) -> Result<(TextureSpec, TextureStats), String> {
+    let mut stats = TextureStats::default();
+    let mut builder = SpecBuilder::new(table, dir);
+    let mut material_layers = builder.build_base(table, id_map, &mut stats);
+    let mut sorted: Vec<&StateVariantAssignment> = assignments.iter().collect();
+    sorted.sort_by_key(|a| a.virtual_id);
+    for a in sorted {
+        let Some(game_id) = id_map.get(&a.base_id) else {
+            continue;
+        };
+        let Some(mat) = table.get(game_id) else {
+            continue;
+        };
+        let side = mat.side_layer_for_state(a.open, a.broken);
+        match builder.entry(mat, side) {
+            Ok(entry) => {
+                let idx = a.virtual_id as usize;
+                if idx >= material_layers.len() {
+                    material_layers.resize(idx + 1, [0, 0, 0, 0]);
+                }
+                material_layers[idx] = entry;
+                stats.variants += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    "voxel-engine: state variant (base {}, open {}, broken {}) stays flat: {e}",
+                    a.base_id, a.open, a.broken
+                );
+            }
+        }
+    }
+    Ok((builder.finish(material_layers, &mut stats), stats))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,18 +280,18 @@ mod tests {
         std::fs::create_dir_all(&blocks).unwrap();
         std::fs::write(
             dir.join("blocks.json"),
-            r#"{"format":"png-layers","tile_size":2,"layer_count":5}"#,
+            r#"{"format":"png-layers","tile_size":2,"layer_count":6}"#,
         )
         .unwrap();
         std::fs::write(
             dir.join("materials.json"),
             r#"[
-              {"id":"t_a","resolved_id":"t_a","resolution":"exact","material_index":0,"top_layer":0,"side_layer":1,"bottom_layer":0,"height_voxels":3,"transparency":"opaque","cutout":false,"transparent":false,"tint":[255,255,255],"sub_model":null,"multitile":true,"subtile_layers":{"edge":3,"unconnected":4}},
+              {"id":"t_a","resolved_id":"t_a","resolution":"exact","material_index":0,"top_layer":0,"side_layer":1,"bottom_layer":0,"height_voxels":3,"transparency":"opaque","cutout":false,"transparent":false,"tint":[255,255,255],"sub_model":null,"multitile":true,"subtile_layers":{"edge":3,"unconnected":4,"open":5}},
               {"id":"t_b","resolved_id":"t_b","resolution":"exact","material_index":1,"top_layer":2,"side_layer":2,"bottom_layer":2,"height_voxels":3,"transparency":"opaque","cutout":false,"transparent":false,"tint":[255,255,255],"sub_model":null,"multitile":false,"subtile_layers":{}}
             ]"#,
         )
         .unwrap();
-        for (i, v) in [(0usize, 10u8), (1, 20), (2, 30), (3, 40), (4, 50)] {
+        for (i, v) in [(0usize, 10u8), (1, 20), (2, 30), (3, 40), (4, 50), (5, 60)] {
             let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([v, v, v, 255]));
             img.save(blocks.join(format!("layer_{i:04}.png"))).unwrap();
         }
@@ -316,6 +375,58 @@ mod tests {
         assert_eq!(spec.layers[3][0], 40, "edge layer bytes");
         assert_eq!(spec.layers[4][0], 50, "unconnected layer bytes");
         assert_eq!(stats.layers_uploaded, 5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn state_variant_spec_selects_open_broken_side_layers() {
+        let dir = std::env::temp_dir().join(format!("engine_tex_state_{}", std::process::id()));
+        fixture(&dir);
+        let table = MaterialTable::load(&dir).unwrap();
+        let id_map: HashMap<u32, String> = [(7u32, "t_a".to_string())].into_iter().collect();
+        // An open part (virtual 30) and a broken part (virtual
+        // 31). The fixture entry carries an "open" subtile layer
+        // (global 5) but no "broken" layer, so broken falls back
+        // to the base side — the same fallback rule as masks.
+        let assignments = [
+            StateVariantAssignment {
+                base_id: 7,
+                virtual_id: 30,
+                open: true,
+                broken: false,
+            },
+            StateVariantAssignment {
+                base_id: 7,
+                virtual_id: 31,
+                open: false,
+                broken: true,
+            },
+            // Open AND broken: the game's ternary order picks
+            // open (pinned cata_tiles.cpp vpart paths).
+            StateVariantAssignment {
+                base_id: 7,
+                virtual_id: 32,
+                open: true,
+                broken: true,
+            },
+        ];
+        let (spec, stats) =
+            build_texture_spec_state_variants(&table, &dir, &id_map, &assignments).unwrap();
+        assert_eq!(stats.variants, 3);
+        // Base loads layers 0,1 (top/side) -> compact 0,1. The
+        // open variant then loads global 5 -> compact 2.
+        assert_eq!(spec.material_layers[30], [0, 2, 0, 1], "open variant side = open layer");
+        assert_eq!(spec.layers[2][0], 60, "open layer bytes");
+        assert_eq!(
+            spec.material_layers[31],
+            [0, 1, 0, 1],
+            "broken with no broken layer falls back to base side"
+        );
+        assert_eq!(
+            spec.material_layers[32],
+            [0, 2, 0, 1],
+            "open+broken selects open (game's ternary order)"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

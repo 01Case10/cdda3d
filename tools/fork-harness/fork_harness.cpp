@@ -13,6 +13,7 @@
 #include "mock_world.h"
 #include "voxel_exporter.h"
 #include "voxel_input.h"
+#include "voxel_refs.h"
 #include "voxel_server.h"
 
 using namespace voxel_ipc;
@@ -209,6 +210,41 @@ int main( int argc, char **argv )
         }
         report( "3.1", uniq && groups_ok && door_ok && td.defs.size() >= 20,
                 "harness-level: ids unique per kind, group indices resolve, door open/bash present (full registry check needs cata_test)" );
+    }
+
+    // ---------- 3.21 fg/bg sprite refs (harness level) ----------
+    {
+        World w = make_house();
+        MockAdapter ad( w );
+        Exporter exp( ad );
+        ipc::TileDefsT td = exp.build_tiledefs();
+        bool ok = true;
+        for( const auto &dp : td.defs ) {
+            if( dp->string_id == "t_floor" ) {
+                ok &= dp->fg_ref == 0 && dp->bg_ref == 1;
+            } else if( dp->string_id == "t_wall" ) {
+                ok &= dp->fg_ref == 3 && dp->bg_ref == -1;
+            } else if( dp->string_id == "t_door_c" ) {
+                ok &= dp->fg_ref == 7 && dp->bg_ref == 2;
+            } else {
+                ok &= dp->fg_ref == -1 && dp->bg_ref == -1;
+            }
+        }
+        report( "3.21", ok,
+                "fg/bg refs from the composed-config mapping (FgBgRefs, the real adapter's mechanism) reach the wire; unmapped ids keep the -1 sentinel" );
+    }
+
+    // ---------- 3.22 connect-group name mirror (hook H8) ----------
+    {
+        clear_connect_group_names();
+        bool ok = connect_group_name( 2 ) == "group_2";
+        record_connect_group_name( 2, "wall" );
+        ok &= connect_group_name( 2 ) == "wall";
+        ok &= connect_group_name( 5 ) == "group_5";
+        clear_connect_group_names();
+        ok &= connect_group_name( 2 ) == "group_2";
+        report( "3.22", ok,
+                "H8 mirror: recorded group names win; unrecorded indices keep the stable group_<index> placeholder" );
     }
 
     // ---------- 3.3 + 3.5 snapshot == game queries, lit exact ----------

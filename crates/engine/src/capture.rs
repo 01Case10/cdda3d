@@ -80,6 +80,14 @@ pub struct CaptureArgs {
     /// Phase 2h.4: prepared UI frame composited last, over the
     /// post-processed world. `None` = no UI pass.
     pub ui: Option<crate::frame::UiPrepared>,
+    /// Phase 8 wiring: vehicles stamped into the world pass as
+    /// blocks (their exported absolute part positions, verbatim).
+    /// `None` = the pre-wiring render, byte-for-byte.
+    pub vehicles: Option<crate::frame::VehicleScene>,
+    /// Phase 8 wiring: transient emitters (animations /
+    /// projectiles from `Effects` messages) drawn in the fields
+    /// pass through the fx shader classes. `None` = no emitters.
+    pub transients: Option<crate::frame::TransientScene>,
 }
 
 impl Default for CaptureArgs {
@@ -103,6 +111,8 @@ impl Default for CaptureArgs {
             lighting: None,
             billboards: None,
             ui: None,
+            vehicles: None,
+            transients: None,
         }
     }
 }

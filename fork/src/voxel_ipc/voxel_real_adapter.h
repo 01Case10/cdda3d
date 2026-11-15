@@ -17,6 +17,7 @@
 #include <string>
 
 #include "voxel_adapter.h"
+#include "voxel_refs.h"
 
 class map;
 
@@ -41,9 +42,14 @@ class RealAdapter : public IGameAdapter
 
     private:
         uint32_t item_wire_id( const std::string &string_id );
+        // The composed-config fg/bg table (lazy-loaded once from
+        // the CDDA_VOXEL_FG_REFS env path; empty when unset).
+        const FgBgRefs &fg_bg();
         map &here_;
         std::map<std::string, uint32_t> item_ids_;
         bool item_ids_built_ = false;
+        FgBgRefs fg_bg_;
+        bool fg_bg_loaded_ = false;
 };
 
 } // namespace voxel_ipc

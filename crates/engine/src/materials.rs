@@ -50,6 +50,23 @@ impl Material {
         }
         self.side_layer
     }
+
+    /// The side layer for a state-carrying tile/part (Phase 2d
+    /// follow-up): the `open`/`broken` subtile layer when the
+    /// entry carries one for the part's state, else the base
+    /// side layer. State selection replaces mask selection for
+    /// stateful parts — the game's vpart renderer never combines
+    /// the two (see `mesher::connect::state_subtile`).
+    pub fn side_layer_for_state(&self, is_open: bool, is_broken: bool) -> usize {
+        if self.multitile {
+            if let Some(subtile) = mesher::connect::state_subtile(is_open, is_broken) {
+                if let Some(&layer) = self.subtile_layers.get(subtile) {
+                    return layer;
+                }
+            }
+        }
+        self.side_layer
+    }
 }
 
 #[derive(Debug, Default)]

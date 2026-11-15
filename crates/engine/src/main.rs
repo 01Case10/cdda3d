@@ -86,6 +86,9 @@ fn main() -> ExitCode {
         billboards,
         ui_stub: args.iter().any(|a| a == "--ui-stub"),
         light_hour,
+        vehicle_fixture: args.iter().any(|a| a == "--vehicle-fixture"),
+        transient_fixture_ms: value_after(&args, "--transient-fixture")
+            .and_then(|s| s.parse().ok()),
     })
 }
 
@@ -111,9 +114,36 @@ fn apply_scene_flags(
             lighting::WeatherKind::Clear,
         ));
     }
+    if let Some(b) = value_after(args, "--light-bake") {
+        let mode = match b.as_str() {
+            "per-vertex" => engine::frame::BakeMode::PerVertex,
+            "per-block" => engine::frame::BakeMode::PerBlock,
+            _ => return Err(format!("bad --light-bake '{b}' (per-vertex|per-block)")),
+        };
+        match &mut cap.lighting {
+            Some(lit) => lit.bake_mode = mode,
+            None => {
+                let mut lit = engine::frame::LightingScene::fake_house(
+                    12.0,
+                    lighting::WeatherKind::Clear,
+                );
+                lit.bake_mode = mode;
+                cap.lighting = Some(lit);
+            }
+        }
+    }
     if args.iter().any(|a| a == "--ui-stub") {
         let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;
         cap.ui = Some(engine::frame::prepare_ui(&store, &note)?);
+    }
+    // Phase 8 wiring demo scenes: the fixture car parked inside
+    // the fake house, and the transient burst at a fixed clock.
+    if args.iter().any(|a| a == "--vehicle-fixture") {
+        cap.vehicles = Some(engine::frame::VehicleScene::fixture_car([4, 5, 0], 23.0));
+    }
+    if let Some(s) = value_after(args, "--transient-fixture") {
+        let now_ms: u64 = s.parse().map_err(|_| format!("bad --transient-fixture '{s}'"))?;
+        cap.transients = Some(engine::frame::TransientScene::fixture_burst(now_ms));
     }
     Ok(())
 }
@@ -242,6 +272,8 @@ struct WindowConfig {
     billboards: Option<engine::frame::BillboardScene>,
     ui_stub: bool,
     light_hour: Option<f32>,
+    vehicle_fixture: bool,
+    transient_fixture_ms: Option<u64>,
 }
 
 struct GpuState {
@@ -291,6 +323,12 @@ impl App {
             lighting: cfg
                 .light_hour
                 .map(|h| engine::frame::LightingScene::fake_house(h, lighting::WeatherKind::Clear)),
+            vehicles: cfg
+                .vehicle_fixture
+                .then(|| engine::frame::VehicleScene::fixture_car([4, 5, 0], 23.0)),
+            transients: cfg
+                .transient_fixture_ms
+                .map(engine::frame::TransientScene::fixture_burst),
             ..CaptureArgs::default()
         };
         // Stub UI: a fixed 640x360 synthetic frame in an in-memory

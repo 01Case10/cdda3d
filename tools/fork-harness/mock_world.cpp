@@ -181,6 +181,21 @@ std::vector<DefVal> MockAdapter::tile_defs()
     def( VP_WHEEL, "wheel", "wheel", 6 );
     def( VP_DOOR, "door", "vehicle door", 6 );
     def( VP_ROOF, "roof", "vehicle roof", 6 );
+    // fg/bg sprite refs, filled through the same FgBgRefs table
+    // the real adapter loads from CDDA_VOXEL_FG_REFS (voxel_refs.h):
+    // the mock's "composed config" maps three of its ids; every
+    // other def keeps the -1 sentinel, exactly as an unmapped id
+    // behaves in the fork build.
+    FgBgRefs refs;
+    refs.load_text( "# mock composed mapping\n"
+                    "t_floor\t0\t1\n"
+                    "t_wall\t3\t-1\n"
+                    "t_door_c\t7\t2\n" );
+    for( DefVal &d : out ) {
+        const std::pair<int32_t, int32_t> fg_bg = refs.lookup( d.string_id );
+        d.fg_ref = fg_bg.first;
+        d.bg_ref = fg_bg.second;
+    }
     return out;
 }
 

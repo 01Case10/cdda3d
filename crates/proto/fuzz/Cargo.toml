@@ -1,0 +1,25 @@
+[package]
+name = "proto-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+proto = { path = ".." }
+
+[[bin]]
+name = "decode_message"
+path = "fuzz_targets/decode_message.rs"
+
+[[bin]]
+name = "decode_roundtrip"
+path = "fuzz_targets/decode_roundtrip.rs"
+
+# Detached from the parent workspace: cargo-fuzz manages this
+# crate's build (nightly + sanitizers) on its own schedule.
+[workspace]

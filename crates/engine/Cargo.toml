@@ -21,6 +21,9 @@ proto = { path = "../proto" }
 ui-share = { path = "../ui-share" }
 billboard = { path = "../billboard" }
 lighting = { path = "../lighting" }
+vehicles = { path = "../vehicles" }
+transient = { path = "../transient" }
+hardcases = { path = "../hardcases" }
 glam = "0.29"
 wgpu = "24"
 winit = "0.30"

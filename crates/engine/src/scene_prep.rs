@@ -65,12 +65,41 @@ fn mesh_filtered(map: &mesher::chunk::ChunkMap) -> (PassMeshes, MeshStats) {
     (combined, stats)
 }
 
+/// Phase 8 wiring: stamp a vehicle scene's models into a
+/// filtered map (their exported absolute part positions,
+/// verbatim — `vehicles::stamp_vehicle`). Returns how many
+/// models were stamped and how many tiles they occupy. Tiles
+/// outside the map's chunks render nothing (the stamp's own
+/// contract).
+pub fn stamp_vehicles(
+    map: &mut mesher::chunk::ChunkMap,
+    scene: &crate::frame::VehicleScene,
+) -> (usize, usize) {
+    let mut tiles = 0usize;
+    for model in &scene.models {
+        let (occupied, _dirtied) =
+            vehicles::stamp_vehicle(map, model, world::HOUSE_MIN_GAME_Z);
+        tiles += occupied.len();
+    }
+    (scene.models.len(), tiles)
+}
+
 /// Prepare the fake house for a raster render at the given
 /// visible z-levels. Returns the meshes, their stats, and the
 /// texture spec to install on the renderer (`None` = flat).
 pub fn prepare_raster_house(
     visible_levels: &[i32],
     textures_dir: Option<&Path>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    prepare_raster_house_v(visible_levels, textures_dir, None)
+}
+
+/// [`prepare_raster_house`] with a vehicle scene stamped into
+/// the world before meshing (Phase 8 wiring).
+pub fn prepare_raster_house_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    vehicles: Option<&crate::frame::VehicleScene>,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
     match textures_dir {
         Some(dir) => {
@@ -81,13 +110,26 @@ pub fn prepare_raster_house(
             let map = world::build_fake_house(mesher::scale::WorldScale::default());
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
             stamp_tex_layers(&mut filtered, &spec);
+            if let Some(v) = vehicles {
+                stamp_vehicles(&mut filtered, v);
+            }
             let (meshes, stats) = mesh_filtered(&filtered);
             Ok((meshes, stats, Some(spec)))
         }
-        None => {
-            let (_map, meshes, stats) = world::mesh_fake_house(visible_levels);
-            Ok((meshes, stats, None))
-        }
+        None => match vehicles {
+            Some(v) => {
+                let map = world::build_fake_house(mesher::scale::WorldScale::default());
+                let mut filtered =
+                    world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+                stamp_vehicles(&mut filtered, v);
+                let (meshes, stats) = mesh_filtered(&filtered);
+                Ok((meshes, stats, None))
+            }
+            None => {
+                let (_map, meshes, stats) = world::mesh_fake_house(visible_levels);
+                Ok((meshes, stats, None))
+            }
+        },
     }
 }
 
@@ -114,6 +156,20 @@ pub fn prepare_raster_house_lit(
     textures_dir: Option<&Path>,
     lit: &crate::frame::LightingScene,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    prepare_raster_house_lit_v(visible_levels, textures_dir, lit, None)
+}
+
+/// [`prepare_raster_house_lit`] with a vehicle scene stamped
+/// into the world *before* the visibility mask, so a vehicle
+/// part on a `BLANK` tile is masked out with the world's own
+/// blocks — the shared mask governs vehicle geometry exactly
+/// like terrain.
+pub fn prepare_raster_house_lit_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
     let scale = mesher::scale::WorldScale::default();
     let (spec, mut filtered) = match textures_dir {
         Some(dir) => {
@@ -132,7 +188,27 @@ pub fn prepare_raster_house_lit(
             (None, filtered)
         }
     };
+    if let Some(v) = vehicles {
+        stamp_vehicles(&mut filtered, v);
+    }
     apply_visibility_mask(&mut filtered, lit);
+    if lit.bake_mode == crate::frame::BakeMode::PerBlock {
+        // Per-block bake (Phase 7's second baker): every block
+        // takes its own tile's presented light BEFORE meshing,
+        // so light boundaries are block-color boundaries and the
+        // greedy mesher cannot merge across them — a MEMORIZED
+        // patch inside a floor mega-quad renders at tile
+        // resolution. (The per-vertex path below remains the
+        // default: it is the leak-proof air-side baker.)
+        let baked = lighting::bake_chunk_map_with_offset(
+            &filtered,
+            &lit.grid,
+            lit.env,
+            world::HOUSE_MIN_GAME_Z,
+        );
+        let (meshes, stats) = mesh_filtered(&baked);
+        return Ok((meshes, stats, spec));
+    }
     let (mut meshes, stats) = mesh_filtered(&filtered);
     lighting::bake_pass_meshes(
         &mut meshes,

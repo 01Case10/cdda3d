@@ -87,11 +87,36 @@ pub const FRAME_ORDER: [FramePass; 5] = [
 /// the environment state (day/night hour × weather) the bake is
 /// evaluated under, and the game z of chunk level 0 (the grid is
 /// indexed in game tile coordinates).
+/// Which lighting baker the raster world pass uses (Phase 7
+/// shipped both; the frame loop originally wired only one).
+///
+/// - `PerVertex` (default, the 2h wiring): `bake_pass_meshes`
+///   after greedy meshing — air-side sampling, leak-proof across
+///   a wall, but its resolution is the *mesh vertex density*: a
+///   light change inside one greedy-merged mega-quad (a
+///   MEMORIZED patch in the middle of a floor) has no vertices
+///   to land on and changes 0 pixels (the recorded 2h.3 limit).
+/// - `PerBlock`: `bake_chunk_map_with_offset` before meshing —
+///   each block carries its own tile's presented light, so the
+///   greedy mesher cannot merge across a light boundary and
+///   every tile renders at tile resolution. The cost is the
+///   per-block baker's known trade: a wall block takes its own
+///   tile's centre sample on both faces (no air-side split).
+///
+/// The RT path is per-voxel in both modes and ignores this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BakeMode {
+    #[default]
+    PerVertex,
+    PerBlock,
+}
+
 #[derive(Debug, Clone)]
 pub struct LightingScene {
     pub grid: lighting::LightGrid,
     pub env: lighting::Environment,
     pub min_game_z: i32,
+    pub bake_mode: BakeMode,
 }
 
 impl LightingScene {
@@ -103,6 +128,7 @@ impl LightingScene {
             grid: lighting::fixtures::fake_house_night_light(),
             env: lighting::Environment::new(hour, weather),
             min_game_z: crate::world::HOUSE_MIN_GAME_Z,
+            bake_mode: BakeMode::PerVertex,
         }
     }
 
@@ -197,6 +223,91 @@ impl BillboardScene {
             items: None,
             time_s: 0.0,
         })
+    }
+}
+
+/// Vehicle input for one frame (Phase 8 wiring): the vehicle
+/// models to stamp into the world pass, in their exported state
+/// (absolute part positions verbatim — the engine never
+/// re-derives them from facing + mounts, the Phase 8 rule).
+#[derive(Debug, Clone)]
+pub struct VehicleScene {
+    pub models: Vec<vehicles::VehicleModel>,
+}
+
+impl VehicleScene {
+    /// Every vehicle currently in a `VehicleStore` (the live
+    /// path once the fork seats data in the loop).
+    pub fn from_store(store: &vehicles::VehicleStore) -> Self {
+        Self {
+            models: store.ids().filter_map(|id| store.get(id).cloned()).collect(),
+        }
+    }
+
+    /// The Phase 8 fixture car at `pivot`, facing `face_deg`
+    /// (mock game truth from the vehicles crate — the same
+    /// fixture its gates prove the model against).
+    pub fn fixture_car(pivot: [i32; 3], face_deg: f32) -> Self {
+        let wire = vehicles::fixtures::truth_vehicle(1, pivot, face_deg);
+        Self {
+            models: vec![vehicles::VehicleModel::from_proto(&wire)],
+        }
+    }
+}
+
+/// Transient-emitter input for one frame (Phase 8 wiring,
+/// gate 8.5's presentation half): the emitters alive at
+/// `now_ms` in a `transient::TransientSystem` fed from
+/// `Effects` messages. The scene owns a snapshot of the active
+/// set, so a frame is a pure function of its inputs.
+#[derive(Debug, Clone)]
+pub struct TransientScene {
+    pub emitters: Vec<transient::Emitter>,
+    pub now_ms: u64,
+}
+
+impl TransientScene {
+    /// Feed `Effects` messages into a fresh system in order,
+    /// advance its clock to `now_ms`, and snapshot the active
+    /// emitters (advance-before-ingest ordering per the soak
+    /// driver's recorded lesson: ingest stamps emitters with
+    /// the system's current time, so each message is ingested
+    /// at the clock value the caller pairs with it — here all
+    /// messages are ingested at t=0 and the clock then advances
+    /// to `now_ms`, expiring what has finished).
+    pub fn from_effects(messages: &[proto::EffectsT], now_ms: u64) -> Self {
+        let mut system = transient::TransientSystem::new();
+        for m in messages {
+            system.ingest(m);
+        }
+        system.advance(now_ms);
+        Self {
+            emitters: system.active().to_vec(),
+            now_ms,
+        }
+    }
+
+    /// A deterministic demo burst for captures and the gate: an
+    /// explosion on the fake-house floor tile (6, 6, 0) and a
+    /// tracer projectile crossing the house, both spawned at
+    /// t=0; at `now_ms` the projectile is mid-flight.
+    pub fn fixture_burst(now_ms: u64) -> Self {
+        let mut boom = proto::EffectEventT::default();
+        boom.kind = proto::EffectKind::Explosion;
+        boom.effect_id = Some("explosion".into());
+        boom.from_pos = Some(proto::Vec3iT { x: 6, y: 6, z: 0 });
+        boom.to_pos = Some(proto::Vec3iT { x: 6, y: 6, z: 0 });
+        boom.duration_ms = 2000;
+        let mut tracer = proto::EffectEventT::default();
+        tracer.kind = proto::EffectKind::Projectile;
+        tracer.effect_id = Some("bullet_tracer".into());
+        tracer.from_pos = Some(proto::Vec3iT { x: 2, y: 2, z: 0 });
+        tracer.to_pos = Some(proto::Vec3iT { x: 10, y: 10, z: 0 });
+        tracer.duration_ms = 1000;
+        let mut fx = proto::EffectsT::default();
+        fx.seq = 1;
+        fx.events = Some(vec![boom, tracer]);
+        Self::from_effects(&[fx], now_ms)
     }
 }
 
@@ -366,6 +477,13 @@ pub struct FrameStats {
     /// Raster mesh stats for the world pass (RT reports leaves in
     /// `FrameOutcome::quads` instead).
     pub mesh_stats: Option<MeshStats>,
+    /// Phase 8 wiring: vehicle models stamped into the world
+    /// pass, and the tiles they occupy.
+    pub vehicles: usize,
+    pub vehicle_tiles: usize,
+    /// Phase 8 wiring: transient emitters drawn in the fields
+    /// pass.
+    pub transients: usize,
 }
 
 /// One composed frame: the final color texture (post-UI), ready
@@ -547,7 +665,8 @@ pub fn render_frame(
         queue.submit([encoder.finish()]);
         stats.passes.push(FramePass::World);
 
-        let needs_depth = defs.is_some() || args.billboards.is_some();
+        let needs_depth =
+            defs.is_some() || args.billboards.is_some() || args.transients.is_some();
         let depth = if needs_depth {
             let (depth_texture, depth_view) =
                 render::create_depth_texture(device, (width, height));
@@ -564,6 +683,15 @@ pub fn render_frame(
         } else {
             None
         };
+        if let Some(v) = &args.vehicles {
+            stats.vehicles = v.models.len();
+            let tiles: std::collections::BTreeSet<[i32; 3]> = v
+                .models
+                .iter()
+                .flat_map(|m| m.parts.iter().map(|p| p.abs_pos))
+                .collect();
+            stats.vehicle_tiles = tiles.len();
+        }
         let camera = capture_camera(args);
         let texture = composite_overlays(
             device,
@@ -591,15 +719,29 @@ pub fn render_frame(
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
     let mut renderer = Renderer::new(device, CAPTURE_FORMAT);
     let (meshes, mstats, spec) = match &args.lighting {
-        Some(lit) => crate::scene_prep::prepare_raster_house_lit(
+        Some(lit) => crate::scene_prep::prepare_raster_house_lit_v(
             &visible,
             args.textures.as_deref(),
             lit,
+            args.vehicles.as_ref(),
         )
         .map_err(CaptureError::Device)?,
-        None => crate::scene_prep::prepare_raster_house(&visible, args.textures.as_deref())
-            .map_err(CaptureError::Device)?,
+        None => crate::scene_prep::prepare_raster_house_v(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
     };
+    if let Some(v) = &args.vehicles {
+        stats.vehicles = v.models.len();
+        let tiles: std::collections::BTreeSet<[i32; 3]> = v
+            .models
+            .iter()
+            .flat_map(|m| m.parts.iter().map(|p| p.abs_pos))
+            .collect();
+        stats.vehicle_tiles = tiles.len();
+    }
     if let Some(spec) = &spec {
         renderer.set_textures(device, queue, spec);
     }
@@ -676,11 +818,34 @@ fn composite_overlays(
     let mut current = color;
 
     // -- Fields (soft-particle volumes over the world) -----------
-    if let (Some(defs), Some((depth_texture, depth_view))) = (defs, &depth) {
-        if args.fx_fields {
-            let fields = crate::fxwire::fake_house_fields(defs).map_err(CaptureError::Device)?;
-            let instances = crate::fxwire::sorted_instances(&fields, camera.eye());
+    // Field volumes (2g.1) and transient emitters (Phase 8 wiring)
+    // share this pass: both are soft volumes in the fx shader
+    // classes, depth-tested against the world. The pass runs when
+    // either source produces instances; with neither, the frame
+    // is exactly the pre-wiring one.
+    {
+        let mut instances: Vec<fx::render::FieldInstGpu> = Vec::new();
+        let mut fields_ran = false;
+        if let Some(defs) = defs {
+            if args.fx_fields {
+                let fields =
+                    crate::fxwire::fake_house_fields(defs).map_err(CaptureError::Device)?;
+                instances.extend(crate::fxwire::sorted_instances(&fields, camera.eye()));
+                fields_ran = true;
+            }
+        }
+        if let Some(ts) = &args.transients {
+            let before = instances.len();
+            instances.extend(crate::fxwire::transient_instances(&ts.emitters, ts.now_ms));
+            stats.transients = instances.len() - before;
+        }
+        if let Some((depth_texture, depth_view)) = &depth {
             if !instances.is_empty() {
+                // One combined back-to-front sort: with fields
+                // only, this reproduces the pre-wiring order
+                // exactly (the sort is stable and the field
+                // instances arrive pre-sorted by the same key).
+                crate::fxwire::sort_instances(&mut instances, camera.eye());
                 // The soft-particle pass samples a COPY of the
                 // scene depth (a pass cannot sample its own depth
                 // attachment).
@@ -735,6 +900,8 @@ fn composite_overlays(
                 let prepared = pass.prepare(device, &instances, &uniforms, &depth_copy_view);
                 pass.draw(device, queue, &prepared, &color_view, depth_view);
             }
+        }
+        if fields_ran || stats.transients > 0 {
             stats.passes.push(FramePass::Fields);
         }
     }

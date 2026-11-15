@@ -90,6 +90,25 @@ pub fn subtile_for_mask(mask: u8) -> (&'static str, u32) {
     }
 }
 
+/// The *state* subtile for a tile/part that carries one: the
+/// game's vehicle-part renderer selects it instead of any
+/// neighbor-mask subtile (pinned source, `cata_tiles.cpp`
+/// `draw_vpart`-family: `vd.is_open ? open_ : vd.is_broken ?
+/// broken : 0`, and the override path's identical
+/// `part_mod == 1 ? open_ : part_mod == 2 ? broken : 0`).
+/// **Open wins over broken** — that is the game's ternary order,
+/// not a severity ranking. `None` = no state variant; the caller
+/// falls back to mask selection (or the base layer).
+pub fn state_subtile(is_open: bool, is_broken: bool) -> Option<&'static str> {
+    if is_open {
+        Some("open")
+    } else if is_broken {
+        Some("broken")
+    } else {
+        None
+    }
+}
+
 /// All 16 masks -> (subtile, rotation), in mask order. Used by tests
 /// and by engine-side variant selection.
 pub fn all_mask_mappings() -> Vec<(u8, &'static str, u32)> {
@@ -99,4 +118,19 @@ pub fn all_mask_mappings() -> Vec<(u8, &'static str, u32)> {
             (m, s, r)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_subtile_follows_the_games_ternary_order() {
+        // Pinned source (cata_tiles.cpp, both vpart draw paths):
+        // is_open ? open : is_broken ? broken : none.
+        assert_eq!(state_subtile(true, true), Some("open"), "open wins over broken");
+        assert_eq!(state_subtile(true, false), Some("open"));
+        assert_eq!(state_subtile(false, true), Some("broken"));
+        assert_eq!(state_subtile(false, false), None);
+    }
 }

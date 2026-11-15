@@ -5,7 +5,8 @@ file map). Every hook below is additive and a no-op unless
 `--frontend=ipc` was passed: one or two lines at a verified call site
 (CDDA `master` @ `6a3e59e0`; line numbers from `docs/hook-points.md`).
 Apply order: H1 (flag) → H2 (adapter construction) → H3–H6 (hooks) →
-H7 (trap accessor the real adapter needs).
+H7 (trap accessor the real adapter needs) → H8 (connect-group name
+mirror the real adapter reads).
 
 ## H1 — `src/main.cpp`: `--frontend=ipc` flag
 
@@ -160,3 +161,30 @@ const std::vector<trap> &get_all_traps_for_voxel() { return trap_factory.get_all
 This is the ONLY upstream-file logic addition beyond one-line hooks,
 and it exists because the alternative (inventing an accessor that
 already exists) was checked and does not.
+
+## H8 — `src/mapdata.cpp`: connect-group name mirror (1 line + include)
+
+`connect_group::load` (mapdata.cpp:355 in the pinned source) is the
+one place where a group's name and its bitset index are both known:
+`get_connect_group` maps name -> group, and upstream has no
+index -> name lookup (verified 2026-11-15). The real adapter's
+`connect_group_table()` needs the names, so the fork mirrors them
+at load. Add the include at the top of mapdata.cpp:
+
+```cpp
+#include "voxel_ipc/voxel_refs.h"
+```
+
+and one line in `connect_group::load`, after the NUM_TERCONN
+overflow check, before `ter_connects_map[...] = result;`:
+
+```cpp
+voxel_ipc::record_connect_group_name( static_cast<int>( result.index ), result.id.str() );
+```
+
+Unlike H3–H6 this line is NOT gated on `--frontend=ipc`: group
+loading happens during data init, and the mirror is inert data
+(a name table nothing reads unless the frontend runs). An index
+the mirror never recorded still exports as the stable placeholder
+`group_<index>` — the indices themselves come from the game's own
+bitsets and are exact with or without H8.

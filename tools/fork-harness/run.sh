@@ -9,6 +9,7 @@ mkdir -p out
 $CXX $CXXFLAGS \
   fork_harness.cpp mock_world.cpp \
   $ROOT/fork/src/voxel_ipc/voxel_exporter.cpp \
+  $ROOT/fork/src/voxel_ipc/voxel_refs.cpp \
   $ROOT/fork/src/voxel_ipc/voxel_server.cpp \
   $ROOT/fork/src/voxel_ipc/voxel_input.cpp \
   $ROOT/fork/src/voxel_ipc/voxel_frontend.cpp \
