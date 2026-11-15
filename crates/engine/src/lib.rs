@@ -9,6 +9,7 @@
 pub mod camera;
 pub mod capture;
 pub mod cutaway;
+pub mod materials;
 pub mod overlay;
 pub mod render;
 pub mod world;

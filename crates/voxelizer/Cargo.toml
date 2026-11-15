@@ -1,0 +1,23 @@
+[package]
+name = "voxelizer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CDDA Voxel Frontend voxelizer: tileset sprites -> block texture layers, materials.json, sprite atlas, attribution (Phase 5, plan §8)."
+
+[lib]
+name = "voxelizer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "voxelizer"
+path = "src/bin/voxelizer.rs"
+
+[dependencies]
+tileset = { path = "../tileset" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+tileset = { path = "../tileset" }

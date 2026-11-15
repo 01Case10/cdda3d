@@ -9,3 +9,8 @@ __pycache__/
 # Phase 1 stub-server build artifacts (rebuilt by tools/stub-server/build.sh)
 tools/stub-server/stub-server
 tools/stub-server/cpp-roundtrip
+
+# Phase 3 fork harness build artifacts
+tools/fork-harness/out/
+tools/fork-harness/rust-decode/target/
+tools/fork-harness/rust-decode/Cargo.lock

@@ -1,0 +1,6 @@
+{
+  "format": "png-layers",
+  "layer_count": 57,
+  "note": "Each PNG is one texture-array layer (tile_size x tile_size). PNG chosen over ktx2: lossless, no external encoder dependency; layer indices match materials.json exactly.",
+  "tile_size": 32
+}

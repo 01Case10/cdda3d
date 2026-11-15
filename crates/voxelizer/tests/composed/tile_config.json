@@ -1,0 +1,49 @@
+{
+ "tile_info": [
+  {
+   "pixelscale": 1,
+   "width": 32,
+   "height": 32
+  },
+  {
+   "normal.png": {
+    "sprites_across": 4
+   }
+  }
+ ],
+ "tiles-new": [
+  {
+   "file": "normal.png",
+   "tiles": [
+    {
+     "id": "t_floor_wood",
+     "fg": 0
+    },
+    {
+     "id": "t_glass_window",
+     "fg": 1
+    },
+    {
+     "id": [
+      "t_shared_a",
+      "t_shared_b"
+     ],
+     "fg": 3
+    },
+    {
+     "id": "t_weighted",
+     "fg": [
+      {
+       "sprite": 0,
+       "weight": 1
+      },
+      {
+       "sprite": 3,
+       "weight": 5
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

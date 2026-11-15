@@ -1,0 +1,9 @@
+[package]
+name = "fork-harness-decode"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proto = { path = "../../../crates/proto" }
+
+[workspace]
