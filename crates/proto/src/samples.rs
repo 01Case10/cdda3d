@@ -77,6 +77,10 @@ pub fn sample_tiledefs() -> TileDefsT {
             looks_like: None,
             fg_ref,
             bg_ref,
+            // Phase 8 additive field: absent = roofs nothing. The
+            // sample values stay None so the committed goldens
+            // (which encode these samples) remain byte-identical.
+            roof_result: None,
         };
     let mut wall = def(TER_WALL, "t_wall", "wall", TileKind::Terrain, 101, -1);
     wall.connect_groups = Some(vec![0]);

@@ -1,0 +1,9 @@
+[package]
+name = "hardcases"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CDDA Voxel Frontend Phase 8: tile-state hard cases — door/window state as id changes (8.4) and open-air/roof floor resolution (8.4b)."
+
+[dependencies]
+proto = { path = "../proto" }

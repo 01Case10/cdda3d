@@ -68,6 +68,7 @@ TileDefsT Exporter::build_tiledefs()
         if( d.open_result ) { w->open_result = *d.open_result; }
         if( d.close_result ) { w->close_result = *d.close_result; }
         if( d.bash_result ) { w->bash_result = *d.bash_result; }
+        if( d.roof_result ) { w->roof_result = *d.roof_result; }
         if( d.looks_like ) { w->looks_like = *d.looks_like; }
         w->fg_ref = d.fg_ref;
         w->bg_ref = d.bg_ref;

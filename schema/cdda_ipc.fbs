@@ -105,6 +105,13 @@ table TileDef {
   /// Indices into the composed tile_config.json tile entries; -1 = none.
   fg_ref: int32 = -1;
   bg_ref: int32 = -1;
+  /// String id of the terrain that is the floor above this terrain
+  /// (ter_t::roof — "what will be the floor above this terrain").
+  /// Absent/empty = this terrain roofs nothing. Added 2026-11-15
+  /// (Phase 8): without it the engine cannot resolve what floor an
+  /// open-air tile shows (gate 8.4b) and would have to guess.
+  /// Appended last: additive/non-breaking, old readers ignore it.
+  roof_result: string;
 }
 
 table TileDefs {
