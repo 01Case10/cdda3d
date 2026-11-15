@@ -26,6 +26,22 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 18: fish, second half — fish complete (Phase 2g.4, 2026-11-15)
+
+**The remaining 52 missing ids in `fish.json`** — 48 fry sharing
+the `mon_fry` abstract's unidentifiable-larva design (seeded
+jitter only), the crayfish zoea, the mutant salmon fry, and the
+huge/mega mutant salmon drawn natively at 64×64 (312 L / exactly
+400 L; the mega carries its description's water-jet tubes).
+`fish.json` is fully covered across batches 17–18 (104/104).
+Drawn by `draw_fish_b.py` (PIL, deterministic).
+
+Verified: release voxelizer test-tileset run, **52 materials, all
+`exact`, 0 missing** (156 layers); every monster PNG on disk
+byte-identical across the re-run, parent re-verified.
+`preview_fish_b.png` is the contact sheet. Coverage: monsters
+missing **351 → 299**, coverage **75.1%**.
+
 ## Monster batch 17: fish, first half (Phase 2g.4, 2026-11-15)
 
 **52 of the 104 missing ids in `fish.json`** (alphabetical first

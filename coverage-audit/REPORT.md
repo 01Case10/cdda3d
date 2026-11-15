@@ -534,6 +534,31 @@ Re-sheeting those three is a placement-only change (coverage is
 unaffected); the fish second half is briefed with volume-based
 placement from the start.
 
+## Created: fish, second half — fish complete (Phase 2g.4 batch 18, 2026-11-15)
+
+**The remaining 52 missing ids in `fish.json`**: 48 of them are
+fry — every one copy-froms the `mon_fry` abstract ("minuscule
+half-translucent fish larva, impossible to identify which
+species"), so they share the first half's larva design with small
+seeded jitter in tint, yolk, and proportions: the same
+unidentifiable creature, never a species portrait. Plus the
+crayfish zoea larva, the oversized mutant salmon fry, and the two
+mutant salmon — `mon_mutant_salmon_huge` (312 L) and
+`mon_mutant_salmon_mega` (exactly 400 L, with its two
+flesh-colored water-jet tubes beneath the fins), both drawn
+natively at 64×64 under the volume placement rule (only *over*
+400 L goes to the giant sheet; the mega's boundary placement is
+flagged as a placement-only question). `fish.json` is now fully
+covered: 104/104 across batches 17–18.
+`new-tiles/draw_fish_b.py`; `new-tiles/preview_fish_b.png`.
+
+Verified per the 2g.4 gate (parent re-run): **52 materials, all
+`exact`, 0 missing** (156 layers); every monster PNG on disk
+byte-identical across the re-run; sampled sprites carry alpha
+values only {0, 255}. Coverage movement (monster overlay,
+baseline 351 reproduced): 52 direct, no rescues — monsters
+missing **351 → 299**, coverage **75.1%** (904/1,203).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
