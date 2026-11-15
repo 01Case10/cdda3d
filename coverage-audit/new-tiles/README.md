@@ -26,6 +26,30 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
+
+**42 of the enumerated final 84** — the seven geometric yrax
+forms and the golden monolith; devourers (daitya, hekatonkheire,
+lab_sec, the melded task force); kraken guard and queen; stalker
+octopus and spawn; ocean zhark; three snails; both solar
+beetles; biollante sprig and sprout; the three linelanders as
+vibrating filaments; the singularity Reclaimer and spawn; both
+TALON secubots and Balthazar's turret; robofac hound, flailer,
+tunnel shadow, interstice horror, black ratkin, sewer blob,
+camouflaged mutant, wasp queen, whisper fungus, and the
+`mon_poly_special_test` red dragon with its calibration patch.
+Drawn by `draw_finisher_cosmic.py` (PIL, deterministic),
+placement by resolved volume (19 at 32×32, 13 at 64×64, 10 at
+96×96).
+
+Verified: test-tileset run (prebuilt release voxelizer), **42
+materials, all `exact`, 0 missing** (126 layers); every monster
+PNG on disk byte-identical across the re-run, parent re-verified.
+`preview_finisher_cosmic.png` is the contact sheet. Coverage:
+monsters missing **84 → 42**, coverage **96.5%**. The remaining
+42 are batch 24's assignment, re-run on Joey's word after its
+dispatch ended empty.
+
 ## Monster batch 23: mammals, birds & mutant mammals (Phase 2g.4, 2026-11-15)
 
 **All 46 missing ids in `mammal.json`, `bird.json`, and

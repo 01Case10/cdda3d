@@ -691,6 +691,43 @@ batch 22's verification window and were counted in its
 baseline), coverage **93.0%** (1,119/1,203). Remaining: 84 ids,
 enumerated exactly — the finisher wave.
 
+## Created: the cosmic & misc tail (Phase 2g.4 batch 25, 2026-11-15)
+
+**42 of the 84 enumerated remaining ids** (the finisher wave's
+second half): the seven yrax as gold faceted geometric forms —
+apeirogon disc, delta, triakis, trifacet, the quadraphract and
+its leg, the sphenocorona — plus the golden monolith on the same
+inherited 930 L frame; the devourers (daitya with clone-heads
+straining out of the flesh mass, the hekatonkheire, lab_sec's
+pitch-black central figure, the melded task force); kraken guard
+and queen (950 L, beak over foam); the stalker octopus and its
+spawn; the ocean zhark; three snails up to the colossal 875 L
+shell; both solar reverberation beetles; biollante sprig and
+sprout; the three linelanders as bright vibrating filaments with
+oscillating echoes (yellow drawn yellow — its data color says
+`red` but the entry's name and its cyan/magenta siblings say
+otherwise); the singularity Reclaimer (950 L) and its spawn; the
+two TALON secubots with sensor arrays (the Liberty Edition's
+flag decal) and Balthazar's rifle turret; and the singles —
+robofac hound, radiosphere flailer, cabin tunnel shadow,
+interstice horror, black ratkin (drawn as the plain black rat
+its description specifies), sewer blob, camouflaged mutant, the
+fungal wasp queen, the whisper fungus, and `mon_poly_special_test`
+drawn as the ancient red dragon its entry describes, with a
+small checkerboard calibration patch on one wing as the
+test-artifact nod. Placement by resolved volume: 19 at 32×32,
+13 at 64×64, 10 at 96×96. `new-tiles/draw_finisher_cosmic.py`;
+`new-tiles/preview_finisher_cosmic.png`.
+
+Verified per the 2g.4 gate (parent re-run): **42 materials, all
+`exact`, 0 missing** (126 layers); every monster PNG on disk
+byte-identical across the re-run (425 files). Coverage movement
+(monster overlay, baseline 84 reproduced): 42 direct, no
+rescues — monsters missing **84 → 42**, coverage **96.5%**
+(1,161/1,203). The remaining 42 are exactly batch 24's
+assignment (undead & lab tail), whose dispatch ended empty and
+is re-run on Joey's word.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
