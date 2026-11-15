@@ -26,6 +26,23 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 16: the fungal zombies (Phase 2g.4, 2026-11-15)
+
+**All 50 missing ids in the fungus-zombie file** — the dusted /
+fungalize / full-bloom variants of the whole zombie line, plus
+mounds, constructs, zougar and ziger. Drawn by
+`draw_fungus_zombies.py` (PIL, deterministic). Sheet placement by
+resolved volume (no explicit size field in this data): 62.5 L
+humanoids at 32×32, 100–150 L at 64×64, 875 L at 96×96 — the
+standing placement rule for monster batches.
+
+Verified: release voxelizer test-tileset run, **50 materials, all
+`exact`, 0 missing** (150 layers); all 59 monster PNGs on disk
+byte-identical across the re-run, parent re-verified.
+`preview_fungus_zombies.png` is the contact sheet. Coverage:
+monsters missing **454 → 404** (baseline taken with 14 fish
+folders already landed), coverage **66.4%**.
+
 ## Furniture batch 15: the remainder — FURNITURE COMPLETE (Phase 2g.4, 2026-11-15)
 
 **All 49 remaining missing furniture ids** — generators, the

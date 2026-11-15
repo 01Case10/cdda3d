@@ -483,6 +483,33 @@ the gate's TileDefs-form re-run remains blocked on Phase 0 tests
 0.1/0.2 like every in-game gate. Monsters (468) are the drive's
 last category.
 
+## Created: the fungal zombies — monsters begin (Phase 2g.4 batch 16, 2026-11-15)
+
+**All 50 missing ids in the fungus-zombie file**: every dusted /
+fungalize / full-bloom variant of the zombie line (standard,
+smoker, skeleton, child, runner, rot, tough, crawler, fat,
+acidic, beekeeper), the prone wretch with its chest burst open
+like a gory flower, the hand-winged spawn raptor, gasbags and
+boomers, brutes and hulks, the fungal mounds and constructs, and
+the zougar and ziger. Treatments follow the descriptions:
+*dusted* is a gray powder wash composited over the finished body,
+*fungalize* is one stalk bursting from the skull, *fungus/fungal*
+is full bloom. Sheet placement follows the butterfly precedent by
+resolved **volume** (the entries carry no explicit size field):
+standard 62.5 L humanoids at 32×32, bulky 100–150 L at 64×64,
+875 L hulks and massive mounds at 96×96 — this volume rule is the
+standing placement rule for the monster batches.
+`new-tiles/draw_fungus_zombies.py`;
+`new-tiles/preview_fungus_zombies.png`.
+
+Verified per the 2g.4 gate (parent re-run): **50 materials, all
+`exact`, 0 missing** (150 layers); all 59 monster PNGs on disk
+(this batch plus the butterfly/moth set) byte-identical across
+the re-run. Coverage movement (monster overlay; baseline 454 at
+verification time because 14 fish-batch folders had already
+landed): 50 direct, no rescues — monsters missing **454 → 404**,
+coverage **66.4%** (799/1,203).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
