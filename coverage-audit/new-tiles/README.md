@@ -26,6 +26,22 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Furniture batch 11: the alien furniture (Phase 2g.4, 2026-11-15)
+
+**19 ids** from `furniture-alien.json` +
+`furniture_alien_meadow.json`: the alien scar, Exodii portal
+enclosure and floor rings, locator antenna, crystalline flower,
+the impaled pair and empty spike, string-dimension pylons (live
+and inert), imploded housing, warped shelf and crate, dead Exodii
+pair, three alien weeds. Drawn by `draw_alien_furniture.py` (PIL,
+deterministic), palette anchored to the alien-meadow terrain.
+
+Verified: release voxelizer test-tileset run, **19 materials, all
+`exact`, 0 missing** (57 layers), byte-identical re-run, parent
+re-verified. `preview_alien_furniture.png` is the contact sheet.
+Coverage: furniture missing **174 → 155**, coverage **75.6% →
+78.3%**.
+
 ## Terrain batch 7: the walls (Phase 2g.4, 2026-11-15)
 
 **All 20 missing ids in `terrain-walls.json`**: the shipping-

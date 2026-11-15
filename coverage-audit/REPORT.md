@@ -359,6 +359,29 @@ the by-design transparent feature sprites), previews inspected.
 The drive continues with furniture (174 missing at the audit) and
 monsters (468).
 
+## Created: the alien furniture (Phase 2g.4 batch 11, 2026-11-15)
+
+The furniture drive opens: **19 ids** from `furniture-alien.json`
+and `furniture_alien_meadow.json` — the gas-belching alien scar,
+the Exodii portal enclosure and both floor portal rings (verbatim-
+identical game entries, one drawing), the locator antenna, the
+crystalline flower, the impaled officer and soldier over the
+glowing spike (and the empty spike), the string-dimension pylons
+(humming vs inert), the imploded housing, the warped shelf and
+crate, the dead Exodii (whole and heartless), and the three alien
+weeds. Palette anchored to the alien-meadow terrain batch.
+`new-tiles/draw_alien_furniture.py`;
+`new-tiles/preview_alien_furniture.png`.
+
+Verified per the 2g.4 gate (parent re-run): **19 materials, all
+`exact`, 0 missing** (57 layers), byte-identical re-run. Coverage
+movement (furniture overlay, baseline 174 reproduced): 19 direct,
+no rescues — furniture missing **174 → 155**, coverage **75.6% →
+78.3%** (539/713 → 558/713). (A folder-based cross-check already
+reads 104 because the stack/mound batch's 51 folders are on disk
+awaiting their own verification; the chain reconciles when it
+lands.)
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
