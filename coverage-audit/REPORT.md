@@ -856,6 +856,29 @@ Verified per the 2g.4 gate (parent re-run): **40 materials, all
 across the re-run. Coverage (trap overlay, baseline 80
 reproduced): traps **80 → 40**.
 
+## Extension batches VEH3 + VEH4: vehicle parts complete (2026-11-15)
+
+**97 vehicle part ids** — VEH3: storage batteries and their
+mounts, pressure tanks, chitin plating (acid variant sheened),
+rail wheels, the concrete-plugged ordnance rifle, the literal
+`null` part as a red debug tile, and 18 stowed appliances unified
+by orange ratchet straps (fridges/freezers told apart by form,
+the golden monolith whole vs. cracked, the broken Yrax
+quadraphract and its leg). VEH4: the stowed tail (rope-lashed),
+the tank family graded by capacity and material, wheel mounts
+as bolt fixtures distinct from wheels (steerable = kingpin
+knuckle), the vehicle weather stations on roof racks.
+`new-tiles/draw_veh3.py`, `new-tiles/draw_veh4.py`; previews
+alongside. (One brief typo — a phantom
+`veh_mobileroof_weather_station` — was caught against the
+authoritative list file and correctly not drawn.)
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **49 + 48 materials, all `exact`, 0 missing**;
+each batch's PNGs byte-identical across the parent re-run.
+Coverage (vehicle overlay, baseline 97 reproduced): **vehicle
+parts 97 → 0 of 483 — category complete at 100%.**
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
