@@ -19,6 +19,8 @@
 | 0 — Recon confirmation and decisions | ✅ GATE PASSED (conditional — see Phase 0 record) | 2026-11-15 | Mandatory gate tests 0.3/0.4/0.6/0.7/0.8 pass at harness level; 0.1/0.2 not yet run — the only build they need is the curses/text build (the tiles/SDL3 build is **not required** by this project at all, updated 2026-11-15), and compiling even that is infeasible in the recon environment (1.5 CPU/6 GB) — with an exact unblock path; in-game spike halves written as a ready-to-apply probe patch. Must be run on a build-capable machine before Phase 3. Full record: Phase 0 section below + `docs/recon.md` |
 | 1 — Protocol and skeleton | ✅ GATE PASSED (conditional — see Phase 1 record) | 2026-11-15 | All Linux gate tests pass locally (parent-verified: `cargo test -p proto` 16/16, C++ `cpp-roundtrip` PASS, live stub↔client flow). Conditions: CI workflow written but not yet run on GitHub (no remote yet — Joey creates it); 1.5 is a fuzz-shaped sweep (cargo-fuzz not run); 1.13 is header-layout agreement only (real shm attach is Phase 4 work); 1.15 Windows not run. Full record: Phase 1 section below |
 | 2 — Engine MVP with fake data | ✅ GATE PASSED (conditional — see Phase 2 record) | 2026-11-15 | Run in parallel with Phase 1; paused mid-run by Joey to add **headless capture** to scope, resumed same day with it built in. Parent-verified: mesher 8/8 + engine 16/16 tests, bench 2.12 greedy 0.397 ms/chunk (< 2 ms). **Headless rendering subsequently PROVEN on this VM** (2026-11-15, after Joey asked): `mesa-vulkan-drivers` (lavapipe/llvmpipe) was installed, and `tools/capture.sh` produced real 1280×720 PNGs of the fake house — full view (roof slab, walls, windows) and `--cutaway 0` view (interior floor, windows, door) — both visually inspected and saved in `captures/`. Remaining conditions: 2.10's formal golden image-diff (3 fixed cameras vs committed goldens) not yet established — captures are visually verified, not diff-gated; 2.13 frame benchmark still not run (llvmpipe frame times don't represent target hardware; run on Joey's PC); windowed app compiled + lib-tested but never run live. Full record: Phase 2 section below |
+| 2b — Shader field effects and HD-2D look | Not started | — | Added 2026-11-15 (Joey's direction): fields/effects are **shader effects parameterized from the sprites**, never pasted 2D sprites; plus the HD-2D post stack (bloom, tilt-shift DoF, grade). See Phase 2b section |
+| 2c — Ray-traced renderer (Sparse-Voxel-64Tree) | Not started | — | Added 2026-11-15 (Joey's direction): replace the raster mesher path with a compute ray tracer over a sparse voxel 64-tree ([Sparse-Voxel-64Tree](https://docs.rs/Sparse-Voxel-64Tree/latest/Sparse_Voxel_64Tree/) crate, wgpu-compatible — verified 2026-11-15). See Phase 2c section |
 | 3 — Game-side export in the fork | ✅ GATE PASSED (conditional — see Phase 3 record) | 2026-11-15 | Run in parallel with Phase 5. Parent-verified harness run: ALL HARNESS TESTS PASS — 3.3 (3,888 tiles, 0 mismatches), 3.9 delta invariant (1,100 turns × 10 seeds, mirror == fresh snapshot), 3.14 hash-identical, C++ serde ↔ Rust `proto` decode PASS. The exporter module (`fork/src/voxel_ipc/`), hook patches H1–H7 and Catch2 cases are written against grep-verified real APIs but **never compiled in-game**: the full gate still requires 0.1/0.2 on a build-capable machine (3.2/3.13/3.15/3.16/3.19 blocked there). Full record: Phase 3 section below |
 | 4 — UI compositing | Not started | — | |
 | 5 — Voxelizer and textures | ✅ GATE PASSED (conditional — see Phase 5 record) | 2026-11-15 | Run in parallel with Phase 3. Parent-verified: `cargo test -p voxelizer -p tileset` 16/16, workspace 57/57; parent's own real UltiCa run byte-identical to the agent's (`diff -r` clean): **7,717 materials, 26,389 layers, 14,450 sprites, 0 missing, 6.2 s** (sparse checkout expanded — 14,451 PNGs now on disk). Conditions: 5.10's TileDefs-based form must re-run once the fork exports real TileDefs (tileset-universe coverage is 100%); 5.13 image-diff gate not established (same status as 2.10); 5.14 manual contact-sheet review is Joey's; textured *rendering* not wired (mesher has no UV/texture-layer field — named follow-up). Full record: Phase 5 section below |
@@ -66,7 +68,7 @@ A voxel-rendered frontend for Cataclysm: Dark Days Ahead. The unmodified-in-spir
 |  cdda-fork (C++)             | <-------------------------------------> |  voxel-engine (Rust)        |
 |                              |                                          |                             |
 |  - full simulation           |  handshake, tile defs, snapshots,        |  - window, GPU (wgpu)       |
-|  - map, z-levels, vehicles   |  deltas, entities, input, UI events      |  - chunk meshing            |
+|  - map, z-levels, vehicles   |  deltas, entities, input, UI events      |  - ray tracing (64-tree)    |
 |  - FOV / lightmap            |                                          |  - billboards               |
 |  - UI -> offscreen RGBA -----+---- shared memory (UI texture) --------->|  - lighting / fog           |
 |  - input_context             | <-- key / mouse / resize events ---------|  - UI compositing, input    |
@@ -131,6 +133,8 @@ Read this before scheduling. **Hard dependency** = that phase's gate must pass b
 | 0 — Recon | — (starts immediately) | — | Nothing; everything waits for its gate. Only repo/CI scaffolding may start alongside |
 | 1 — Protocol and skeleton | **0** (schema, scale and headless decisions come from recon) | — | **2** — once a draft schema exists, engine work on fake data need not wait for the Phase 1 gate |
 | 2 — Engine MVP (fake data) | **0** (world scale, chunk size) | 1 — final world/chunk format for its gate; mesher and camera work need only Phase 0 | **1, 3, 5** |
+| 2b — Shader field effects / HD-2D | **2** (renderer + headless capture to composite over), **5** (sprite-derived effect parameters from the voxelizer) | 3 — real field export; fake field tiles suffice during development | **3, 4, 5** — engine-side; its post stack is renderer-agnostic and carries into **2c** |
+| 2c — Ray-traced renderer | **2** (world model, camera, capture harness) | 5 — materials/texture array for the material side-table; flat-color tree rendering needs only Phase 2 · 3 — real snapshots; fake house suffices during development | **3, 4, 5, 2b** — engine-core work on fake data |
 | 3 — Game-side export (fork) | **0, 1** (hook points + protocol to export over) | — | **2, 5** — different codebase (C++ fork vs Rust), the main parallel track |
 | 4 — UI compositing | **3** (fork scaffolding: `--frontend=ipc`, `voxel_ipc` server, input injector) | 2 — an engine window/quad to composite onto; engine-side compositing can start earlier against Phase 1 stub UI frames | **5**; engine-side parts alongside **3** |
 | 5 — Voxelizer and textures | **0** (tileset study) | 1 — TileDefs format for materials keyed by def; the voxelizer can start from game JSON + composed `tile_config.json` before the exporter exists | **2, 3, 4**, and the sprite-atlas parts of **6** |
@@ -138,7 +142,7 @@ Read this before scheduling. **Hard dependency** = that phase's gate must pass b
 | 7 — Lighting, FOV, atmosphere | **2, 3** (`lit_level`/seen export to consume) — for its gate | 5 — works on flat colors before textures land | **6** |
 | 8 — Hard cases and release | **4, 5, 6, 7** for the release gate (playable + textured + billboards + lighting) | Individual hard cases only need their own inputs: vehicles and animations need **3** (+ **4** for effects-in-UI checks) | Sub-tasks inside Phase 8 (vehicles, animations, packaging prep) are parallel with each other |
 
-**Critical path to playable (M4): 0 → 1 → 3 → 4.** Phase 3 is the long pole. The texture path **0 → 1 → 5 → 6** and engine path **2** run alongside it, which is why M5/M6 in §13 land close behind M4 instead of a full phase-duration later. Phase 7 slots in as soon as Phase 3's light/visibility export is stable, in parallel with 6. The cumulative times in §13 assume these tracks actually run concurrently (multiple developers, or one developer interleaving); a strictly serial single-developer run takes roughly the sum of the individual phase estimates.
+**Critical path to playable (M4): 0 → 1 → 3 → 4.** Phase 3 is the long pole. The texture path **0 → 1 → 5 → 6** and engine path **2** run alongside it, which is why M5/M6 in §13 land close behind M4 instead of a full phase-duration later. Phase 7 slots in as soon as Phase 3's light/visibility export is stable, in parallel with 6. **Phases 2b/2c (added 2026-11-15)** are engine-track work in the Phase 2 family: 2b (shader effects + HD-2D grade) and 2c (ray-traced renderer) both run on fake data in parallel with 3/4/5; neither is on the critical path to playable, but 2c's gate decides which renderer is the default from then on, and 2b's post stack is shared by both renderers. The cumulative times in §13 assume these tracks actually run concurrently (multiple developers, or one developer interleaving); a strictly serial single-developer run takes roughly the sum of the individual phase estimates.
 
 
 Time estimates assume one developer working full time; scale accordingly. Phase 0 is shorter than in v1 because the source-reading part is already done — Appendix A *is* most of the recon output. What remains is confirming the hook points in a build, and two spikes.
@@ -258,6 +262,55 @@ Time estimates assume one developer working full time; scale accordingly. Phase 
 
 ---
 
+### Phase 2b: Shader field effects and the HD-2D look (1-2 weeks) — added 2026-11-15, Joey's direction
+
+> **Dependencies:** ⛔ hard — Phase 2 gate (renderer + headless capture), Phase 5 gate (sprite-derived parameters) · soft — Phase 3 (real field export; fake field tiles suffice during development). **Parallel with:** Phases 3, 4, 5, 2c.
+
+**Direction (Joey, 2026-11-15): fields and effects are NOT rendered from the 2D sprites.** No sprite quads pasted into the 3D world for smoke, fire, gas or other field effects. Instead, each effect is a **shader effect parameterized from its sprite**: the sprite contributes its palette and character (dominant colors, emissive tint, alpha/density profile), and a procedural shader produces the actual visuals. The art target is the modern HD-2D look (the Final Fantasy / Octopath-style remakes): crisp voxel geometry, dramatic lighting, bloom on emissives, tilt-shift depth of field, and a warm graded finish — not flat 2D art floating in 3D.
+
+**Tasks**
+- **Effect definitions (data-driven, per field type):** extend the Phase 5 voxelizer with an effect-parameter extraction pass — for each field type in the (fixture or real) TileDefs set, read its sprite and emit an `effects.json` entry: base color, emissive color + strength, density scale, noise scale/speed, buoyancy/drift direction, render class (`smoke`, `flame`, `gas`, `liquid`, `energy`, `generic`). Hand-tunable via the same `overrides.toml` mechanism as materials. Every field type resolves to an effect definition or an explicit logged fallback — never a sprite quad.
+- **Effect rendering (engine):** fields live in the engine world model as per-tile `(type, intensity)` (the protocol already carries exactly this, §6). Each field tile renders as a shader volume: an instanced unit volume whose fragment/compute shader does animated fbm noise, soft silhouette falloff, and density ∝ game intensity; `flame` adds emissive flicker and upward scroll, `smoke` adds rise + lateral drift and soft depth-faded edges, `gas` stays low and translucent. Animation is time-based in the shader — the game stays turn-based; no per-turn effect updates cross the IPC.
+- **Displayed-field parity stays the cheap path:** the game's `displayed_field` (§6 / decision 1) still tells the engine which field dominates a tile; the effect pass weights volumes by it instead of re-deriving the game's rule.
+- **HD-2D post stack (fullscreen, renderer-agnostic):** bloom (emissive-driven), tilt-shift DoF (sharp band at the follow target's depth, blur near/far), vignette + warm color grade, optional subtle chromatic offset. Implemented as post passes over color+depth so the identical stack applies to the Phase 2 raster renderer now and the Phase 2c ray-traced renderer later — 2b must not bake any raster-only assumptions into the stack.
+- **Shared effect system:** Phase 8's animations/projectiles (muzzle flash, explosions, thrown items) consume this same shader-effect system with transient emitters, not sprite-frame animation — Phase 8's scope is updated accordingly.
+- **Fake-data first:** a scripted test scene (fake house + placed smoke/fire/gas tiles at intensities 1–3) drives development and the headless-capture gates, exactly as Phase 2 used the fake house.
+
+**Deliverables**: `effects.json` from the voxelizer (+ overrides support); engine effect pass + HD-2D post stack, both toggleable per-pass for A/B captures; headless captures of the effect test scene.
+
+**Exit criteria**: the effect test scene reads clearly at all intensities (smoke obscures, fire glows and blooms, gas stays low); no field is ever rendered as a pasted sprite; post stack on/off captures show the grade without changing geometry or UI legibility.
+
+---
+
+### Phase 2c: Ray-traced renderer on Sparse-Voxel-64Tree (2-3 weeks) — added 2026-11-15, Joey's direction
+
+> **Dependencies:** ⛔ hard — Phase 2 gate (world model, camera, capture harness) · soft — Phase 5 (materials for the side-table; flat-color rendering needs only Phase 2), Phase 3 (real snapshots; fake data suffices during development). **Parallel with:** Phases 3, 4, 5, 2b.
+
+**Direction (Joey, 2026-11-15): the engine is to be ray traced**, using the [Sparse-Voxel-64Tree](https://docs.rs/Sparse-Voxel-64Tree/latest/Sparse_Voxel_64Tree/) crate as the voxel acceleration structure. This replaces the greedy-mesher raster path as the primary renderer (the mesher stays as a fallback/comparison path until this gate decides the default).
+
+**Crate facts (verified against docs.rs + crates.io, 2026-11-15 — re-verify at implementation time):**
+- `Sparse-Voxel-64Tree` **0.1.0** (single release, 2025-03-14, MIT, Rust 2024): a sparse **64-tree** ("contree") — each node branches 4×4×4, with a 64-bit child mask. `Sparse64Tree` holds `Node64`s in a slotmap with stable keys; `insert(x, y, z, depth, color)` adds a voxel; the tree flattens (breadth-first, contiguous child pointers) into `GpuNode64` records for GPU upload.
+- `GpuNode64` is 32 bytes `#[repr(C)]`: child mask (2×u32), child pointer + leaf flag (u32), padding, and **`color: [f32; 3]` — one RGB color per node, nothing else.** There is no material index, no per-face data, no flags. This is the central integration constraint (see the material side-table task below).
+- `Tree64GpuManager` is **wgpu-native**: it owns a `wgpu` bind group/layout, builds from `(&Device, &Sparse64Tree)`, and re-uploads on update. **Its wgpu dependency is `^24.0.1` and this project pins wgpu 24.0.5 — compatible** (checked 2026-11-15). What the crate does *not* ship is the traversal shader: "GPU tracing support" means the GPU-resident tree + binding; the ray-traversal WGSL is the consumer's (the author's Lepton Engine is the reference consumer).
+- There is **no incremental GPU update**: an update re-flattens and re-uploads the tree. Turn-based deltas are small, but rebuild cost at real scene size must be measured, not assumed (see tasks).
+- Single-release, single-author crate = supply-chain risk: pin `=0.1.0`, and keep the vendoring option open. The GPU node layout is small and documented, so a fallback in-house flatten (same 32-byte format, our own traversal) is feasible if the crate stalls — the plan must not become hostage to it.
+
+**Tasks**
+- **Spike R0 (compat + traversal proof, do first):** depend on the crate, build a tree from the Phase 2 fake house, upload via `Tree64GpuManager`, and write a minimal WGSL compute traversal (primary rays only, flat color from `GpuNode64.color`) into the existing `--headless-capture` path. Pass = the fake house renders recognizably through the tree, on lavapipe, at small size. If the crate's wgpu surface fights ours, fall back to consuming its flattened bytes with our own buffer/bind group (same spike, alternate arm) and record which arm won.
+- **Tree builder (world → tree):** a `crates/treebuild` (or engine module) that converts the engine world model (12×12 chunk columns, 1 tile = 1 block, 1 z-level = 3 blocks) into a `Sparse64Tree` at block resolution: stored world 132×132 tiles × cutaway z (≤63 blocks) fits a depth-4 tree (4⁴ = 256 per axis). Snapshot = full build; Delta = apply to the world model, then rebuild-and-reupload, with the rebuild cost measured per gate 2c.5. If full rebuilds miss the budget, switch to **one tree per chunk column** via the crate's `TreeMemoryManager` (multiple trees in one GPU buffer) and rebuild only dirty columns — the builder's chunking must make this a configuration change, not a rewrite.
+- **Material side-table (the texture story):** leaves need Phase 5 materials (texture-array layer per face class, transparency class, tint), not a flat RGB. Design: the flatten order is deterministic breadth-first over a tree *we* built, so generate a **parallel GPU buffer indexed by flattened node index** carrying `{material_id, lit_level, flags}` per node, built by walking the same tree in the same order; a round-trip test (gate 2c.2) proves the indexing matches the crate's flatten on every build. The hit shader resolves the material, samples the Phase 5 texture array (top/side by hit normal), and applies tint. Fallback if the parallel-order assumption breaks: pack a palette index into `color` (flat-shaded look) and treat the side-table as best-effort — but the gate decides this on evidence, not preference. **Consequence for Phase 5:** its "mesher UV/texture-layer follow-up" is superseded on the RT path — the mesher only needs UVs if the raster fallback is kept long-term; that decision is this phase's gate output.
+- **Shading model:** primary ray → hit (voxel, normal, material) → textured albedo × game `lit_level` visibility (Phase 7's source of truth for *what is visible* — never-seen tiles are simply not in the tree / rendered black) + a sun directional light with a **shadow ray**, plus cheap AO from tree occupancy (neighbor queries in the traversal). Emissive materials (fire-lit, lava, screens) feed 2b's bloom. This is *illumination*, deliberately separate from the game's visibility: the game decides what you may see; the tracer decides how it is lit.
+- **Hybrid composition (unchanged contracts):** the tracer writes color + depth to offscreen textures; billboards (Phase 6) rasterize on top depth-tested against the traced depth; field effects (Phase 2b) composite/march after; the UI quad (Phase 4) stays last. `--headless-capture` captures the same composed frame.
+- **Picking:** mouse picking (§7) reuses the tree: a CPU traversal of the slotmap tree (or a one-ray GPU dispatch) replaces the mesher-era chunk DDA — same tile-coordinate result, one code path for "what is under this ray" in both rendering and picking.
+- **Cutaway:** z-cutaway becomes a tree-build filter (don't insert above the cut plane) or a traversal max-z clip — pick by measurement; the Phase 2 cutaway semantics (gate 2.8) must hold identically.
+- **Fallback policy:** keep the Phase 2 raster path runnable behind a `--renderer raster|rt` flag through this phase; the gate compares both on the same scenes (correctness first, then frame time on the RX 9070 XT) and records which becomes the default. Deleting the raster path is a later, separate decision.
+
+**Deliverables**: R0 spike report; tree builder + material side-table; WGSL traversal/shading shaders; RT mode in the windowed app and in `--headless-capture`; renderer comparison captures + frame-time table (lavapipe for correctness, RX 9070 XT for performance).
+
+**Exit criteria**: fake-house and bubble-scale scenes render through the tree with textures and shadows, visually matching or beating the raster path on the same captures; deltas update the render within the turn budget; picking and cutaway behave identically to the raster path; a recorded default-renderer decision.
+
+---
+
 ### Phase 3: Game-side export in the fork (3-4 weeks) (highest risk) — ✅ GATE PASSED (conditional) 2026-11-15
 
 > **Dependencies:** ⛔ hard — Phase 0 and Phase 1 gates. **Parallel with:** Phases 2 and 5 (different codebases). This is the critical path.
@@ -342,6 +395,8 @@ See section 8 for the pipeline.
 
 > **Dependencies:** ⛔ hard — Phase 2 and Phase 5 gates · soft — Phase 3 (real entities; fake entities suffice during development). **Parallel with:** Phase 7.
 
+> **Renderer note (2026-11-15, Phase 2c):** billboards stay rasterized quads, composited over the ray-traced frame and depth-tested against the traced depth buffer — they are the one place original sprites appear as-is, per this phase's design; field *effects* are never billboards (Phase 2b).
+
 - Instanced camera-facing quads (cylindrical billboarding: rotate around Y only) for creatures, NPCs, items on ground.
 - Overlay compositing: the engine composes layered sprites (body + clothing + wielded) into a single billboard texture, cached by overlay signature. **Draw order is verified, not guessed** — the tile layer order in `cata_tiles::draw()` is: terrain → furniture → graffiti → trap → part_con → field_or_item → vpart (no roof) → vpart (roof) → critter → zone mark → zombie-revival indicator; and within a creature, the base sprite first, then `get_overlay_ids()` in returned order. For billboards only the creature part applies, but the same ordering source governs what the game's own examine/look output expects.
 - Facing: `FacingDirection` is `LEFT`/`RIGHT`/`NONE` only — mirror horizontally for `LEFT`, never look for 8-way directional creature sprites (they don't exist in this system; rotation exists for *terrain/vehicle* tiles via multitile/rotation, not creatures). Use each sprite's real width/height/offset from `tile_info.json` (§8) — creature sprites are not all 32×32.
@@ -358,6 +413,8 @@ See section 8 for the pipeline.
 
 > **Dependencies:** ⛔ hard — Phase 2 and Phase 3 gates (for its own gate) · soft — Phase 5 (flat colors work first). **Parallel with:** Phase 6.
 
+> **Scope split (2026-11-15, Phase 2c):** with a ray-traced renderer, *illumination* (sun shadows, AO, emissive bounce feel) is computed by the tracer in Phase 2c. This phase keeps what only the game knows: **visibility and memory** — `lit_level`/seen as the source of truth for what may be shown at all, remembered-vs-seen presentation, day/night and weather *state* from the game. The tracer must never reveal a tile the game marks unseen, no matter how the light rays travel.
+
 - Use the game's per-tile `lit_level` and seen values as the source of truth (do not recompute FOV). Note the game also computes *colored* light (`light_color_rgb`, float RGB energy) — v1 of the frontend may quantize to intensity + a single tint per tile, but the protocol field should be sized so colored light can be added without a breaking change.
 - Bake light into vertex data or a per-chunk light texture; smooth with simple averaging across neighbors.
 - Unseen-but-remembered tiles (`lit_level::MEMORIZED` / map-memory layer): desaturated and darker. Never-seen tiles (`BLANK`): black / not meshed.
@@ -373,7 +430,7 @@ See section 8 for the pipeline.
 - **Vehicles**: orientation is a **continuous angle** (`vehicle::face` is a `tileray`; `face.dir()` returns `units::angle`). The "15-degree steps" in v1 came from a real but narrower fact: `vehicle::immediate_path()` clamps a *pathing* angle "to multiples of 15". Do not quantize exported facing to 15° — export float degrees, let the engine smooth/interpolate, and build the voxel model from the game-side absolute part positions (Phase 3), so pivot/precalc logic is never duplicated. Smooth turning animation interpolates between exported facings.
 - **Doors, windows, multitile terrain**: open/closed state arrives as a *different terrain/furniture id* after the game's own transform (`open`/`close` ids) — the engine needs no door logic, just the delta. Bashed/broken states likewise. Connecting walls use the multitile set — all **eight** keys: `center, corner, edge, t_connection, end_piece, unconnected, open, broken` (`multitile_keys` in `cata_tiles.cpp`; v1 listed six and missed `open`/`broken`).
 - **Open air, roofs and pits**: terrain `t_open_air` has a `roof` field naming the floor above; z-level meshing must treat open air as "no block, floor comes from below/roof rules", or every upper floor and rooftop breaks. Test explicitly with a two-storey house and a basement.
-- **Animations and projectiles**: hook the game's animation dispatch (`src/animation.*` — it already selects curses vs tiles implementations per effect: bullets, explosions, thrown items) and forward effect events; the engine renders its own versions.
+- **Animations and projectiles**: hook the game's animation dispatch (`src/animation.*` — it already selects curses vs tiles implementations per effect: bullets, explosions, thrown items) and forward effect events; the engine renders them through the **Phase 2b shader-effect system** (transient emitters: flashes, bursts, trails), never as sprite-frame animation.
 - **Overmap**: keep the game's 2D overmap drawn in the UI texture; optionally a 3D terrain view later.
 - **Large mods and tilesets**: validate against popular mods; add a debug report for ids with no sprite/material. Mods can also add *connect groups, field types and vparts* — all are in the TileDefs export, so no engine change should be needed; test with one content mod to prove it.
 - **Performance**: chunk streaming, mesh rebuild budgets, instancing, culling, LOD for distant chunks.
@@ -532,6 +589,16 @@ table Delta    { seq:uint64; epoch:uint64; tile_changes:[TileChange]; entity_upd
 
 ---
 
+### Ray-traced renderer (Phase 2c, added 2026-11-15)
+- The primary renderer is a **compute ray tracer over a sparse voxel 64-tree** ([Sparse-Voxel-64Tree](https://docs.rs/Sparse-Voxel-64Tree/latest/Sparse_Voxel_64Tree/) crate: slotmap tree on CPU, flattened `GpuNode64` buffer + wgpu bind group on GPU; our WGSL does the traversal). The world model stays chunk-based (12×12 columns); a builder converts world → tree at block resolution, and deltas rebuild/re-upload the tree (per-chunk-column trees via `TreeMemoryManager` if full rebuilds measure too slow).
+- The crate's GPU node carries only an RGB color, so materials ride in a **parallel side-table buffer** indexed by the crate's deterministic flatten order: `{material_id, lit_level, flags}` per node; the hit shader samples the Phase 5 texture array by material + hit normal.
+- Shading: textured albedo × game `lit_level` (visibility truth) + sun light with shadow rays + occupancy AO. Billboards, field effects and the UI composite *after* the traced color+depth, in that order.
+- The greedy mesher/raster path remains as a `--renderer raster` fallback until the Phase 2c gate records the default. Meshing costs in §11 apply to the fallback; the RT budgets are the 2c rows there.
+
+### Field effects and HD-2D grade (Phase 2b, added 2026-11-15)
+- Fields are **shader volumes, never sprite quads**: per-tile instanced volumes with animated-noise fragment/compute shading, density from the game's field intensity, palettes and emissive/density parameters extracted from the sprites by the voxelizer (`effects.json`). The game's `displayed_field` weights which effect dominates a tile.
+- The HD-2D finish is a fullscreen post stack over color+depth — bloom, tilt-shift DoF, vignette, warm grade — shared unchanged between the raster and ray-traced renderers.
+
 ## 8. Texture and sprite pipeline (voxelizer)
 
 ### Inputs
@@ -548,6 +615,7 @@ UltiCa's base tile size is 32×32, but `tile_info.json` defines many sheets with
 - `blocks` texture array: per material, top, side and bottom faces at tile resolution (32x32 for UltiCa base; configurable per tileset — other tilesets differ, e.g. RetroDays is 10×10).
 - `materials.json`: terrain/furniture id -> material, faces, height in voxels, transparency, tint, sub-model reference.
 - `sprites` atlas for billboards (characters, monsters, items) with UV table, **per-sprite width/height/offset**, and overlay layering metadata.
+- `effects.json` (Phase 2b, added 2026-11-15): per field type, shader-effect parameters extracted from its sprite — base/emissive colors, density and noise scales, render class (`smoke`/`flame`/`gas`/`liquid`/`energy`/`generic`). Sprites parameterize effects; they are never rendered as field visuals.
 - `ATTRIBUTION.md`.
 
 ### Face generation rules
@@ -618,6 +686,9 @@ Snapshot size math, corrected: one z-level of the full bubble is 132×132 = 17,4
 | Chunk remesh | under 2 ms per chunk, off the render thread |
 | Delta apply | under 1 ms per turn |
 | UI texture upload | only on dirty frames; under 1 ms (GPU readback on the game side is budgeted in Phase 4's spike, not here) |
+| RT frame time (Phase 2c) | under 16 ms at 1440p on the RX 9070 XT (primary + shadow ray, bubble-scale scene); correctness gates run on lavapipe at small sizes, performance is never gated on llvmpipe |
+| Tree rebuild + re-upload (Phase 2c) | full stored-world rebuild under 20 ms; per-turn delta rebuild under 2 ms if per-column trees are needed to reach it |
+| Effect pass (Phase 2b) | field volumes + post stack under 3 ms at 1440p on the RX 9070 XT |
 | Snapshot size | under 2 MB *for the view window*; full resend rare |
 | Memory | under 1.5 GB total for engine |
 
@@ -639,6 +710,9 @@ Snapshot size math, corrected: one z-level of the full bubble is 132×132 = 17,4
 | Vehicle rotation and multi-tile parts | Complexity | Defer to Phase 8; game-side absolute part positions from day one so no rotation math is duplicated |
 | Cross-platform shared memory/input quirks | Delays | Linux first; abstract platform layer; test early on Windows |
 | Licensing mistakes | Legal/attribution | Phase 0 decision doc; auto-generated attribution including third-party notices from `LICENSE.txt` |
+| Sparse-Voxel-64Tree is a single-release (0.1.0) single-author crate | Phase 2c stalls or breaks on a wgpu bump | Pin `=0.1.0` (its wgpu `^24.0.1` matches our 24.0.5 today); vendor if needed; the 32-byte GPU node layout is documented, so an in-house flatten/traversal fallback is feasible — the design keeps the crate behind the tree-builder boundary |
+| Ray tracing underperforms on non-RT / software adapters | Phase 2c frame budget missed off the target GPU | Budgets are gated on the RX 9070 XT only; lavapipe runs correctness at small sizes; the raster path stays as `--renderer raster` fallback until the 2c gate |
+| Shader effects diverge from game readability (smoke that hides too much/little) | Phase 2b art risk | Density is driven by the game's own intensity + `displayed_field`; per-type overrides; capture gates at intensities 1–3 |
 
 ---
 
@@ -651,6 +725,8 @@ Cumulative times are **critical-path** times (see §5 "Phase dependencies and pa
 | M0 Recon confirmed + spikes | ~1 week | Hook points proven, UI and headless routes chosen |
 | M1 Protocol + stub | ~2 weeks | Rust client talks to fake server |
 | M2 Engine MVP | ~4 weeks | Navigable colored-voxel scene with z-slicing |
+| M2b Effects / HD-2D | ~6 weeks | Shader field effects (smoke/fire/gas) + HD-2D post stack over the engine |
+| M2c Ray-traced renderer | ~8 weeks | World rendered by compute ray tracing over the 64-tree, textured + shadowed; default-renderer decision recorded |
 | M3 Real game export | ~8 weeks | Live snapshots/deltas from the fork |
 | M4 UI compositing | ~10 weeks | **Playable**: real menus over flat voxels |
 | M5 Textures | ~12 weeks | Textured world from UltiCa |
@@ -864,6 +940,46 @@ Goal: prove the hook points exist before building on them. (Most source question
 
 ---
 
+## 5b. Phase 2b: Shader field effects and HD-2D look
+
+> **Phase dependencies:** ⛔ requires the Phase 2 and Phase 5 gates; soft-requires Phase 3. Runs in parallel with Phases 3, 4, 5, 2c.
+
+| # | Test | Method | Pass criteria |
+|---|---|---|---|
+| 2b.1 | Effect-parameter extraction | run the voxelizer effect pass on the fixture tileset + UltiCa field sprites | every field type yields an `effects.json` entry (or a logged explicit fallback); extraction is deterministic (two runs byte-identical); palette values match a direct sample of the source sprite |
+| 2b.2 | No sprite rendering of fields | render the effect test scene; inspect the render path and captures | no field is drawn from a sprite texture/quad — fields come only from the effect shader pass (code-level check + captures show volumetric falloff, not a flat quad) |
+| 2b.3 | Intensity mapping | smoke/fire/gas tiles at game intensities 1, 2, 3 | rendered density/opacity is strictly monotonic with intensity; intensity 3 smoke fully obscures the tile behind it, intensity 1 does not |
+| 2b.4 | Displayed-field weighting | tile with two fields (smoke + fire), `displayed_field` = each in turn | the displayed field dominates the composite in both configurations |
+| 2b.5 | Effect captures | `--headless-capture` of the effect test scene (fixed cameras, pinned time) | image diff within tolerance of goldens (adapter-conditional like 2.10: lavapipe small scenes here, never a blank/no-adapter pass) |
+| 2b.6 | Post stack isolation | toggle bloom, DoF, grade independently; capture with all off | all-off output is pixel-identical to the pre-2b renderer on the same scene; each pass changes only its own aspect (bloom adds no geometry shift, DoF keeps the focal band sharp) |
+| 2b.7 | UI legibility under grade | Phase 4 UI frame composited over a graded frame | UI pixels are not graded/bloomed (post applies to the world only, UI composites after) |
+| 2b.8 | Effect performance | full-view scene with 500 active field tiles, 1440p, RX 9070 XT | effect pass + post stack under 3 ms (§11) |
+
+**Gate:** 2b.1–2b.4, 2b.6 mandatory; 2b.5 adapter-conditional as in 2.10; 2b.8 on target hardware.
+
+---
+
+## 5c. Phase 2c: Ray-traced renderer (Sparse-Voxel-64Tree)
+
+> **Phase dependencies:** ⛔ requires the Phase 2 gate; soft-requires Phases 5 and 3. Runs in parallel with Phases 3, 4, 5, 2b.
+
+| # | Test | Method | Pass criteria |
+|---|---|---|---|
+| 2c.1 | Tree build correctness | build trees from known worlds (fake house, random proptest worlds); traverse on CPU | every solid block in the world model is hit by a CPU traversal ray cast at it; every air block is missed; tree node count within a sane bound of the occupied-voxel count |
+| 2c.2 | Material side-table indexing | for the same worlds, read back / recompute the flattened order and compare side-table entries per node | 100% of leaf nodes carry the material/lit/flags of the voxel they represent — a single indexing mismatch fails the test |
+| 2c.3 | GPU traversal vs CPU oracle | cast a fixed ray set (grid of origins × directions) through both the WGSL traversal (readback) and a CPU reference traversal | identical hit voxel, normal and distance (within float tolerance) for every ray |
+| 2c.4 | Render parity captures | `--headless-capture --renderer rt` vs `--renderer raster` on the fake house + a textured scene, fixed cameras | same visible geometry (silhouette diff within tolerance); RT adds shadows/AO — differences confined to lighting, itemized in the comparison report |
+| 2c.5 | Rebuild cost | time tree build + flatten + upload for: full stored world (132×132 × cutaway z) and a typical per-turn delta | full build under 20 ms; delta path under 2 ms — if the single-tree design misses the delta budget, the per-column-tree design is measured instead and the numbers recorded either way |
+| 2c.6 | Cutaway parity | RT captures at the Phase 2 cutaway settings incl. z = −10/+10 | identical layer selection to gate 2.8's expectations |
+| 2c.7 | Picking parity | cast picking rays at known tiles through the tree path | returned tile coordinates equal the mesher-era DDA results on the calibration scene |
+| 2c.8 | Visibility discipline | world with `BLANK`/never-seen and `MEMORIZED` regions | never-seen voxels are absent from the tree (or provably rendered black); shadow rays do not leak identifiable detail from unseen areas |
+| 2c.9 | Frame time (target hardware) | bubble-scale scene, 1440p, RX 9070 XT, primary + shadow rays | median under 16 ms (§11). Never gated on llvmpipe numbers |
+| 2c.10 | Crate-compat smoke | workspace builds against pinned `Sparse-Voxel-64Tree =0.1.0` with our wgpu 24.0.5 | builds clean; `Tree64GpuManager` bind group used in a capture (or the R0 spike's fallback arm — own upload of the crate's flattened bytes — is the recorded path with its own smoke test) |
+
+**Gate:** 2c.1–2c.8, 2c.10 mandatory; 2c.9 on target hardware; the default-renderer decision is recorded in Part I with the 2c.4/2c.9 evidence.
+
+---
+
 ## 6. Phase 3: Game-side export (highest risk)
 
 > **Phase dependencies:** ⛔ requires the Phase 0 and Phase 1 gates. Runs in parallel with Phases 2 and 5. On the critical path to playable.
@@ -1041,6 +1157,7 @@ These run on every PR once their phase has shipped:
 
 - Protocol golden and fuzz-smoke (Phase 1), including seq/epoch semantics (1.14)
 - Mesher properties and benchmarks (Phase 2)
+- Effect-parameter determinism and intensity mapping (Phase 2b); tree-build correctness, side-table indexing and GPU-vs-CPU traversal parity (Phase 2c)
 - Delta equals snapshot, map shift, and no-simulation-change (Phase 3)
 - UI golden frames and the end-to-end script (Phase 4)
 - Voxelizer determinism, resolution chain and coverage (Phase 5)
