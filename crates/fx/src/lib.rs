@@ -14,6 +14,7 @@
 
 pub mod density;
 pub mod effect;
+pub mod passes;
 pub mod post;
 pub mod render;
 pub mod scene;

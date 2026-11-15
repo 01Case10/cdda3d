@@ -20,6 +20,7 @@ fn args(renderer: RendererKind, cutaway_z: i32, out: &str) -> CaptureArgs {
         size: (320, 180),
         out: out.into(),
         cutaway_z,
+        ..CaptureArgs::default()
     }
 }
 

@@ -5,6 +5,7 @@
 #   tools/capture.sh [--snapshot stub-house] [--camera x,y,yaw,pitch]
 #                    [--distance d] [--cutaway z] [--renderer raster|rt]
 #                    [--textures voxelizer-output-dir]
+#                    [--effects effects.json] [--fx-fields-off] [--fx-post-off]
 #                    [--size WxH] --out file.png
 #
 # Thin wrapper around `cargo run -p engine -- --headless-capture ...`.

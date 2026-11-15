@@ -146,12 +146,29 @@ pub struct RtCapture {
     pub texture_stats: Option<crate::textures::TextureStats>,
 }
 
-/// Render one RT capture on an already-created device/queue.
-pub fn capture_rt_with_device(
+/// A rendered RT frame before readback (Phase 2g.1: the fx
+/// wiring composites field volumes + the post stack over these
+/// textures, so it needs the frame, not just its pixels).
+pub struct RtFrameOut {
+    pub color: wgpu::Texture,
+    pub depth: wgpu::Buffer,
+    pub max_dist: f32,
+    pub camera: RtCamera,
+    pub size: (u32, u32),
+    pub leaves: usize,
+    pub nodes: usize,
+    pub build_ms: f64,
+    pub texture_stats: Option<crate::textures::TextureStats>,
+}
+
+/// Render one RT frame on an already-created device/queue,
+/// returning the GPU frame (color texture + linear depth
+/// buffer). [`capture_rt_with_device`] is this plus readback.
+pub fn render_rt_frame(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,
-) -> Result<RtCapture, CaptureError> {
+) -> Result<RtFrameOut, CaptureError> {
     let t0 = Instant::now();
     // Phase 2d: with textures, the world is variant-prepared
     // *before* the tree build so the virtual material ids land in
@@ -181,6 +198,27 @@ pub fn capture_rt_with_device(
     let camera = capture_camera(args, aspect);
     let frame = renderer.render(device, queue, &scene, &camera, (width, height), true);
     device.poll(wgpu::Maintain::Wait);
+    Ok(RtFrameOut {
+        color: frame.color,
+        depth: frame.depth,
+        max_dist: frame.max_dist,
+        camera,
+        size: (width, height),
+        leaves: built.leaf_count(),
+        nodes: built.node_count(),
+        build_ms,
+        texture_stats,
+    })
+}
+
+/// Render one RT capture on an already-created device/queue.
+pub fn capture_rt_with_device(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+) -> Result<RtCapture, CaptureError> {
+    let frame = render_rt_frame(device, queue, args)?;
+    let (width, height) = frame.size;
 
     let pixels = read_texture_rgba(device, queue, &frame.color, (width, height))?;
     let depth = read_buffer_f32(device, queue, &frame.depth, (width * height) as usize)?;
@@ -195,11 +233,11 @@ pub fn capture_rt_with_device(
         depth,
         max_dist: frame.max_dist,
         size: (width, height),
-        leaves: built.leaf_count(),
-        nodes: built.node_count(),
-        build_ms,
+        leaves: frame.leaves,
+        nodes: frame.nodes,
+        build_ms: frame.build_ms,
         distinct_colors: distinct.len(),
-        texture_stats,
+        texture_stats: frame.texture_stats,
     })
 }
 
