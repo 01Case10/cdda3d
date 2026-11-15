@@ -26,6 +26,21 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 20: insects & spiders (Phase 2g.4, 2026-11-15)
+
+**All 26 missing ids in `insect_spider.json`** — mega ant and
+mega fly at 96×96, graboid halfworm, cicada, giant mantis, lunar
+moth titan, the cellar spider mother with her spiderling ball,
+the dermatik deer host, and the larva/small-spider tail. Drawn by
+`draw_insects.py` (PIL, deterministic), placement by resolved
+volume.
+
+Verified: test-tileset run (prebuilt release voxelizer), **26
+materials, all `exact`, 0 missing** (78 layers); every monster
+PNG on disk byte-identical across the re-run, parent re-verified.
+`preview_insects.png` is the contact sheet. Coverage: monsters
+missing **243 → 217**, coverage **82.0%**.
+
 ## Monster batch 19: reptiles & amphibians (Phase 2g.4, 2026-11-15)
 
 **All 56 missing ids in `reptile_amphibian.json`** — snakes

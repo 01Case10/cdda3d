@@ -588,6 +588,25 @@ workspace membership. Coverage movement (monster overlay,
 baseline 299 reproduced): 56 direct, no rescues — monsters
 missing **299 → 243**, coverage **79.8%** (960/1,203).
 
+## Created: insects & spiders (Phase 2g.4 batch 20, 2026-11-15)
+
+**All 26 missing ids in `insect_spider.json`** (the file's other
+missing ids were the already-drawn butterflies and moths): the
+625 L mega acid ant and mega fly at 96×96, the graboid halfworm,
+cicada with alpha-composited rooflike wings, giant mantis, the
+lunar moth titan with glittering dust, the cellar spider mother
+clutching a ball of ~46 individually drawn spiderlings, the
+dermatik's deer host (emaciated, ribs showing, terrified eye —
+the monster is the host body), and the larva/nymph/small-spider
+tail down to 0.8 L. `new-tiles/draw_insects.py`;
+`new-tiles/preview_insects.png`.
+
+Verified per the 2g.4 gate (parent re-run): **26 materials, all
+`exact`, 0 missing** (78 layers); every monster PNG on disk
+byte-identical across the re-run. Coverage movement (monster
+overlay, baseline 243 reproduced): 26 direct, no rescues —
+monsters missing **243 → 217**, coverage **82.0%** (986/1,203).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
