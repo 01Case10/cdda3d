@@ -26,6 +26,27 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 23: mammals, birds & mutant mammals (Phase 2g.4, 2026-11-15)
+
+**All 46 missing ids in `mammal.json`, `bird.json`, and
+`mutant_mammal.json`** — chickadee, waxwing, and guinea fowl;
+thirteen species-hinted chicks; black cats, mole, porcupine,
+skunk, ferrets, and baby rabbits; the three corpse placeholders
+as plain prone figures; and the mutant mammals (wyrmhound,
+mauler, thrasher, lopers, shark- and venom-mouthed coyote pups,
+the standing raccoon mutant). Drawn by `draw_mammals_birds.py`
+(PIL, deterministic); all 46 resolved under 100 L, so all are on
+the 32×32 sheet.
+
+Verified: test-tileset run (prebuilt release voxelizer), **46
+materials, all `exact`, 0 missing** (138 layers); every monster
+PNG on disk byte-identical across the re-run, parent re-verified.
+`preview_mammals_birds.png` is the contact sheet. Coverage:
+monsters missing **84 → 84** — 42 newly covered against the
+folders-minus-batch baseline (126) + 4 rescues upgraded to
+direct sprites; the headline holds because 42 folders had
+already landed inside batch 22's window. Coverage **93.0%**.
+
 ## Monster batch 22: feral humans & the zed clusters (Phase 2g.4, 2026-11-15)
 
 **All 40 missing ids in the feral-humans, zed_misc,

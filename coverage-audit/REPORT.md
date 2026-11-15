@@ -657,6 +657,40 @@ mammals/birds folders had already landed): 40 direct, no
 rescues — monsters missing **124 → 84**, coverage **93.0%**
 (1,119/1,203).
 
+## Created: mammals, birds & mutant mammals (Phase 2g.4 batch 23, 2026-11-15)
+
+**All 46 missing ids across `mammal.json` (17), `bird.json`
+(16), and `mutant_mammal.json` (13)**: the chickadee's black cap
+and bib, the waxwing's swept crest and red waxy wing dot, the
+guinea fowl's bony helmet casque; thirteen chicks whose palettes
+resolve through the generic chick abstracts with species hints
+(coot chick's orange-red head patch, grebe chick's striped head,
+the yellow duckling's flat bill); the black cats' prominent
+green eyes, the mole's huge pink digging paws, the porcupine's
+banded white-tipped quills, the skunk's dorsal stripe; the three
+corpse placeholders (`mon_human`, `mon_child`,
+`mon_human_scorched`) drawn as plain prone figures in pallor and
+charred tones, no gore, matching their placeholder data nature;
+and the mutant mammals, deformity as silhouette — the
+wyrmhound's furless serpentine head and forked tongue, the
+mauler's widened tooth-crowded jaw, the thrasher's oversized
+digging paws, the raccoon mutant standing on hindlimbs with long
+fingered paws. All 46 resolved under 100 L through their
+copy-from chains, so all sit on the 32×32 sheet.
+`new-tiles/draw_mammals_birds.py`;
+`new-tiles/preview_mammals_birds.png`.
+
+Verified per the 2g.4 gate (parent re-run): **46 materials, all
+`exact`, 0 missing** (138 layers); every monster PNG on disk
+byte-identical across the re-run (383 files). Coverage movement
+(monster overlay, folders-minus-batch baseline 126 reproduced):
+42 newly covered + 4 upgraded from `looks_like` rescue to their
+own sprites — monsters missing **84 → 84** (the headline holds
+because 42 of this batch's folders had already landed inside
+batch 22's verification window and were counted in its
+baseline), coverage **93.0%** (1,119/1,203). Remaining: 84 ids,
+enumerated exactly — the finisher wave.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
