@@ -93,6 +93,9 @@ reproduced):
   rings, chasm maw, flooded/overgrown states, damaged
   hospital/house. Overmap 192 → 144. `draw_om4.py`,
   `preview_om4.png`.
+- **OM5** — microlab system, mi-go camp/portal, minefield,
+  ocean grade (48). Overmap 144 → 96. `draw_om5.py`,
+  `preview_om5.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 

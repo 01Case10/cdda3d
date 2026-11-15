@@ -1004,6 +1004,25 @@ Verified per the 2g.4 gate (parent re-run): **48 materials, all
 across the re-run. Coverage (overmap overlay, baseline 192
 reproduced): overmap terrain **192 → 144**.
 
+## Extension batch OM5: microlab, mi-go, minefield (2026-11-15)
+
+**48 overmap terrain ids** — the microlab system on dark paneled
+floors (generic/edge/sub-entry/surface/vent variants, the
+ratkin set re-paletted green on warm floors, the nether-glass
+portal elevator as a violet shaft on black), the mi-go camp
+segments and portal (pale organic ground, pink flesh forms,
+teal glow; the portal's "=" data symbol rendered as twin energy
+bands), the minefield perimeter (fence lines on the named
+edges, mine discs, gates with swung leaves), the ocean depth
+grade (shore → surface → water cube → bed), and `omt_obsolete`
+as a debug tile carrying its own "%" glyph. `new-tiles/draw_om5.py`;
+`new-tiles/preview_om5.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 144
+reproduced): overmap terrain **144 → 96**.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
