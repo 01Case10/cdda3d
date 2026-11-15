@@ -1,5 +1,22 @@
 # New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension, the regional templates
 
+## Terrain batch 7: the walls (Phase 2g.4, 2026-11-15)
+
+**All 20 missing ids in `terrain-walls.json`**: the shipping-
+container wall in 15 game colors (one parameterized corrugated
+panel), the warped wall (courses that disagree, magenta mortar,
+wrong-side shadows), reinforced lab glass (wire grid in a bolted
+frame), the wasp-paper pair (brood vs hardened strata), and the
+wooden sunshade pole (canopy + pole, mostly air by design). Drawn
+by `draw_walls.py` (PIL, deterministic). **Zero-drive wave 1
+complete.**
+
+Verified: release voxelizer test-tileset run, **20 materials, all
+`exact`, 0 missing** (60 layers), byte-identical re-run, parent
+re-verified. `preview_walls.png` is the contact sheet. Coverage:
+terrain missing **84 → 64**, coverage **93.4% → 95.0%** — the
+remaining 64 are wave 2's three batches.
+
 ## Terrain batch 6: the vitrified terrain (Phase 2g.4, 2026-11-15)
 
 **All 16 missing ids in `terrain_vitrified.json`** — black-glass

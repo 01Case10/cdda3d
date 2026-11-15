@@ -297,6 +297,30 @@ movement (overlay method, sequential chain from batch 5's 100):
 16 direct, no rescues — terrain missing **100 → 84**, coverage
 **92.1% → 93.4%** (1,171/1,271 → 1,187/1,271).
 
+## Created: the wall terrain (Phase 2g.4 batch 7, 2026-11-15)
+
+**All 20 missing ids in `terrain-walls.json`**: the shipping-
+container wall in 15 game colors (one parameterized corrugated-
+steel panel — vertical ribs, rails, rivets, faint weathering),
+`t_wall_warped` (stone courses that visibly disagree, magenta
+seeping through the mortar, shadows on the wrong side, per its
+description), `t_reinforced_glass_lab` (thick pane, embedded wire
+grid, bolted frame), the wasp-paper pair `t_paper_brood` /
+`t_paper_hard` (layered pulp strata, gray vs dark-compressed), and
+`t_wood_sunshade_pole` (canvas canopy on a grained pole — the
+sprite is mostly air by design). `new-tiles/draw_walls.py`;
+`new-tiles/preview_walls.png`. **Wave 1 of the zero-drive is
+complete with this batch.**
+
+Verified per the 2g.4 gate (parent re-run): **20 materials, all
+`exact`, 0 missing** (60 layers), byte-identical re-run. Coverage
+movement (overlay method, baseline 84 reproduced first): 20
+direct, no rescues — terrain missing **84 → 64**, coverage
+**93.4% → 95.0%** (1,187/1,271 → 1,207/1,271). The remaining 64
+are exactly wave 2's scope: manufactured/mechanisms/sunken-
+helicopter (18), triffid/reverberations/ice (20), and the 26-id
+scatter.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
