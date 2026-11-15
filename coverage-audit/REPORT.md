@@ -794,6 +794,28 @@ subdirs (`items`, `overmap`, `vehicle`, `traps`, `fields`).
 Batch records follow below as they land; the finish line is
 0 missing in all eight audit categories.
 
+## Extension batch TRAP1: the LIXA portal family (2026-11-15)
+
+**41 trap ids** — the LIXA facility's invisible teleport
+triggers (`tr_LIXA_back_*`, `tr_LIXA_forward_*`,
+`tr_LIXA_unfold_entry_*`, numbered channel indices into the
+teleport chain, confirmed from the linked EOCs/spells). One
+parameterized renderer: green portal pads in the shipped
+`tr_portal` treatment, family glyphs (down-chevron / up-chevron
+/ nested-squares unfold) with a slight hue lean per family, and
+the channel number encoded as lit pips in a 2×8 grid.
+`new-tiles/draw_trap1.py`; `new-tiles/preview_trap1.png`.
+
+Verified per the 2g.4 gate (parent re-run): **41 materials, all
+`exact`, 0 missing** (123 layers) — the tileset loader does read
+the `traps/` subdir; every trap PNG byte-identical across the
+re-run. Coverage: traps **121 → 80**. (Bookkeeping note: the
+batch brief's hand-typed list and the alphabetical split file
+disagreed on the unfold_entry numbering; the drawn set is
+back 1–16, forward 1–16, unfold_entry 1–9, and the remaining
+trap batches were re-split from the measured still-missing
+list, so the union is exact.)
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
