@@ -1,0 +1,16 @@
+[package]
+name = "billboard"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CDDA Voxel Frontend Phase 6: camera-facing billboard sprites — overlay composition/cache, instancing, shadows, picking."
+
+[dependencies]
+tileset = { path = "../tileset" }
+glam = "0.29"
+wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
