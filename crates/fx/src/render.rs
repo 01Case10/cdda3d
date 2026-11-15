@@ -528,32 +528,32 @@ struct Uniforms {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct FieldInstGpu {
-    center: [f32; 3],
-    size: f32,
-    base_color: [f32; 3],
-    density: f32,
-    emissive: [f32; 3],
-    emissive_strength: f32,
-    noise_scale: f32,
-    noise_speed: f32,
-    class_id: u32,
-    seed: f32,
-    drift: [f32; 3],
+pub struct FieldInstGpu {
+    pub center: [f32; 3],
+    pub size: f32,
+    pub base_color: [f32; 3],
+    pub density: f32,
+    pub emissive: [f32; 3],
+    pub emissive_strength: f32,
+    pub noise_scale: f32,
+    pub noise_speed: f32,
+    pub class_id: u32,
+    pub seed: f32,
+    pub drift: [f32; 3],
     /// Fire coupling: for smoke, how much fire burns on/below its
     /// tile (0..1); 0 for everything else. Computed at upload.
-    heat: f32,
+    pub heat: f32,
     /// Smoke column links: 1 = smoke directly below, 2 = smoke
     /// directly above, 3 = both, 0 = neither/other classes. Lets a
     /// vertical smoke column shade as one plume, not stacked blobs.
-    link: f32,
-    _pad: [f32; 3],
+    pub link: f32,
+    pub _pad: [f32; 3],
 }
 
 /// Heat coupling for one placed field: smoke sitting on or above
 /// fire is heated by it (same tile counts full, each z-level above
 /// the fire counts less). Everything that is not smoke gets 0.
-fn heat_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
+pub fn heat_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
     use crate::effect::RenderClass;
     if f.def.render_class != RenderClass::Smoke {
         return 0.0;
@@ -574,7 +574,7 @@ fn heat_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
 }
 
 /// Column links for one placed field (see FieldInstGpu::link).
-fn link_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
+pub fn link_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
     use crate::effect::RenderClass;
     if f.def.render_class != RenderClass::Smoke {
         return 0.0;
@@ -590,7 +590,7 @@ fn link_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
     (has(-1) as u32 + 2 * has(1) as u32) as f32
 }
 
-fn field_instance(f: &PlacedField, heat: f32, link: f32) -> FieldInstGpu {
+pub fn field_instance(f: &PlacedField, heat: f32, link: f32) -> FieldInstGpu {
     let def: &EffectDef = &f.def;
     FieldInstGpu {
         center: f.world_center().to_array(),
@@ -614,7 +614,7 @@ fn field_instance(f: &PlacedField, heat: f32, link: f32) -> FieldInstGpu {
 // Post pass (fullscreen; mirrors post.rs CPU reference)
 // ---------------------------------------------------------------------
 
-const POST_SHADER: &str = r#"
+pub const POST_SHADER: &str = r#"
 struct PostUniforms {
     flags: vec4<u32>,          // bloom, dof, grade, chromatic
     params: vec4<f32>,         // threshold, bloom_strength, focal_depth(projected), dof_strength
@@ -687,11 +687,11 @@ fn lum(c: vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.299, 0.587, 0.114)); }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct PostUniforms {
-    flags: [u32; 4],
-    params: [f32; 4],
-    texel: [f32; 2],
-    _p: [f32; 2],
+pub struct PostUniforms {
+    pub flags: [u32; 4],
+    pub params: [f32; 4],
+    pub texel: [f32; 2],
+    pub _p: [f32; 2],
 }
 
 // ---------------------------------------------------------------------

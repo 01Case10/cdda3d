@@ -139,6 +139,41 @@ Combined test-tileset run: **9 materials, all `exact`, 0 missing**.
 `new-tiles/preview_moths.png` is their contact sheet; `preview.png`
 now shows all nine.
 
+## Created: the alien meadow (Phase 2g.4 terrain batch, 2026-11-15)
+
+The first terrain batch under Phase 2g.4 (priority: player-visible
+terrain first): **all 16 ids in `terrain_alien_meadow.json`** — the
+first cluster named in §"Two distinct problems" above — drawn from
+their in-game descriptions in the same decomposed layout under
+`new-tiles/pngs_normal_32x32/terrain/<id>/` (32×32, CC BY-SA 3.0;
+`new-tiles/draw_alien_meadow.py` regenerates them deterministically;
+`new-tiles/preview_alien_meadow.png` is the contact sheet, and
+`preview.png` now shows all batches). Design notes: flat ground
+(`t_alien_meadow_grass`, `t_alien_meadow_pond_goo`) is full-tile fg with
+`bg: ""`; plants/trees are transparent fg over `bg:
+t_alien_meadow_grass` (the `t_shrub`-over-`t_grass` pattern); and the
+two hidden trap-root grasses (`…_roots_long_grass`, `…_roots_tall_grass`)
+are entry-only, their `fg` referencing the plain grass sprite itself —
+the game data says they must look exactly the same, so they do by
+construction.
+
+Verified per the 2g.4 gate: a test tileset containing the batch run
+through the release voxelizer produces **16 materials, all resolution
+`exact`, 0 missing** (48 layers, 14 sprites), byte-identical on re-run.
+
+Coverage movement: `tools/audit_missing_tiles.py` was re-run; its
+outputs are byte-identical to the previous run, because the script
+measures the UltiCa tree in `fork-src/` and `new-tiles/` is an overlay
+that has not been dropped into it (the same reason `mon_butterfly`
+still appears in `missing.json`). Measured as an overlay — batch ids
+added to the shipped universe, `looks_like` chains re-resolved —
+terrain missing (shipped) moves **202 → 184**: the 16 direct ids plus
+`t_nl_shrub_glowberries` and `t_nl_shrub_glowberries_harvested`, whose
+`looks_like` targets `t_alien_meadow_shrub_2` / `_harvested`. Terrain
+coverage **84.1% → 85.5%** (1,069/1,271 → 1,087/1,271); player-visible
+terrain missing **173 → 155**. The script's headline numbers will show
+this only once the batch lands in an actual tileset tree.
+
 ## Status
 
 Working tree only — not committed, not pushed (other sessions have

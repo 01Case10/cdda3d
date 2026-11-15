@@ -52,7 +52,8 @@ fn main() -> ExitCode {
         println!(
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
-             [--textures voxelizer-output-dir] \
+             [--textures voxelizer-output-dir] [--effects effects.json] \
+             [--fx-fields-off] [--fx-post-off] \
              --size WxH --out file.png] [--scene-report] [--renderer raster|rt] [--textures dir]"
         );
         return ExitCode::SUCCESS;
@@ -130,6 +131,15 @@ fn headless_main(args: &[String]) -> ExitCode {
     }
     if let Some(t) = value_after(args, "--textures") {
         cap.textures = Some(t.into());
+    }
+    if let Some(e) = value_after(args, "--effects") {
+        cap.effects = Some(e.into());
+    }
+    if args.iter().any(|a| a == "--fx-fields-off") {
+        cap.fx_fields = false;
+    }
+    if args.iter().any(|a| a == "--fx-post-off") {
+        cap.fx_post = false;
     }
     if let Some(o) = value_after(args, "--out") {
         cap.out = o.into();
@@ -245,10 +255,24 @@ impl App {
             self.pacer.mark_world_dirty();
             return;
         }
-        let (_map, meshes, stats) = world::mesh_fake_house(&visible);
-        self.overlay.stats = stats;
-        let gpu_meshes = gpu.renderer.upload(&gpu.device, &meshes);
-        self.gpu.as_mut().unwrap().gpu_meshes = gpu_meshes;
+        // Phase 2g.2: the windowed raster remesh shares scene
+        // preparation with the capture path — with --textures the
+        // spec is built by the shared builder and installed via
+        // set_textures (before this wiring the windowed raster
+        // path was always flat; the RT branch above already had
+        // its textures).
+        match engine::scene_prep::prepare_raster_house(&visible, self.textures_dir.as_deref()) {
+            Ok((meshes, stats, spec)) => {
+                self.overlay.stats = stats;
+                let gpu_meshes = gpu.renderer.upload(&gpu.device, &meshes);
+                let gpu = self.gpu.as_mut().unwrap();
+                if let Some(spec) = &spec {
+                    gpu.renderer.set_textures(&gpu.device, &gpu.queue, spec);
+                }
+                gpu.gpu_meshes = gpu_meshes;
+            }
+            Err(e) => eprintln!("voxel-engine: raster scene prep failed: {e}"),
+        }
         self.pacer.mark_world_dirty();
     }
 

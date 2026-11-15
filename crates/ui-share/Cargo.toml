@@ -1,0 +1,14 @@
+[package]
+name = "ui-share"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CDDA Voxel Frontend Phase 4: shared-memory UI texture double-buffer, UI compositing quad, input mapping and picking."
+
+[dependencies]
+proto = { path = "../proto" }
+glam = "0.29"
+wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }

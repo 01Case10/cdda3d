@@ -145,6 +145,7 @@ fn capture_args(textures: Option<PathBuf>, out: &Path) -> CaptureArgs {
         size: (320, 180),
         out: out.to_path_buf(),
         cutaway_z: 1,
+        ..CaptureArgs::default()
     }
 }
 

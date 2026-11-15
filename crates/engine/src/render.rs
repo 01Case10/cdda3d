@@ -580,9 +580,15 @@ impl Renderer {
     }
 }
 
-/// Create a depth texture view sized `size` (windowed resize and
-/// headless capture both use this).
-pub fn create_depth_view(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureView {
+/// Create a depth texture + view sized `size`. The texture
+/// carries the usages the Phase 2g fx wiring needs (sampled by
+/// the post pass, copied for the soft-particle field pass) on top
+/// of render-attachment; the extra usages do not change what the
+/// world pass renders into it.
+pub fn create_depth_texture(
+    device: &wgpu::Device,
+    size: (u32, u32),
+) -> (wgpu::Texture, wgpu::TextureView) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth-texture"),
         size: wgpu::Extent3d {
@@ -594,8 +600,18 @@ pub fn create_depth_view(device: &wgpu::Device, size: (u32, u32)) -> wgpu::Textu
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    texture.create_view(&Default::default())
+    let view = texture.create_view(&Default::default());
+    (texture, view)
+}
+
+/// Create a depth texture view sized `size` (windowed resize and
+/// headless capture both use this).
+pub fn create_depth_view(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureView {
+    create_depth_texture(device, size).1
 }
