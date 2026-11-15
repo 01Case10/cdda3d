@@ -1,4 +1,46 @@
-# New tiles: the butterfly and moth lifecycles, the alien meadow
+# New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension
+
+## Terrain batch 2: the string dimension (Phase 2g.4, 2026-11-15)
+
+The second terrain batch, same priority order: **the 20 missing
+terrain ids in `data/json/furniture_and_terrain/terrain-string-dimension.json`**
+— the audit's second named cluster (the file's remaining ids resolve
+via `looks_like`; `t_string_dimension_groundcover` is a regional
+pseudo and stays out). All 32×32 on the normal sheet under
+`pngs_normal_32x32/terrain/<id>/`, drawn from the in-game descriptions
+by `draw_string_dimension.py` (PIL, deterministic):
+
+| id | drawn from |
+|---|---|
+| `t_string_void` / `t_string_true_void` | "an otherworldly nothing… a black wall at the front of your senses" — pure black, the two indistinguishable as described |
+| `t_string_point_small` / `_big` | "A speck in the darkness." — white dot / white star speck on black (symbols `.` / `*`) |
+| `t_string_point_small_gray` / `_big_gray` | the same specks in light gray |
+| `t_string_x` | "impossibly thin magenta line… the space around it shimmers" — 1px horizontal magenta line, faint shimmer ghosts, over the void |
+| `t_string_y` | the cyan line, vertical |
+| `t_string_z` | the yellow line "that extends up and down" — vertical, bright caps at both ends |
+| `t_string_xy` / `t_string_xy_plane_1` | "impossibly flat blue square" — flat blue, identical descriptions drawn identically |
+| `t_string_xy_plane_2` | "shimmering blue square" — diagonal sheen bands + sparkles |
+| `t_string_xy_plane_3` | "wavy square" — light blue with wavy bands |
+| `t_string_xyz` | "white cube… it somehow reminds you of home" — isometric white cube over the void |
+| `t_nl_sd_2d_sky` | "the sky… impossibly flattened into two dimensions" — near-black with the whole sky squashed into one pale band |
+| `t_nl_sd_2d_sky_walkable` | "You can stand here, upon the horizon." — the band as a floor |
+| `t_nl_sd_2d_ground` | "the ground… flattened… patterns constantly shifting, like an image passing through a veined rock" — light-gray veined marbling |
+| `t_string_gates_mech_control` | "A heavy-duty metal lever with two settings, each marked by an alien symbol." — plate, angled arm, red knob, cyan/red glyph marks, over the void |
+| `t_string_gates_mech_control_inert` | the same lever, "Toggling it back and forth does nothing" — dimmed, desaturated |
+| `t_string_dimension_meteoric_rock_charred` | "solid rock, deeply pitted, charred, and coated in a residue with an acrid smell" — dark pitted rock, scorch blotches, olive residue streaks |
+
+Verified: run through this project's release voxelizer as a test
+tileset, all 20 produce materials with resolution `exact`, **0
+missing** (60 layers, 20 sprites), byte-identical re-run.
+`preview_string_dimension.png` is the batch contact sheet (each tile
+composited over its bg, as the game shows it); `preview.png` now
+stacks this batch above the alien meadow and the monsters.
+
+Coverage: no `looks_like` rescues this time — terrain missing
+(shipped) **184 → 164**, coverage **85.5% → 87.1%**, player-visible
+missing **155 → 135** (see `../REPORT.md`).
+
+---
 
 ## Terrain batch: the alien meadow (Phase 2g.4, 2026-11-15)
 

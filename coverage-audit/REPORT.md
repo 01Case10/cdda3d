@@ -174,11 +174,49 @@ coverage **84.1% → 85.5%** (1,069/1,271 → 1,087/1,271); player-visible
 terrain missing **173 → 155**. The script's headline numbers will show
 this only once the batch lands in an actual tileset tree.
 
+## Created: the string dimension (Phase 2g.4 batch 2, 2026-11-15)
+
+The second terrain batch, same priority order: **the 20 missing ids in
+`terrain-string-dimension.json`** (the audit's second named cluster;
+the file's other ids already resolve via `looks_like`, and
+`t_string_dimension_groundcover` is a regional pseudo that never
+actually shows up, so it stays out). Drawn from their in-game
+descriptions in the same decomposed layout
+(`new-tiles/draw_string_dimension.py` regenerates them
+deterministically; `new-tiles/preview_string_dimension.png` is the
+contact sheet, and `preview.png` now stacks this batch above the
+alien meadow and the monsters). Design notes: the two voids are pure
+black and indistinguishable, as described; the points are specks on
+that black; the perceived geometry — impossibly thin magenta/cyan/
+yellow lines, the flat blue planes (plain, shimmering, wavy), and the
+white xyz cube — plus the rotary lever are transparent `fg` over
+`bg: t_string_void`, things perceived against the nothing; the
+flattened sky is the whole sky squashed into one pale band, the
+walkable horizon is that band as a floor; the flattened ground is
+light-gray veined rock; the charred meteoric rock is pitted,
+scorch-blotched, and streaked with dull olive residue; the inert
+lever is the working lever drawn dimmed and desaturated.
+
+Verified per the 2g.4 gate: a test tileset containing the batch run
+through the release voxelizer produces **20 materials, all resolution
+`exact`, 0 missing** (60 layers, 20 sprites), byte-identical on
+re-run.
+
+Coverage movement (same overlay method as the alien meadow — the
+computation first reproduces that batch's 184 and its two glowberry
+rescues exactly): no `looks_like` rescues this time, so terrain
+missing (shipped) moves **184 → 164**, terrain coverage **85.5% →
+87.1%** (1,087/1,271 → 1,107/1,271), player-visible terrain missing
+**155 → 135**. Remaining named terrain clusters: the nether
+labyrinth `t_nl_*` (17) and the vitrified set (16).
+
 ## Status
 
-Working tree only — not committed, not pushed (other sessions have
-uncommitted 2d/2e/2f work in this repo). `fork-src/` is gitignored, so
-expanding its sparse checkout for `data/json` does not dirty the repo.
+Batches are committed locally as they land (butterfly/moth in
+`5f740f2`, alien meadow in `13e91e2`, string dimension with this
+record); pushes follow Joey's word via the PC-clone bundle route.
+`fork-src/` is gitignored, so expanding its sparse checkout for
+`data/json` does not dirty the repo.
 Gate 5.10 stays open, now with a measured list instead of an unknown:
 as written (≥98% of base-game terrain+furniture) it cannot pass on
 current UltiCa — closing it means either re-scoping the gate or a
