@@ -50,6 +50,9 @@ pub struct CaptureArgs {
     pub snapshot: String,
     /// Renderer selection (Phase 2c).
     pub renderer: RendererKind,
+    /// Voxelizer output directory for RT textures (Phase 5
+    /// hookup). `None` = flat-color RT rendering.
+    pub textures: Option<std::path::PathBuf>,
     /// Follow-target tile coords (x = east, y = south).
     pub camera_target: (f32, f32),
     pub yaw_deg: f32,
@@ -66,6 +69,7 @@ impl Default for CaptureArgs {
         Self {
             snapshot: "stub-house".to_string(),
             renderer: RendererKind::Raster,
+            textures: None,
             camera_target: (6.0, 6.0),
             yaw_deg: 45.0,
             pitch_deg: 45.0,

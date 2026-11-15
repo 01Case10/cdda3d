@@ -128,9 +128,21 @@ pub fn fire_scene() -> (Vec<BoxPrim>, Vec<PlacedField>) {
             intensity,
         });
     }
-    // Smoke column rising over the central blaze (z-levels 1-2),
-    // as in the reference screenshots.
-    for (tile, intensity) in [([4, 4, 1], 2u8), ([5, 4, 1], 3), ([5, 4, 2], 2)] {
+    // Smoke plume over the blaze, composed as ONE column (the
+    // first cut stacked three discrete cubes and read as cotton
+    // blocks): a full layer over the burning row at z=1, a narrower
+    // layer at z=2, one tile at z=3 leaning with the wind. The
+    // renderer's heat coupling thins and darkens the z=1 bases, so
+    // the layers merge instead of stacking.
+    for (tile, intensity) in [
+        ([3, 4, 1], 2u8),
+        ([4, 4, 1], 3),
+        ([5, 4, 1], 3),
+        ([6, 4, 1], 2),
+        ([4, 4, 2], 2),
+        ([5, 4, 2], 2),
+        ([5, 4, 3], 1),
+    ] {
         fields.push(PlacedField {
             tile,
             def: smoke.clone(),

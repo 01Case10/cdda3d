@@ -12,6 +12,7 @@ fn args(renderer: RendererKind, cutaway_z: i32, out: &str) -> CaptureArgs {
     CaptureArgs {
         snapshot: "stub-house".to_string(),
         renderer,
+        textures: None,
         camera_target: (6.0, 6.0),
         yaw_deg: 45.0,
         pitch_deg: 45.0,
@@ -169,4 +170,67 @@ fn gate_2c_4_and_2c_6_render_parity() {
     let raster_cut = run_capture(&args(RendererKind::Raster, 0, raster_cut_path.to_str().unwrap()))
         .expect("raster cutaway capture");
     assert!(raster_cut.quads < raster.quads);
+}
+
+// ------------------------------------------------------- texture hookup
+/// Phase 5 texture hookup on the RT path: with `--textures` pointing
+/// at the real UltiCa voxelizer output, the fake house's materials
+/// resolve, the traced geometry (depth) is bit-identical to the
+/// flat render (textures shade, they don't move geometry), and the
+/// colors actually change.
+#[test]
+fn gate_texture_hookup_ultica_fake_house() {
+    let tex_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ultica_run1");
+    if !tex_dir.join("materials.json").exists() {
+        eprintln!("texture hookup: {} not present — NOT RUN", tex_dir.display());
+        return;
+    }
+    let flat = match capture_rt_standalone(&args(RendererKind::Rt, 1, "unused.png")) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("texture hookup: RT capture unavailable ({e}) — NOT RUN");
+            return;
+        }
+    };
+    let mut tex_args = args(RendererKind::Rt, 1, "unused.png");
+    tex_args.textures = Some(tex_dir);
+    let tex = capture_rt_standalone(&tex_args).expect("textured RT capture");
+    let stats = tex.texture_stats.expect("texture stats reported");
+    println!(
+        "texture hookup: {} materials textured, {} missing, {} layers uploaded",
+        stats.textured_materials, stats.missing_materials, stats.layers_uploaded
+    );
+    assert!(
+        stats.textured_materials >= 6,
+        "all six fake-house materials must resolve (got {})",
+        stats.textured_materials
+    );
+    assert!(stats.layers_uploaded >= 6);
+    // Geometry is untouched by shading: depths bit-identical.
+    assert_eq!(flat.depth.len(), tex.depth.len());
+    assert!(
+        flat.depth.iter().zip(tex.depth.iter()).all(|(a, b)| a == b),
+        "textured and flat RT captures must trace identical geometry"
+    );
+    // And the picture changes: substantial mean color delta on
+    // geometry pixels, more distinct colors than the flat palette.
+    let mut diff = 0f64;
+    let mut n = 0usize;
+    for (i, &d) in flat.depth.iter().enumerate() {
+        if d < flat.max_dist {
+            n += 1;
+            let fp = flat.image.get_pixel((i as u32) % 320, (i as u32) / 320);
+            let tp = tex.image.get_pixel((i as u32) % 320, (i as u32) / 320);
+            for c in 0..3 {
+                diff += (fp.0[c] as f64 - tp.0[c] as f64).abs();
+            }
+        }
+    }
+    let mean = diff / (n * 3) as f64;
+    println!("texture hookup: mean |color diff| on geometry {mean:.1}/255; distinct colors flat {} -> textured {}", flat.distinct_colors, tex.distinct_colors);
+    assert!(mean > 5.0, "textures must visibly change the render (mean diff {mean:.1})");
+    assert!(
+        tex.distinct_colors > flat.distinct_colors,
+        "textured render must have richer color variation"
+    );
 }

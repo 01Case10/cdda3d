@@ -4,6 +4,7 @@
 # Usage:
 #   tools/capture.sh [--snapshot stub-house] [--camera x,y,yaw,pitch]
 #                    [--distance d] [--cutaway z] [--renderer raster|rt]
+#                    [--textures voxelizer-output-dir]
 #                    [--size WxH] --out file.png
 #
 # Thin wrapper around `cargo run -p engine -- --headless-capture ...`.

@@ -132,16 +132,25 @@ pub fn voronoi_f1(p: Vec3) -> f32 {
 pub fn smoke_color(def: &EffectDef, curve: f32, y: f32) -> [f32; 3] {
     let g = (curve * (0.55 + 0.45 * y)).clamp(0.0, 1.0);
     let dark = [
-        def.base_color[0] * 0.30,
-        def.base_color[1] * 0.29,
-        def.base_color[2] * 0.29,
+        def.base_color[0] * 0.10,
+        def.base_color[1] * 0.095,
+        def.base_color[2] * 0.095,
     ];
     let light = [
-        def.base_color[0] * 0.98,
-        def.base_color[1] * 0.98,
-        def.base_color[2] * 0.98,
+        def.base_color[0] * 0.52,
+        def.base_color[1] * 0.52,
+        def.base_color[2] * 0.52,
     ];
     mix3(dark, light, g)
+}
+
+/// Fire underlight for heated smoke (CPU reference for the WGSL
+/// smoke path): orange light added at the smoke's base when fire
+/// burns on/below its tile, fading with the square of height and
+/// flickering with the fire. Zero when there is no heat.
+pub fn smoke_underlight(heat: f32, y: f32, flicker: f32) -> [f32; 3] {
+    let s = heat * (1.0 - y).powi(2) * 0.55 * flicker;
+    [s, 0.42 * s, 0.10 * s]
 }
 
 /// Soft silhouette falloff inside a unit volume: `local` in [0,1]^3,
@@ -379,6 +388,15 @@ mod tests {
         let base = smoke_color(&smoke, 0.1, 0.0);
         let top = smoke_color(&smoke, 0.95, 1.0);
         assert!(lum(top) > lum(base) * 1.8, "base {base:?} vs top {top:?}");
+    }
+
+    #[test]
+    fn smoke_underlight_needs_heat_and_fades_with_height() {
+        assert_eq!(smoke_underlight(0.0, 0.0, 1.0), [0.0, 0.0, 0.0]);
+        let base = smoke_underlight(1.0, 0.0, 1.0);
+        let high = smoke_underlight(1.0, 0.85, 1.0);
+        assert!(base[0] > 0.4 && base[0] > base[1] && base[1] > base[2], "orange: {base:?}");
+        assert!(high[0] < base[0] * 0.1, "must fade: {high:?} vs {base:?}");
     }
 
     #[test]

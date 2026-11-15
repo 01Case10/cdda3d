@@ -22,6 +22,48 @@ use crate::capture::{CaptureArgs, CaptureError};
 use crate::cutaway::CutawayMode;
 use crate::world;
 
+/// Fake-data material resolution: mesher fake tile id -> UltiCa
+/// game id whose voxelizer material stands in for it. Every id here
+/// was verified present in the real UltiCa `materials.json`
+/// (2026-11-15). Real scenes resolve through TileDefs instead —
+/// this table exists so the fake house can exercise the texture
+/// path end to end.
+pub fn fake_material_ids() -> std::collections::HashMap<u32, String> {
+    use mesher::block::*;
+    [
+        (TILE_FLOOR_WOOD, "t_floor_primitive"), // rough plank floor
+        (TILE_WALL, "t_wall"),
+        (TILE_DOOR, "t_door_c"),
+        (TILE_WINDOW, "t_window"),
+        (TILE_ROOF, "t_shingle_flat_roof"),
+        (TILE_GROUND, "t_grass"),
+        (TILE_FENCE, "t_chainfence"),
+        (TILE_WATER, "t_water_dp"),
+        (TILE_FOLIAGE, "t_tree"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k, v.to_string()))
+    .collect()
+}
+
+/// Attach voxelizer textures from `dir` to `scene`, resolving the
+/// fake house's material ids. Returns the build stats.
+pub fn attach_fake_textures(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    scene: &mut treebuild::render::RtScene,
+    dir: &std::path::Path,
+) -> Result<crate::textures::TextureStats, CaptureError> {
+    let table = crate::materials::MaterialTable::load(dir)
+        .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+    let (spec, stats) = crate::textures::build_texture_spec(&table, dir, &fake_material_ids())
+        .map_err(CaptureError::Device)?;
+    scene
+        .attach_textures(device, queue, &spec)
+        .map_err(CaptureError::Device)?;
+    Ok(stats)
+}
+
 /// The fake-house voxel world for a set of visible game z-levels.
 pub fn world_for_levels(visible_levels: &[i32]) -> VoxelWorld {
     let map = world::build_fake_house(mesher::scale::WorldScale::default());
@@ -63,6 +105,8 @@ pub struct RtCapture {
     pub nodes: usize,
     pub build_ms: f64,
     pub distinct_colors: usize,
+    /// Texture hookup stats when `args.textures` was set.
+    pub texture_stats: Option<crate::textures::TextureStats>,
 }
 
 /// Render one RT capture on an already-created device/queue.
@@ -74,7 +118,11 @@ pub fn capture_rt_with_device(
     let t0 = Instant::now();
     let built = build_capture_tree(args.cutaway_z)?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
-    let (renderer, scene) = RtRenderer::with_scene(device, &built);
+    let (renderer, mut scene) = RtRenderer::with_scene(device, queue, &built);
+    let texture_stats = match &args.textures {
+        Some(dir) => Some(attach_fake_textures(device, queue, &mut scene, dir)?),
+        None => None,
+    };
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
     let aspect = width as f32 / height as f32;
     let camera = capture_camera(args, aspect);
@@ -96,6 +144,7 @@ pub fn capture_rt_with_device(
         nodes: built.node_count(),
         build_ms,
         distinct_colors: distinct.len(),
+        texture_stats,
     })
 }
 

@@ -52,14 +52,16 @@ fn main() -> ExitCode {
         println!(
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
-             --size WxH --out file.png] [--scene-report] [--renderer raster|rt]"
+             [--textures voxelizer-output-dir] \
+             --size WxH --out file.png] [--scene-report] [--renderer raster|rt] [--textures dir]"
         );
         return ExitCode::SUCCESS;
     }
     let kind = value_after(&args, "--renderer")
         .and_then(|s| RendererKind::parse(&s))
         .unwrap_or(RendererKind::Raster);
-    windowed_main(kind)
+    let textures = value_after(&args, "--textures").map(std::path::PathBuf::from);
+    windowed_main(kind, textures)
 }
 
 fn value_after(args: &[String], flag: &str) -> Option<String> {
@@ -126,6 +128,9 @@ fn headless_main(args: &[String]) -> ExitCode {
             }
         }
     }
+    if let Some(t) = value_after(args, "--textures") {
+        cap.textures = Some(t.into());
+    }
     if let Some(o) = value_after(args, "--out") {
         cap.out = o.into();
     }
@@ -182,10 +187,11 @@ struct App {
     fps_counter: FpsCounter,
     pacer: FramePacer,
     renderer_kind: RendererKind,
+    textures_dir: Option<std::path::PathBuf>,
 }
 
 impl App {
-    fn new(renderer_kind: RendererKind) -> Self {
+    fn new(renderer_kind: RendererKind, textures_dir: Option<std::path::PathBuf>) -> Self {
         // Follow target: house center tile (6,6) -> world (6, top, -6).
         let camera = OrbitCamera::new(Vec3::new(6.0, 1.0, -6.0));
         Self {
@@ -196,6 +202,7 @@ impl App {
             fps_counter: FpsCounter::new(),
             pacer: FramePacer::new(),
             renderer_kind,
+            textures_dir,
         }
     }
 
@@ -210,7 +217,16 @@ impl App {
             let voxel_world = engine::rt::world_for_levels(&visible);
             match treebuild::build::build_tree(&voxel_world, treebuild::build::BuildConfig::default()) {
                 Ok(built) => {
-                    let (renderer, scene) = RtRenderer::with_scene(&gpu.device, &built);
+                    let (renderer, mut scene) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
+                    if let Some(dir) = &self.textures_dir {
+                        match engine::rt::attach_fake_textures(&gpu.device, &gpu.queue, &mut scene, dir) {
+                            Ok(stats) => eprintln!(
+                                "voxel-engine: RT textures: {} materials, {} layers",
+                                stats.textured_materials, stats.layers_uploaded
+                            ),
+                            Err(e) => eprintln!("voxel-engine: RT textures unavailable: {e}"),
+                        }
+                    }
                     let gpu = self.gpu.as_mut().unwrap();
                     gpu.rt_renderer = Some(renderer);
                     gpu.rt_scene = Some(scene);
@@ -438,10 +454,13 @@ impl ApplicationHandler for App {
     }
 }
 
-fn windowed_main(renderer_kind: RendererKind) -> ExitCode {
+fn windowed_main(
+    renderer_kind: RendererKind,
+    textures_dir: Option<std::path::PathBuf>,
+) -> ExitCode {
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(renderer_kind);
+    let mut app = App::new(renderer_kind, textures_dir);
     match event_loop.run_app(&mut app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

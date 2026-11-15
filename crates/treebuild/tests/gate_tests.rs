@@ -430,7 +430,7 @@ fn gate_2c_3_and_2c_10_gpu_traversal_parity_and_crate_smoke() {
     use treebuild::render::{RtCamera, RtRenderer};
     let world = house_world();
     let built = build_tree(&world, BuildConfig::default()).unwrap();
-    let (renderer, scene) = RtRenderer::with_scene(&gpu.device, &built);
+    let (renderer, scene) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
     // 2c.10 smoke: the crate manager's buffer is exactly the flat
     // tree's bytes, and its bind group is the one the pipelines use.
     assert_eq!(scene.node_count, built.node_count());
@@ -532,4 +532,174 @@ fn read_f32_buffer(gpu: &Gpu, buffer: &wgpu::Buffer, count: usize) -> Vec<f32> {
     drop(data);
     staging.unmap();
     out
+}
+
+// ---------------------------------------------------------------------
+// Texture hookup (Phase 5 follow-up, closed on the RT path 2026-11-15)
+// ---------------------------------------------------------------------
+
+fn read_rgba_texture(gpu: &Gpu, texture: &wgpu::Texture, size: (u32, u32)) -> Vec<u8> {
+    let (w, h) = size;
+    let unpadded = w * 4;
+    let padded = unpadded.div_ceil(256) * 256;
+    let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("gate-tex-readback"),
+        size: (padded * h) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded),
+                rows_per_image: Some(h),
+            },
+        },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+    );
+    gpu.queue.submit([encoder.finish()]);
+    gpu.device.poll(wgpu::Maintain::Wait);
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    gpu.device.poll(wgpu::Maintain::Wait);
+    rx.recv().unwrap().unwrap();
+    let mut out = Vec::with_capacity((unpadded * h) as usize);
+    {
+        let data = slice.get_mapped_range();
+        for row in 0..h as usize {
+            let start = row * padded as usize;
+            out.extend_from_slice(&data[start..start + unpadded as usize]);
+        }
+    }
+    staging.unmap();
+    out
+}
+
+/// Textured materials sample the texture array by material + face
+/// class; untextured materials keep flat shading. Two grey voxels,
+/// one mapped to a black/white checkerboard layer: the textured
+/// render must contain both near-black and near-white hit pixels,
+/// the flat control render neither.
+#[test]
+fn gate_texture_hookup_samples_array_and_falls_back_flat() {
+    let Some(gpu) = gpu() else {
+        eprintln!("texture hookup: no wgpu adapter — GPU checks NOT RUN");
+        return;
+    };
+    use treebuild::render::{RtCamera, RtRenderer, TextureSpec};
+
+    let mut world = VoxelWorld::new();
+    // Both voxels flat mid-grey; only material 7 gets a texture.
+    world.set([4, 4, 4], VoxelCell::new([0.5, 0.5, 0.5], 7));
+    world.set([6, 4, 4], VoxelCell::new([0.5, 0.5, 0.5], 9));
+    let built = build_tree(&world, BuildConfig::default()).unwrap();
+    let (renderer, mut scene) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
+
+    // 8x8 checkerboard layer: 4px checks, pure black / pure white.
+    let tile = 8u32;
+    let mut layer = Vec::with_capacity((tile * tile * 4) as usize);
+    for y in 0..tile {
+        for x in 0..tile {
+            let white = ((x / 4) + (y / 4)) % 2 == 0;
+            let v = if white { 255u8 } else { 0u8 };
+            layer.extend_from_slice(&[v, v, v, 255]);
+        }
+    }
+    let mut material_layers = vec![[0u32, 0, 0, 0]; 10];
+    material_layers[7] = [0, 0, 0, 1];
+    scene
+        .attach_textures(
+            &gpu.device,
+            &gpu.queue,
+            &TextureSpec {
+                tile_size: tile,
+                layers: vec![layer],
+                material_layers,
+            },
+        )
+        .unwrap();
+    assert_eq!(scene.textures.layer_count, 1);
+
+    // Tilted camera (a perfectly vertical look direction is
+    // degenerate for the +z-up basis — same reason the engine's
+    // OrbitCamera clamps pitch below 90 degrees).
+    let camera = RtCamera {
+        eye: Vec3::new(5.0, 0.0, 11.0),
+        target: Vec3::new(5.0, 5.0, 4.0),
+        fov_y_deg: 60.0,
+        aspect: 1.0,
+    };
+    let hit_luminance = |scene: &treebuild::render::RtScene| -> Vec<u8> {
+        let frame = renderer.render(&gpu.device, &gpu.queue, scene, &camera, (128, 128), false);
+        let pixels = read_rgba_texture(&gpu, &frame.color, frame.size);
+        let depth = read_f32_buffer(&gpu, &frame.depth, 128 * 128);
+        depth
+            .iter()
+            .zip(pixels.chunks_exact(4))
+            .filter(|(&d, _)| d < frame.max_dist)
+            .map(|(_, px)| px[0])
+            .collect()
+    };
+
+    let textured = hit_luminance(&scene);
+    assert!(textured.len() > 100, "both voxels must be visible");
+    assert!(
+        textured.iter().any(|&v| v < 40),
+        "checkerboard black texels must appear (min {})",
+        textured.iter().min().unwrap()
+    );
+    assert!(
+        textured.iter().any(|&v| v > 180),
+        "checkerboard white texels must appear (max {})",
+        textured.iter().max().unwrap()
+    );
+
+    // Control: a fresh scene (dummy textures) renders both voxels
+    // flat — no dark or bright outliers.
+    let (renderer2, scene2) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
+    let frame = renderer2.render(&gpu.device, &gpu.queue, &scene2, &camera, (128, 128), false);
+    let pixels = read_rgba_texture(&gpu, &frame.color, frame.size);
+    let depth = read_f32_buffer(&gpu, &frame.depth, 128 * 128);
+    let flat: Vec<u8> = depth
+        .iter()
+        .zip(pixels.chunks_exact(4))
+        .filter(|(&d, _)| d < frame.max_dist)
+        .map(|(_, px)| px[0])
+        .collect();
+    assert!(flat.len() > 100);
+    // Flat shading legitimately spans ~38 (face turned from the sun:
+    // ambient only) to ~117 (lit top face) for 0.5 grey — but it
+    // takes only a handful of distinct values (one per face/AO
+    // combination), unlike the textured render's checkerboard.
+    let distinct: HashSet<u8> = flat.iter().copied().collect();
+    assert!(
+        flat.iter().all(|&v| v >= 30 && v <= 180),
+        "flat control must stay mid-grey (min {}, max {})",
+        flat.iter().min().unwrap(),
+        flat.iter().max().unwrap()
+    );
+    assert!(
+        distinct.len() <= 16,
+        "flat control must be near-uniform per face ({} distinct values)",
+        distinct.len()
+    );
+    let _ = renderer;
 }

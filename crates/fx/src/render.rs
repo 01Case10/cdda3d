@@ -152,7 +152,8 @@ struct FieldInst {
     base_color: vec3<f32>, density: f32,
     emissive: vec3<f32>, emissive_strength: f32,
     noise_scale: f32, noise_speed: f32, class_id: u32, seed: f32,
-    drift: vec3<f32>, _pad: f32,
+    drift: vec3<f32>, heat: f32,
+    link: f32, _pad0: f32, _pad1: f32, _pad2: f32,
 };
 @group(0) @binding(1) var<storage, read> fields: array<FieldInst>;
 struct VsIn { @location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) color: vec4<f32> };
@@ -165,6 +166,7 @@ struct VsOut { @builtin(position) clip: vec4<f32>, @location(0) normal: vec3<f32
     out.world = input.position;
     return out;
 }
+
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(input.normal);
     let l = normalize(vec3<f32>(0.35, 0.8, 0.45));
@@ -238,7 +240,8 @@ struct FieldInst {
     base_color: vec3<f32>, density: f32,
     emissive: vec3<f32>, emissive_strength: f32,
     noise_scale: f32, noise_speed: f32, class_id: u32, seed: f32,
-    drift: vec3<f32>, _pad: f32,
+    drift: vec3<f32>, heat: f32,
+    link: f32, _pad0: f32, _pad1: f32, _pad2: f32,
 };
 @group(0) @binding(1) var<storage, read> fields: array<FieldInst>;
 
@@ -342,6 +345,74 @@ fn voronoi_f1(p: vec3<f32>) -> f32 {
     return f1;
 }
 
+// SMOKE shading (redone 2026-11-15, Joey's pick: technique after
+// Loop-Box's "Stylized Smoke Shader", godotshaders.com, CC0 —
+// voronoi noise, alpha curve, color gradient maps; here all three
+// are procedural math, since the field pass binds no sprite data
+// at all, gate 2b.2). Marched: 4 steps along the view chord,
+// front-to-back — a single mid-chord sample read as a marbled
+// glass slab with hard box edges; integration makes silhouette
+// chords (short) fade and interior structure vary along the ray.
+fn smoke_shade(f: FieldInst, p: vec3<f32>, dir_l: vec3<f32>, t0: f32, t1: f32) -> vec4<f32> {
+    let steps = 4;
+    let step_len = max((t1 - t0) / f32(steps), 0.0);
+    var acc = vec3<f32>(0.0);
+    var acc_a = 0.0;
+    for (var i = 0; i < steps; i++) {
+        let ts = mix(t0, t1, (f32(i) + 0.5) / f32(steps));
+        let lp = clamp(p + dir_l * ts, vec3<f32>(0.0), vec3<f32>(1.0));
+        // Voronoi puffs; cells grow as smoke rises and expands.
+        let billow = 1.15 - 0.35 * lp.y;
+        var sp = vec3<f32>(lp.x, lp.y * 0.8, lp.z) * (f.noise_scale * billow * 1.6) + vec3<f32>(f.seed);
+        // Heat coupling (f.heat: fire on/below this tile): hot
+        // smoke rises faster, churns at its base, is lit from below.
+        sp.y -= u.time * f.noise_speed * 1.4 * (1.0 + f.heat * 1.1);
+        sp.x += u.time * f.noise_speed * 0.22; // slight wind lean
+        let v1 = 1.0 - voronoi_f1(sp);
+        let v2 = 1.0 - voronoi_f1(sp * 2.13 + vec3<f32>(7.7));
+        var v = clamp(0.72 * v1 + 0.28 * v2, 0.0, 1.0);
+        // The fire erodes the smoke's base.
+        v = clamp(v - f.heat * (1.0 - lp.y) * 0.30 * (1.0 - v2), 0.0, 1.0);
+        let curve = smoothstep(0.18, 0.9, v); // the alpha-curve remap
+        // Billow silhouette, LINK-AWARE (f.link: smoke below/above
+        // in the column): unlinked bases pinch and unlinked tops
+        // round off, linked faces stay full — a column of smoke
+        // tiles shades as one plume, not stacked blobs.
+        let taper = 1.0 + 0.5 * lp.y;
+        let cx = (lp.x - 0.5) * 2.0 / taper;
+        let cz = (lp.z - 0.5) * 2.0 / taper;
+        let radial = length(vec2<f32>(cx, cz));
+        let has_below = (f.link == 1.0 || f.link == 3.0);
+        let has_above = (f.link == 2.0 || f.link == 3.0);
+        var base_f = 0.35 + 0.65 * smoothstep(0.0, 0.3, lp.y);
+        if (has_below) { base_f = 1.0; }
+        var top_f = 1.0 - 0.5 * smoothstep(0.7, 1.0, lp.y);
+        if (has_above) { top_f = 1.0; }
+        let shape = clamp(1.2 - radial, 0.0, 1.0) * base_f * top_f;
+        var sdens = f.density * (0.25 + 0.75 * curve) * shape;
+        // Hot smoke is THIN at the base (still mostly flame and
+        // hot gas there) and builds as it climbs.
+        sdens *= mix(1.0, 0.25 + 0.75 * smoothstep(0.05, 0.6, lp.y), f.heat);
+        let a = clamp(1.0 - exp(-sdens * 1.9 * step_len), 0.0, 1.0);
+        if (a > 0.001) {
+            // Flat color gradient, dark base to light top; heat
+            // darkens fresh smoke and underlights it orange.
+            let g = clamp(curve * (0.55 + 0.45 * lp.y), 0.0, 1.0);
+            var dark = f.base_color * vec3<f32>(0.10, 0.095, 0.095);
+            dark *= 1.0 - 0.5 * f.heat * pow(1.0 - lp.y, 1.5);
+            let light = f.base_color * 0.52;
+            var scol = mix(dark, light, g);
+            let uflick = 0.6 + 0.4 * vnoise(vec3<f32>(f.seed * 5.0, u.time * 4.0, 3.0));
+            scol += vec3<f32>(1.0, 0.42, 0.10) * (f.heat * pow(1.0 - lp.y, 2.0) * 1.15 * uflick);
+            acc += (1.0 - acc_a) * a * scol;
+            acc_a += (1.0 - acc_a) * a;
+            if (acc_a > 0.98) { break; }
+        }
+    }
+    if (acc_a < 0.03) { return vec4<f32>(0.0); } // stylized cutout edge
+    return vec4<f32>(acc / acc_a, acc_a);
+}
+
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
     let f = fields[input.inst];
     // Chord evaluation: intersect the view ray with the unit volume,
@@ -425,38 +496,7 @@ fn voronoi_f1(p: vec3<f32>) -> f32 {
     let t = clamp((1.15 - d) / 0.9, 0.0, 1.0);
     let fall = (0.25 + 0.75 * (t * t * (3.0 - 2.0 * t))) * clamp(chord, 0.0, 1.0);
     if (f.class_id == 0u) {
-        // SMOKE (redone 2026-11-15, Joey's pick: technique after
-        // Loop-Box's "Stylized Smoke Shader", godotshaders.com, CC0).
-        // The source runs on particle meshes with three maps — a
-        // voronoi noise, an alpha curve, a color gradient. The field
-        // pass binds no sprite data at all (gate 2b.2), so all
-        // three maps become procedural math here: voronoi cellular
-        // puffs scrolled upward, alpha remapped through a contrast
-        // curve with a stylized cutout edge, and a FLAT color
-        // gradient (dark base to light top, no directional shading
-        // — the source's empty light() is the point).
-        let billow = 1.15 - 0.35 * local.y; // cells grow as smoke rises and expands
-        var sp = vec3<f32>(local.x, local.y * 0.8, local.z) * (f.noise_scale * billow * 1.6) + vec3<f32>(f.seed);
-        sp.y -= u.time * f.noise_speed * 1.4;
-        sp.x += u.time * f.noise_speed * 0.22; // slight wind lean
-        let v1 = 1.0 - voronoi_f1(sp);
-        let v2 = 1.0 - voronoi_f1(sp * 2.13 + vec3<f32>(7.7));
-        let v = clamp(0.72 * v1 + 0.28 * v2, 0.0, 1.0);
-        let curve = smoothstep(0.18, 0.9, v); // the alpha-curve remap
-        // Billow silhouette: wider at the top, pinched at the base.
-        let taper = 1.0 + 0.5 * local.y;
-        let cx = (local.x - 0.5) * 2.0 / taper;
-        let cz = (local.z - 0.5) * 2.0 / taper;
-        let radial = length(vec2<f32>(cx, cz));
-        let shape = clamp(1.2 - radial, 0.0, 1.0) * (0.35 + 0.65 * smoothstep(0.0, 0.3, local.y));
-        let sdens = f.density * (0.25 + 0.75 * curve) * shape * pow(fall, 0.7);
-        let salpha = clamp(1.0 - exp(-sdens * 4.5), 0.0, 1.0);
-        if (salpha < 0.03) { return vec4<f32>(0.0); } // stylized cutout edge
-        // Color gradient: dark base/core to light top, flat.
-        let g = clamp(curve * (0.55 + 0.45 * local.y), 0.0, 1.0);
-        let dark = f.base_color * vec3<f32>(0.30, 0.29, 0.29);
-        let light = f.base_color * 0.98;
-        return vec4<f32>(mix(dark, light, g), salpha);
+        return smoke_shade(f, p, dir_l, t_enter, t_exit);
     }
     var dens = f.density * fall * (0.45 + 0.55 * shaped);
     var emis = vec3<f32>(0.0);
@@ -495,10 +535,57 @@ struct FieldInstGpu {
     class_id: u32,
     seed: f32,
     drift: [f32; 3],
-    _pad: f32,
+    /// Fire coupling: for smoke, how much fire burns on/below its
+    /// tile (0..1); 0 for everything else. Computed at upload.
+    heat: f32,
+    /// Smoke column links: 1 = smoke directly below, 2 = smoke
+    /// directly above, 3 = both, 0 = neither/other classes. Lets a
+    /// vertical smoke column shade as one plume, not stacked blobs.
+    link: f32,
+    _pad: [f32; 3],
 }
 
-fn field_instance(f: &PlacedField) -> FieldInstGpu {
+/// Heat coupling for one placed field: smoke sitting on or above
+/// fire is heated by it (same tile counts full, each z-level above
+/// the fire counts less). Everything that is not smoke gets 0.
+fn heat_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
+    use crate::effect::RenderClass;
+    if f.def.render_class != RenderClass::Smoke {
+        return 0.0;
+    }
+    let mut heat = 0.0f32;
+    for o in all {
+        if o.def.render_class == RenderClass::Flame
+            && o.tile[0] == f.tile[0]
+            && o.tile[1] == f.tile[1]
+            && o.tile[2] <= f.tile[2]
+        {
+            let dz = (f.tile[2] - o.tile[2]) as f32;
+            let h = (o.intensity as f32 / 3.0) * (1.0 - 0.35 * dz).max(0.0);
+            heat = heat.max(h);
+        }
+    }
+    heat.clamp(0.0, 1.0)
+}
+
+/// Column links for one placed field (see FieldInstGpu::link).
+fn link_of(f: &PlacedField, all: &[PlacedField]) -> f32 {
+    use crate::effect::RenderClass;
+    if f.def.render_class != RenderClass::Smoke {
+        return 0.0;
+    }
+    let has = |dz: i32| {
+        all.iter().any(|o| {
+            o.def.render_class == RenderClass::Smoke
+                && o.tile[0] == f.tile[0]
+                && o.tile[1] == f.tile[1]
+                && o.tile[2] == f.tile[2] + dz
+        })
+    };
+    (has(-1) as u32 + 2 * has(1) as u32) as f32
+}
+
+fn field_instance(f: &PlacedField, heat: f32, link: f32) -> FieldInstGpu {
     let def: &EffectDef = &f.def;
     FieldInstGpu {
         center: f.world_center().to_array(),
@@ -512,7 +599,9 @@ fn field_instance(f: &PlacedField) -> FieldInstGpu {
         class_id: def.render_class.id(),
         seed: def.seed(),
         drift: def.world_drift().to_array(),
-        _pad: 0.0,
+        heat,
+        link,
+        _pad: [0.0; 3],
     }
 }
 
@@ -674,7 +763,14 @@ async fn render_frame_async(req: &CaptureRequest<'_>) -> Result<image::RgbaImage
             .partial_cmp(&a.world_center().distance_squared(eye))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut instances: Vec<FieldInstGpu> = placed.iter().map(|f| field_instance(f)).collect();
+    let mut instances: Vec<FieldInstGpu> = placed
+        .iter()
+        .map(|f| {
+            let heat = heat_of(f, req.fields);
+            let link = link_of(f, req.fields);
+            field_instance(f, heat, link)
+        })
+        .collect();
     let real_instances = instances.len();
     if instances.is_empty() {
         // wgpu rejects zero-sized buffers; bind one dummy instance
@@ -691,7 +787,9 @@ async fn render_frame_async(req: &CaptureRequest<'_>) -> Result<image::RgbaImage
             class_id: 5,
             seed: 0.0,
             drift: [0.0; 3],
-            _pad: 0.0,
+            heat: 0.0,
+            link: 0.0,
+            _pad: [0.0; 3],
         });
     }
     let inst_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

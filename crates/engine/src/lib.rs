@@ -13,4 +13,5 @@ pub mod materials;
 pub mod overlay;
 pub mod render;
 pub mod rt;
+pub mod textures;
 pub mod world;

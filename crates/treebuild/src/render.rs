@@ -332,6 +332,45 @@ fn point_occluded(p: vec3<f32>) -> bool {
 const RENDER_WGSL: &str = r#"
 @group(1) @binding(2) var color_out: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(3) var<storage, read_write> depth_out: array<f32>;
+@group(1) @binding(4) var tex_array: texture_2d_array<f32>;
+@group(1) @binding(5) var tex_samp: sampler;
+@group(1) @binding(6) var<storage, read> mat_layers: array<vec4<u32>>;
+
+// Face-class texture lookup (Phase 5 texture hookup): the material's
+// (top, side, bottom) layers in the scene texture array, selected by
+// hit normal — +z is top, -z bottom, anything else side (grid space,
+// z is up). UVs come from the hit point's position inside the voxel;
+// side faces map +z to v=0 so textures stand upright. Materials with
+// no entry (present flag 0) keep the flat node color. Cutout
+// materials whose texel is mostly transparent also fall back to the
+// flat color — traversal already decided the voxel is solid, so a
+// hole here would be a shading lie; true alpha-tested traversal is
+// a later refinement.
+fn tex_albedo(e: SideEntry, n: vec3<f32>, hitp: vec3<f32>, voxel_min: vec3<f32>, flat: vec3<f32>) -> vec3<f32> {
+    if e.material_id >= arrayLength(&mat_layers) {
+        return flat;
+    }
+    let ml = mat_layers[e.material_id];
+    if ml.w == 0u {
+        return flat;
+    }
+    let local = hitp - voxel_min;
+    var uv = vec2<f32>(0.0, 0.0);
+    var layer = ml.y;
+    if abs(n.z) > 0.5 {
+        uv = vec2<f32>(local.x, local.y);
+        layer = select(ml.z, ml.x, n.z > 0.0);
+    } else if abs(n.x) > 0.5 {
+        uv = vec2<f32>(local.y, 1.0 - local.z);
+    } else {
+        uv = vec2<f32>(local.x, 1.0 - local.z);
+    }
+    let texel = textureSampleLevel(tex_array, tex_samp, uv, i32(layer), 0.0);
+    if (e.flags & 2u) != 0u && texel.a < 0.5 {
+        return flat;
+    }
+    return texel.rgb;
+}
 
 fn lit_factor(lit: u32) -> f32 {
     switch lit {
@@ -348,7 +387,8 @@ fn lit_factor(lit: u32) -> f32 {
 fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     let node = nodes[h.node];
     let e = side[h.node];
-    var albedo = node.color;
+    let hitp = ro + rd * h.dist;
+    var albedo = tex_albedo(e, h.normal, hitp, h.voxel_min, node.color);
     if (e.flags & 8u) != 0u {
         // Memorized: remembered, not currently seen — desaturate.
         let lum = dot(albedo, vec3<f32>(0.299, 0.587, 0.114));
@@ -359,7 +399,6 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         return albedo * 1.6;
     }
     let n = h.normal;
-    let hitp = ro + rd * h.dist;
     var light = 0.35;
     let ndl = max(dot(n, u.sun_dir), 0.0);
     if ndl > 0.0 {
@@ -485,15 +524,183 @@ pub fn wgsl_sources() -> (String, String) {
     )
 }
 
+/// CPU-side description of a scene texture set: a stack of square
+/// RGBA layers (the scene-local texture array — only the layers the
+/// scene's materials actually use, already remapped by the caller)
+/// plus, per material id, the `(top, side, bottom, present)` layer
+/// indices into that stack. Materials absent from `material_layers`
+/// (or with `present == 0`) shade with their flat node color.
+#[derive(Debug, Clone)]
+pub struct TextureSpec {
+    pub tile_size: u32,
+    /// One RGBA byte buffer per layer, `tile_size * tile_size * 4`
+    /// bytes each, row-major, first row = texture v=0.
+    pub layers: Vec<Vec<u8>>,
+    /// Indexed by material id.
+    pub material_layers: Vec<[u32; 4]>,
+}
+
+/// GPU texture set bound to the render pipeline: texture array +
+/// sampler + the material-layer lookup buffer. Texels are sampled
+/// raw (Rgba8Unorm, no sRGB decode) — the same display-value
+/// convention as node colors in this renderer.
+pub struct TextureSet {
+    /// Kept alive for `view`; not read directly.
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    layers_buffer: wgpu::Buffer,
+    pub layer_count: usize,
+    pub material_count: usize,
+}
+
+impl TextureSet {
+    /// The no-textures set: a 1x1 white layer and a lookup buffer
+    /// whose only entry says "not present", so every material takes
+    /// the flat-color path. Bound unconditionally so the pipeline
+    /// layout never changes.
+    pub fn dummy(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        Self::from_spec(
+            device,
+            queue,
+            &TextureSpec {
+                tile_size: 1,
+                layers: vec![vec![255, 255, 255, 255]],
+                material_layers: vec![[0, 0, 0, 0]],
+            },
+        )
+        .expect("dummy texture spec is valid")
+    }
+
+    pub fn from_spec(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        spec: &TextureSpec,
+    ) -> Result<Self, String> {
+        if spec.tile_size == 0 {
+            return Err("texture tile_size is 0".into());
+        }
+        if spec.layers.is_empty() {
+            return Err("texture set has no layers".into());
+        }
+        let expect = (spec.tile_size * spec.tile_size * 4) as usize;
+        for (i, l) in spec.layers.iter().enumerate() {
+            if l.len() != expect {
+                return Err(format!(
+                    "texture layer {i} has {} bytes, expected {expect}",
+                    l.len()
+                ));
+            }
+        }
+        let material_layers: Vec<[u32; 4]> = if spec.material_layers.is_empty() {
+            vec![[0, 0, 0, 0]]
+        } else {
+            spec.material_layers.clone()
+        };
+        for (id, ml) in material_layers.iter().enumerate() {
+            if ml[3] != 0 && ml[..3].iter().any(|&l| l as usize >= spec.layers.len()) {
+                return Err(format!(
+                    "material {id} references layer out of range ({} layers)",
+                    spec.layers.len()
+                ));
+            }
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rt-texture-array"),
+            size: wgpu::Extent3d {
+                width: spec.tile_size,
+                height: spec.tile_size,
+                depth_or_array_layers: spec.layers.len() as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (i, layer) in spec.layers.iter().enumerate() {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: i as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                layer,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(spec.tile_size * 4),
+                    rows_per_image: Some(spec.tile_size),
+                },
+                wgpu::Extent3d {
+                    width: spec.tile_size,
+                    height: spec.tile_size,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("rt-texture-sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+        let layers_data: Vec<[u32; 4]> = material_layers;
+        let layers_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-material-layers"),
+            contents: bytemuck::cast_slice(&layers_data),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        Ok(Self {
+            _texture: texture,
+            view,
+            sampler,
+            layers_buffer,
+            layer_count: spec.layers.len(),
+            material_count: layers_data.len(),
+        })
+    }
+}
+
 /// An uploaded tree: the crate manager (nodes) + our side-table.
 pub struct RtScene {
     pub manager: Tree64GpuManager,
     side_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
+    /// Bound textures; starts as the dummy set (all flat color)
+    /// until `attach_textures` replaces it.
+    pub textures: TextureSet,
     pub node_count: usize,
     pub depth: usize,
     pub size: u32,
     pub origin: [i32; 3],
+}
+
+impl RtScene {
+    /// Replace the scene's texture set with a real one built from
+    /// `spec` (see `TextureSpec`). Materials the spec doesn't cover
+    /// keep flat-color shading.
+    pub fn attach_textures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        spec: &TextureSpec,
+    ) -> Result<(), String> {
+        self.textures = TextureSet::from_spec(device, queue, spec)?;
+        Ok(())
+    }
 }
 
 /// A rendered frame: color texture (rgba8unorm) + depth buffer
@@ -565,6 +772,23 @@ impl RtRenderer {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                side_layout_entry(6),
             ],
         });
         let query_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -630,7 +854,7 @@ impl RtRenderer {
     /// Create a renderer + scene in one step (the manager's layout is
     /// needed to build the pipelines, and the manager lives in the
     /// scene — this constructor keeps that ordering in one place).
-    pub fn with_scene(device: &wgpu::Device, built: &BuiltTree) -> (Self, RtScene) {
+    pub fn with_scene(device: &wgpu::Device, queue: &wgpu::Queue, built: &BuiltTree) -> (Self, RtScene) {
         let manager = Tree64GpuManager::new(device, &built.tree);
         let renderer = Self::new(device, &manager.contree_bind_group_layout);
         let scene = RtScene {
@@ -649,6 +873,7 @@ impl RtRenderer {
             depth: built.depth,
             size: built.size,
             origin: built.origin,
+            textures: TextureSet::dummy(device, queue),
             manager,
         };
         (renderer, scene)
@@ -746,6 +971,18 @@ impl RtRenderer {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: depth.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&scene.textures.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&scene.textures.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: scene.textures.layers_buffer.as_entire_binding(),
                 },
             ],
         });

@@ -136,6 +136,7 @@ empty root-only tree; z=+10 the full house).
   path (engine `materials.rs` loads the materials JSON only). The
   side-table already carries `material_id` per leaf, so binding the
   array later is a shader change, not a data change.
+  **Closed the same day** — see "Texture hookup" below.
 
 ## Gate evidence (parent re-run, 2026-11-15)
 
@@ -165,11 +166,50 @@ the RX 9070 XT: `tools/capture.sh --renderer rt` on the bubble
 scene at 2560×1440, median frame time under 16 ms flips the
 default.
 
+## Texture hookup (Phase 5 follow-up, closed 2026-11-15)
+
+Added on Joey's word after the 2c gate, RT path only:
+
+- `TextureSpec`/`TextureSet` in treebuild's render module: a
+  scene-local texture array plus a per-material `(top, side,
+  bottom, present)` layer lookup buffer, bound at group 1 bindings
+  4–6. Scenes without textures bind a 1×1 dummy set, so the
+  pipeline layout is unconditional and untextured materials shade
+  flat exactly as before.
+- The render shader samples by face class from the hit normal
+  (+z top, −z bottom, else side) with in-voxel UVs; side faces map
+  +z to v=0 so textures stand upright. Texels are sampled raw
+  (Rgba8Unorm), matching the node-color convention. Cutout
+  materials with a mostly-transparent texel fall back to flat
+  color (traversal already decided the voxel is solid). No mipmaps
+  yet — nearest sampling; distant faces will alias until a mip
+  chain lands.
+- Engine side (`crates/engine/src/textures.rs`): builds the spec
+  from a voxelizer output dir via `MaterialTable`, decoding only
+  the layers the scene's materials reference — the fake house
+  uploads **27 layers** out of UltiCa's 26,389. Numeric→string
+  material resolution is the caller's: fake data uses
+  `rt::fake_material_ids` (mesher fake tile id → verified UltiCa
+  id, e.g. wall → `t_wall`, roof → `t_shingle_flat_roof`); real
+  scenes will pass TileDefs once Phase 4 wires snapshots in.
+- CLI: `--textures <voxelizer-dir>` on headless capture and the
+  windowed app (RT mode). Evidence: treebuild checkerboard gate
+  (textured voxel shows both texel colors, flat control stays
+  near-uniform) + engine gate against the real UltiCa output
+  (9/9 fake materials textured, 0 missing; depth bit-identical to
+  the flat render; mean |color diff| 45.3/255 on geometry;
+  distinct colors 38 → 232 at 320×180). Captures:
+  `captures/house_rt.png` (flat) vs `captures/house_rt_textured.png`.
+- Not covered: multitile/subtile layer selection (walls use their
+  base side layer regardless of neighbors — needs connectivity at
+  build time), the raster path (still needs the mesher
+  UV/texture-layer field), mipmapping.
+
 ## Follow-ups (not 2c scope)
 
 - 2c.9 on the RX 9070 XT (above).
-- Bind the Phase 5 texture array in the RT shader (and raster) —
-  engine GPU texture array does not exist yet.
+- Texture mipmaps in the RT shader; multitile layer selection;
+  raster-path textures (mesher UV follow-up, still open).
 - fx (Phase 2b) wiring into the engine renderer: the post stack
   composites over whichever renderer produced the frame; RT frames
   currently bypass it.
