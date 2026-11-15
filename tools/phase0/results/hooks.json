@@ -1,0 +1,290 @@
+[
+  {
+    "area": "Send boundary",
+    "file": "src/do_turn.cpp",
+    "pattern": "bool game::do_turn",
+    "why": "primary send boundary candidate: fires once per completed player turn (definition lives in do_turn.cpp, NOT game.cpp \u2014 Phase 0 finding)",
+    "found": true,
+    "line": 536,
+    "text": "bool game::do_turn()"
+  },
+  {
+    "area": "Send boundary",
+    "file": "src/game.cpp",
+    "pattern": "void game::draw\\( ui_adaptor",
+    "why": "game::draw(ui_adaptor&) \u2014 redraw point; panels+terrain drawn here",
+    "found": true,
+    "line": 3364,
+    "text": "void game::draw( ui_adaptor &ui )"
+  },
+  {
+    "area": "Send boundary",
+    "file": "src/game.h",
+    "pattern": "bool do_turn",
+    "why": "do_turn declaration",
+    "found": true,
+    "line": 221,
+    "text": "bool do_turn();"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/map.h",
+    "pattern": "ter_id ter\\( const tripoint_bub_ms",
+    "why": "terrain id per tile",
+    "found": true,
+    "line": 1045,
+    "text": "ter_id ter( const tripoint_bub_ms &p ) const;"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/map.h",
+    "pattern": "furn_id furn\\( tripoint_bub_ms",
+    "why": "furniture id per tile (takes tripoint by value)",
+    "found": true,
+    "line": 1020,
+    "text": "furn_id furn( tripoint_bub_ms p ) const;"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/map.h",
+    "pattern": "const trap &tr_at\\( const tripoint_bub_ms",
+    "why": "trap per tile",
+    "found": true,
+    "line": 1614,
+    "text": "const trap &tr_at( const tripoint_bub_ms &p ) const;"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/map.h",
+    "pattern": "const field &field_at\\( const tripoint_bub_ms",
+    "why": "FULL field map per tile (type->entry)",
+    "found": true,
+    "line": 1660,
+    "text": "const field &field_at( const tripoint_bub_ms &p ) const;"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/map.h",
+    "pattern": "map_stack i_at\\( const tripoint_bub_ms",
+    "why": "item stack per tile",
+    "found": true,
+    "line": 1424,
+    "text": "map_stack i_at( const tripoint_bub_ms &p );"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/map.h",
+    "pattern": "bool has_graffiti_at\\( const tripoint_bub_ms",
+    "why": "graffiti flag",
+    "found": true,
+    "line": 1811,
+    "text": "bool has_graffiti_at( const tripoint_bub_ms &p ) const;"
+  },
+  {
+    "area": "Snapshot read",
+    "file": "src/submap.h",
+    "pattern": "get_uppermost_item",
+    "why": "uppermost item helper \u2014 lives on the submap maptile (submap.h), not map",
+    "found": true,
+    "line": 439,
+    "text": "const item &get_uppermost_item() const {"
+  },
+  {
+    "area": "Light / FOV",
+    "file": "src/map.h",
+    "pattern": "lit_level apparent_light_at",
+    "why": "per-tile lit_level from visibility cache",
+    "found": true,
+    "line": 585,
+    "text": "lit_level apparent_light_at( const tripoint_bub_ms &p, const visibility_variables &cache ) const;"
+  },
+  {
+    "area": "Light / FOV",
+    "file": "src/map.h",
+    "pattern": "void update_visibility_cache",
+    "why": "recompute visibility cache per z",
+    "found": true,
+    "line": 2520,
+    "text": "void update_visibility_cache( int zlev );"
+  },
+  {
+    "area": "Light / FOV",
+    "file": "src/lightmap.h",
+    "pattern": "enum class lit_level|enum lit_level",
+    "why": "lit_level enum definition",
+    "found": true,
+    "line": 96,
+    "text": "enum class lit_level : uint8_t {"
+  },
+  {
+    "area": "Delta dirty set",
+    "file": "src/map.cpp",
+    "pattern": "void map::invalidate_map_cache",
+    "why": "coarse invalidation hook (per z)",
+    "found": true,
+    "line": 550,
+    "text": "void map::invalidate_map_cache( const int zlev )"
+  },
+  {
+    "area": "Delta dirty set",
+    "file": "src/map.h",
+    "pattern": "set_seen_cache_dirty",
+    "why": "seen-cache dirty hook",
+    "found": true,
+    "line": 526,
+    "text": "void set_seen_cache_dirty( const tripoint_bub_ms &change_location );"
+  },
+  {
+    "area": "Delta dirty set",
+    "file": "src/map.h",
+    "pattern": "set_transparency_cache_dirty",
+    "why": "transparency-cache dirty hook",
+    "found": true,
+    "line": 517,
+    "text": "void set_transparency_cache_dirty( int zlev );"
+  },
+  {
+    "area": "Delta dirty set",
+    "file": "src/map.cpp",
+    "pattern": "void map::shift\\( const point_rel_sm",
+    "why": "bubble recentering \u2014 snapshot epoch event",
+    "found": true,
+    "line": 9170,
+    "text": "void map::shift( const point_rel_sm &sp )"
+  },
+  {
+    "area": "UI capture",
+    "file": "src/sdltiles.cpp",
+    "pattern": "display_buffer",
+    "why": "SDL backend's single composited texture (Route A capture point)",
+    "found": true,
+    "line": 151,
+    "text": "static SDL_Texture_Ptr display_buffer;"
+  },
+  {
+    "area": "UI capture",
+    "file": "src/game.cpp",
+    "pattern": "draw_ter\\(\\)",
+    "why": "terrain draw \u2014 suppressed in frontend mode (Route A)",
+    "found": true,
+    "line": 3387,
+    "text": "draw_ter();"
+  },
+  {
+    "area": "UI capture",
+    "file": "src/game.cpp",
+    "pattern": "draw_panels",
+    "why": "sidebar/message panels drawn after terrain",
+    "found": true,
+    "line": 3404,
+    "text": "draw_panels( true );"
+  },
+  {
+    "area": "UI capture",
+    "file": "src/cursesport.cpp",
+    "pattern": "catacurses|WINDOW",
+    "why": "catacurses window impl (Route B capture layer)",
+    "found": true,
+    "line": 21,
+    "text": "* The struct WINDOW is the base. It acts as the normal curses window, having"
+  },
+  {
+    "area": "Input inject",
+    "file": "src/input_context.h",
+    "pattern": "get_raw_input",
+    "why": "raw input entry the injector feeds",
+    "found": true,
+    "line": 427,
+    "text": "input_event get_raw_input();"
+  },
+  {
+    "area": "Input inject",
+    "file": "src/input_context.h",
+    "pattern": "handle_input",
+    "why": "action dispatch after raw input",
+    "found": true,
+    "line": 227,
+    "text": "* Only registered actions will be returned by `handle_input()`, it's"
+  },
+  {
+    "area": "Entities",
+    "file": "src/character.h",
+    "pattern": "get_overlay_ids",
+    "why": "Character overlay list in game order",
+    "found": true,
+    "line": 2553,
+    "text": "std::vector<std::pair<std::string, std::string>> get_overlay_ids() const;"
+  },
+  {
+    "area": "Entities",
+    "file": "src/monster.h",
+    "pattern": "get_overlay_ids",
+    "why": "monster overlay list in game order",
+    "found": true,
+    "line": 630,
+    "text": "std::vector<std::pair<std::string, std::string>> get_overlay_ids() const;"
+  },
+  {
+    "area": "Entities",
+    "file": "src/creature.h",
+    "pattern": "enum class FacingDirection",
+    "why": "facing: NONE/LEFT/RIGHT only",
+    "found": true,
+    "line": 217,
+    "text": "enum class FacingDirection : int {"
+  },
+  {
+    "area": "Vehicles",
+    "file": "src/vehicle.h",
+    "pattern": "bub_part_pos",
+    "why": "game-side absolute part position (pre-rotated mounts)",
+    "found": true,
+    "line": 1555,
+    "text": "tripoint_bub_ms bub_part_pos( const map &here, int index ) const;"
+  },
+  {
+    "area": "Vehicles",
+    "file": "src/vehicle.h",
+    "pattern": "tileray face",
+    "why": "continuous facing angle",
+    "found": true,
+    "line": 2560,
+    "text": "tileray face;"
+  },
+  {
+    "area": "Vehicles",
+    "file": "src/vehicle.cpp",
+    "pattern": "multiples of 15",
+    "why": "the 15-degree pathing clamp (NOT an orientation quantum)",
+    "found": true,
+    "line": 734,
+    "text": "// clamp to multiples of 15."
+  },
+  {
+    "area": "Tiles draw order",
+    "file": "src/cata_tiles.cpp",
+    "pattern": "drawing_layers|multitile_keys",
+    "why": "11 draw layers / 8 multitile keys",
+    "found": true,
+    "line": 112,
+    "text": "static const std::array<std::string, 8> multitile_keys = {{"
+  },
+  {
+    "area": "Animation",
+    "file": "src/animation.cpp",
+    "pattern": "void.*animation|tilecontext|draw_.*animation",
+    "why": "animation dispatch (Phase 8 effects hook)",
+    "found": true,
+    "line": 293,
+    "text": "// avoid segfault from null tilecontext in tests"
+  },
+  {
+    "area": "Main loop",
+    "file": "src/main.cpp",
+    "pattern": "int main",
+    "why": "process entry; --frontend=ipc arg parsing lands near here",
+    "found": true,
+    "line": 900,
+    "text": "int main( int argc, const char *argv[] )"
+  }
+]
