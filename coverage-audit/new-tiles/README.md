@@ -26,6 +26,23 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Furniture batch 12: stacks, mounds, cardboard (Phase 2g.4, 2026-11-15)
+
+**All 51 missing ids in `furniture-terrains.json`**: mounds (sand,
+gravel, pebble, clay, glass, rock, rock-large) and stacks (log,
+plank, brick, adobe, rebar, pipe, stick, long-stick) in short/mid/
+tall heights from the game data's coverage values, via two
+parameterized renderers with per-material textures — plus the six
+cardboard pieces (fort, wall, floor, roof, door closed/open) drawn
+individually. Drawn by `draw_furniture_terrains.py` (PIL,
+deterministic).
+
+Verified: release voxelizer test-tileset run, **51 materials, all
+`exact`, 0 missing** (153 layers), byte-identical re-run, parent
+re-verified. `preview_furniture_terrains.png` is the contact
+sheet. Coverage: furniture missing **155 → 104**, coverage
+**78.3% → 85.4%**.
+
 ## Furniture batch 11: the alien furniture (Phase 2g.4, 2026-11-15)
 
 **19 ids** from `furniture-alien.json` +

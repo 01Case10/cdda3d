@@ -382,6 +382,28 @@ reads 104 because the stack/mound batch's 51 folders are on disk
 awaiting their own verification; the chain reconciles when it
 lands.)
 
+## Created: the stack/mound family + cardboard (Phase 2g.4 batch 12, 2026-11-15)
+
+**All 51 missing ids in `furniture-terrains.json`**: the
+stack/mound family — mounds (sand, gravel, pebble, clay, glass,
+rock, rock-large) and stacks (log, plank, brick, adobe, rebar,
+pipe, stick, long-stick), each in short/mid/tall heights taken
+from the game data's coverage values (short tops at the knees,
+mid at the shoulders, tall well above the head), drawn by two
+parameterized renderers with per-material textures — plus the six
+cardboard pieces (fort, wall, floor, roof, and the cut-and-fold
+door, closed and open) drawn individually.
+`new-tiles/draw_furniture_terrains.py`;
+`new-tiles/preview_furniture_terrains.png`.
+
+Verified per the 2g.4 gate (parent re-run): **51 materials, all
+`exact`, 0 missing** (153 layers), byte-identical re-run.
+Coverage movement (furniture overlay, baseline 155 reproduced —
+the post-batch-11 state): 51 direct, no rescues — furniture
+missing **155 → 104**, coverage **78.3% → 85.4%** (558/713 →
+609/713). This is exactly the figure the batch-11 cross-check
+predicted, so the chain is fully reconciled.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
