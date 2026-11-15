@@ -23,6 +23,14 @@ pub struct Block {
     pub id: u32,
     pub color: [f32; 4],
     pub pass: Pass,
+    /// Phase 2f: compact texture-array layer indices
+    /// `[top, side, bottom]` for this block's material, stamped by
+    /// the engine from the shared texture spec builder when a scene
+    /// is textured. `None` = flat color only (the pre-2f behavior).
+    /// Because this field is part of `Block` equality, the greedy
+    /// mesher's merge key never merges faces across different
+    /// layers (gate 2f.1).
+    pub tex_layers: Option<[u32; 3]>,
 }
 
 pub const AIR_ID: u32 = 0;
@@ -32,6 +40,7 @@ impl Block {
         id: AIR_ID,
         color: [0.0, 0.0, 0.0, 0.0],
         pass: Pass::Transparent,
+        tex_layers: None,
     };
 
     pub fn is_air(self) -> bool {
@@ -79,7 +88,12 @@ pub fn block_for_tile(id: u32) -> Block {
         TILE_FOLIAGE => ([0.20, 0.45, 0.20, 1.0], Pass::Cutout),
         _ => ([1.0, 0.0, 1.0, 1.0], Pass::Opaque), // unknown id placeholder
     };
-    Block { id, color, pass }
+    Block {
+        id,
+        color,
+        pass,
+        tex_layers: None,
+    }
 }
 
 /// Shape for a fake-data tile id.

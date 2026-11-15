@@ -127,6 +127,54 @@ pub struct CaptureOutcome {
     pub distinct_colors: usize,
 }
 
+/// Phase 2f: stamp each non-air block of the (already
+/// cutaway-filtered) map with its material's compact texture layers
+/// from `spec`, so the meshers emit textured quads for it. Blocks
+/// whose material has no texture entry (present flag 0, or id out of
+/// range) keep `tex_layers: None` and stay flat.
+fn stamp_tex_layers(map: &mut mesher::chunk::ChunkMap, spec: &treebuild::render::TextureSpec) {
+    for chunk in map.chunks.values_mut() {
+        let size = chunk.grid.size;
+        for z in 0..size[2] {
+            for y in 0..size[1] {
+                for x in 0..size[0] {
+                    let b = chunk.grid.get(x as i32, y as i32, z as i32);
+                    if b.is_air() {
+                        continue;
+                    }
+                    if let Some(ml) = spec.material_layers.get(b.id as usize) {
+                        if ml[3] == 1 {
+                            let mut stamped = b;
+                            stamped.tex_layers = Some([ml[0], ml[1], ml[2]]);
+                            chunk.grid.set(x, y, z, stamped);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Mesh an already-filtered map (the combine loop of
+/// `world::mesh_world`, minus its filtering step — capture's
+/// textured path filters and stamps before meshing).
+fn mesh_filtered(
+    map: &mesher::chunk::ChunkMap,
+) -> (mesher::mesh::PassMeshes, crate::overlay::MeshStats) {
+    let mut combined = mesher::mesh::PassMeshes::default();
+    let mut n_chunks = 0;
+    for coord in map.chunks.keys().copied().collect::<Vec<_>>() {
+        if let Some(pm) = map.mesh_chunk(coord, true) {
+            for (dst, src) in combined.meshes.iter_mut().zip(pm.meshes.iter()) {
+                dst.append(src);
+            }
+            n_chunks += 1;
+        }
+    }
+    let stats = crate::overlay::MeshStats::from_pass_meshes(n_chunks, &combined);
+    (combined, stats)
+}
+
 /// Run one headless capture. Synchronous (pollster drives the futures).
 pub fn run_capture(args: &CaptureArgs) -> Result<CaptureOutcome, CaptureError> {
     if args.snapshot != "stub-house" {
@@ -184,8 +232,32 @@ async fn run_capture_async(args: &CaptureArgs) -> Result<CaptureOutcome, Capture
 
     // Same world, same meshing, same renderer as the windowed path.
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
-    let (_map, meshes, stats) = world::mesh_fake_house(&visible);
-    let renderer = Renderer::new(&device, CAPTURE_FORMAT);
+    let mut renderer = Renderer::new(&device, CAPTURE_FORMAT);
+    let (meshes, stats) = match &args.textures {
+        Some(dir) => {
+            // Phase 2f raster textures: build the scene spec with
+            // the SAME shared builder the RT path uses (gate 2f.3),
+            // stamp the cutaway-filtered map's blocks with their
+            // compact layers, mesh after stamping, and install the
+            // spec on the renderer. Without `--textures` nothing
+            // below runs and the flat capture is unchanged (2f.4).
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (spec, _tex_stats) =
+                crate::textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())
+                    .map_err(CaptureError::Device)?;
+            let map = world::build_fake_house(mesher::scale::WorldScale::default());
+            let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, &visible);
+            stamp_tex_layers(&mut filtered, &spec);
+            let (meshes, stats) = mesh_filtered(&filtered);
+            renderer.set_textures(&device, &queue, &spec);
+            (meshes, stats)
+        }
+        None => {
+            let (_map, meshes, stats) = world::mesh_fake_house(&visible);
+            (meshes, stats)
+        }
+    };
     let gpu_meshes = renderer.upload(&device, &meshes);
 
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));

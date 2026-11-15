@@ -4,12 +4,22 @@ use std::collections::HashSet;
 
 use crate::block::Pass;
 
+/// Texture-layer sentinel for flat (untextured) vertices (Phase 2f).
+/// The raster fragment shader compares against this exact value and
+/// falls back to the pre-2f flat shading math.
+pub const FLAT_LAYER: u32 = u32::MAX;
+
 /// An indexed mesh: 4 vertices + 6 indices per quad.
 #[derive(Debug, Clone, Default)]
 pub struct Mesh {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub colors: Vec<[f32; 4]>,
+    /// Per-vertex UVs (Phase 2f). Parallel to `positions`.
+    pub uvs: Vec<[f32; 2]>,
+    /// Per-vertex texture-array layer (Phase 2f), `FLAT_LAYER` for
+    /// untextured faces. Parallel to `positions`.
+    pub layers: Vec<u32>,
     pub indices: Vec<u32>,
 }
 
@@ -33,12 +43,36 @@ impl Mesh {
     /// Append one quad. `corners` must be counter-clockwise seen from the
     /// side `normal` points to (both meshers guarantee this; the winding
     /// test verifies it geometrically).
+    ///
+    /// Flat variant: default UV quad-order (0,0),(1,0),(1,1),(0,1) and
+    /// the `FLAT_LAYER` sentinel — the shader never samples for these.
     pub fn push_quad(&mut self, corners: [[f32; 3]; 4], normal: [f32; 3], color: [f32; 4]) {
+        self.push_quad_textured(
+            corners,
+            normal,
+            color,
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            FLAT_LAYER,
+        );
+    }
+
+    /// Append one textured quad (Phase 2f): per-corner `uvs` in the
+    /// same order as `corners`, all sampling texture-array `layer`.
+    pub fn push_quad_textured(
+        &mut self,
+        corners: [[f32; 3]; 4],
+        normal: [f32; 3],
+        color: [f32; 4],
+        uvs: [[f32; 2]; 4],
+        layer: u32,
+    ) {
         let base = self.positions.len() as u32;
-        for c in corners {
+        for (i, c) in corners.into_iter().enumerate() {
             self.positions.push(c);
             self.normals.push(normal);
             self.colors.push(color);
+            self.uvs.push(uvs[i]);
+            self.layers.push(layer);
         }
         self.indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -49,6 +83,8 @@ impl Mesh {
         self.positions.extend_from_slice(&other.positions);
         self.normals.extend_from_slice(&other.normals);
         self.colors.extend_from_slice(&other.colors);
+        self.uvs.extend_from_slice(&other.uvs);
+        self.layers.extend_from_slice(&other.layers);
         self.indices.extend(other.indices.iter().map(|i| i + base));
     }
 
@@ -123,7 +159,10 @@ pub fn covered_face_cells(mesh: &Mesh) -> (HashSet<([i32; 3], usize)>, usize) {
         } else {
             (2, 5)
         };
-        let others = [0, 1, 2].into_iter().filter(|&a| a != axis).collect::<Vec<_>>();
+        let others = [0, 1, 2]
+            .into_iter()
+            .filter(|&a| a != axis)
+            .collect::<Vec<_>>();
         // World position -> grid position (inverse rotation).
         let to_grid = |p: [f32; 3]| [p[0], -p[2], p[1]];
         let pts: Vec<[f32; 3]> = quad[..4]

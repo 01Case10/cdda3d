@@ -22,6 +22,7 @@ use wgpu::util::DeviceExt;
 
 use crate::build::BuiltTree;
 use crate::cpu::TraceMode;
+use crate::lod;
 
 /// Direction *toward* the sun in grid space: the raster shader's
 /// world-space light dir (0.3, 0.8, 0.4) run through `world_to_grid`.
@@ -88,6 +89,13 @@ struct Uniforms {
     viewport: [u32; 2],
     mode: u32,
     shadows: u32,
+    /// Phase 2e debug LOD view: nonzero = `shade` returns a false
+    /// color by `floor(lod)` instead of albedo shading. The trailing
+    /// pad mirrors the WGSL struct's own trailing padding (its size
+    /// rounds up to the 16-byte vec3 alignment), keeping the buffer
+    /// at the shader's expected 112 bytes.
+    debug_lod: u32,
+    _pad_debug: [u32; 3],
 }
 
 #[repr(C)]
@@ -142,6 +150,7 @@ struct Uniforms {
     viewport: vec2<u32>,
     mode: u32,
     shadows: u32,
+    debug_lod: u32,
 }
 @group(0) @binding(0) var<storage, read> nodes: array<GpuNode>;
 @group(1) @binding(0) var<storage, read> side: array<SideEntry>;
@@ -336,6 +345,43 @@ const RENDER_WGSL: &str = r#"
 @group(1) @binding(5) var tex_samp: sampler;
 @group(1) @binding(6) var<storage, read> mat_layers: array<vec4<u32>>;
 
+// Ray-cone LOD (Phase 2e, docs/phase2e-mipmaps.md §2 — mirror of
+// crate::lod::ray_cone_lod): the compute shader has no implicit
+// derivatives, so the mip level is estimated from the ray cone.
+// spread is the cone's full-angle width per unit distance, from the
+// existing camera uniforms; every voxel face maps the full texture
+// over 1x1 world units, so the per-face term is the constant
+// Δ = 0.5·log2(texW·texH) of the array's level-0 dimensions.
+fn cone_lod(t: f32, n_dot_v: f32) -> f32 {
+    let dims = textureDimensions(tex_array, 0u);
+    let delta = 0.5 * log2(f32(dims.x * dims.y));
+    let spread = atan(2.0 * u.tan_half_fov / f32(u.viewport.y));
+    let w_hit = max(spread * t, 1e-4);
+    let cosang = max(abs(n_dot_v), 1e-4);
+    var lod = delta + log2(w_hit) - log2(cosang);
+    if lod != lod {
+        lod = 0.0;
+    }
+    let max_mip = f32(textureNumLevels(tex_array) - 1u);
+    return clamp(lod, 0.0, max_mip);
+}
+
+// Debug LOD view palette: one saturated color per mip level
+// (floor(lod)). An if-chain, not an indexed array — dynamically
+// indexed local arrays lose the llvmpipe device (Phase 2c finding).
+fn lod_color(lod: f32) -> vec3<f32> {
+    let l = i32(floor(lod));
+    if l <= 0 { return vec3<f32>(0.0, 0.0, 1.0); }
+    if l == 1 { return vec3<f32>(0.0, 1.0, 0.0); }
+    if l == 2 { return vec3<f32>(1.0, 1.0, 0.0); }
+    if l == 3 { return vec3<f32>(1.0, 0.5, 0.0); }
+    if l == 4 { return vec3<f32>(1.0, 0.0, 0.0); }
+    if l == 5 { return vec3<f32>(1.0, 0.0, 1.0); }
+    if l == 6 { return vec3<f32>(0.0, 1.0, 1.0); }
+    if l == 7 { return vec3<f32>(1.0, 1.0, 1.0); }
+    return vec3<f32>(0.5, 0.0, 0.5);
+}
+
 // Face-class texture lookup (Phase 5 texture hookup): the material's
 // (top, side, bottom) layers in the scene texture array, selected by
 // hit normal — +z is top, -z bottom, anything else side (grid space,
@@ -345,8 +391,9 @@ const RENDER_WGSL: &str = r#"
 // materials whose texel is mostly transparent also fall back to the
 // flat color — traversal already decided the voxel is solid, so a
 // hole here would be a shading lie; true alpha-tested traversal is
-// a later refinement.
-fn tex_albedo(e: SideEntry, n: vec3<f32>, hitp: vec3<f32>, voxel_min: vec3<f32>, flat: vec3<f32>) -> vec3<f32> {
+// a later refinement. Phase 2e: the sample is taken at the ray-cone
+// `lod` computed by the caller (see cone_lod).
+fn tex_albedo(e: SideEntry, n: vec3<f32>, hitp: vec3<f32>, voxel_min: vec3<f32>, flat: vec3<f32>, lod: f32) -> vec3<f32> {
     if e.material_id >= arrayLength(&mat_layers) {
         return flat;
     }
@@ -365,7 +412,7 @@ fn tex_albedo(e: SideEntry, n: vec3<f32>, hitp: vec3<f32>, voxel_min: vec3<f32>,
     } else {
         uv = vec2<f32>(local.x, 1.0 - local.z);
     }
-    let texel = textureSampleLevel(tex_array, tex_samp, uv, i32(layer), 0.0);
+    let texel = textureSampleLevel(tex_array, tex_samp, uv, i32(layer), lod);
     if (e.flags & 2u) != 0u && texel.a < 0.5 {
         return flat;
     }
@@ -388,7 +435,14 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     let node = nodes[h.node];
     let e = side[h.node];
     let hitp = ro + rd * h.dist;
-    var albedo = tex_albedo(e, h.normal, hitp, h.voxel_min, node.color);
+    // One cone LOD per hit, from this hit's own distance — the
+    // transparent overlay hit is the same primary ray continued, so
+    // it re-enters here with its own (farther) distance.
+    let lod = cone_lod(h.dist, dot(h.normal, -rd));
+    if u.debug_lod != 0u {
+        return lod_color(lod);
+    }
+    var albedo = tex_albedo(e, h.normal, hitp, h.voxel_min, node.color, lod);
     if (e.flags & 8u) != 0u {
         // Memorized: remembered, not currently seen — desaturate.
         let lum = dot(albedo, vec3<f32>(0.299, 0.587, 0.114));
@@ -552,6 +606,8 @@ pub struct TextureSet {
     layers_buffer: wgpu::Buffer,
     pub layer_count: usize,
     pub material_count: usize,
+    /// Mip levels per layer, level 0 included (Phase 2e).
+    pub mip_levels: u32,
 }
 
 impl TextureSet {
@@ -605,6 +661,15 @@ impl TextureSet {
                 ));
             }
         }
+        // Phase 2e: the spec stays level-0 layers only; the mip
+        // chain is generated here, per layer, with the CPU
+        // premultiplied alpha-aware downsample (crate::lod).
+        let chains: Vec<Vec<Vec<u8>>> = spec
+            .layers
+            .iter()
+            .map(|l| lod::mip_chain(l, spec.tile_size))
+            .collect();
+        let mip_levels = chains.first().map(|c| c.len() as u32).unwrap_or(1);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rt-texture-array"),
             size: wgpu::Extent3d {
@@ -612,47 +677,55 @@ impl TextureSet {
                 height: spec.tile_size,
                 depth_or_array_layers: spec.layers.len() as u32,
             },
-            mip_level_count: 1,
+            mip_level_count: mip_levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        for (i, layer) in spec.layers.iter().enumerate() {
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: i as u32,
+        for (i, chain) in chains.iter().enumerate() {
+            for (level, data) in chain.iter().enumerate() {
+                let level_size = (spec.tile_size >> level).max(1);
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: level as u32,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: i as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
                     },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                layer,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(spec.tile_size * 4),
-                    rows_per_image: Some(spec.tile_size),
-                },
-                wgpu::Extent3d {
-                    width: spec.tile_size,
-                    height: spec.tile_size,
-                    depth_or_array_layers: 1,
-                },
-            );
+                    data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(level_size * 4),
+                        rows_per_image: Some(level_size),
+                    },
+                    wgpu::Extent3d {
+                        width: level_size,
+                        height: level_size,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
+        // Trilinear sampler. The LOD clamps must span the whole
+        // chain: a too-low lod_max_clamp silently degrades mips to
+        // level 0 (docs/phase2e-mipmaps.md §3 W2 warning).
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("rt-texture-sampler"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: (mip_levels - 1) as f32,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
@@ -670,6 +743,7 @@ impl TextureSet {
             layers_buffer,
             layer_count: spec.layers.len(),
             material_count: layers_data.len(),
+            mip_levels,
         })
     }
 }
@@ -898,6 +972,8 @@ impl RtRenderer {
             viewport: [1, 1],
             mode: 0,
             shadows: 1,
+            debug_lod: 0,
+            _pad_debug: [0; 3],
         }
     }
 
@@ -910,6 +986,33 @@ impl RtRenderer {
         camera: &RtCamera,
         size: (u32, u32),
         shadows: bool,
+    ) -> RtFrame {
+        self.render_impl(device, queue, scene, camera, size, shadows, 0)
+    }
+
+    /// Render with the Phase 2e debug LOD view: every hit shades as
+    /// a false color by `floor(lod)` (see `lod_color` in the WGSL)
+    /// instead of its albedo shading. Validation/tuning only.
+    pub fn render_debug_lod(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene: &RtScene,
+        camera: &RtCamera,
+        size: (u32, u32),
+    ) -> RtFrame {
+        self.render_impl(device, queue, scene, camera, size, false, 1)
+    }
+
+    fn render_impl(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene: &RtScene,
+        camera: &RtCamera,
+        size: (u32, u32),
+        shadows: bool,
+        debug_lod: u32,
     ) -> RtFrame {
         let (width, height) = (size.0.max(1), size.1.max(1));
         let origin = Vec3::new(
@@ -927,6 +1030,7 @@ impl RtRenderer {
         uniforms.aspect = camera.aspect;
         uniforms.viewport = [width, height];
         uniforms.shadows = shadows as u32;
+        uniforms.debug_lod = debug_lod;
         self.write_uniforms(queue, scene, &uniforms);
 
         let color = device.create_texture(&wgpu::TextureDescriptor {
