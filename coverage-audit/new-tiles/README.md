@@ -26,6 +26,22 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 17: fish, first half (Phase 2g.4, 2026-11-15)
+
+**52 of the 104 missing ids in `fish.json`** (alphabetical first
+half) — crayfish, flatfish, catfish, sturgeon, gar, trout, bass,
+perch, and the fry. Drawn by `draw_fish_a.py` (PIL,
+deterministic), all on the 32×32 sheet; a parent volume census
+names three ≥75 L sprites (`mon_crayfish_mega` 625 L,
+`mon_fish_bluefin_tuna` 250 L, `mon_fish_halibut` 75 L) whose
+re-sheeting would be a placement-only change.
+
+Verified: release voxelizer test-tileset run, **52 materials, all
+`exact`, 0 missing** (156 layers), byte-identical re-run, parent
+re-verified. `preview_fish_a.png` is the contact sheet. Coverage:
+monsters missing **404 → 351** (52 direct + the `mon_nether_fish`
+rescue), coverage **70.8%**.
+
 ## Monster batch 16: the fungal zombies (Phase 2g.4, 2026-11-15)
 
 **All 50 missing ids in the fungus-zombie file** — the dusted /

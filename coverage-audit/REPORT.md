@@ -510,6 +510,30 @@ verification time because 14 fish-batch folders had already
 landed): 50 direct, no rescues — monsters missing **454 → 404**,
 coverage **66.4%** (799/1,203).
 
+## Created: fish, first half (Phase 2g.4 batch 17, 2026-11-15)
+
+**52 of the 104 missing ids in `fish.json`** (alphabetical first
+half, `mon_crayfish_giant_larva` … `mon_fry_blackfish`): the two
+crayfish, flatfish with both eyes on the eyed side, catfish with
+barbels, sturgeon with scute rows, the gar's needle jaw, chain
+pickerel reticulation, the haddock's black shoulder blotch, the
+rainbow trout's pink band, and the tiny pale fry with its yolk
+sac. `new-tiles/draw_fish_a.py`; `new-tiles/preview_fish_a.png`.
+
+Verified per the 2g.4 gate (parent re-run): **52 materials, all
+`exact`, 0 missing** (156 layers), byte-identical re-run.
+Coverage movement (monster overlay, baseline 404 reproduced):
+52 direct + 1 rescue (`mon_nether_fish`, whose `looks_like`
+chain reaches a drawn fish) — monsters missing **404 → 351**,
+coverage **70.8%** (852/1,203). Placement note: all 52 sit on the
+32×32 sheet per the brief's letter (no entry carries an explicit
+size field); a parent volume census finds exactly three at
+≥75 L resolved volume — `mon_crayfish_mega` (625 L),
+`mon_fish_bluefin_tuna` (250 L), `mon_fish_halibut` (75 L).
+Re-sheeting those three is a placement-only change (coverage is
+unaffected); the fish second half is briefed with volume-based
+placement from the start.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
