@@ -1077,6 +1077,29 @@ folders, overlay count).
   parameterized by weapon/form (drones, turrets, humanoid bots,
   superalloy mech wrecks), faceted gems, XEDRA documents.
   Items → 3,540. `draw_item04.py`.
+- **ITEM05** — generic 2/3 (52): appliances, gems, documents,
+  USB drives; the `metabolism`/`muscle` pseudo-items as debug
+  tiles (their descriptions say "seeing this is a bug").
+  Items → 3,488. `draw_item05.py`.
+- **ITEM06** — generic 3/3 (37): gems, nanofabricator template
+  slates, NRE printouts, the sun/wind pseudo-items as glyphs.
+  **Generic cluster complete (141).** Items → 3,451.
+  `draw_item06.py`.
+- **ITEM07** — eggs 1/2 (52): species-parameterized bird eggs,
+  fish roe, frog egg clusters per their real arrangements,
+  prepared egg dishes. Items → 3,395 measured (incl. 4
+  knock-on `looks_like` rescues — intact bot/exoskeleton items
+  whose targets ITEM04 drew). `draw_item07.py`.
+
+**Process note (2026-11-15):** a VM replacement wiped `/tmp`,
+taking the item batch lists and the overlay tool with it. All
+343 drawn item folders and every commit were intact under
+`~/workspace`. The lists were recovered (01–05 from their
+commits, 06–07 by defining file), the overlay tool was rebuilt
+at `~/workspace/audit-tools/overlay_cat.py`, and the remaining
+3,395 ids were re-batched by defining file into batches 08–91
+at `~/workspace/item-batches/`. New batch scripts embed their
+id lists and read them from the durable path.
 
 ## Status
 
