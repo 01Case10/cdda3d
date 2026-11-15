@@ -404,6 +404,34 @@ missing **155 → 104**, coverage **78.3% → 85.4%** (558/713 →
 609/713). This is exactly the figure the batch-11 cross-check
 predicted, so the chain is fully reconciled.
 
+## Created: the vitrified furniture (Phase 2g.4 batch 13, 2026-11-15)
+
+**All 32 missing ids in `furniture_vitrified.json`** — the whole
+household in black glass, matching batch 6's terrain palette:
+bed, bathtub (frozen onyx column still pouring from the tap),
+dresser, open fridge, armchair, chair, desk, locker, oven crowned
+with flame shards, mailbox, rack, ripple-frozen sink, toilet,
+cupboard, planter, bench, washer and dryer (portholes filled with
+black sand), both bookcases (the talker's missing book is a dark
+slot), counter, table, birdbath, shower, water heater, fireplace,
+firering, floor lamp, box, sofa, dishwasher — and the set's one
+non-glass object, the matte cloth doll lying on the glass sofa.
+`new-tiles/draw_vitrified_furniture.py`;
+`new-tiles/preview_vitrified_furniture.png`.
+
+Verified per the 2g.4 gate (parent re-run): **32 materials, all
+`exact`, 0 missing** (96 layers); the parent's full-directory
+snapshot test (all 306 files under the furniture tree, md5 before
+and after re-running the batch's script) diffs **empty** — the
+output is byte-identical and the re-run touches nothing else, which
+also closes the folder-deletion incident from this batch's first
+run (an `rm -rf` cleanup by the agent, owned in its report; the
+step is removed and the script contains no deletion calls).
+Coverage movement (furniture overlay, baseline 104 reproduced):
+32 direct, no rescues — furniture missing **104 → 72**, coverage
+**85.4% → 89.9%** (609/713 → 641/713). The remaining 72 are the
+two wave-2 furniture batches now running.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

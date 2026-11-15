@@ -26,6 +26,23 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Furniture batch 13: the vitrified furniture (Phase 2g.4, 2026-11-15)
+
+**All 32 missing ids in `furniture_vitrified.json`** — the whole
+household in black glass (bed, bath, fridge, oven, washer, dryer,
+bookcases, sofa, and the one matte cloth doll), palette matched to
+the vitrified terrain batch. Drawn by `draw_vitrified_furniture.py`
+(PIL, deterministic).
+
+Verified: release voxelizer test-tileset run, **32 materials, all
+`exact`, 0 missing** (96 layers), and a parent-run full-directory
+snapshot diff (306 files, md5 before/after the script re-run)
+came back **empty** — byte-identical output, zero sibling impact,
+which also closes this batch's first-run folder-deletion incident
+(the agent's `rm -rf` cleanup, owned in its report and removed).
+`preview_vitrified_furniture.png` is the contact sheet. Coverage:
+furniture missing **104 → 72**, coverage **85.4% → 89.9%**.
+
 ## Furniture batch 12: stacks, mounds, cardboard (Phase 2g.4, 2026-11-15)
 
 **All 51 missing ids in `furniture-terrains.json`**: mounds (sand,
