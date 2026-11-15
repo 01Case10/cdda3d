@@ -26,6 +26,21 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Furniture batch 15: the remainder — FURNITURE COMPLETE (Phase 2g.4, 2026-11-15)
+
+**All 49 remaining missing furniture ids** — generators, the
+nether-labyrinth set, mutant trees, medical, storage, the mortar,
+the roulette table, and the `f_clear`/`f_no_item` debug tiles
+drawn as black "? BUG" tiles per their nature. Drawn by
+`draw_furniture_remainder.py` (PIL, deterministic).
+
+Verified: release voxelizer test-tileset run, **49 materials, all
+`exact`, 0 missing** (147 layers), byte-identical re-run, parent
+re-verified; final full-overlay check: **furniture missing 0 of
+713 — 100.0%**. `preview_furniture_remainder.png` is the contact
+sheet. Gate 5.10's ≥98% terrain+furniture coverage criterion is
+met on both halves (terrain 0 of 1,271 since batch 10).
+
 ## Furniture batch 14: shores — regional flora, sea flora, decor (Phase 2g.4, 2026-11-15)
 
 **All 23 missing ids in `furniture-regional-pseudo.json`,

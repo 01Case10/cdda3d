@@ -457,6 +457,32 @@ reproduced): 23 direct, no rescues — furniture missing
 remaining 49 ids are enumerated in the audit working notes; they
 are the furniture-remainder batch's set, now running.
 
+## Created: the furniture remainder — FURNITURE COMPLETE (Phase 2g.4 batch 15, 2026-11-15)
+
+**All 49 remaining missing furniture ids**: the four generators
+(one body plan from their shared copy-from, four paints — the
+military one in camo), the nether-labyrinth set (autodoc and its
+couch, both boilers, climbing vine, pipe plant, both powerboxes —
+the open one shows the fleshy wired interior), the mutant tree
+line (sprout, sapling, adult), medical pair, torah ark, military
+crates, butter churn, hobo stove, solar cooker, brambles, midden,
+the M224 mortar, roulette table, barber chair, the down beds —
+and the two debug placeholders `f_clear` / `f_no_item`, drawn as
+black tiles with a magenta "? BUG" mark, matching their
+"seeing this is a bug" nature. `new-tiles/draw_furniture_remainder.py`;
+`new-tiles/preview_furniture_remainder.png`.
+
+Verified per the 2g.4 gate (parent re-run): **49 materials, all
+`exact`, 0 missing** (147 layers), byte-identical re-run, folder
+count stable at 174. The final check is a full overlay
+re-resolution of every furniture id against every new-tiles
+folder (not chain arithmetic): **furniture missing 0 of 713 —
+100.0%**. With terrain already at 0 of 1,271, gate 5.10's ≥98%
+terrain+furniture coverage criterion is now met on both halves;
+the gate's TileDefs-form re-run remains blocked on Phase 0 tests
+0.1/0.2 like every in-game gate. Monsters (468) are the drive's
+last category.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
