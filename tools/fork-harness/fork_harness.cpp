@@ -109,11 +109,11 @@ struct Mirror {
             }
             std::sort( t.fields.begin(), t.fields.end(),
             []( const FieldVal &a, const FieldVal &b ) { return a.type < b.type; } );
-            // displayed field is not carried by TileChange; preserve mirror's
-            auto old = tiles.find( {tc.pos->x(), tc.pos->y(), tc.pos->z()} );
-            if( old != tiles.end() ) {
-                t.displayed_type = old->second.displayed_type;
-                t.displayed_intensity = old->second.displayed_intensity;
+            // TileChange carries displayed_field (schema fix 2026-11-15);
+            // absent (pre-fix data) reads as 0/0 = no displayed field.
+            if( tc.displayed_field ) {
+                t.displayed_type = tc.displayed_field->field_type();
+                t.displayed_intensity = tc.displayed_field->intensity();
             }
             t.top_item = tc.top_item; t.item_count = tc.item_count;
             t.lit = static_cast<Lit>( static_cast<uint8_t>( tc.lit ) );
@@ -146,14 +146,9 @@ static bool mirror_matches_fresh( World &w, const ViewSpec &view, Mirror &mirror
             const int x = b.origin->x() + ( i % kSubmapSize );
             const int y = b.origin->y() + ( i / kSubmapSize );
             TileVal t = wire_tile( b, i, by_tile );
-            // TileChange carries no displayed_field; the invariant in
-            // Part II 3.9 covers fields/items/vehicles/terrain — compare
-            // displayed only via snapshot-vs-query test 3.3.
-            auto mit = mirror.tiles.find( {x, y, b.origin->z()} );
-            if( mit != mirror.tiles.end() ) {
-                t.displayed_type = mit->second.displayed_type;
-                t.displayed_intensity = mit->second.displayed_intensity;
-            }
+            // displayed_field is compared strictly: TileChange carries it
+            // since the 2026-11-15 schema fix, so the 3.9 invariant covers
+            // it with no exemption.
             want[{x, y, b.origin->z()}] = t;
         }
     }

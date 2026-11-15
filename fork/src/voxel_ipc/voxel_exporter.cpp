@@ -281,6 +281,8 @@ DeltaT Exporter::build_delta()
                     fo->intensity = f.intensity;
                     tc->fields.push_back( std::move( fo ) );
                 }
+                tc->displayed_field = std::make_unique<DisplayedField>(
+                                          fresh[i].displayed_type, fresh[i].displayed_intensity );
                 tc->top_item = fresh[i].top_item;
                 tc->item_count = fresh[i].item_count;
                 tc->lit = static_cast<LitLevel>( static_cast<uint8_t>( fresh[i].lit ) );

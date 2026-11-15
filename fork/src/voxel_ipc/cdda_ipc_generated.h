@@ -2261,6 +2261,7 @@ struct TileChangeT : public ::flatbuffers::NativeTable {
   cdda::ipc::LitLevel lit = cdda::ipc::LitLevel_DARK;
   uint8_t seen = 0;
   bool has_graffiti = false;
+  std::unique_ptr<cdda::ipc::DisplayedField> displayed_field{};
   TileChangeT() = default;
   TileChangeT(const TileChangeT &o);
   TileChangeT(TileChangeT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -2281,7 +2282,8 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ITEM_COUNT = 16,
     VT_LIT = 18,
     VT_SEEN = 20,
-    VT_HAS_GRAFFITI = 22
+    VT_HAS_GRAFFITI = 22,
+    VT_DISPLAYED_FIELD = 24
   };
   const cdda::ipc::Vec3i *pos() const {
     return GetStruct<const cdda::ipc::Vec3i *>(VT_POS);
@@ -2314,6 +2316,15 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool has_graffiti() const {
     return GetField<uint8_t>(VT_HAS_GRAFFITI, 0) != 0;
   }
+  /// The field the game itself would display after this change
+  /// (field::displayed_field_type + its intensity). Added 2026-11-15:
+  /// without it the engine cannot update the displayed field from a
+  /// Delta alone and would have to re-derive the game's rule.
+  /// field_type = 0 means "no displayed field". Additive/non-breaking:
+  /// old readers ignore it, old data reads as 0/0.
+  const cdda::ipc::DisplayedField *displayed_field() const {
+    return GetStruct<const cdda::ipc::DisplayedField *>(VT_DISPLAYED_FIELD);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<cdda::ipc::Vec3i>(verifier, VT_POS, 4) &&
@@ -2328,6 +2339,7 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_LIT, 1) &&
            VerifyField<uint8_t>(verifier, VT_SEEN, 1) &&
            VerifyField<uint8_t>(verifier, VT_HAS_GRAFFITI, 1) &&
+           VerifyField<cdda::ipc::DisplayedField>(verifier, VT_DISPLAYED_FIELD, 4) &&
            verifier.EndTable();
   }
   TileChangeT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2369,6 +2381,9 @@ struct TileChangeBuilder {
   void add_has_graffiti(bool has_graffiti) {
     fbb_.AddElement<uint8_t>(TileChange::VT_HAS_GRAFFITI, static_cast<uint8_t>(has_graffiti), 0);
   }
+  void add_displayed_field(const cdda::ipc::DisplayedField *displayed_field) {
+    fbb_.AddStruct(TileChange::VT_DISPLAYED_FIELD, displayed_field);
+  }
   explicit TileChangeBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2391,8 +2406,10 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(
     uint16_t item_count = 0,
     cdda::ipc::LitLevel lit = cdda::ipc::LitLevel_DARK,
     uint8_t seen = 0,
-    bool has_graffiti = false) {
+    bool has_graffiti = false,
+    const cdda::ipc::DisplayedField *displayed_field = nullptr) {
   TileChangeBuilder builder_(_fbb);
+  builder_.add_displayed_field(displayed_field);
   builder_.add_top_item(top_item);
   builder_.add_fields(fields);
   builder_.add_trap(trap);
@@ -2417,7 +2434,8 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChangeDirect(
     uint16_t item_count = 0,
     cdda::ipc::LitLevel lit = cdda::ipc::LitLevel_DARK,
     uint8_t seen = 0,
-    bool has_graffiti = false) {
+    bool has_graffiti = false,
+    const cdda::ipc::DisplayedField *displayed_field = nullptr) {
   auto fields__ = fields ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::FieldOnTile>>(*fields) : 0;
   return cdda::ipc::CreateTileChange(
       _fbb,
@@ -2430,7 +2448,8 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChangeDirect(
       item_count,
       lit,
       seen,
-      has_graffiti);
+      has_graffiti,
+      displayed_field);
 }
 
 ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBufferBuilder &_fbb, const TileChangeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -4376,7 +4395,8 @@ inline TileChangeT::TileChangeT(const TileChangeT &o)
         item_count(o.item_count),
         lit(o.lit),
         seen(o.seen),
-        has_graffiti(o.has_graffiti) {
+        has_graffiti(o.has_graffiti),
+        displayed_field((o.displayed_field) ? new cdda::ipc::DisplayedField(*o.displayed_field) : nullptr) {
   fields.reserve(o.fields.size());
   for (const auto &fields_ : o.fields) { fields.emplace_back((fields_) ? new cdda::ipc::FieldOnTileT(*fields_) : nullptr); }
 }
@@ -4392,6 +4412,7 @@ inline TileChangeT &TileChangeT::operator=(TileChangeT o) FLATBUFFERS_NOEXCEPT {
   std::swap(lit, o.lit);
   std::swap(seen, o.seen);
   std::swap(has_graffiti, o.has_graffiti);
+  std::swap(displayed_field, o.displayed_field);
   return *this;
 }
 
@@ -4414,6 +4435,7 @@ inline void TileChange::UnPackTo(TileChangeT *_o, const ::flatbuffers::resolver_
   { auto _e = lit(); _o->lit = _e; }
   { auto _e = seen(); _o->seen = _e; }
   { auto _e = has_graffiti(); _o->has_graffiti = _e; }
+  { auto _e = displayed_field(); if (_e) _o->displayed_field = std::unique_ptr<cdda::ipc::DisplayedField>(new cdda::ipc::DisplayedField(*_e)); }
 }
 
 inline ::flatbuffers::Offset<TileChange> TileChange::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TileChangeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4434,6 +4456,7 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBuf
   auto _lit = _o->lit;
   auto _seen = _o->seen;
   auto _has_graffiti = _o->has_graffiti;
+  auto _displayed_field = _o->displayed_field ? _o->displayed_field.get() : nullptr;
   return cdda::ipc::CreateTileChange(
       _fbb,
       _pos,
@@ -4445,7 +4468,8 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBuf
       _item_count,
       _lit,
       _seen,
-      _has_graffiti);
+      _has_graffiti,
+      _displayed_field);
 }
 
 inline DeltaT::DeltaT(const DeltaT &o)

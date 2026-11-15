@@ -270,6 +270,9 @@ pub fn sample_delta() -> DeltaT {
             lit: LitLevel::LIT,
             seen: 255,
             has_graffiti: false,
+            // Schema fix 2026-11-15: TileChange carries the displayed
+            // field. This tile has no fields, so 0/0 = none.
+            displayed_field: Some(crate::displayed_field(0, 0)),
         }]),
         entity_updates: Some(vec![sample_entity()]),
         entity_removed: Some(vec![99]),

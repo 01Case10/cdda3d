@@ -222,6 +222,13 @@ table TileChange {
   lit: LitLevel;
   seen: ubyte;
   has_graffiti: bool;
+  /// The field the game itself would display after this change
+  /// (field::displayed_field_type + its intensity). Added 2026-11-15:
+  /// without it the engine cannot update the displayed field from a
+  /// Delta alone and would have to re-derive the game's rule.
+  /// field_type = 0 means "no displayed field". Additive/non-breaking:
+  /// old readers ignore it, old data reads as 0/0.
+  displayed_field: DisplayedField;
 }
 
 table Delta {
