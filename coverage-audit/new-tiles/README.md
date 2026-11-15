@@ -70,6 +70,11 @@ reproduced):
   tanks, chitin plating, rail wheels, stowed appliances,
   wheel mounts. Vehicle parts 97 → 0 of 483 — **category
   complete**. `draw_veh3.py`, `draw_veh4.py`, previews.
+- **FIELD1 + FIELD2** — field types complete (90): the
+  zone-manager marker family plus bee swarm, biolum, graded
+  cold/hot air, the scarlet set, mi-go atmosphere, darkness
+  and shadow. Field types 90 → 0 of 172 — **category
+  complete**. `draw_field1.py`, `draw_field2.py`, previews.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 

@@ -879,6 +879,33 @@ each batch's PNGs byte-identical across the parent re-run.
 Coverage (vehicle overlay, baseline 97 reproduced): **vehicle
 parts 97 → 0 of 483 — category complete at 100%.**
 
+## Extension batches FIELD1 + FIELD2: field types complete (2026-11-15)
+
+**90 field type ids** — the two batches split the zone-manager
+family between them (~66 `*_zone` fields: one shared treatment,
+corner-bracketed area square in a per-category accent with a
+category pictogram; NPC zones get figure glyphs with slash /
+"?" / retreat-arrow marks, perishables a snowflake; the two
+batches, dispatched in parallel, independently converged on
+the same treatment) and the physical fields: FIELD1's bee
+swarm, bioluminescent motes, clairvoyant eye, full-tile
+darkness (its data is `light_override: 0.0`), construction
+site, and cold/hot air graded 1–4 in density and color depth;
+FIELD2's scarlet family (atmosphere/fog as full-tile washes,
+sea gas wisps, cresting sea wave, storm lightning over dark
+scarlet), mi-go atmosphere, nauseating smell, full-tile shadow,
+push-items arrows, last-known ghost pin. `new-tiles/draw_field1.py`,
+`new-tiles/draw_field2.py`; previews alongside.
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **45 + 45 materials, all `exact`, 0 missing** —
+the loader reads the `fields/` subdir; each batch's PNGs
+byte-identical across the parent re-run. Coverage (field
+overlay, baseline 90 reproduced): **field types 90 → 0 of
+172 — category complete at 100%.** These sprites also feed
+the Phase 2b effects sampler (palette/emissive/density), so
+the scarlet/mi-go/air sets close a downstream gap there too.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
