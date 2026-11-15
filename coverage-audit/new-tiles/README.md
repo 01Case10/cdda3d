@@ -63,6 +63,9 @@ reproduced):
   solar cluster, weather stations, engines, frames, tanks.
   Vehicle parts 195 → 97. `draw_veh1.py`, `draw_veh2.py`,
   previews alongside.
+- **TRAP2** — devices and triggers (40): LIXA pads 10–16,
+  dissector/crossbow/bear-trap devices, light-pool trigger
+  markers. Traps 80 → 40. `draw_trap2.py`, `preview_trap2.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 

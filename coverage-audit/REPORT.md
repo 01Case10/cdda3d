@@ -839,6 +839,23 @@ each batch's PNGs byte-identical across the parent re-run.
 Coverage (vehicle overlay, baseline 195 reproduced): 98 direct,
 no rescues — vehicle parts **195 → 97** of 483 total.
 
+## Extension batch TRAP2: devices and triggers (2026-11-15)
+
+**40 trap ids** — the LIXA unfold pads 10–16 (TRAP1's renderer
+reused verbatim, pixel-consistent with 1–9), the visible devices
+drawn as devices (dissector's arcing conduit, crossbow, buried
+bear trap, spinning blade, booby trap's shelled pipe clamp,
+dermatik burrow, the dormant corpse drawn as a corpse), and the
+invisible mapgen triggers as subtle floor markers (the
+`tr_light_on_*` light pools differentiated by edge tick and pip
+count, lab door glyphs with sensor dots). `new-tiles/draw_trap2.py`;
+`new-tiles/preview_trap2.png`.
+
+Verified per the 2g.4 gate (parent re-run): **40 materials, all
+`exact`, 0 missing** (120 layers); every PNG byte-identical
+across the re-run. Coverage (trap overlay, baseline 80
+reproduced): traps **80 → 40**.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
