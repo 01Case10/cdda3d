@@ -13,6 +13,14 @@
 //! (`<id>_var_<variant>`) → season suffix (`<id>_season_<season>`) →
 //! `looks_like` (recursive, jump-limited) → filler. Nothing is declared
 //! missing until every stage has failed.
+//!
+//! The decomposed loader also mirrors `compose.py --use-all` (the flag
+//! the official CDDA tileset build uses for UltiCa): a PNG that no tile
+//! entry references becomes a tile entry of its own,
+//! `{id: <png stem>, fg: <that sprite>}`. Without this, ids such as
+//! `mon_antlion_larva` — a sprite with no entry JSON at all — are
+//! covered in the shipped game but invisible here (coverage audit,
+//! 2026-11-15).
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -470,7 +478,57 @@ pub fn load_decomposed(root: &Path) -> Result<Tileset, LoadError> {
             }
         }
     }
+    synthesize_use_all_entries(&mut ts);
     Ok(ts)
+}
+
+/// `compose.py --use-all` parity: every sprite not referenced by any
+/// tile entry (fg/bg, including multitile `additional_tiles`, at any
+/// depth) gets a synthesized entry `{id: stem, fg: stem}`. A sprite
+/// whose stem already names a JSON entry is skipped — explicit entries
+/// always win — as are sprites on the fallback sheet and stray PNGs
+/// outside any `pngs_*` folder (e.g. the root `fallback.png` itself).
+/// Iteration is over `BTreeMap`s, so synthesis order is deterministic.
+fn synthesize_use_all_entries(ts: &mut Tileset) {
+    fn referenced(entry: &TileEntry, out: &mut std::collections::BTreeSet<String>) {
+        let mut names = Vec::new();
+        if let Some(r) = &entry.fg {
+            r.all_names(&mut names);
+        }
+        if let Some(r) = &entry.bg {
+            r.all_names(&mut names);
+        }
+        out.extend(names);
+        for sub in entry.additional_tiles.values() {
+            referenced(sub, out);
+        }
+    }
+    let mut used = std::collections::BTreeSet::new();
+    for entry in ts.entries.values() {
+        referenced(entry, &mut used);
+    }
+    let candidates: Vec<(String, String)> = ts
+        .sprites_by_name
+        .iter()
+        .map(|(name, g)| (name.clone(), g.sheet_file.clone()))
+        .collect();
+    for (name, sheet_file) in candidates {
+        if sheet_file.is_empty() || used.contains(&name) {
+            continue;
+        }
+        if ts.sheets.get(&sheet_file).is_some_and(|s| s.fallback) {
+            continue;
+        }
+        ts.entries.entry(name.clone()).or_insert(TileEntry {
+            ids: vec![name.clone()],
+            fg: Some(SpriteRef::Name(name)),
+            bg: None,
+            multitile: false,
+            rotates: false,
+            additional_tiles: BTreeMap::new(),
+            sheet_file: None,
+        });
+    }
 }
 
 /// Load a composed tileset: `tile_config.json` (+ its `tile_info`).
