@@ -26,6 +26,27 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 24: the undead & lab tail (Phase 2g.4, 2026-11-15)
+
+**The final 42 ids** — four skeletons, the four zombie horses,
+the scorched/rust/fireproof zed line, both no-weakpoints zeds,
+the inner-cabins grue, string-dimension zeds and zomborgs, six
+weird dogs (antimemetic, cuspated, howling, incorporeal,
+scorched, scorched hulk), liquid and void cats, three lab
+ghouls, the brute/hulk pupae and their near-identical decoys,
+and the two `pseudo_*` test monsters as range targets. Drawn by
+`draw_finisher_undead.py` (PIL, deterministic), placement by
+resolved volume (24 at 32×32, 10 at 64×64, 8 at 96×96). Batch
+24's first dispatch ended empty; re-dispatched on Joey's word.
+
+Verified: test-tileset run (prebuilt release voxelizer), **42
+materials, all `exact`, 0 missing** (126 layers); every monster
+PNG on disk byte-identical across the re-run, parent re-verified.
+`preview_finisher_undead.png` is the contact sheet. Coverage:
+monsters missing **42 → 0**, coverage **100.0%** — with terrain
+and furniture already at 0, the zero-drive is complete
+(0 / 0 / 0 on the final audit re-run).
+
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
 **42 of the enumerated final 84** — the seven geometric yrax

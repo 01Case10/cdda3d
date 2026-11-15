@@ -728,6 +728,59 @@ rescues — monsters missing **84 → 42**, coverage **96.5%**
 assignment (undead & lab tail), whose dispatch ended empty and
 is re-run on Joey's word.
 
+## Created: the undead & lab tail (Phase 2g.4 batch 24, 2026-11-15)
+
+**The final 42 ids**: four skeletons (the executioner's
+sword-blade forearms and fused-jaw mask, the reaper's scythe
+arms with black goo dripping from its sockets, necro, slasher);
+the four zombie horses at 550 L (the smoldering black stallion's
+smoke pillars, the pale horse's green bile reservoir showing
+through its rotund belly, red, white); the scorched/rust/
+fireproof zed line; the two no-weakpoints zeds drawn as straight
+soldier/survivor zombies (their descriptions are testing notes);
+the grue's swollen gray eyes and stark white slack maw in a
+shadow body (435 L); the string-dimension zeds and zomborgs; six
+weird dogs (the antimemetic dog's static-smudge head, the
+triclopean dog's lidded third eye, the incorporeal dog's pale
+ghost palette, the scorched hulk at 440 L); the liquid and void
+cats; three lab ghouls; the brute and hulk pupae with their
+decoys deliberately near-identical to their twins (their
+in-game function), the hulk pupae at 875 L; and the two
+`pseudo_*` test monsters as readable range targets (bullseye,
+bullet holes, marked glowing weak points). Placement by resolved
+volume: 24 at 32×32, 10 at 64×64, 8 at 96×96.
+`new-tiles/draw_finisher_undead.py`;
+`new-tiles/preview_finisher_undead.png`. (Batch 24's first
+dispatch ended empty — no files, no report; the batch was
+re-dispatched on Joey's word and completed in full.)
+
+Verified per the 2g.4 gate (parent re-run): **42 materials, all
+`exact`, 0 missing** (126 layers); every monster PNG on disk
+byte-identical across the re-run (467 files). Coverage movement
+(monster overlay, baseline 42 reproduced): 42 direct, no
+rescues — monsters missing **42 → 0**, coverage **100.0%**
+(1,203/1,203).
+
+## Zero-drive complete (2026-11-15)
+
+Final audit re-run, same folder-based full-chain overlay method
+as every batch gate (shipped universe ∪ all drawn folders,
+effective `looks_like` through copy-from chains, 10-hop rescue):
+
+- **Terrain: 0 missing of 1,271 — 100.0%**
+- **Furniture: 0 missing of 713 — 100.0%**
+- **Monsters: 0 missing of 1,203 — 100.0%**
+
+Gate 5.10's coverage criterion (≥98% of base-game
+terrain+furniture) is met at 100% on both halves, with monsters
+also at 100%. The gate's TileDefs-form re-run (measuring through
+the fork's in-game exporter) remains blocked on Phase 0 tests
+0.1/0.2, as do all in-game gates. Out of scope throughout, per
+the audit's own caveats: items (3,778; Phase 6 ground-sprite
+scope), field types (shader effects, Phase 2b), traps (mostly
+internal triggers), overmap (own tilesets), vehicle parts
+(Phase 8).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
