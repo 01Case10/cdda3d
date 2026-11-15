@@ -101,13 +101,39 @@ pub fn prepare_raster_house_v(
     textures_dir: Option<&Path>,
     vehicles: Option<&crate::frame::VehicleScene>,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    prepare_raster_v(visible_levels, textures_dir, vehicles, false)
+}
+
+/// The sample scene's form of [`prepare_raster_house_v`]
+/// (24x24 yard + house; `world::build_sample_scene`).
+pub fn prepare_raster_sample_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    prepare_raster_v(visible_levels, textures_dir, vehicles, true)
+}
+
+fn prepare_raster_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    let build_map = |scale: mesher::scale::WorldScale| {
+        if sample {
+            world::build_sample_scene(scale)
+        } else {
+            world::build_fake_house(scale)
+        }
+    };
     match textures_dir {
         Some(dir) => {
             let table = materials::MaterialTable::load(dir)
                 .map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
-            let map = world::build_fake_house(mesher::scale::WorldScale::default());
+            let map = build_map(mesher::scale::WorldScale::default());
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
             stamp_tex_layers(&mut filtered, &spec);
             if let Some(v) = vehicles {
@@ -118,11 +144,17 @@ pub fn prepare_raster_house_v(
         }
         None => match vehicles {
             Some(v) => {
-                let map = world::build_fake_house(mesher::scale::WorldScale::default());
+                let map = build_map(mesher::scale::WorldScale::default());
                 let mut filtered =
                     world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
                 stamp_vehicles(&mut filtered, v);
                 let (meshes, stats) = mesh_filtered(&filtered);
+                Ok((meshes, stats, None))
+            }
+            None if sample => {
+                let map = build_map(mesher::scale::WorldScale::default());
+                let (meshes, stats) =
+                    world::mesh_world(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
                 Ok((meshes, stats, None))
             }
             None => {
@@ -170,20 +202,47 @@ pub fn prepare_raster_house_lit_v(
     lit: &crate::frame::LightingScene,
     vehicles: Option<&crate::frame::VehicleScene>,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    prepare_raster_lit_v(visible_levels, textures_dir, lit, vehicles, false)
+}
+
+/// The sample scene's form of [`prepare_raster_house_lit_v`].
+pub fn prepare_raster_sample_lit_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    prepare_raster_lit_v(visible_levels, textures_dir, lit, vehicles, true)
+}
+
+fn prepare_raster_lit_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
     let scale = mesher::scale::WorldScale::default();
+    let build_map = |scale: mesher::scale::WorldScale| {
+        if sample {
+            world::build_sample_scene(scale)
+        } else {
+            world::build_fake_house(scale)
+        }
+    };
     let (spec, mut filtered) = match textures_dir {
         Some(dir) => {
             let table = materials::MaterialTable::load(dir)
                 .map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
-            let map = world::build_fake_house(scale);
+            let map = build_map(scale);
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
             stamp_tex_layers(&mut filtered, &spec);
             (Some(spec), filtered)
         }
         None => {
-            let map = world::build_fake_house(scale);
+            let map = build_map(scale);
             let filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
             (None, filtered)
         }

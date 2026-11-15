@@ -54,11 +54,11 @@ fn main() -> ExitCode {
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
              [--textures voxelizer-output-dir] [--effects effects.json] \
-             [--fx-fields-off] [--fx-post-off] [--billboards fixture|<atlas-dir>] \
+             [--fx-fields-off] [--fx-post-off] [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] \
              [--light-hour H] [--ui-stub] \
              --size WxH --out file.png] [--scene-report] \
              [--renderer raster|rt] [--textures dir] [--effects effects.json] \
-             [--billboards fixture|<atlas-dir>] [--light-hour H] [--ui-stub]"
+             [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] [--light-hour H] [--ui-stub]"
         );
         return ExitCode::SUCCESS;
     }
@@ -69,6 +69,15 @@ fn main() -> ExitCode {
     let effects = value_after(&args, "--effects").map(std::path::PathBuf::from);
     let billboards = match value_after(&args, "--billboards") {
         Some(s) if s == "fixture" => Some(BillboardScene::fixture_crowd()),
+        Some(s) if s.starts_with("sample:") => {
+            match BillboardScene::sample_crowd(std::path::Path::new(&s["sample:".len()..])) {
+                Ok(scene) => Some(scene),
+                Err(e) => {
+                    eprintln!("voxel-engine: --billboards atlas load failed: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
         Some(dir) => match BillboardScene::ultica_crowd(std::path::Path::new(&dir)) {
             Ok(scene) => Some(scene),
             Err(e) => {
@@ -103,6 +112,8 @@ fn apply_scene_flags(
     if let Some(s) = value_after(args, "--billboards") {
         cap.billboards = Some(if s == "fixture" {
             BillboardScene::fixture_crowd()
+        } else if let Some(dir) = s.strip_prefix("sample:") {
+            BillboardScene::sample_crowd(std::path::Path::new(dir))?
         } else {
             BillboardScene::ultica_crowd(std::path::Path::new(&s))?
         });

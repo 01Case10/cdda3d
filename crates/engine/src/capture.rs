@@ -39,7 +39,8 @@ impl RendererKind {
 
 #[derive(Debug, Clone)]
 pub struct CaptureArgs {
-    /// Scene source. Phase 2 supports only "stub-house".
+    /// Scene source: "stub-house" (the Phase 2 fixture) or
+    /// "sample-scene" (the 24x24 yard + house sample world).
     pub snapshot: String,
     /// Renderer selection (Phase 2c).
     pub renderer: RendererKind,
@@ -134,7 +135,7 @@ impl fmt::Display for CaptureError {
             }
             CaptureError::UnsupportedSnapshot(s) => write!(
                 f,
-                "headless-capture: unsupported --snapshot source '{s}' (Phase 2 supports 'stub-house')"
+                "headless-capture: unsupported --snapshot source '{s}' (supports 'stub-house' and 'sample-scene')"
             ),
             CaptureError::Device(e) => write!(f, "headless-capture: device error: {e}"),
             CaptureError::Readback(e) => {
@@ -185,7 +186,7 @@ fn save_capture(args: &CaptureArgs, img: &image::RgbaImage) -> Result<(), Captur
 /// golden harness (2g.3) pins that the delegation is
 /// byte-stable for the pre-2h scenes.
 pub fn run_capture(args: &CaptureArgs) -> Result<CaptureOutcome, CaptureError> {
-    if args.snapshot != "stub-house" {
+    if args.snapshot != "stub-house" && args.snapshot != "sample-scene" {
         return Err(CaptureError::UnsupportedSnapshot(args.snapshot.clone()));
     }
     pollster::block_on(run_capture_async(args))

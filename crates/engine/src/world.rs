@@ -59,6 +59,81 @@ pub fn build_fake_house(scale: WorldScale) -> ChunkMap {
     map
 }
 
+/// The sample scene (Joey's request, 2026-11-15): a 24x24-tile
+/// yard — 2x2 chunk columns, same z layout as the house — with a
+/// house in the north-west, and open ground outside it: a pond,
+/// scattered trees, and a chain-link fence run. Built for looking
+/// at, not gating: monsters inside the room and outside on the
+/// grass come from `BillboardScene::sample_crowd`, whose
+/// placements are written against these coordinates:
+///
+/// - house footprint x 3..=10, y 3..=9 (walls), wood floor
+///   x 4..=9, y 4..=8, door in the south wall at (6, 9), windows
+///   at (5, 3), (3, 6), (10, 6); roof slabs at level 1 over the
+///   footprint only (a cutaway at z 0 opens the room).
+/// - pond x 16..=19, y 14..=17; fence along y = 13, x 2..=8;
+///   trees at (14, 4), (19, 7), (5, 15), (21, 17), (13, 20),
+///   (18, 20).
+pub fn build_sample_scene(scale: WorldScale) -> ChunkMap {
+    let mut map = ChunkMap::new(scale);
+    for cy in 0..2 {
+        for cx in 0..2 {
+            map.add_chunk([cx, cy], HOUSE_LEVELS);
+        }
+    }
+    let set = |map: &mut ChunkMap, x: usize, y: usize, z: usize, tile: u32| {
+        let coord = [
+            (x / CHUNK_W) as i32,
+            (y / CHUNK_H) as i32,
+        ];
+        let chunk = map.chunks.get_mut(&coord).expect("sample chunk");
+        chunk.set_tile(x % CHUNK_W, y % CHUNK_H, z, tile, scale);
+    };
+    // Grass everywhere at level 0.
+    for y in 0..24 {
+        for x in 0..24 {
+            set(&mut map, x, y, 0, TILE_GROUND);
+        }
+    }
+    // House: wood floor, wall perimeter, door + windows, roof.
+    for y in 4..=8 {
+        for x in 4..=9 {
+            set(&mut map, x, y, 0, TILE_FLOOR_WOOD);
+        }
+    }
+    for x in 3..=10 {
+        set(&mut map, x, 3, 0, TILE_WALL);
+        set(&mut map, x, 9, 0, TILE_WALL);
+    }
+    for y in 3..=9 {
+        set(&mut map, 3, y, 0, TILE_WALL);
+        set(&mut map, 10, y, 0, TILE_WALL);
+    }
+    set(&mut map, 6, 9, 0, TILE_DOOR);
+    set(&mut map, 5, 3, 0, TILE_WINDOW);
+    set(&mut map, 3, 6, 0, TILE_WINDOW);
+    set(&mut map, 10, 6, 0, TILE_WINDOW);
+    for y in 3..=9 {
+        for x in 3..=10 {
+            set(&mut map, x, y, 1, TILE_ROOF);
+        }
+    }
+    // The yard: pond, fence run, trees.
+    for y in 14..=17 {
+        for x in 16..=19 {
+            set(&mut map, x, y, 0, TILE_WATER);
+        }
+    }
+    for x in 2..=8 {
+        set(&mut map, x, 13, 0, TILE_FENCE);
+    }
+    for (x, y) in [(14, 4), (19, 7), (5, 15), (21, 17), (13, 20), (18, 20)] {
+        set(&mut map, x, y, 0, TILE_FOLIAGE);
+    }
+    map.clear_dirty();
+    map
+}
+
 /// The cutaway applied at data level: a copy of `map` keeping only
 /// blocks whose game z-level is in `visible_levels`. Shared by the
 /// raster mesher and the Phase 2c tree builder so both renderers see
@@ -236,6 +311,23 @@ mod tests {
         let (_m3, roof_only, _) = mesh_fake_house(&[1]);
         assert!(roof_only.total_quads() > 0);
         assert!(roof_only.total_quads() < full.total_quads());
+    }
+
+    #[test]
+    fn sample_scene_has_house_pond_fence_and_trees() {
+        let map = build_sample_scene(WorldScale::default());
+        assert_eq!(map.chunks.len(), 4);
+        let per = WorldScale::default().blocks_per_z_level as usize;
+        assert_eq!(count_block(&map, TILE_DOOR), per);
+        assert_eq!(count_block(&map, TILE_WINDOW), 3 * per);
+        // Pond: 4x4 tiles of water (floor-slab shape, 1 block each
+        // at the tile's base like ground).
+        assert!(count_block(&map, TILE_WATER) >= 16);
+        assert_eq!(count_block(&map, TILE_FOLIAGE), 6 * per);
+        // Roof only over the 8x7 house footprint.
+        assert_eq!(count_block(&map, TILE_ROOF), 8 * 7);
+        let (meshes, stats) = mesh_world(&map, HOUSE_MIN_GAME_Z, &[0, 1]);
+        assert!(meshes.total_quads() > 0 && stats.chunks == 4);
     }
 
     #[test]

@@ -195,6 +195,35 @@ impl BillboardScene {
         }
     }
 
+    /// Sample-scene crowd (Joey's request, 2026-11-15), placed
+    /// against `world::build_sample_scene`'s coordinates with
+    /// the real UltiCa atlas: a zombie, a skeleton and a dog
+    /// *inside* the room (floor x 4..=9, y 4..=8); a zombie, a
+    /// hulk, a second zombie and a skeleton *outside* on the
+    /// grass. Sprite ids are the real-capture set.
+    pub fn sample_crowd(dir: &std::path::Path) -> Result<Self, String> {
+        use billboard::instance::FakeEntity;
+        let atlas = billboard::atlas::SpriteAtlas::load(dir)?;
+        let mut z1 = FakeEntity::creature(1, "mon_zombie_1", [5, 5, 0]);
+        z1.overlays = vec!["overlay_effect_bleed".into()];
+        Ok(Self {
+            atlas,
+            entities: vec![
+                // Inside the room.
+                z1,
+                FakeEntity::creature(2, "mon_skeleton", [8, 7, 0]),
+                FakeEntity::creature(3, "mon_dog", [6, 7, 0]),
+                // Outside, on the grass.
+                FakeEntity::creature(4, "mon_zombie_2", [14, 6, 0]),
+                FakeEntity::creature(5, "mon_zombie_hulk", [18, 10, 0]),
+                FakeEntity::creature(6, "mon_zombie_1", [12, 16, 0]),
+                FakeEntity::creature(7, "mon_skeleton", [21, 4, 0]),
+            ],
+            items: None,
+            time_s: 0.0,
+        })
+    }
+
     /// Real-UltiCa crowd for gate 2h.2, in the fake house's
     /// geometry (the Phase 6 real-capture composition seated in
     /// the engine's world): an equipped zombie and the hulk
@@ -718,15 +747,29 @@ pub fn render_frame(
     // lit preparation (visibility mask + per-vertex bake, 2h.3).
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
     let mut renderer = Renderer::new(device, CAPTURE_FORMAT);
-    let (meshes, mstats, spec) = match &args.lighting {
-        Some(lit) => crate::scene_prep::prepare_raster_house_lit_v(
+    let sample = args.snapshot == "sample-scene";
+    let (meshes, mstats, spec) = match (&args.lighting, sample) {
+        (Some(lit), false) => crate::scene_prep::prepare_raster_house_lit_v(
             &visible,
             args.textures.as_deref(),
             lit,
             args.vehicles.as_ref(),
         )
         .map_err(CaptureError::Device)?,
-        None => crate::scene_prep::prepare_raster_house_v(
+        (Some(lit), true) => crate::scene_prep::prepare_raster_sample_lit_v(
+            &visible,
+            args.textures.as_deref(),
+            lit,
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, false) => crate::scene_prep::prepare_raster_house_v(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, true) => crate::scene_prep::prepare_raster_sample_v(
             &visible,
             args.textures.as_deref(),
             args.vehicles.as_ref(),
@@ -996,6 +1039,23 @@ fn composite_overlays(
     Ok(current)
 }
 
+/// World Y of a floor tile's top surface above its z-level
+/// base, under the engine's world scale: a floor slab occupies
+/// the bottom `floor_slab_blocks` blocks of the level, so the
+/// surface a creature stands on sits that many world units
+/// above the level base. The billboard crate anchors feet at
+/// the level base (its harness floor is a plane there); in the
+/// engine's world that leaves the quad's lower stretch inside
+/// the slab box, whose faces depth-occlude it — in the composed
+/// frame only a sliver of each creature survived (found
+/// 2026-11-15 via the sample scene; gate 2h.2 asserted pixel
+/// deltas, which the sliver satisfied). The engine therefore
+/// lifts every billboard anchor by the slab height.
+fn floor_surface_lift() -> f32 {
+    let s = mesher::scale::WorldScale::default();
+    s.floor_slab_blocks as f32 * s.block_size
+}
+
 /// Draw one billboard scene into the composed frame: creatures
 /// from their packed overlay composites first, then item piles
 /// from the raw atlas — two prepares/draws of the one pass, each
@@ -1018,7 +1078,16 @@ fn draw_billboards(
         pitch_deg: camera.pitch_deg,
         distance: camera.distance,
     };
-    let built = billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
+    let mut built = billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
+    // Stand the creatures on the floor surface, not the level
+    // base (see floor_surface_lift).
+    let lift = floor_surface_lift();
+    for inst in &mut built.instances {
+        inst.anchor.y += lift;
+    }
+    for sh in &mut built.shadows {
+        sh.center.y += lift;
+    }
     let aspect = size.0 as f32 / size.1.max(1) as f32;
     let view_proj = camera.view_projection(aspect);
     let eye = camera.eye();
@@ -1039,7 +1108,10 @@ fn draw_billboards(
     count += built.instances.len();
 
     if let Some(items) = &scene.items {
-        let inst = billboard::instance::item_instances(items, &scene.atlas, eye);
+        let mut inst = billboard::instance::item_instances(items, &scene.atlas, eye);
+        for i in &mut inst {
+            i.anchor.y += lift;
+        }
         if !inst.is_empty() {
             pass.prepare_with_view_proj(
                 device,

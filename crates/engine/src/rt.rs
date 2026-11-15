@@ -112,7 +112,22 @@ pub fn world_for_levels_v(
     visible_levels: &[i32],
     vehicles: Option<&crate::frame::VehicleScene>,
 ) -> VoxelWorld {
-    let map = world::build_fake_house(mesher::scale::WorldScale::default());
+    world_for_levels_sv(visible_levels, vehicles, false)
+}
+
+/// [`world_for_levels_v`] over the sample scene instead of the
+/// fake house.
+pub fn world_for_levels_sv(
+    visible_levels: &[i32],
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+) -> VoxelWorld {
+    let scale = mesher::scale::WorldScale::default();
+    let map = if sample {
+        world::build_sample_scene(scale)
+    } else {
+        world::build_fake_house(scale)
+    };
     let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
     if let Some(v) = vehicles {
         crate::scene_prep::stamp_vehicles(&mut filtered, v);
@@ -157,7 +172,17 @@ pub fn world_for_levels_lit_v(
     lit: &crate::frame::LightingScene,
     vehicles: Option<&crate::frame::VehicleScene>,
 ) -> VoxelWorld {
-    let base = world_for_levels_v(visible_levels, vehicles);
+    world_for_levels_lit_sv(visible_levels, lit, vehicles, false)
+}
+
+/// [`world_for_levels_lit_v`] over the sample scene.
+pub fn world_for_levels_lit_sv(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+) -> VoxelWorld {
+    let base = world_for_levels_sv(visible_levels, vehicles, sample);
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
     let mut out = VoxelWorld::new();
@@ -260,9 +285,10 @@ pub fn render_rt_frame(
     // the side-table; without textures the world is untouched and
     // the render is exactly the pre-2d one.
     let levels = capture_visible_levels(args.cutaway_z);
+    let sample = args.snapshot == "sample-scene";
     let mut voxel_world = match &args.lighting {
-        Some(lit) => world_for_levels_lit_v(&levels, lit, args.vehicles.as_ref()),
-        None => world_for_levels_v(&levels, args.vehicles.as_ref()),
+        Some(lit) => world_for_levels_lit_sv(&levels, lit, args.vehicles.as_ref(), sample),
+        None => world_for_levels_sv(&levels, args.vehicles.as_ref(), sample),
     };
     let assignments = match &args.textures {
         Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
