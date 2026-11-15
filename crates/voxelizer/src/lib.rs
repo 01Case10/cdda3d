@@ -3,6 +3,7 @@
 //! extrusion models, attribution, a contact sheet and a missing log.
 //! Everything iterates in sorted order so reruns are byte-identical.
 
+pub mod effects;
 pub mod faces;
 pub mod material;
 pub mod multitile;
@@ -14,6 +15,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tileset::{resolve, Stage, TileEntry, Tileset};
 
+pub use effects::*;
 pub use faces::*;
 pub use material::*;
 pub use multitile::*;

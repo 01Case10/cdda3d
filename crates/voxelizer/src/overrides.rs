@@ -17,6 +17,11 @@ pub struct OverrideEntry {
     pub material: Option<String>,
     pub transparency: Option<String>,
     pub tint: [u8; 3],
+    // Phase 2b effect tuning (all optional; absent = extracted value).
+    pub effect_density: Option<f32>,
+    pub effect_emissive: Option<f32>,
+    pub effect_noise_scale: Option<f32>,
+    pub effect_class: Option<String>,
 }
 
 impl OverrideEntry {
@@ -35,6 +40,25 @@ impl OverrideEntry {
         if let Some(t) = &self.transparency {
             if !matches!(t.as_str(), "opaque" | "cutout" | "transparent") {
                 return Err(format!("invalid transparency {t:?}"));
+            }
+        }
+        if let Some(c) = &self.effect_class {
+            if !matches!(
+                c.as_str(),
+                "smoke" | "flame" | "gas" | "liquid" | "energy" | "generic"
+            ) {
+                return Err(format!("invalid effect_class {c:?}"));
+            }
+        }
+        for (name, v) in [
+            ("effect_density", self.effect_density),
+            ("effect_emissive", self.effect_emissive),
+            ("effect_noise_scale", self.effect_noise_scale),
+        ] {
+            if let Some(v) = v {
+                if !(0.0..=10.0).contains(&v) || !v.is_finite() {
+                    return Err(format!("invalid {name} {v} (expected 0..=10)"));
+                }
             }
         }
         Ok(())
@@ -102,6 +126,23 @@ pub fn parse_overrides(text: &str) -> Result<Overrides, String> {
                     Some(unquote(value).ok_or_else(|| {
                         format!("line {}: transparency must be quoted", lineno + 1)
                     })?);
+            }
+            "effect_density" | "effect_emissive" | "effect_noise_scale" => {
+                let v = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("line {}: {key} is not a number", lineno + 1))?;
+                match key {
+                    "effect_density" => entry.effect_density = Some(v),
+                    "effect_emissive" => entry.effect_emissive = Some(v),
+                    _ => entry.effect_noise_scale = Some(v),
+                }
+            }
+            "effect_class" => {
+                entry.effect_class = Some(
+                    unquote(value).ok_or_else(|| {
+                        format!("line {}: effect_class must be quoted", lineno + 1)
+                    })?,
+                );
             }
             "tint" => {
                 let inner = value

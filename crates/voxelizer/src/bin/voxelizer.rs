@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use voxelizer::{parse_overrides, run, VoxelizerConfig};
+use voxelizer::{field_ids_in_tileset, parse_overrides, run, run_effects, VoxelizerConfig};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -20,6 +20,8 @@ fn main() {
     let mut ids_path: Option<PathBuf> = None;
     let mut ll_path: Option<PathBuf> = None;
     let mut game_json: Vec<PathBuf> = Vec::new();
+    let mut want_effects = false;
+    let mut field_ids_path: Option<PathBuf> = None;
     let mut i = 0;
     while i < args.len() {
         let mut take = |i: &mut usize| -> PathBuf {
@@ -38,6 +40,8 @@ fn main() {
             "--ids" => ids_path = Some(take(&mut i)),
             "--looks-like" => ll_path = Some(take(&mut i)),
             "--game-json" => game_json.push(take(&mut i)),
+            "--effects" => want_effects = true,
+            "--field-ids" => field_ids_path = Some(take(&mut i)),
             "-h" | "--help" => {
                 println!("voxelizer --tileset <dir> --out <dir> [--composed <tile_config.json>] [--overrides f] [--season s] [--ids f] [--looks-like f] [--game-json path...]");
                 return;
@@ -144,6 +148,39 @@ fn main() {
         Err(e) => {
             eprintln!("voxelizer: run failed: {e}");
             std::process::exit(1);
+        }
+    }
+    if want_effects {
+        // Phase 2b: effect-parameter extraction. Field ids default to
+        // every fd_* entry in the tileset; --field-ids adds explicit ids.
+        let mut field_ids = field_ids_in_tileset(&ts);
+        if let Some(p) = &field_ids_path {
+            if let Ok(text) = std::fs::read_to_string(p) {
+                for l in text.lines() {
+                    let l = l.trim();
+                    if !l.is_empty() {
+                        field_ids.push(l.to_string());
+                    }
+                }
+            }
+        }
+        match run_effects(&ts, &cfg, &field_ids, &out) {
+            Ok((entries, log)) => {
+                let fallbacks = entries.iter().filter(|e| e.fallback).count();
+                println!(
+                    "voxelizer effects: {} field types, {} with sprites, {} fallbacks (see effects_fallback.log)",
+                    entries.len(),
+                    entries.len() - fallbacks,
+                    fallbacks
+                );
+                for line in &log {
+                    println!("  fallback: {line}");
+                }
+            }
+            Err(e) => {
+                eprintln!("voxelizer: effects run failed: {e}");
+                std::process::exit(1);
+            }
         }
     }
 }
