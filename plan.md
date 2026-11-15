@@ -362,16 +362,18 @@ Time estimates assume one developer working full time; scale accordingly. Phase 
 
 **Problem (plain form):** RT textures are sampled at full resolution with nearest filtering no matter the distance. A far-away face carries far more texture detail than the screen has pixels for, and the single texel picked per pixel jumps around as the camera moves — distant textured surfaces alias: they shimmer and crawl. The standard cure is mipmaps: pre-shrunk copies of each texture (half, quarter, … size) with the detail averaged out, sampled at the level matching the face's on-screen size.
 
-**Design constraint that shapes the work:** the RT renderer is a *compute* shader, and compute shaders have no implicit derivatives — `textureSample` (which auto-picks a mip level in fragment shaders) is unavailable. The LOD must be estimated explicitly from ray geometry (hit distance × per-pixel ray spread is the standard approximation) and sampled with `textureSampleLevel`. Getting that estimate right — neither blurry near nor shimmering far — is the phase's real work; generating the chain is the easy half.
+**Design constraint that shapes the work:** the RT renderer is a *compute* shader, and compute shaders have no implicit derivatives — `textureSample` (which auto-picks a mip level in fragment shaders) is unavailable. The LOD must be estimated explicitly from ray geometry and sampled with `textureSampleLevel`. Getting that estimate right — neither blurry near nor shimmering far — is the phase's real work; generating the chain is the easy half.
+
+**Method (integrated 2026-11-15, Joey supplied the source plan): improved ray cones** (Akenine-Möller et al., JCGT 2021 — the Ray Tracing Gems ch. 20 refinement), mapped onto this renderer in **`docs/phase2e-mipmaps.md`**, which is the phase's implementation plan. The mapping's load-bearing simplifications: per-face Δ collapses to the constant `0.5·log2(texW·texH)` (every voxel face maps the full texture over exactly 1×1 world units); no ray queries/BLAS/bindless are involved (custom tree traversal + texture array — the source plan's own fallback design); curvature/reflection/refraction cone machinery does not apply (flat faces, no secondary texture-sampling rays — the transparent overlay reuses the primary cone at its own hit distance); mip filtering happens in the stored (display) space, consistent with this renderer's raw-sampling convention. Full-angle cone convention throughout.
 
 **Tasks**
-- **Mip chain generation** for the scene texture array (per layer, down to 1×1), using the voxelizer's alpha-aware premultiplied averaging with edge clamping (Phase 5 §8 rules) so cutout edges don't bleed color. CPU generation at spec-build time is acceptable at scene-local layer counts; measure before optimizing.
-- **LOD estimation + sampling** in the RT render shader: footprint from hit distance and the camera's per-pixel ray cone; clamp to the chain length; trilinear (linear between levels) if the estimate is stable, bilinear-within-level otherwise — record which shipped.
-- Sampler/filtering changes stay inside `TextureSet`; the flat-color dummy path is unaffected.
+- **Mip chain generation** for the scene texture array (per layer, down to 1×1), using the voxelizer's alpha-aware premultiplied averaging with edge clamping (Phase 5 §8 rules) so cutout edges don't bleed color, plus alpha-coverage rescaling for cutout materials so they don't thin out at coarse levels. CPU generation at spec-build time is acceptable at scene-local layer counts; measure before optimizing.
+- **Ray-cone LOD + sampling** in the RT render shader per docs/phase2e-mipmaps.md §2: `spread = atan(2·tan(fovY/2)/imageHeight)` from existing uniforms, `lod = Δ + log2(spread·t) − log2(|N·V|)` clamped to the chain, `textureSampleLevel` with a trilinear sampler. Applies to primary hits and the transparent overlay hit. A debug false-color LOD view ships behind a uniform flag (validation + future tuning).
+- Sampler/filtering changes stay inside `TextureSet` (incl. no restrictive sampler LOD clamp — a too-low max clamp silently degrades mips to level 0); the flat-color dummy path is unaffected.
 
-**Deliverables**: mip chain in `TextureSet`; LOD sampling in the RT shader; before/after captures of a distant textured wall (two camera poses a fraction of a pixel apart); gate results in Part II §5e.
+**Deliverables**: mip chain in `TextureSet`; ray-cone LOD sampling + debug LOD view in the RT shader; CPU reference of the LOD formula with analytic-case tests; before/after captures of a distant textured wall (two camera poses a fraction of a pixel apart); gate results in Part II §5e.
 
-**Exit criteria**: distant textured faces are stable between the two poses (variance metric in gate 2e.3 drops materially vs the level-0-only build); close-up captures are unchanged (level 0 sampled); existing texture gates still pass.
+**Exit criteria**: distant textured faces are stable between the two poses (variance metric in gate 2e.3 drops materially vs the level-0-only build); close-up captures are unchanged (level 0 sampled); GPU LOD agrees with the CPU reference on the analytic cases; existing texture gates still pass.
 
 ---
 
@@ -1086,12 +1088,12 @@ Goal: prove the hook points exist before building on them. (Most source question
 
 | # | Test | Method | Pass criteria |
 |---|---|---|---|
-| 2e.1 | Mip chain correctness | generate the chain for known layers (checkerboard, gradient, cutout with transparent edges); compare against a CPU reference downsample using the Phase 5 premultiplied/edge-clamped rules | every level within tolerance of the reference; cutout edge texels carry no color bleed from transparent neighbors |
-| 2e.2 | LOD selection | textured plane at known distances; instrumented probe (debug capture encoding the sampled level, or readback of a level-tinted test texture) | sampled level matches the footprint estimate's expected level ±1 at every probed distance |
+| 2e.1 | Mip chain correctness | generate the chain for known layers (checkerboard, gradient, cutout with transparent edges); compare against a CPU reference downsample using the Phase 5 premultiplied/edge-clamped rules | every level within tolerance of the reference; cutout edge texels carry no color bleed from transparent neighbors; cutout mean alpha per level tracks level 0 (coverage preservation) |
+| 2e.2 | LOD selection (ray cones, analytic) | CPU reference of the LOD formula (docs/phase2e-mipmaps.md §2) vs GPU debug-LOD-view readback on a textured plane: fronto-parallel at doubling distances, then at increasing slant | distance doubling raises LOD by 1 (±0.15); slant adds −log2(cos θ) (±0.15); GPU and CPU agree within 0.15 LOD at every probed point, silhouettes excluded |
 | 2e.3 | Aliasing reduction | distant textured wall captured from two camera poses offset by a sub-pixel amount, mip build vs level-0-only build | inter-pose pixel variance on the wall region drops by at least half with mips; close-up capture (level 0 range) is pixel-identical to the pre-mip build |
 | 2e.4 | No regression | re-run the texture hookup gates (treebuild checkerboard, engine UltiCa) + full workspace suite | all pass |
 
-**Gate:** 2e.1–2e.4 mandatory.
+**Gate:** 2e.1–2e.4 mandatory. Method: improved ray cones per docs/phase2e-mipmaps.md (the integrated implementation plan, 2026-11-15).
 
 ---
 
