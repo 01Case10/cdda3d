@@ -277,6 +277,7 @@ struct VsOut {
     var scale = vec3<f32>(f.size, f.size, f.size);
     if (f.class_id == 2u || f.class_id == 3u) { scale.y = f.size * 0.55; } // gas/liquid stay low
     if (f.class_id == 1u) { scale = vec3<f32>(f.size * 1.3, f.size * 1.7, f.size * 1.3); } // flame: wide billowing base, tall
+    if (f.class_id == 0u) { scale = vec3<f32>(f.size * 1.25, f.size * 1.35, f.size * 1.25); } // smoke billows
     let world = f.center + (corner - vec3<f32>(0.5, 0.0, 0.5)) * scale;
     var out: VsOut;
     out.clip = u.view_proj * vec4<f32>(world, 1.0);
@@ -313,6 +314,33 @@ fn fbm(p: vec3<f32>) -> f32 {
     for (var i = 0; i < 4; i++) { sum += amp * vnoise(p * fr); fr *= 2.0; amp *= 0.5; }
     return sum / 0.9375;
 }
+fn vhash3(p: vec3<i32>) -> vec3<f32> {
+    var n = u32(p.x + 4096) * 374761393u ^ u32(p.y + 4096) * 668265263u ^ u32(p.z + 4096) * 1274126177u;
+    n = (n ^ (n >> 13u)) * 1274126177u;
+    n = n ^ (n >> 16u);
+    var m = n ^ (n >> 7u);
+    m = (m ^ (m >> 11u)) * 2246822519u;
+    var k = n ^ (n >> 19u);
+    k = (k ^ (k >> 5u)) * 3266489917u;
+    return vec3<f32>(f32(n & 1023u) / 1023.0, f32(m & 1023u) / 1023.0, f32(k & 1023u) / 1023.0);
+}
+// Cellular (voronoi) F1: distance to the nearest jittered cell
+// point. 1-F1 gives rounded puff blobs — the core of the stylized
+// smoke look (see the smoke branch in fs_main).
+fn voronoi_f1(p: vec3<f32>) -> f32 {
+    let base = floor(p);
+    var f1 = 8.0;
+    for (var dz = -1; dz <= 1; dz++) {
+        for (var dy = -1; dy <= 1; dy++) {
+            for (var dx = -1; dx <= 1; dx++) {
+                let cell = base + vec3<f32>(f32(dx), f32(dy), f32(dz));
+                let pt = cell + vhash3(vec3<i32>(cell));
+                f1 = min(f1, length(pt - p));
+            }
+        }
+    }
+    return f1;
+}
 
 @fragment fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
     let f = fields[input.inst];
@@ -325,6 +353,7 @@ fn fbm(p: vec3<f32>) -> f32 {
     var scale = vec3<f32>(f.size, f.size, f.size);
     if (f.class_id == 2u || f.class_id == 3u) { scale.y = f.size * 0.55; }
     if (f.class_id == 1u) { scale = vec3<f32>(f.size * 1.3, f.size * 1.7, f.size * 1.3); }
+    if (f.class_id == 0u) { scale = vec3<f32>(f.size * 1.25, f.size * 1.35, f.size * 1.25); }
     let dir_l = view_dir / scale;
     let p = input.local;
     var t_enter = -1e9;
@@ -395,6 +424,40 @@ fn fbm(p: vec3<f32>) -> f32 {
     let d = length(c);
     let t = clamp((1.15 - d) / 0.9, 0.0, 1.0);
     let fall = (0.25 + 0.75 * (t * t * (3.0 - 2.0 * t))) * clamp(chord, 0.0, 1.0);
+    if (f.class_id == 0u) {
+        // SMOKE (redone 2026-11-15, Joey's pick: technique after
+        // Loop-Box's "Stylized Smoke Shader", godotshaders.com, CC0).
+        // The source runs on particle meshes with three maps — a
+        // voronoi noise, an alpha curve, a color gradient. The field
+        // pass binds no sprite data at all (gate 2b.2), so all
+        // three maps become procedural math here: voronoi cellular
+        // puffs scrolled upward, alpha remapped through a contrast
+        // curve with a stylized cutout edge, and a FLAT color
+        // gradient (dark base to light top, no directional shading
+        // — the source's empty light() is the point).
+        let billow = 1.15 - 0.35 * local.y; // cells grow as smoke rises and expands
+        var sp = vec3<f32>(local.x, local.y * 0.8, local.z) * (f.noise_scale * billow * 1.6) + vec3<f32>(f.seed);
+        sp.y -= u.time * f.noise_speed * 1.4;
+        sp.x += u.time * f.noise_speed * 0.22; // slight wind lean
+        let v1 = 1.0 - voronoi_f1(sp);
+        let v2 = 1.0 - voronoi_f1(sp * 2.13 + vec3<f32>(7.7));
+        let v = clamp(0.72 * v1 + 0.28 * v2, 0.0, 1.0);
+        let curve = smoothstep(0.18, 0.9, v); // the alpha-curve remap
+        // Billow silhouette: wider at the top, pinched at the base.
+        let taper = 1.0 + 0.5 * local.y;
+        let cx = (local.x - 0.5) * 2.0 / taper;
+        let cz = (local.z - 0.5) * 2.0 / taper;
+        let radial = length(vec2<f32>(cx, cz));
+        let shape = clamp(1.2 - radial, 0.0, 1.0) * (0.35 + 0.65 * smoothstep(0.0, 0.3, local.y));
+        let sdens = f.density * (0.25 + 0.75 * curve) * shape * pow(fall, 0.7);
+        let salpha = clamp(1.0 - exp(-sdens * 4.5), 0.0, 1.0);
+        if (salpha < 0.03) { return vec4<f32>(0.0); } // stylized cutout edge
+        // Color gradient: dark base/core to light top, flat.
+        let g = clamp(curve * (0.55 + 0.45 * local.y), 0.0, 1.0);
+        let dark = f.base_color * vec3<f32>(0.30, 0.29, 0.29);
+        let light = f.base_color * 0.98;
+        return vec4<f32>(mix(dark, light, g), salpha);
+    }
     var dens = f.density * fall * (0.45 + 0.55 * shaped);
     var emis = vec3<f32>(0.0);
     // (class 1, flame, returned early above — it has its own path.)

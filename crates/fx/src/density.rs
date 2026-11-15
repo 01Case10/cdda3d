@@ -90,6 +90,60 @@ pub fn fbm(p: Vec3) -> f32 {
     sum / 0.9375 // normalize by total amplitude
 }
 
+fn hash3v(x: i32, y: i32, z: i32) -> Vec3 {
+    let mut n: u32 = (x as u32).wrapping_mul(374761393)
+        ^ (y as u32).wrapping_mul(668265263)
+        ^ (z as u32).wrapping_mul(1274126177);
+    n = (n ^ (n >> 13)).wrapping_mul(1274126177);
+    n ^= n >> 16;
+    let a = (n & 1023) as f32 / 1023.0;
+    let mut m = n ^ (n >> 7);
+    m = (m ^ (m >> 11)).wrapping_mul(2246822519);
+    let b = (m & 1023) as f32 / 1023.0;
+    let mut k = n ^ (n >> 19);
+    k = (k ^ (k >> 5)).wrapping_mul(3266489917);
+    let c = (k & 1023) as f32 / 1023.0;
+    Vec3::new(a, b, c)
+}
+
+/// Cellular (voronoi) F1 distance — CPU reference for the WGSL
+/// `voronoi_f1` (behavioral mirror, own hash). 1−F1 gives the
+/// rounded puff blobs of the stylized smoke look.
+pub fn voronoi_f1(p: Vec3) -> f32 {
+    let base = p.floor();
+    let mut f1 = 8.0f32;
+    for dz in -1..=1 {
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let cell = base + Vec3::new(dx as f32, dy as f32, dz as f32);
+                let pt = cell
+                    + hash3v(cell.x as i32, cell.y as i32, cell.z as i32);
+                f1 = f1.min((pt - p).length());
+            }
+        }
+    }
+    f1
+}
+
+/// Smoke color gradient (CPU reference for the WGSL smoke path):
+/// flat mix from a darkened base color to a lightened one, driven
+/// by the alpha-curve value and height — the source shader's
+/// gradient map, as math.
+pub fn smoke_color(def: &EffectDef, curve: f32, y: f32) -> [f32; 3] {
+    let g = (curve * (0.55 + 0.45 * y)).clamp(0.0, 1.0);
+    let dark = [
+        def.base_color[0] * 0.30,
+        def.base_color[1] * 0.29,
+        def.base_color[2] * 0.29,
+    ];
+    let light = [
+        def.base_color[0] * 0.98,
+        def.base_color[1] * 0.98,
+        def.base_color[2] * 0.98,
+    ];
+    mix3(dark, light, g)
+}
+
 /// Soft silhouette falloff inside a unit volume: `local` in [0,1]^3,
 /// 1 at the center, 0 at and beyond the inscribed sphere's shell.
 /// This is what makes a field read as a volume, not a flat quad
@@ -135,6 +189,31 @@ pub fn density_at(def: &EffectDef, local: Vec3, time: f32, intensity: u8, weight
             let body = ((n - thresh) * 2.4).clamp(0.0, 1.0);
             let shape = (1.15 - radial).clamp(0.0, 1.0);
             d = effective_density(def, intensity) * weight * body * shape * flicker * 2.0;
+        }
+        // Smoke (redone 2026-11-15, stylized-shader technique —
+        // see `smoke_color`): voronoi puff pattern, alpha-curve
+        // remap, billow silhouette (wider at top, pinched base).
+        RenderClass::Smoke => {
+            let billow = 1.15 - 0.35 * local.y;
+            let mut sp = Vec3::new(local.x, local.y * 0.8, local.z)
+                * (def.noise_scale * billow * 1.6)
+                + Vec3::splat(def.seed());
+            sp -= def.world_drift() * (time * def.noise_speed);
+            let v1 = 1.0 - voronoi_f1(sp);
+            let v2 = 1.0 - voronoi_f1(sp * 2.13 + Vec3::splat(7.7));
+            let v = (0.72 * v1 + 0.28 * v2).clamp(0.0, 1.0);
+            let curve = smoothstep(0.18, 0.9, v);
+            let taper = 1.0 + 0.5 * local.y;
+            let cx = (local.x - 0.5) * 2.0 / taper;
+            let cz = (local.z - 0.5) * 2.0 / taper;
+            let radial = (cx * cx + cz * cz).sqrt();
+            let shape = (1.2 - radial).clamp(0.0, 1.0)
+                * (0.35 + 0.65 * smoothstep(0.0, 0.3, local.y));
+            d = effective_density(def, intensity)
+                * weight
+                * falloff(local).powf(0.7)
+                * shape
+                * (0.25 + 0.75 * curve);
         }
         // Gas stays low: density falls off with height in the volume.
         RenderClass::Gas | RenderClass::Liquid => {
@@ -282,6 +361,24 @@ mod tests {
         assert!(core[2] > core[0] * 0.45, "core must be pale-hot: {core:?}");
         // Rim is deep red-orange: red dominates, blue is small.
         assert!(rim[0] > rim[1] * 1.8 && rim[1] > rim[2], "rim must be deep red-orange: {rim:?}");
+    }
+
+    #[test]
+    fn voronoi_is_bounded_deterministic_and_cellular() {
+        let a = voronoi_f1(Vec3::new(0.3, 0.4, 0.5));
+        let b = voronoi_f1(Vec3::new(2.9, 0.4, 0.5));
+        assert!((0.0..1.6).contains(&a), "f1 {a}");
+        assert_eq!(a, voronoi_f1(Vec3::new(0.3, 0.4, 0.5)), "deterministic");
+        assert!((a - b).abs() > 0.05, "cellular structure must vary: {a} vs {b}");
+    }
+
+    #[test]
+    fn smoke_color_gradient_dark_base_to_light_top() {
+        let smoke = demo_defs().into_iter().find(|d| d.field_id == "fd_smoke").unwrap();
+        let lum = |c: [f32; 3]| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+        let base = smoke_color(&smoke, 0.1, 0.0);
+        let top = smoke_color(&smoke, 0.95, 1.0);
+        assert!(lum(top) > lum(base) * 1.8, "base {base:?} vs top {top:?}");
     }
 
     #[test]

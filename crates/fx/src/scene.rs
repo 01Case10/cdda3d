@@ -117,6 +117,7 @@ pub fn fire_scene() -> (Vec<BoxPrim>, Vec<PlacedField>) {
     ];
     let defs = demo_defs();
     let fire = defs.iter().find(|d| d.field_id == "fd_fire").unwrap().clone();
+    let smoke = defs.iter().find(|d| d.field_id == "fd_smoke").unwrap().clone();
     let mut fields = Vec::new();
     // A burning row: a big central blaze (3,3), neighbours at 2,
     // one small fire at 1 off to the side.
@@ -124,6 +125,15 @@ pub fn fire_scene() -> (Vec<BoxPrim>, Vec<PlacedField>) {
         fields.push(PlacedField {
             tile: [x, 4, 0],
             def: fire.clone(),
+            intensity,
+        });
+    }
+    // Smoke column rising over the central blaze (z-levels 1-2),
+    // as in the reference screenshots.
+    for (tile, intensity) in [([4, 4, 1], 2u8), ([5, 4, 1], 3), ([5, 4, 2], 2)] {
+        fields.push(PlacedField {
+            tile,
+            def: smoke.clone(),
             intensity,
         });
     }

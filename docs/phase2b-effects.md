@@ -251,3 +251,39 @@ What changed:
   base cores, red tips, light pool). Still a still-frame judgment:
   the rising/flicker animation is the other half of the look and
   is only verifiable in motion.
+
+## 9. Smoke redo (2026-11-15, Joey's pick of reference)
+
+Joey rejected the first smoke (generic fbm soft volume — a smooth
+grey cloud) and named the reference: Loop-Box's **Stylized Smoke
+Shader** (godotshaders.com, CC0). Its technique, on particle
+meshes: a **voronoi noise** map scrolled over time, **alpha
+remapped through a 1D curve** sampled at the noise value, **color
+from a gradient** driven by particle alpha, alpha-scissor cutout,
+and an **empty `light()`** — flat, unlit, stylized.
+
+Ported into the field-volume system with one hard constraint: the
+field pass binds no sprite/texture data at all (gate 2b.2), so the
+shader's three maps become procedural math in WGSL, mirrored in
+the CPU reference (`density.rs::voronoi_f1`, `smoke_color`):
+
+- **Voronoi F1** (jittered cellular, two scales) replaces fbm for
+  smoke: 1−F1 gives the rounded puff lobes. Cells grow with height
+  (billow), the pattern scrolls upward with a slight wind lean.
+- **Alpha curve**: `smoothstep(0.18, 0.9, v)` remaps the voronoi
+  value before density→alpha; alphas under 0.03 are cut to zero
+  (the scissor flavor — a defined stylized edge, not a fade).
+- **Flat gradient**: dark base (`base × 0.30`) to light top
+  (`base × 0.98`), driven by curve × height. No directional
+  shading term — flat is the look. First cut reused the flame-era
+  brightness (×0.42→×1.32) and read as glowing white steam over
+  the night fire scene; darkened after capture review.
+- **Silhouette**: billow shape — pinched at the base, wider at
+  the top (inverted taper vs flame), volume scaled 1.25×1.35.
+
+The fire showcase scene gained a smoke column over the central
+blaze (z-levels 1–2) so smoke is judged in context, as in the
+reference screenshots. Gates: 2b.2/2b.3/2b.5 re-verified against
+the new smoke path (obscurance is now voronoi-modulated but keeps
+its floor term, so intensity ordering and the white-backdrop
+deltas hold); fx 12 lib + 7 gate tests pass.
