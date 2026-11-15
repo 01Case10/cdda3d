@@ -1,5 +1,21 @@
 # New tiles: the butterfly and moth lifecycles, the alien meadow, the string dimension, the regional templates
 
+## Terrain batch 6: the vitrified terrain (Phase 2g.4, 2026-11-15)
+
+**All 16 missing ids in `terrain_vitrified.json`** — black-glass
+dirt, whorled glass floor/wall, octagonal glass tile, vitrified
+sand, and the glass wall with murky shapes frozen inside (full-tile;
+the translucency is the pane's own property), plus razor grass,
+spiral bush, glass bars, column, curtains, barbed fence, both
+stairs, and the smashed window frame over `bg: t_vitrified_floor`.
+Near-black blue-teal glass, pale specular light. Drawn by
+`draw_vitrified_terrain.py` (PIL, deterministic).
+
+Verified: release voxelizer test-tileset run, **16 materials, all
+`exact`, 0 missing** (48 layers), byte-identical re-run, parent
+re-verified. `preview_vitrified_terrain.png` is the contact sheet.
+Coverage: terrain missing **100 → 84**, coverage **92.1% → 93.4%**.
+
 ## Terrain batch 5: floors, roofs, z-level transitions (Phase 2g.4, 2026-11-15)
 
 **22 ids** from `terrain-floors-indoor.json`, `terrain-roofs.json`,

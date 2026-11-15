@@ -277,6 +277,26 @@ movement (overlay method, baseline 122 reproduced first): 22
 direct, no rescues — terrain missing **122 → 100**, coverage
 **90.4% → 92.1%** (1,149/1,271 → 1,171/1,271).
 
+## Created: the vitrified terrain (Phase 2g.4 batch 6, 2026-11-15)
+
+**All 16 missing ids in `terrain_vitrified.json`** — a landscape
+fused to glass: pebbled black-glass dirt, wood-whorl glass floor
+and wall, octagonal glass tile, dusty vitrified sand, and the glass
+wall with murky shapes frozen inside it (drawn full-tile: the
+translucency is a property of the pane itself), plus the feature
+set over `bg: t_vitrified_floor` — razor grass, spiral bush, thick
+glass bars, faceted column, draped-glass curtains, barbed coil
+fence, both stairs, and the smashed window frame. Palette:
+near-black blue-teal glass with pale specular light.
+`new-tiles/draw_vitrified_terrain.py`;
+`new-tiles/preview_vitrified_terrain.png`.
+
+Verified per the 2g.4 gate (parent re-run): **16 materials, all
+`exact`, 0 missing** (48 layers), byte-identical re-run. Coverage
+movement (overlay method, sequential chain from batch 5's 100):
+16 direct, no rescues — terrain missing **100 → 84**, coverage
+**92.1% → 93.4%** (1,171/1,271 → 1,187/1,271).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
