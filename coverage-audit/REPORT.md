@@ -629,6 +629,34 @@ overlay, baseline 217 reproduced): 51 newly covered + 1 upgrade
 `looks_like` to the brown trout, now has its own sprite) —
 monsters missing **217 → 166**, coverage **86.2%** (1,037/1,203).
 
+## Created: feral humans & the zed clusters (Phase 2g.4 batch 22, 2026-11-15)
+
+**All 40 missing ids in the feral-humans, zed_misc,
+zed_amphibian, and zed_amalgamation files (14 + 7 + 12 + 7)**:
+the ferals are living-skinned with the descriptions' shared
+tells — blackened bulging vein webs, bloodshot wide eyes,
+hunched twitching posture — differentiated by uniform and prop
+(sailors with wrench, crash axe, mop, lug wrench; the Marine's
+gleaming bayonet; the fungal-infected cop's sprouting vest; the
+six serum users in orange jumpsuit remnants, from Locutus's
+healthy glow to Anaximander's shadow-blend). The amalgamations
+are drawn to each entry's own creature plan, not as fused
+humanoids: the spotter's twin head-sized compound eyes on waving
+limbs, the corroder's caustic proboscis, the zapper crab's
+glowing organ, the soldier's vertical mouth. The zed frogs and
+toads share a parameterized renderer tuned per description
+(bone death-mask and beak, mummy wraps, smoke haze, shadow
+wreath). `new-tiles/draw_ferals_zeds.py`;
+`new-tiles/preview_ferals_zeds.png`.
+
+Verified per the 2g.4 gate (parent re-run): **40 materials, all
+`exact`, 0 missing** (120 layers); every monster PNG on disk
+byte-identical across the re-run. Coverage movement (monster
+overlay; baseline 124 at verification time because 42
+mammals/birds folders had already landed): 40 direct, no
+rescues — monsters missing **124 → 84**, coverage **93.0%**
+(1,119/1,203).
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

@@ -26,6 +26,23 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Monster batch 22: feral humans & the zed clusters (Phase 2g.4, 2026-11-15)
+
+**All 40 missing ids in the feral-humans, zed_misc,
+zed_amphibian, and zed_amalgamation files** — ferals with their
+uniforms and props, the ocular zombie and the fursuit, the
+amalgamations on their own creature plans (spotter, corroder,
+zapper, soldier, breathers), and the zed frogs/toads. Drawn by
+`draw_ferals_zeds.py` (PIL, deterministic), placement by resolved
+volume.
+
+Verified: test-tileset run (prebuilt release voxelizer), **40
+materials, all `exact`, 0 missing** (120 layers); every monster
+PNG on disk byte-identical across the re-run, parent re-verified.
+`preview_ferals_zeds.png` is the contact sheet. Coverage: monsters
+missing **124 → 84** (baseline taken with 42 mammals/birds
+folders already landed), coverage **93.0%**.
+
 ## Monster batch 21: the nether creatures (Phase 2g.4, 2026-11-15)
 
 **All 52 missing ids in `nether.json` and
