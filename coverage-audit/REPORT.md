@@ -1053,6 +1053,20 @@ JSON-declared ids counted, baseline 96 = 48 + 47 + the null
 terrain): **overmap terrain 96 → 0 of 484 — category complete
 at 100%.**
 
+## Extension item batches (2026-11-15)
+
+The 3,742 missing items are batched by defining file (91
+batches, `/tmp`-side index; batch = one file cluster, split at
+52). Item records are grouped below as batches verify; every
+batch individually passes the full gate (parent re-run:
+byte-identical, voxelizer all-`exact`/0-missing on its own
+folders, overlay count).
+
+- **ITEM01** — bionics 1/3 (52): CBM canisters with function
+  pictograms, armor body-part shells, deployed blade/claws,
+  the Exodii cyberlimbs and Cyberframes, the brass Cree'yn
+  heart. Items 3,742 → 3,690. `draw_item01.py`.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
