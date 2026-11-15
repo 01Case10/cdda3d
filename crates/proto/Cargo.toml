@@ -1,0 +1,13 @@
+[package]
+name = "proto"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CDDA Voxel Frontend IPC protocol: FlatBuffers schema bindings, framing, handshake, seq/epoch and heartbeat logic."
+
+[dependencies]
+flatbuffers = "=24.3.25"
+
+[[bin]]
+name = "proto-client"
+path = "src/bin/proto_client.rs"

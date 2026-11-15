@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  proto-compat:
+    # Phase 1 exit criterion: CI builds both sides (Rust proto crate + C++
+    # stub) and verifies schema compatibility via the cross-language tests.
+    # Linux-only for v1 (plan §14: Linux first).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatc 24.3.25 (pinned, matches the vendored headers)
+        run: |
+          curl -sL -o /tmp/flatc.zip https://github.com/google/flatbuffers/releases/download/v24.3.25/Linux.flatc.binary.g++-13.zip
+          unzip -o /tmp/flatc.zip -d /tmp/flatc-bin
+          echo "FLATC=/tmp/flatc-bin/flatc" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Schema compat — regenerated C++ header must match the checked-in one
+        run: |
+          "$FLATC" --cpp --gen-object-api -o /tmp/gen schema/cdda_ipc.fbs
+          diff /tmp/gen/cdda_ipc_generated.h tools/stub-server/cdda_ipc_generated.h
+
+      - name: Build C++ stub + round-trip tool
+        working-directory: tools/stub-server
+        run: ./build.sh
+
+      - name: C++ round-trip (gate 1.2)
+        run: tools/stub-server/cpp-roundtrip
+
+      - name: Rust proto tests (gates 1.1, 1.3-1.14; includes live cross-language stub tests)
+        run: cargo test -p proto
+        env:
+          CARGO_BUILD_JOBS: 2
+
+      - name: Rust formatting
+        run: cargo fmt -p proto --check

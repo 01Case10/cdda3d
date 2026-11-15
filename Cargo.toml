@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/proto", "crates/mesher", "crates/engine"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[profile.dev]
+# This VM has 1.5 CPUs / 6 GB; keep debug builds lighter.
+debug = 1

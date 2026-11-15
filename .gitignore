@@ -5,3 +5,7 @@ fork-src/
 tools/phase0/spike_out/
 tools/phase0/spike_ui_capture
 __pycache__/
+
+# Phase 1 stub-server build artifacts (rebuilt by tools/stub-server/build.sh)
+tools/stub-server/stub-server
+tools/stub-server/cpp-roundtrip

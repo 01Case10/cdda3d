@@ -17,8 +17,8 @@
 | Phase | Status | Updated | Notes |
 |---|---|---|---|
 | 0 — Recon confirmation and decisions | ✅ GATE PASSED (conditional — see Phase 0 record) | 2026-11-15 | Mandatory gate tests 0.3/0.4/0.6/0.7/0.8 pass at harness level; 0.1/0.2 not yet run — the only build they need is the curses/text build (the tiles/SDL3 build is **not required** by this project at all, updated 2026-11-15), and compiling even that is infeasible in the recon environment (1.5 CPU/6 GB) — with an exact unblock path; in-game spike halves written as a ready-to-apply probe patch. Must be run on a build-capable machine before Phase 3. Full record: Phase 0 section below + `docs/recon.md` |
-| 1 — Protocol and skeleton | Not started | — | |
-| 2 — Engine MVP with fake data | Not started | — | |
+| 1 — Protocol and skeleton | ✅ GATE PASSED (conditional — see Phase 1 record) | 2026-11-15 | All Linux gate tests pass locally (parent-verified: `cargo test -p proto` 16/16, C++ `cpp-roundtrip` PASS, live stub↔client flow). Conditions: CI workflow written but not yet run on GitHub (no remote yet — Joey creates it); 1.5 is a fuzz-shaped sweep (cargo-fuzz not run); 1.13 is header-layout agreement only (real shm attach is Phase 4 work); 1.15 Windows not run. Full record: Phase 1 section below |
+| 2 — Engine MVP with fake data | ✅ GATE PASSED (conditional — see Phase 2 record) | 2026-11-15 | Run in parallel with Phase 1; paused mid-run by Joey to add **headless capture** to scope, resumed same day with it built in. Parent-verified: mesher 8/8 + engine 16/16 tests, bench 2.12 greedy 0.397 ms/chunk (< 2 ms), capture mode exits 2 with the named no-adapter error and writes no PNG on this adapter-less VM. Conditions: 2.10 pixel comparison and 2.13 frame benchmark not run (no `wgpu` adapter here — must pass on an adapter machine, e.g. Joey's PC, before Phase 2 counts as fully closed); windowed app compiled + lib-tested but never run live here. Full record: Phase 2 section below |
 | 3 — Game-side export in the fork | Not started | — | |
 | 4 — UI compositing | Not started | — | |
 | 5 — Voxelizer and textures | Not started | — | |
@@ -202,7 +202,7 @@ Time estimates assume one developer working full time; scale accordingly. Phase 
 
 ---
 
-### Phase 1: Protocol and skeleton (1 week)
+### Phase 1: Protocol and skeleton (1 week) — ✅ GATE PASSED (conditional) 2026-11-15
 
 > **Dependencies:** ⛔ hard — Phase 0 gate. **Parallel with:** Phase 2 may start on the draft schema before this gate passes.
 
@@ -217,9 +217,18 @@ Time estimates assume one developer working full time; scale accordingly. Phase 
 
 **Exit criteria**: CI builds both sides and a test verifies schema compatibility.
 
+> #### Phase 1 completion record (2026-11-15, per the maintenance rule)
+> **What was actually built:** `schema/cdda_ipc.fbs` (Envelope union of all 14 message types from §6, sparse `FieldOnTile` + `field_index`, `lit:[LitLevel]`, facing NONE/LEFT/RIGHT only, vehicle `face_deg` float + absolute part positions); `crates/proto` (length-prefixed framing with a 32 MiB cap rejected from the prefix alone, verified decode, handshake, `SeqTracker`, `HeartbeatTracker`, `UiShmHeader`, `proto-client` bin; flatbuffers pinned `=24.3.25`, codegen via flatc in `build.rs`); the C++ stub server in `tools/stub-server/` (vendored flatbuffers headers, checked-in generated header, procedural-house snapshot, input echo); `docs/protocol.md` (versioning rules); `.github/workflows/ci.yml` (Linux: flatc download, C++ header regen-diff, stub build, C++ round-trip, `cargo test -p proto`, fmt). Ran in parallel with Phase 2 as §5 allows.
+>
+> **Test-gate results (Part II §4), parent-verified by re-running the gates:** 1.1 ✅ (all messages + 200 randomized), 1.2 ✅ (`cpp-roundtrip` PASS), 1.3 ✅ both directions (C++ goldens ↔ Rust, semantic equality + committed goldens in `crates/proto/tests/golden/`), 1.4 ✅ with the nuance below, 1.5 ⚠️ partial (fuzz-shaped sweep: every single-byte flip + 20k mutations, no panic; cargo-fuzz itself not run), 1.6 ✅, 1.7 ✅, 1.8 ✅, 1.9 ✅ (real v2-schema encode → v1 decode), 1.10 ✅ (pure logic, clock-injected), 1.11 ✅ (live stub, both directions), 1.12 ✅ (live Unix socket), 1.13 ⚠️ partial (48-byte header, Rust asserts + C++ `static_assert`s agree; no cross-language shm attach — that is Phase 4 work), 1.14 ✅, 1.15 ⛔ not run (Linux-first per §14). Totals from the parent's own run: `cargo test -p proto` **16/16**.
+>
+> **Findings / deviations:** (1) Stock flatbuffers 24.3.25 `root()` does **not** check the file identifier and a flipped root offset could land on a valid empty envelope — `decode_message` now checks the `CDDA` identifier explicitly and rejects `MessageT::NONE`. Two inherent FlatBuffers limits are documented in the tests: a content-byte flip inside a string can verify with altered data (no checksum exists), and the builder's trailing ≤3 alignment-padding bytes are unreferenced, so truncating only those yields the identical message (the test asserts error-or-identical there, hard error elsewhere). (2) `displayed_field` is a `[DisplayedField]` struct vector, not packed `[uint32]` — lossless, no packing ambiguity. (3) "No transform" for open/close/bash/`looks_like` is an **absent** field, not `""` — the C++ object API packs `""` as absent, so absent is the only cross-language-representable form; documented in `docs/protocol.md` (absent ≡ empty). (4) `TileDef` also carries `rotate_to_groups` (named in Phase 3's exporter text).
+>
+> **Gate verdict: CONDITIONAL PASS.** Everything runnable on Linux in this environment passes; the conditions are: the CI workflow has not yet run on GitHub (no remote exists yet — Joey creates it, then CI must go green there), cargo-fuzz (1.5 full form) runs as a nightly job once CI exists, and 1.13's real shared-memory attach lands with Phase 4. Phase 3 may start on this gate **subject to Phase 0's own condition** (0.1/0.2 on a build-capable machine).
+
 ---
 
-### Phase 2: Engine MVP with fake data (1-2 weeks)
+### Phase 2: Engine MVP with fake data (1-2 weeks) — ✅ GATE PASSED (conditional) 2026-11-15
 
 > **Dependencies:** ⛔ hard — Phase 0 gate · soft — Phase 1 (final chunk format, for its gate only). **Parallel with:** Phases 1, 3, 5.
 
@@ -229,10 +238,21 @@ Time estimates assume one developer working full time; scale accordingly. Phase 
 - Camera: follow-player with orbit, zoom, pitch limits; z-level cutaway (hide everything above player z + N, or fade roofs).
 - Basic frame pacing (render only on change or when camera moves; the game is turn-based, but camera movement and effects are not).
 - Debug overlay: chunk borders, mesh stats, fps.
+- **Headless capture mode (added 2026-11-15, Joey's direction — the CDDA Voxel analogue of the Godot Xvfb capture workflow):** the engine must support offscreen rendering with no window and no X server — `cargo run -p engine -- --headless-capture --snapshot <stub-house | snapshot-file | stub-server> --camera <x,y,yaw,pitch> --size <WxH> --out <png>`. Inside that mode: create the `wgpu` instance/adapter/device with `compatible_surface: None` (no `winit` window, no surface), render to an offscreen `Rgba8UnormSrgb` texture (`RENDER_ATTACHMENT | COPY_SRC`) plus a depth texture using **the same pipelines and the exact same chunk meshes as the windowed path**, `device.poll(Wait)`, copy texture → staging buffer, map it, write a PNG via the `image` crate, and exit — no event loop. It feeds on Phase 2 fake data now and on real `Snapshot`/`Delta` data later (Phases 3+). The game side needs no equivalent: it is already headless by design (Phase 0, null `catacurses` backend) and its UI is already a CPU RGBA buffer whose PNG dump was proven in the Phase 0 spike (`tools/phase0/spike_out/spike_ui.png`).
+  - **Environment split (verified 2026-11-15 on the recon VM):** that VM has **no `/dev/dri`, no Vulkan ICD, and `mesa-vulkan-drivers` not installed**, so `wgpu` has no adapter there at all — the same class of limit as Godot 3D under Xvfb on that machine, not an engine bug. Therefore: (a) CI gates on this class of machine rely on mesh/snapshot hash tests and UI-buffer PNG dumps, **not** pixel captures; (b) pixel captures require either `mesa-vulkan-drivers` (lavapipe, software Vulkan — real but slow; small scenes only at 1.5 CPUs, a full 132×132 capture will crawl) or running the capture binary on Joey's PC (RX 9070 XT — the actual target hardware, and fast). The capture code must fail cleanly with a named "no adapter" error when no adapter exists, never panic or emit a blank PNG presented as a pass.
 
-**Deliverables**: fake house rendered as colored cubes, navigable camera, z-slider.
+**Deliverables**: fake house rendered as colored cubes, navigable camera, z-slider; **headless capture binary mode (above) plus `tools/capture.sh`** wrapping it (scene/camera/size/out arguments, non-zero exit on no-adapter).
 
 **Exit criteria**: 60 fps rendering a **132×132-tile area × the z-levels in the cutaway** (the real bubble footprint — v1's "60×60×10" understated the width by >2×; 60 is the view *radius*, not the width) on mid-range hardware.
+
+> #### Phase 2 completion record (2026-11-15, per the maintenance rule)
+> **What was actually built:** `crates/mesher` (pure Rust: 12×12 chunk columns, naive + greedy meshers, cross-chunk culling via a sampler, pass classification, dirty propagation, `WorldScale` config); `crates/engine` (camera with pitch clamp [20°, 85°], z-cutaway layer selection, fake-house world — ground + wood floor, wall perimeter, south door, 3 windows, roof-slab layer —, shared `render::Renderer` used by both the winit/wgpu windowed app and the headless path, debug-overlay state, render-on-change pacing, resize decision logic); **headless capture** exactly as scoped mid-phase (§5 task above, §7): `--headless-capture` offscreen mode + `tools/capture.sh`. Ran in parallel with Phase 1.
+>
+> **Test-gate results (Part II §5), parent-verified by re-running the gates:** 2.1–2.6 ✅ (mesher gate tests), 2.7 ✅ (camera lib tests incl. NaN/∞-corrupted inputs still yielding finite matrices), 2.8 ✅ (cutaway at z = −10/+10 and out-of-range ±100), 2.9 ✅, 2.10 ⚠️ partial — capture deliverable built and its adapter-less behavior proven (parent's own run: `tools/capture.sh …` → exit 2, stderr `headless-capture: no wgpu adapter available`, no PNG written); the pixel comparison itself is **not run** (no adapter on this VM) and its adapter-present branch has never run anywhere yet, 2.11 ✅ at lib level (`resize_action`: zero-size/unchanged → Ignore, real change → Reconfigure; the bin wires exactly this; a live window resize was not exercised — no display here), 2.12 ✅ (parent's own bench run: greedy **0.397 ms/chunk**, naive 0.300 ms/chunk, budget 2 ms), 2.13 ⛔ not run (no GPU) — data proxy instead (parent's own `--scene-report` run: 121 chunks, 17,424 tiles stored, 3 z-levels, 27,954 non-air blocks → 5,132 quads / 20,528 vertices, ~1,288 ms total meshing in a *debug* build, ~10.6 ms/chunk unoptimized — not comparable to the optimized 2.12 bench). Totals from the parent's own run: mesher 8/8, engine 16/16, workspace 40/40.
+>
+> **Decisions / deviations:** floor/ceiling (§14 Q1) = **thin slabs** — floor is the bottom 1 of a z-level's 3 blocks, roof the top 1, walls full height; a `WorldScale` config value, not a constant. Debug overlay renders as a window-title summary, not in-scene GUI; the chunk-borders toggle is state-only (border geometry not drawn in the MVP). Cutout pass shares the opaque pipeline (fake-data cutouts are fully opaque; alpha testing arrives with Phase 5 textures). Follow-target WASD moves in world axes, not yaw-relative. The windowed app has never run live (no display/adapter here) — first live run is on an adapter machine.
+>
+> **Gate verdict: CONDITIONAL PASS.** All data-level gates pass on this machine. **Conditions:** 2.10's pixel comparison and 2.13's frame benchmark must pass on an adapter-equipped machine (Joey's PC with the RX 9070 XT is the natural target — it is also where the windowed app gets its first live run) before Phase 2 is called fully closed; per the amended 2.10 gate line this does not block Phases 3/5, which do not depend on pixel output.
 
 ---
 
@@ -483,6 +503,10 @@ table Delta    { seq:uint64; epoch:uint64; tile_changes:[TileChange]; entity_upd
 
 ### Picking
 - Ray from cursor through the world; hit-test chunks (DDA voxel traversal) and billboards; send tile coordinate on click.
+
+### Headless capture (offscreen rendering)
+- A `--headless-capture` engine mode (Phase 2 deliverable, §5 Phase 2) renders the same chunk meshes through the same pipelines to an offscreen texture with no window/surface, reads the texture back, and writes a PNG — the direct analogue of the Godot projects' viewport `get_image()` readback, minus the X server. Windowed and headless paths must share mesh, camera, and pipeline code so a capture is evidence about the real renderer, not a parallel one.
+- Adapter reality: `wgpu` needs a Vulkan/Metal/DX adapter — a software one (lavapipe/WARP) counts for small scenes; a machine with no adapter at all (the recon VM as of 2026-11-15) can only run the data-level gates, and captures move to a machine with an adapter (developer's PC).
 
 ---
 
@@ -788,6 +812,8 @@ Goal: prove the hook points exist before building on them. (Most source question
 
 **Gate:** all of the above on Linux; CI green; golden files committed.
 
+**Phase 1 gate results (2026-11-15):** 1.1 ✅ · 1.2 ✅ · 1.3 ✅ · 1.4 ✅ (with documented FlatBuffers limits) · 1.5 ⚠️ fuzz-shaped sweep only · 1.6 ✅ · 1.7 ✅ · 1.8 ✅ · 1.9 ✅ · 1.10 ✅ (logic) · 1.11 ✅ · 1.12 ✅ · 1.13 ⚠️ header agreement only · 1.14 ✅ · 1.15 ⛔ Windows not run. Verdict: **conditional pass** — CI workflow written, first GitHub run pending repo creation. Full record in Part I's Phase 1 completion record.
+
 ---
 
 ## 5. Phase 2: Engine MVP (fake data)
@@ -805,12 +831,14 @@ Goal: prove the hook points exist before building on them. (Most source question
 | 2.7 | Camera math | yaw/pitch/zoom clamps; follow target | values stay within limits; no NaN at extremes |
 | 2.8 | Z-cutaway selection | each cutaway mode, player at several z including z = −10 and +10 extremes | expected set of z-layers/chunks drawn; no index errors at the extremes |
 | 2.9 | Dirty propagation | change a boundary block | both chunks marked dirty; unrelated chunks untouched |
-| 2.10 | Visual snapshot: fake house | headless render from 3 fixed cameras | image diff within tolerance of golden |
+| 2.10 | Visual snapshot: fake house | `--headless-capture` mode (offscreen `wgpu`, no window/surface — §5 Phase 2, §7) from 3 fixed cameras | image diff within tolerance of golden. **Environment condition (2026-11-15):** requires a `wgpu` adapter — lavapipe/WARP software adapter or a real GPU. On a machine with no adapter (the recon VM: no `/dev/dri`, no Vulkan ICD), this test is **not run** and the gate relies on 2.1–2.9 mesh-level tests instead; a blank or no-adapter render is never a pass. The capture mode itself (CLI, offscreen path, clean no-adapter error) is part of this test's deliverable even where the pixel comparison cannot run |
 | 2.11 | Resize and minimize | resize sequence, zero-size surface | no panic; depth buffer recreated |
 | 2.12 | Benchmark: meshing | `criterion`, 12x12xN chunk (N = cutaway depth) | under 2 ms per chunk (single thread) |
 | 2.13 | Benchmark: frame | scene filling the real view: up to 132×132 tiles stored, camera view at radius ~60, cutaway z-range | median under 16 ms on the reference machine. (v1's "60x60x10" scene understated the world; the scene must match plan §11) |
 
-**Gate:** 2.1-2.11 pass; benchmarks meet budgets.
+**Gate:** 2.1-2.11 pass; benchmarks meet budgets. 2.10's pixel comparison is adapter-conditional per its row (2026-11-15): where no `wgpu` adapter exists it is recorded as not-run with the capture deliverable still required, and must pass on an adapter-equipped machine before Phase 2 is called fully closed.
+
+**Phase 2 gate results (2026-11-15):** 2.1 ✅ · 2.2 ✅ · 2.3 ✅ · 2.4 ✅ · 2.5 ✅ · 2.6 ✅ · 2.7 ✅ · 2.8 ✅ · 2.9 ✅ · 2.10 ⚠️ capture deliverable proven (clean no-adapter exit), pixel comparison not run · 2.11 ✅ (lib level) · 2.12 ✅ greedy 0.397 ms/chunk · 2.13 ⛔ not run (no GPU), data proxy: 121 chunks / 17,424 tiles → 5,132 quads meshed. Verdict: **conditional pass**. Full record in Part I's Phase 2 completion record.
 
 ---
 

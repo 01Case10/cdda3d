@@ -10,8 +10,18 @@ must be updated after each phase** (see its maintenance rule).
 - **Phase 0 (recon): complete at harness level, conditional gate pass** —
   see `docs/recon.md` for the exit answers, spike results, decisions,
   and the blocked build items (0.1/0.2) with their unblock path.
-- Phase 1 (protocol + skeleton) is next; it does not depend on the
-  blocked items.
+- **Phase 1 (protocol + skeleton): conditional gate pass 2026-11-15** —
+  FlatBuffers schema, Rust `proto` crate, C++ stub server, live
+  client↔stub round-trip; see `docs/protocol.md` and plan.md's Phase 1
+  record. CI workflow exists; first GitHub run pending repo creation.
+- **Phase 2 (engine MVP, fake data): conditional gate pass 2026-11-15** —
+  mesher + engine crates, fake house, headless capture mode
+  (`tools/capture.sh`). Pixel gates (2.10/2.13) still owe a run on a
+  GPU machine — this VM has no `wgpu` adapter; see plan.md's Phase 2
+  record.
+- Phase 3 (game-side export) is next on the critical path, subject to
+  Phase 0's condition: tests 0.1/0.2 must run on a build-capable
+  machine first.
 
 ## Layout
 ```
@@ -20,11 +30,28 @@ docs/
   recon.md         Phase 0 deliverable: hook points, spikes, decisions
   hook-points.md   machine-extracted hook-point catalogue (file:line)
   licensing.md     Phase 0 licensing decision record (test 0.10)
-tools/phase0/      Phase 0 probes, spikes, and the fork probe patch
+  protocol.md      Phase 1 deliverable: protocol versioning rules
+schema/            cdda_ipc.fbs — the IPC FlatBuffers schema (Phase 1)
+crates/
+  proto/           schema codegen, framing, sync, proto-client (Phase 1)
+  mesher/          chunk data + naive/greedy meshers, no GPU deps (Phase 2)
+  engine/          wgpu/winit engine + --headless-capture mode (Phase 2)
+tools/
+  phase0/          Phase 0 probes, spikes, and the fork probe patch
+  stub-server/     C++ fake-snapshot server for protocol work (Phase 1)
+  capture.sh       headless PNG capture wrapper (Phase 2)
 fork-src/          pinned upstream checkouts (sparse; NOT the fork —
-                   the fork itself is created in Phase 1/3 per plan §3)
-crates/            Rust workspace (Phase 1)
+                   the fork itself is created in Phase 3 per plan §3)
 assets/            generated output (gitignored)
+```
+
+## Quick checks
+```
+export PATH="$HOME/.cargo/bin:$PATH"
+cargo test --workspace                       # proto + mesher + engine gates
+tools/stub-server/build.sh && tools/stub-server/cpp-roundtrip
+tools/capture.sh --snapshot stub-house --camera 6,6,45,45 \
+  --size 1280x720 --out captures/house.png   # needs a wgpu adapter
 ```
 
 ## Phase 0 re-run
