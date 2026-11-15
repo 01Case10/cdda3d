@@ -40,9 +40,11 @@
 
 pub mod fixtures;
 pub mod interp;
+pub mod mesh;
 pub mod model;
 pub mod store;
 
 pub use interp::{lerp_angle_deg, sample_vehicle, shortest_arc_deg, RenderPart, RenderVehicle};
+pub use mesh::{clear_vehicle, stamp_vehicle, VEHICLE_BLOCK_ID};
 pub use model::{PartKey, PartModel, VehicleModel, FLAG_BROKEN, FLAG_OPEN, FLAG_ROOF};
 pub use store::VehicleStore;

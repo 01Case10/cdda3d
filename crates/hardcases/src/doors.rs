@@ -45,6 +45,9 @@ pub enum Transition {
 pub struct DefTable {
     by_id: HashMap<u32, TileDefT>,
     id_by_string: HashMap<String, u32>,
+    /// The connect-group names, by the index defs reference (a
+    /// mod's new groups arrive here, gate 8.7).
+    connect_groups: Vec<String>,
     /// `t_open_air`'s def id, resolved by string id at build time
     /// (0 = the table has no open-air def; real TileDefs always
     /// do). Cached because [`crate::openair`] asks per tile.
@@ -54,6 +57,9 @@ pub struct DefTable {
 impl DefTable {
     pub fn from_tiledefs(defs: &TileDefsT) -> Self {
         let mut table = Self::default();
+        if let Some(groups) = &defs.connect_groups {
+            table.connect_groups = groups.clone();
+        }
         if let Some(list) = &defs.defs {
             for d in list {
                 if let Some(s) = &d.string_id {
@@ -70,6 +76,16 @@ impl DefTable {
 
     pub fn def(&self, id: u32) -> Option<&TileDefT> {
         self.by_id.get(&id)
+    }
+
+    /// Every def in the table (report generation, gate 8.7).
+    pub fn defs(&self) -> impl Iterator<Item = &TileDefT> {
+        self.by_id.values()
+    }
+
+    /// Connect-group names by index.
+    pub fn connect_groups(&self) -> &[String] {
+        &self.connect_groups
     }
 
     /// Resolve a transform's string result to its def id in this

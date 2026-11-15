@@ -7,4 +7,5 @@ description = "CDDA Voxel Frontend Phase 8: vehicle models from game-exported ab
 
 [dependencies]
 proto = { path = "../proto" }
+mesher = { path = "../mesher" }
 glam = "0.29"

@@ -28,6 +28,8 @@
 
 pub mod doors;
 pub mod openair;
+pub mod report;
 
 pub use doors::{classify_transition, DefTable, TileWorld, Transition};
 pub use openair::{floor_at, Column, Floor};
+pub use report::{missing_materials, missing_report_lines, unreferenced_defs, MissingDef};
