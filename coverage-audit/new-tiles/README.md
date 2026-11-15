@@ -26,6 +26,24 @@ All parent re-verified: voxelizer all-`exact`/0 missing,
 byte-identical re-runs, opacity checks clean, previews inspected.
 Furniture and monsters are the remaining drive.
 
+## Furniture batch 14: shores — regional flora, sea flora, decor (Phase 2g.4, 2026-11-15)
+
+**All 23 missing ids in `furniture-regional-pseudo.json`,
+`furniture-flora_marine.json`, and `furniture-decorative.json`** —
+the ten regional-pseudo placeholders drawn as the flora their
+roles name, the seven marine pieces (algae, kelp, sea lettuce,
+bladderwrack, anemone, sponge), and six decorative pieces
+(shackle, gazing ball, lighthouse light, styling station, two
+flagpoles). Drawn by `draw_furniture_shores.py` (PIL,
+deterministic).
+
+Verified: release voxelizer test-tileset run, **23 materials, all
+`exact`, 0 missing** (69 layers), byte-identical re-run, furniture
+folder count stable across the re-run (no sibling impact), parent
+re-verified. `preview_furniture_shores.png` is the contact sheet.
+Coverage: furniture missing **72 → 49**, coverage
+**89.9% → 93.1%**.
+
 ## Furniture batch 13: the vitrified furniture (Phase 2g.4, 2026-11-15)
 
 **All 32 missing ids in `furniture_vitrified.json`** — the whole

@@ -432,6 +432,31 @@ Coverage movement (furniture overlay, baseline 104 reproduced):
 **85.4% → 89.9%** (609/713 → 641/713). The remaining 72 are the
 two wave-2 furniture batches now running.
 
+## Created: shores — regional flora, sea flora, decor (Phase 2g.4 batch 14, 2026-11-15)
+
+**All 23 missing ids in `furniture-regional-pseudo.json`,
+`furniture-flora_marine.json`, and `furniture-decorative.json`**:
+the ten regional-pseudo placeholders (drawn anyway — zero is
+zero — each as the flora its regional role names: wildflower
+patch, scraggly weed, lily pads and reeds, fern undergrowth,
+cattails, cultivated flower bed, submerged ribbon weeds); the
+seven marine pieces (red and green algae, sugar kelp, sea
+lettuce, bladderwrack with its paired air bladders, sea anemone,
+sea sponge); and the six decorative pieces (wall shackle with
+sagging chains, gazing ball on its cement pedestal, lighthouse
+light, styling station, both indoor flagpoles).
+`new-tiles/draw_furniture_shores.py`;
+`new-tiles/preview_furniture_shores.png`.
+
+Verified per the 2g.4 gate (parent re-run): **23 materials, all
+`exact`, 0 missing** (69 layers), byte-identical re-run, and the
+furniture folder count held at 125 across the re-run — no sibling
+impact. Coverage movement (furniture overlay, baseline 72
+reproduced): 23 direct, no rescues — furniture missing
+**72 → 49**, coverage **89.9% → 93.1%** (641/713 → 664/713). The
+remaining 49 ids are enumerated in the audit working notes; they
+are the furniture-remainder batch's set, now running.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
