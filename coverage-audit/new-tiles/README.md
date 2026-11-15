@@ -47,6 +47,23 @@ monsters missing **42 → 0**, coverage **100.0%** — with terrain
 and furniture already at 0, the zero-drive is complete
 (0 / 0 / 0 on the final audit re-run).
 
+## Scope extension: all tiles (2026-11-15)
+
+On Joey's word ("when I said all tiles I meant all tiles") the
+drive continues into the audit's other five categories — items,
+overmap terrain, vehicle parts, traps, field types (4,484 ids).
+Extension batches, all parent re-verified (byte-identical
+re-runs, voxelizer all-`exact`/0-missing, overlay baselines
+reproduced):
+
+- **TRAP1** — the LIXA portal family (41 traps): green portal
+  pads, family glyphs, channel pips. Traps 121 → 80.
+  `draw_trap1.py`, `preview_trap1.png`.
+- **VEH1 + VEH2** — vehicle parts, first half (98): appliance/
+  solar cluster, weather stations, engines, frames, tanks.
+  Vehicle parts 195 → 97. `draw_veh1.py`, `draw_veh2.py`,
+  previews alongside.
+
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
 **42 of the enumerated final 84** — the seven geometric yrax

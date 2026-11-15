@@ -816,6 +816,29 @@ back 1–16, forward 1–16, unfold_entry 1–9, and the remaining
 trap batches were re-split from the measured still-missing
 list, so the union is exact.)
 
+## Extension batches VEH1 + VEH2: vehicle parts, first half (2026-11-15)
+
+**98 vehicle part ids**: VEH1 — the appliance/solar cluster
+(solar panels in folding/ground/reinforced/XL treatments, water
+wheels, wind turbines, three differentiated weather stations,
+the safehouse boiler's gauge-eyed pot belly, the glassblower's
+crucible, floodlights, size-graded car battery cells drawn from
+their shared abstract) and VEH2 — engines and frames (V-bank
+diesels sized by cylinder count, finned single-cylinder family,
+steam boilers with flywheels, turbine intake rings, electric
+motor cans up to the train traction motor, the dimensional
+perambulator's pram under its violet vortex, fridge/heater
+tanks told apart by cold/warm stripes, the debug jumper cable
+as a checkerboard-tagged artifact). `new-tiles/draw_veh1.py`,
+`new-tiles/draw_veh2.py`; previews alongside.
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **49 + 49 materials, all `exact`, 0 missing**
+(147 layers each) — the loader reads the `vehicle/` subdir;
+each batch's PNGs byte-identical across the parent re-run.
+Coverage (vehicle overlay, baseline 195 reproduced): 98 direct,
+no rescues — vehicle parts **195 → 97** of 483 total.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in
