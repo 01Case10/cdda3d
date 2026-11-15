@@ -906,6 +906,28 @@ overlay, baseline 90 reproduced): **field types 90 → 0 of
 the Phase 2b effects sampler (palette/emissive/density), so
 the scarlet/mi-go/air sets close a downstream gap there too.
 
+## Extension batch TRAP3: traps complete (2026-11-15)
+
+**40 trap ids** — the portal/stairs/hazard tail: the dungeon
+teleporter family as badged spiral vortices (entrance/exit/
+elsewhere/next-level told apart by chevron, daylight core, and
+star badges), the scarlet and string-dimension tunnel rings,
+the microlab shift pads and shifting halls, NL stair pairs with
+circled direction chevrons, LIXA fall shafts (the climbing
+variant roped), the "mysterious hallway" trio (the
+skip-the-teleporter one carrying an amber "!" as its own mark),
+and the hazards as themselves — sinkhole, sparkling chasm,
+coiled snake, trapdoor spider den, moonpool and its exit line,
+temple flood ledge and pressure plate, thick vs. thin ice,
+the void spider rift. `new-tiles/draw_trap3.py`;
+`new-tiles/preview_trap3.png`.
+
+Verified per the 2g.4 gate (parent re-run): **40 materials, all
+`exact`, 0 missing** (120 layers); every PNG byte-identical
+across the re-run. Coverage (trap overlay, baseline 40
+reproduced): **traps 40 → 0 of 150 — category complete at
+100%.**
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

@@ -75,6 +75,10 @@ reproduced):
   cold/hot air, the scarlet set, mi-go atmosphere, darkness
   and shadow. Field types 90 → 0 of 172 — **category
   complete**. `draw_field1.py`, `draw_field2.py`, previews.
+- **TRAP3** — traps complete (40): badged portal vortices,
+  stairs/shafts, moonpool, ice pair, void spider rift.
+  Traps 40 → 0 of 150 — **category complete**.
+  `draw_trap3.py`, `preview_trap3.png`.
 
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
