@@ -55,6 +55,14 @@ pub enum RecipeKind {
     Dirt,
     WoodFloor,
     Plaster,
+    Concrete,
+    Brick,
+    Stone,
+    Metal,
+    Glass,
+    Water,
+    Road,
+    Shingle,
 }
 
 impl RecipeKind {
@@ -64,13 +72,26 @@ impl RecipeKind {
             RecipeKind::Dirt => "dirt",
             RecipeKind::WoodFloor => "wood_floor",
             RecipeKind::Plaster => "plaster",
+            RecipeKind::Concrete => "concrete",
+            RecipeKind::Brick => "brick",
+            RecipeKind::Stone => "stone",
+            RecipeKind::Metal => "metal",
+            RecipeKind::Glass => "glass",
+            RecipeKind::Water => "water",
+            RecipeKind::Road => "road",
+            RecipeKind::Shingle => "shingle",
         }
     }
 
     /// Ground materials sample sprite centers (anatomy SS2:
-    /// transition fringes live at sprite edges).
+    /// transition fringes live at sprite edges). Water and road
+    /// are ground surfaces in the same sense: their sprites are
+    /// full-bleed fields whose edges carry transition art.
     pub fn is_ground(self) -> bool {
-        matches!(self, RecipeKind::Grass | RecipeKind::Dirt)
+        matches!(
+            self,
+            RecipeKind::Grass | RecipeKind::Dirt | RecipeKind::Water | RecipeKind::Road
+        )
     }
 }
 
@@ -299,6 +320,14 @@ fn render(kind: RecipeKind, palette: &[PaletteColor], analysis: &SpriteAnalysis,
         RecipeKind::Dirt => render_dirt(&mut img, &ramp, seed),
         RecipeKind::WoodFloor => render_wood_floor(&mut img, &ramp, analysis, seed),
         RecipeKind::Plaster => render_plaster(&mut img, &ramp, seed),
+        RecipeKind::Concrete => render_concrete(&mut img, &ramp, seed),
+        RecipeKind::Brick => render_brick(&mut img, &ramp, seed),
+        RecipeKind::Stone => render_stone(&mut img, &ramp, seed),
+        RecipeKind::Metal => render_metal(&mut img, &ramp, seed),
+        RecipeKind::Glass => render_glass(&mut img, &ramp, seed),
+        RecipeKind::Water => render_water(&mut img, &ramp, seed),
+        RecipeKind::Road => render_road(&mut img, &ramp, seed),
+        RecipeKind::Shingle => render_shingle(&mut img, &ramp, seed),
     }
     img
 }
@@ -418,6 +447,232 @@ fn render_plaster(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
             let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
             let t = 0.5 + (broad.sample_uv(u, v) - 0.5) * 0.16 + (fine.sample_uv(u, v) - 0.5) * 0.06;
             put(img, x, y, ramp.at(t.clamp(0.0, 1.0)));
+        }
+    }
+}
+
+/// Concrete: fine Worley grain (small cells, ~1.3 px) over a
+/// broad fBm unevenness, walked in a narrow ramp band — cast
+/// concrete is one material with pores and faint trowel patches,
+/// no pattern at tile scale. Sparse dark pits (air holes) via
+/// white noise.
+fn render_concrete(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let broad = Fbm::new(seed, 4).octaves(2);
+    let cells = Worley::new(seed ^ 0x9E37_79B9_7F4A_7C15, 24);
+    let pit_seed = seed ^ 0xD1B5_4A32_D192_ED03;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let ws = cells.sample_uv(u, v);
+            let t = 0.5 + (broad.sample_uv(u, v) - 0.5) * 0.22 + (ws.f1 - 0.45) * 0.16;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            if white_noise(pit_seed, x, y) < 0.03 {
+                lab.l = (lab.l - 0.05).max(0.0);
+            }
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Brick: running-bond courses. Course height 4 px, brick length
+/// 16 px, odd courses offset half a brick. Both phases are shifted
+/// (x + 8, y + 2) so the wrap edges fall mid-brick and mid-course —
+/// the Stage C wood-floor lesson: border-aligned mortar lines are
+/// what blew the seam budget there. Mortar takes the ramp's light
+/// end; each brick gets a deterministic ramp offset plus fine
+/// grain, so courses read as individual fired bricks.
+fn render_brick(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let grain = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 16).octaves(2);
+    let brick_seed = seed ^ 0x2545_F491_4F6C_DD1D;
+    let course_h: u32 = 4;
+    let brick_len: u32 = 16;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let sy = (y + course_h / 2) % TEXTURE_SIZE;
+            let course = sy / course_h;
+            let row_off = if course % 2 == 1 { brick_len / 2 } else { 0 };
+            let sx = (x + brick_len / 2 + row_off) % TEXTURE_SIZE;
+            let within_y = sy % course_h;
+            let within_x = sx % brick_len;
+            if within_y == 0 || within_x == 0 {
+                // Mortar: horizontal course line + vertical joints.
+                put(img, x, y, ramp.at(0.93));
+                continue;
+            }
+            let brick_id = sx / brick_len + course * (TEXTURE_SIZE / brick_len);
+            let brick_off = (white_noise(brick_seed, brick_id, course) - 0.5) * 0.34;
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.48 + brick_off + (grain.sample_uv(u, v) - 0.5) * 0.14;
+            put(img, x, y, ramp.at(t.clamp(0.0, 1.0)));
+        }
+    }
+}
+
+/// Stone: large Worley cells (~6 px) as individual stones — the
+/// F2-F1 signal draws the dark seams between them, and F1 shades
+/// each stone radially (lit toward its feature point, darker at
+/// the rim), which is how the source's rubble/rock walls read.
+fn render_stone(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let cells = Worley::new(seed, 5);
+    let grain = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 12).octaves(2);
+    let jitter_seed = seed ^ 0xD1B5_4A32_D192_ED03;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let ws = cells.sample_uv(u, v);
+            let t = 0.30 + ws.f1 * 0.38 + (grain.sample_uv(u, v) - 0.5) * 0.20;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            // Anti-aliased seam: blend toward the seam color as
+            // F2-F1 closes, instead of a hard 1 px line — the
+            // source's mortar joints are soft-edged too, and a
+            // hard line makes wrap-edge pixel pairs cliff-edge
+            // outliers against the smooth cell interiors.
+            let seam_d = ws.f2_minus_f1();
+            if seam_d < 0.14 {
+                let f = (1.0 - seam_d / 0.14) * 0.7;
+                lab = lerp_lab(lab, ramp.at(0.18), f);
+            }
+            // Per-pixel mineral jitter (the grass-speckle idiom):
+            // stone is grainy at pixel scale, and a uniform step
+            // floor keeps adjacent-pixel statistics stationary
+            // across the wrap border.
+            lab.l = (lab.l + (white_noise(jitter_seed, x, y) - 0.5) * 0.03).clamp(0.0, 1.0);
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Metal: brushed panels. The brush grain is noise stretched
+/// along x (one period across the tile horizontally, an 8 px
+/// period vertically — the wood-floor stretched-sample idiom), so
+/// streaks run horizontally. Panels are 16x16 with the phase
+/// shifted by 8 on both axes: seams (dark line + lip highlight)
+/// and corner rivets sit in the tile interior, never on the wrap.
+fn render_metal(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let brush = Fbm::new(seed, 8).octaves(3);
+    let panel: u32 = 16;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let sx = (x + panel / 2) % TEXTURE_SIZE;
+            let sy = (y + panel / 2) % TEXTURE_SIZE;
+            let g = brush.sample(x as f32 * 0.25, y as f32);
+            let t = 0.5 + (g - 0.5) * 0.30;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            let (wx, wy) = (sx % panel, sy % panel);
+            if wx == 0 || wy == 0 {
+                lab.l = (lab.l - 0.075).max(0.0); // panel seam shadow
+            } else if wx == 1 || wy == 1 {
+                lab.l = (lab.l + 0.016).min(1.0); // seam lip
+            }
+            if (wx == 2 || wx == panel - 3) && (wy == 2 || wy == panel - 3) {
+                lab.l = (lab.l + 0.055).min(1.0); // rivet heads
+            }
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Glass: near-flat by design — the material is a tinted pane.
+/// A faint diagonal specular streak crosses the pane (anatomy:
+/// UltiCa glass sprites carry painted diagonal streaks); the
+/// streak coordinate `(x + y) mod 32` is continuous across both
+/// wrap edges, so the streak tiles seamlessly.
+fn render_glass(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let broad = Fbm::new(seed, 4).octaves(2);
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.5 + (broad.sample_uv(u, v) - 0.5) * 0.05;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            let d = (x + y) % TEXTURE_SIZE;
+            if (10..=12).contains(&d) {
+                lab = ramp.at(0.85);
+            } else if d == 9 || d == 13 {
+                lab.l = (lab.l + 0.03).min(1.0);
+            }
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Water: two fBm layers at different scales drifting against
+/// each other — broad swells plus a finer ripple — walked in a
+/// mid ramp band. No hard features: open water has no pattern at
+/// tile scale, and the shoreline (Stage E shore.rs) supplies the
+/// edges. Sparse sparkle where the ripple peaks.
+fn render_water(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let swell = Fbm::new(seed, 3).octaves(2);
+    let ripple = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 9).octaves(2);
+    let sparkle_seed = seed ^ 0xD1B5_4A32_D192_ED03;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.5 + (swell.sample_uv(u, v) - 0.5) * 0.5 + (ripple.sample_uv(u, v) - 0.5) * 0.26;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            if white_noise(sparkle_seed, x, y) > 0.97 {
+                lab.l = (lab.l + 0.04).min(1.0);
+            }
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Road: asphalt — dark fBm aggregate with fine grain and sparse
+/// light/dark speckle (exposed aggregate and tar spots). Plain
+/// asphalt only; painted markings are map art, not material.
+fn render_road(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let broad = Fbm::new(seed, 6).octaves(3);
+    let grain = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 16).octaves(2);
+    let speckle_seed = seed ^ 0xD1B5_4A32_D192_ED03;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.44 + (broad.sample_uv(u, v) - 0.5) * 0.34 + (grain.sample_uv(u, v) - 0.5) * 0.16;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            let w = white_noise(speckle_seed, x, y);
+            if w > 0.93 {
+                lab.l = (lab.l + 0.035).min(1.0);
+            } else if w < 0.05 {
+                lab.l = (lab.l - 0.035).max(0.0);
+            }
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Shingle: overlapping tab rows. Row pitch 8 px, tab width 8 px,
+/// odd rows offset half a tab; both phases shifted (x + 4, y + 4)
+/// so wrap edges fall mid-tab and mid-row. The bottom two pixels
+/// of each row are the shadow gap under the overlapping row
+/// above's lip — the darkest line sits one pixel above the row
+/// boundary, in the tile interior's rhythm, not on the wrap.
+fn render_shingle(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let grain = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 12).octaves(2);
+    let tab_seed = seed ^ 0x2545_F491_4F6C_DD1D;
+    let row_h: u32 = 8;
+    let tab_w: u32 = 8;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let sy = (y + row_h / 2) % TEXTURE_SIZE;
+            let row = sy / row_h;
+            let row_off = if row % 2 == 1 { tab_w / 2 } else { 0 };
+            let sx = (x + tab_w / 2 + row_off) % TEXTURE_SIZE;
+            let within_y = sy % row_h;
+            let within_x = sx % tab_w;
+            let tab_id = sx / tab_w + row * (TEXTURE_SIZE / tab_w);
+            let tab_off = (white_noise(tab_seed, tab_id, row) - 0.5) * 0.30;
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.48 + tab_off + (grain.sample_uv(u, v) - 0.5) * 0.12;
+            let mut lab = ramp.at(t.clamp(0.0, 1.0));
+            if within_x == 0 {
+                lab.l = (lab.l - 0.045).max(0.0); // tab side gap
+            }
+            if within_y == row_h - 1 {
+                lab.l = (lab.l - 0.085).max(0.0); // shadow under the lip
+            } else if within_y == row_h - 2 {
+                lab.l = (lab.l - 0.035).max(0.0);
+            }
+            put(img, x, y, lab);
         }
     }
 }

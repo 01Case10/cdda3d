@@ -15,6 +15,7 @@ pub mod noise;
 pub mod overrides;
 pub mod props;
 pub mod quilt;
+pub mod shore;
 
 use image::{Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,7 @@ pub use noise::*;
 pub use overrides::*;
 pub use props::*;
 pub use quilt::*;
+pub use shore::*;
 
 /// Deterministic placeholder: magenta/black checker (plan §8 fallback).
 pub fn placeholder_image(size: u32) -> RgbaImage {

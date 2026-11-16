@@ -388,3 +388,33 @@ cleverer global rule. Depth uses a documented 2:1 foreshortening
 heuristic, clamped to the tile. Showcase:
 `examples/props_showcase.rs` -> target/stage-g/props.png, presented
 to Joey 2026-11-16 for the §12 quality sign-off before G.3.
+
+## 14. Stage E outcome (2026-11-16)
+
+Stage E is DONE in the voxelizer (parent re-verified in the main
+tree: `stage_e_gate` 3/3, lib 30/30, all prior gates green).
+Eight new recipes on the Stage C/D framework, all passing the §8
+targets unrelaxed (seam / mean ΔE_OK): concrete 1.045 / 0.0006,
+brick 0.695 / 0.0130, stone 1.052 / 0.0069, metal 0.339 / 0.0051,
+glass 0.901 / 0.0121, water 0.437 / 0.0138, road 0.968 / 0.0064,
+shingle 0.816 / 0.0109 (family fetched by id from
+t_shingle_flat_roof). Structured recipes keep features off the wrap
+edge by phase shift (the Stage C wood-floor lesson). `shore.rs`
+(§10.1, voxelizer half): shoreline autotiling from the 8-neighbor
+mask — chamfer distance field over the 96x96 neighborhood frame,
+radius-4 blur for corner rounding, ±2.5px fBm wobble, fixed material
+heights (water 0.0 / dirt 0.45 / grass 1.0) composited via
+height_blend, shallow tint within 14px of the waterline,
+`depth_shade` from field erosion. Gate: convex-corner texels are
+dirt (never water), all-water mask returns the water input
+byte-for-byte, pond mosaic corner-tile water coverage 38.6% vs the
+<60% target. HONEST VISUAL VERDICT (parent, target/stage-e/pond.png):
+the mosaic reads as a rounded-square pond — corners genuinely round
+and the dirt bank ring is continuous, but the straights stay
+straight; the mockup's fully circular pond is NOT yet matched at
+3x3-tile pond size, because the rounding radius is capped near one
+tile. Closing that gap means a larger straight-bow (pull the
+waterline further in mid-edge) — a tuning decision recorded here
+for Stage H, not silently baked in. Engine-side mask assignment +
+the §10.1 engine pond capture belong to the Stage F integration
+round, as planned.
