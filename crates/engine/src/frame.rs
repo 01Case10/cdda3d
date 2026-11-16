@@ -636,7 +636,58 @@ pub fn readback_rgba(
 /// Render one composed frame on an existing device/queue. This is
 /// the only frame composition in the engine: the capture path and
 /// the windowed app both call it (see the module docs).
+///
+/// Stage A internal resolution: with `args.render_scale > 1` the
+/// composition runs at `size / render_scale` (see
+/// `render_frame_inner`) and the result is integer-upscaled into a
+/// full-size texture with the PresentBlit's nearest sampler — the
+/// same blit the windowed app presents with, reused rather than a
+/// second upscale path. `render_scale == 1` calls the inner
+/// composition directly, byte-for-byte the pre-Stage-A frame.
 pub fn render_frame(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+) -> Result<FrameOutcome, CaptureError> {
+    let scale = args.render_scale.max(1);
+    if scale == 1 {
+        return render_frame_inner(device, queue, args);
+    }
+    let mut inner_args = args.clone();
+    inner_args.size = (
+        (args.size.0 / scale).max(1),
+        (args.size.1 / scale).max(1),
+    );
+    inner_args.render_scale = 1;
+    let inner = render_frame_inner(device, queue, &inner_args)?;
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("frame-upscaled"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: CAPTURE_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    PresentBlit::new(device, CAPTURE_FORMAT).draw(device, queue, &inner.texture, &view);
+    Ok(FrameOutcome {
+        texture,
+        size: (width, height),
+        quads: inner.quads,
+        stats: inner.stats,
+    })
+}
+
+fn render_frame_inner(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,

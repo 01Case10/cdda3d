@@ -68,29 +68,32 @@ fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
 }
 
 /// UV for a grid-space point `p` on face `di`, given the quad's
-/// per-axis grid minimum and extent (Phase 2f). Mirrors the RT
-/// shader's `tex_albedo` mapping exactly: top and bottom faces use
-/// `(x_fraction, y_fraction)`; side faces use
-/// `(horizontal_fraction, 1 - z_fraction)` so v = 0 is the texture's
-/// top row at the top of the voxel. Fractions are relative to the
-/// (possibly greedy-merged) quad, so a quad's UVs span [0,1]² across
-/// its whole extent.
-fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], quad_ext: [f32; 3]) -> [f32; 2] {
+/// per-axis grid minimum (Phase 2f; Stage A of the procedural
+/// texture pipeline rework). Mirrors the RT shader's `tex_albedo`
+/// mapping: top and bottom faces use `(x, y)` in tile units; side
+/// faces use `(horizontal, 1 - z)` in tile units so v = 0 is the
+/// texture's top row at the top of each voxel.
+///
+/// Stage A fix: UVs are in TILE UNITS, not fractions of the merged
+/// quad. The pre-fix version divided by the quad extent, so a
+/// greedy-merged quad spanned [0,1]² across its whole extent and
+/// stretched one sprite over the merged area (the smearing in the
+/// first textured screenshots). In tile units a merged quad's UVs
+/// span [0, w] x [0, h], and the engine's `Repeat` sampler wraps
+/// each integer interval to one full texture per tile. Quad minima
+/// sit on tile boundaries, so the repeat phase is anchored
+/// correctly; `quad_ext` is no longer needed and kept only so the
+/// two call sites read the same.
+fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], _quad_ext: [f32; 3]) -> [f32; 2] {
     let dir = FACE_DIRS[di];
     let axis = (0..3).find(|&a| dir[a] != 0).unwrap();
     if axis == 2 {
-        [
-            (p[0] - quad_min[0]) / quad_ext[0],
-            (p[1] - quad_min[1]) / quad_ext[1],
-        ]
+        [p[0] - quad_min[0], p[1] - quad_min[1]]
     } else {
         // The horizontal axis is the one that is neither the face
         // axis nor z.
         let h = (0..3).find(|&a| a != axis && a != 2).unwrap();
-        [
-            (p[h] - quad_min[h]) / quad_ext[h],
-            1.0 - (p[2] - quad_min[2]) / quad_ext[2],
-        ]
+        [p[h] - quad_min[h], 1.0 - (p[2] - quad_min[2])]
     }
 }
 

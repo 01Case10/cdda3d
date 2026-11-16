@@ -53,7 +53,7 @@ fn main() -> ExitCode {
         println!(
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
-             [--textures voxelizer-output-dir] [--effects effects.json] \
+             [--textures voxelizer-output-dir] [--render-scale N] [--effects effects.json] \
              [--fx-fields-off] [--fx-post-off] [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] \
              [--light-hour H] [--ui-stub] \
              --size WxH --out file.png] [--scene-report] \
@@ -98,6 +98,10 @@ fn main() -> ExitCode {
         vehicle_fixture: args.iter().any(|a| a == "--vehicle-fixture"),
         transient_fixture_ms: value_after(&args, "--transient-fixture")
             .and_then(|s| s.parse().ok()),
+        render_scale: value_after(&args, "--render-scale")
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|&v| v >= 1)
+            .unwrap_or(1),
     })
 }
 
@@ -226,6 +230,15 @@ fn headless_main(args: &[String]) -> ExitCode {
     if let Some(t) = value_after(args, "--textures") {
         cap.textures = Some(t.into());
     }
+    if let Some(s) = value_after(args, "--render-scale") {
+        match s.parse::<u32>() {
+            Ok(v) if v >= 1 => cap.render_scale = v,
+            _ => {
+                eprintln!("headless-capture: --render-scale must be an integer >= 1 (got '{s}')");
+                return ExitCode::from(2);
+            }
+        }
+    }
     if let Some(e) = value_after(args, "--effects") {
         cap.effects = Some(e.into());
     }
@@ -285,6 +298,7 @@ struct WindowConfig {
     light_hour: Option<f32>,
     vehicle_fixture: bool,
     transient_fixture_ms: Option<u64>,
+    render_scale: u32,
 }
 
 struct GpuState {
@@ -328,6 +342,7 @@ impl App {
         let camera = OrbitCamera::new(Vec3::new(6.0, 1.0, -6.0));
         let mut frame_args = CaptureArgs {
             renderer: cfg.renderer_kind,
+            render_scale: cfg.render_scale,
             textures: cfg.textures_dir,
             effects: cfg.effects,
             billboards: cfg.billboards,

@@ -68,6 +68,14 @@ pub struct CaptureArgs {
     pub pitch_deg: f32,
     pub distance: f32,
     pub size: (u32, u32),
+    /// Stage A internal resolution: when > 1, the frame is
+    /// composed at `size / render_scale` and integer-upscaled with
+    /// nearest filtering into the full-size output (the
+    /// PresentBlit pass), for a consistent texel density and the
+    /// deliberate pixel look. 1 = render at full size (the
+    /// pre-Stage-A behavior, byte-for-byte). Sizes should be
+    /// multiples of the scale for an exact integer upscale.
+    pub render_scale: u32,
     pub out: PathBuf,
     /// Player z for the cutaway (levels <= this z are drawn).
     pub cutaway_z: i32,
@@ -107,6 +115,7 @@ impl Default for CaptureArgs {
             pitch_deg: 45.0,
             distance: 28.0,
             size: (1280, 720),
+            render_scale: 1,
             out: PathBuf::from("captures/house.png"),
             cutaway_z: 1,
             lighting: None,

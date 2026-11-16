@@ -90,12 +90,15 @@ struct Uniforms {
     mode: u32,
     shadows: u32,
     /// Phase 2e debug LOD view: nonzero = `shade` returns a false
-    /// color by `floor(lod)` instead of albedo shading. The trailing
-    /// pad mirrors the WGSL struct's own trailing padding (its size
-    /// rounds up to the 16-byte vec3 alignment), keeping the buffer
-    /// at the shader's expected 112 bytes.
+    /// color by `floor(lod)` instead of albedo shading.
     debug_lod: u32,
-    _pad_debug: [u32; 3],
+    /// Stage A LOD tunables (see `crate::lod::LOD_BIAS` /
+    /// `NDOTV_WEIGHT` — the values written here come from those
+    /// constants). They occupy what was the trailing pad, keeping
+    /// the buffer at the shader's expected 112 bytes.
+    lod_bias: f32,
+    ndotv_weight: f32,
+    _pad_debug: u32,
 }
 
 #[repr(C)]
@@ -151,6 +154,9 @@ struct Uniforms {
     mode: u32,
     shadows: u32,
     debug_lod: u32,
+    lod_bias: f32,
+    ndotv_weight: f32,
+    _pad: u32,
 }
 @group(0) @binding(0) var<storage, read> nodes: array<GpuNode>;
 @group(1) @binding(0) var<storage, read> side: array<SideEntry>;
@@ -358,7 +364,9 @@ fn cone_lod(t: f32, n_dot_v: f32) -> f32 {
     let spread = atan(2.0 * u.tan_half_fov / f32(u.viewport.y));
     let w_hit = max(spread * t, 1e-4);
     let cosang = max(abs(n_dot_v), 1e-4);
-    var lod = delta + log2(w_hit) - log2(cosang);
+    // Stage A tunables: u.lod_bias and u.ndotv_weight (uniform-fed
+    // mirrors of crate::lod::LOD_BIAS / NDOTV_WEIGHT).
+    var lod = delta + log2(w_hit) - u.ndotv_weight * log2(cosang) + u.lod_bias;
     if lod != lod {
         lod = 0.0;
     }
@@ -719,15 +727,22 @@ impl TextureSet {
         // Trilinear sampler. The LOD clamps must span the whole
         // chain: a too-low lod_max_clamp silently degrades mips to
         // level 0 (docs/phase2e-mipmaps.md §3 W2 warning).
+        // Stage A: magnification is Nearest — the pre-fix Linear
+        // mag was the RT half of the "everything is soft/blurry"
+        // symptom (close-up faces were always bilinear-blurred).
+        // Min/mip stay Linear (trilinear minification via the
+        // ray-cone LOD). Address mode is Repeat so filtering wraps
+        // across voxel borders for tileable textures instead of
+        // clamping to the edge texel.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("rt-texture-sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: 0.0,
             lod_max_clamp: (mip_levels - 1) as f32,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
             ..Default::default()
         });
         let layers_data: Vec<[u32; 4]> = material_layers;
@@ -973,7 +988,9 @@ impl RtRenderer {
             mode: 0,
             shadows: 1,
             debug_lod: 0,
-            _pad_debug: [0; 3],
+            lod_bias: crate::lod::LOD_BIAS,
+            ndotv_weight: crate::lod::NDOTV_WEIGHT,
+            _pad_debug: 0,
         }
     }
 

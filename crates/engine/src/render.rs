@@ -405,11 +405,28 @@ impl Renderer {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
+        // Stage A (procedural texture pipeline rework): Nearest
+        // magnification keeps pixel-art texels crisp up close (the
+        // pre-fix Linear mag was the raster half of the "everything
+        // is soft/blurry" symptom); Linear min + mip stay for
+        // minification. `Repeat` address mode is required by the
+        // mesher's tile-unit UVs (a merged quad spans [0, w] x
+        // [0, h] and wraps once per tile).
+        //
+        // Deviation from the Stage A draft, forced by wgpu
+        // validation (hit on the first Stage A capture run):
+        // anisotropy > 1 requires ALL filter modes to be Linear,
+        // so the draft's "Nearest mag + anisotropy 8x" cannot
+        // exist in one sampler. Crisp magnification is the
+        // headline fix, so anisotropy stays at 1 here; oblique
+        // minification is carried by the Linear mip chain alone.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("raster-texture-sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
             ..Default::default()
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

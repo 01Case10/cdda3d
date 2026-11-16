@@ -32,8 +32,20 @@ pub fn spread_angle(tan_half_fov: f32, image_height: u32) -> f32 {
     (2.0 * tan_half_fov / image_height as f32).atan()
 }
 
+/// Stage A tunables (procedural texture pipeline rework, draft
+/// §4.11/§6.1): a constant LOD bias and a weight on the slant term,
+/// added because the unweighted `-log2(|N·V|)` term over-blurred
+/// surfaces seen at a tilt. The starting values are the draft's:
+/// bias −0.5 (half a mip sharper everywhere) and weight 0.5 (half
+/// the slant penalty). These are the values the WGSL `cone_lod`
+/// receives through the uniforms; tune them here and in the
+/// shader together — `mip_gate` cross-checks CPU vs GPU.
+pub const LOD_BIAS: f32 = -0.5;
+pub const NDOTV_WEIGHT: f32 = 0.5;
+
 /// Ray-cone LOD for a hit on a voxel face textured with a
-/// `tex_w` x `tex_h` layer: `Δ + log2(spread * t) - log2(|N·V|)`
+/// `tex_w` x `tex_h` layer:
+/// `Δ + log2(spread * t) - NDOTV_WEIGHT * log2(|N·V|) + LOD_BIAS`
 /// clamped to `[0, max_mip]`.
 ///
 /// Hygiene (docs/phase2e-mipmaps.md §2): `w_hit` and `|N·V|` are
@@ -44,7 +56,7 @@ pub fn ray_cone_lod(tex_w: u32, tex_h: u32, spread: f32, t: f32, n_dot_v: f32, m
     let delta = 0.5 * ((tex_w.max(1) * tex_h.max(1)) as f32).log2();
     let w_hit = (spread * t).max(1e-4);
     let cos = n_dot_v.abs().max(1e-4);
-    let lod = delta + w_hit.log2() - cos.log2();
+    let lod = delta + w_hit.log2() - NDOTV_WEIGHT * cos.log2() + LOD_BIAS;
     if !lod.is_finite() {
         return 0.0;
     }

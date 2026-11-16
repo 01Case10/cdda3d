@@ -222,19 +222,21 @@ fn gate_2e_2_cpu_analytic_lod() {
         let d = lod(t * 2.0, 1.0) - lod(t, 1.0);
         assert!((d - 1.0).abs() <= 0.15, "doubling at t={t}: LOD delta {d}");
     }
-    // Slant adds -log2(cos theta).
+    // Slant adds -NDOTV_WEIGHT * log2(cos theta) (Stage A: the
+    // weight halves the pre-Stage-A slant penalty of -log2(cos)).
     for deg in [30.0f32, 45.0, 60.0] {
         let cos = deg.to_radians().cos();
         let d = lod(200.0, cos) - lod(200.0, 1.0);
-        let want = -cos.log2();
+        let want = -treebuild::NDOTV_WEIGHT * cos.log2();
         assert!(
             (d - want).abs() <= 0.15,
             "slant {deg} deg: LOD delta {d}, want {want}"
         );
     }
-    // Delta for a 32x32 texture is 5: at w_hit == 1 the LOD is 5.
+    // Delta for a 32x32 texture is 5: at w_hit == 1 the LOD is
+    // 5 + LOD_BIAS (Stage A bias −0.5 → 4.5).
     let t_unit = 1.0 / spread;
-    assert!((lod(t_unit, 1.0) - 5.0).abs() <= 0.01);
+    assert!((lod(t_unit, 1.0) - (5.0 + treebuild::LOD_BIAS)).abs() <= 0.01);
     // Hygiene: clamps hold and NaN inputs cannot produce NaN out.
     assert_eq!(lod(1e-6, 1.0), 0.0, "close-up clamps to level 0");
     assert_eq!(lod(1e6, 0.0), max_mip, "grazing + far clamps to max mip");
