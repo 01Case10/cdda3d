@@ -1142,6 +1142,13 @@ folders, overlay count).
   **Fake cluster complete (62).** Items → 2,836.
   `draw_item22.py`, `draw_item23.py`.
 
+- **ITEM24 + ITEM25** — mutagens (52 + 9): IV primers as
+  injectors and oral mutagens as flasks, one renderer per
+  form, liquid color and label motif per mutation line;
+  the mutated arm/leg drawn as limbs. **Mutagen cluster
+  complete (61).** Items → 2,775. `draw_item24.py`,
+  `draw_item25.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
