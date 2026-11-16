@@ -13,6 +13,7 @@ pub mod material;
 pub mod multitile;
 pub mod noise;
 pub mod overrides;
+pub mod quilt;
 
 use image::{Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,7 @@ pub use material::*;
 pub use multitile::*;
 pub use noise::*;
 pub use overrides::*;
+pub use quilt::*;
 
 /// Deterministic placeholder: magenta/black checker (plan §8 fallback).
 pub fn placeholder_image(size: u32) -> RgbaImage {

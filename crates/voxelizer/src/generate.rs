@@ -422,6 +422,143 @@ fn render_plaster(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
     }
 }
 
+/// De-shade a whole image with the palette transform of
+/// [`deshade_palette`]: every pixel's OKLab L is compressed
+/// toward `median_l` by `shading_factor`, hue/chroma untouched.
+/// Stage D's quilting path runs this over the exemplars so the
+/// synthesized texture lives in the same albedo space as the
+/// Stage C noise renders (which draw from the de-shaded palette).
+fn deshade_image(img: &RgbaImage, median_l: f32, shading_factor: f32) -> RgbaImage {
+    let keep = 1.0 - shading_factor.clamp(0.0, 1.0);
+    if keep >= 1.0 {
+        return img.clone();
+    }
+    let mut out = RgbaImage::new(img.width(), img.height());
+    for (x, y, p) in img.enumerate_pixels() {
+        if p[3] < 128 {
+            out.put_pixel(x, y, *p);
+            continue;
+        }
+        let mut lab = Oklab::from_srgb_u8([p[0], p[1], p[2]]);
+        lab.l = median_l + (lab.l - median_l) * keep;
+        let [r, g, b] = lab.to_srgb_u8();
+        out.put_pixel(x, y, Rgba([r, g, b, p[3]]));
+    }
+    out
+}
+
+/// Shared Stage D inputs for one family: the de-shaded palette
+/// and analysis (exactly as [`generate`] computes them) plus the
+/// exemplar images quilting samples from — center crops for
+/// ground families (the same [`center_crop`] convention as the
+/// Stage C analysis), de-shaded pixel-wise with the same median
+/// and factor as the palette.
+fn quilt_inputs(
+    kind: RecipeKind,
+    family: &[RgbaImage],
+) -> (Vec<PaletteColor>, SpriteAnalysis, Vec<RgbaImage>) {
+    assert!(!family.is_empty(), "quilt inputs: empty family for {}", kind.name());
+    let working: Vec<RgbaImage> = if kind.is_ground() {
+        family.iter().map(center_crop).collect()
+    } else {
+        family.to_vec()
+    };
+    let refs: Vec<&RgbaImage> = working.iter().collect();
+    let analysis = analyze_family(&refs, PALETTE_K);
+    let palette = deshade_palette(&analysis.palette, analysis.shading.shading_factor);
+    let median_l = weighted_median_l(&analysis.palette);
+    let exemplars: Vec<RgbaImage> = working
+        .iter()
+        .map(|img| deshade_image(img, median_l, analysis.shading.shading_factor))
+        .collect();
+    (palette, analysis, exemplars)
+}
+
+/// Quilting geometry for ground synthesis: 12 px patches with a
+/// 4 px overlap (step 8 divides both the 32 px tile and the
+/// 128 px macro). Sub-exemplar patches (the ground center crop
+/// is 16x16) are the normal Efros-Freeman regime; the geometry
+/// was picked on measured gate margins — of the geometries tried
+/// (16/8, 14/6, 12/4) it gives the best worst-case seam across
+/// grass/dirt x tile/macro (max 0.99 vs the 1.15 target). The
+/// selection rule that keeps the synthesis from collapsing into
+/// single-exemplar tiling is documented in
+/// [`crate::quilt::pick_candidate`].
+const QUILT_TILE: crate::quilt::QuiltParams = crate::quilt::QuiltParams {
+    patch: 12,
+    overlap: 4,
+};
+
+/// Stage D alternative generation path for the ground recipes
+/// (Grass, Dirt): Efros–Freeman quilting over the family's
+/// (center-cropped, de-shaded) sprites instead of a noise render
+/// from the palette. The Stage C noise path ([`generate`]) is
+/// unchanged and stays the default; this path exists so the two
+/// can be compared per material (Stage G sign-off). Output is a
+/// 32x32 exactly-tileable texture in the same
+/// [`GeneratedTexture`] envelope, with the same de-shaded palette
+/// the metrics are scored against.
+pub fn generate_quilted(kind: RecipeKind, family: &[RgbaImage]) -> GeneratedTexture {
+    assert!(
+        kind.is_ground(),
+        "generate_quilted: only ground recipes (grass, dirt), got {}",
+        kind.name()
+    );
+    let (palette, analysis, exemplars) = quilt_inputs(kind, family);
+    let seed = family_seed(family) ^ seed_from_str(kind.name()) ^ seed_from_str("quilt");
+    let image = crate::quilt::quilt(&exemplars, TEXTURE_SIZE, QUILT_TILE, seed);
+    GeneratedTexture {
+        image,
+        palette,
+        analysis,
+    }
+}
+
+/// Macro ground textures are 128x128 = 4x4 tiles at the 32 px
+/// density (plan decision, pipeline doc SS3.3).
+pub const MACRO_SIZE: u32 = 128;
+
+/// One macro ground texture plus its stored height layer.
+#[derive(Debug, Clone)]
+pub struct MacroTexture {
+    /// The 128x128 quilted macro texture (fully opaque,
+    /// exactly tileable over the 4x4-tile span).
+    pub image: RgbaImage,
+    /// 128x128 stored height layer (OKLab L mapped to 0..=255;
+    /// see [`crate::quilt::height_layer`]).
+    pub height: image::GrayImage,
+    /// The de-shaded family palette the macro was synthesized
+    /// from.
+    pub palette: Vec<PaletteColor>,
+    /// The family analysis behind the palette (pre-de-shade).
+    pub analysis: SpriteAnalysis,
+}
+
+/// Stage D macro ground for Grass / Dirt: quilted at 128x128 so
+/// one texture spans 4x4 tiles — the repetition period moves from
+/// 1 tile to 4, which is what makes ground read as terrain rather
+/// than wallpaper at world scale. The height layer is derived
+/// from the finished macro (per-pixel OKLab L, stored explicitly)
+/// and feeds [`crate::quilt::height_blend`] at material borders;
+/// engine/GPU wiring of both is Stage F.
+pub fn generate_macro(kind: RecipeKind, family: &[RgbaImage]) -> MacroTexture {
+    assert!(
+        kind.is_ground(),
+        "generate_macro: only ground recipes (grass, dirt), got {}",
+        kind.name()
+    );
+    let (palette, analysis, exemplars) = quilt_inputs(kind, family);
+    let seed = family_seed(family) ^ seed_from_str(kind.name()) ^ seed_from_str("macro");
+    let image = crate::quilt::quilt(&exemplars, MACRO_SIZE, QUILT_TILE, seed);
+    let height = crate::quilt::height_layer(&image);
+    MacroTexture {
+        image,
+        height,
+        palette,
+        analysis,
+    }
+}
+
 /// Plan SS8 quality metrics for generated textures.
 pub mod metrics {
     use super::*;

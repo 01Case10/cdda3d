@@ -206,3 +206,88 @@ bit-exact edge tileability). One open input for Stage C: UltiCa
 has no `t_roof` terrain entry — roof palettes can only come from
 mapgen scene illustrations (shading factor 1.00) unless Joey
 picks another source.
+
+## 10. Stage E/F additions — mockup-driven scope (2026-11-16, Joey's direction)
+
+Source: the finished-look mockup of the sample scene
+(`~/workspace/imagine_media/`, concept image — NOT an engine render).
+Joey's call: the engine output should get close to it, specifically
+(a) shrubs/tufts standing on the grass and (b) round-looking ponds.
+Both are now plan items, not chat-only ideas.
+
+### 10.1 Stage E addition — circular ponds via shoreline autotiling
+
+Terrain data stays square tiles; the rounding lives in the texels.
+
+- Water recipe (Stage E) ships with shore variants selected by the
+  8-neighbor mask, reusing the Phase 2d canonical mask→subtile
+  machinery (`voxelizer/src/multitile.rs`, `neighbors_connect`).
+- Interior water tiles: plain water texture. Edge tiles: generated
+  shore texture — waterline drawn as a curve (quarter-circle arcs on
+  corners, a smooth bow on straights) over a dirt bank, composed with
+  the Stage D height blend (height order water < dirt < grass forces
+  the blend, no per-tile hand tuning).
+- Land tiles adjacent to water get the matching dirt ring on their
+  side of the border.
+- Depth cue: erode the neighbor mask once; edge distance selects
+  shallow vs deep water color (interior reads darker).
+- No engine/shader changes: both renderers already sample one
+  texture per voxel face (Stage A UV rules), so the curve appears in
+  RT and raster identically. The SDF-in-shader alternative (perfectly
+  smooth waterline) is deferred — at 32px texel density the
+  autotiled curve is expected to carry it; revisit only on Stage G
+  A/B evidence.
+- Gate: sample-scene pond capture in both renderers; corner tiles
+  show the arc (pixel check: corner texels on the land side of the
+  arc are dirt/grass, not water), interior unchanged, determinism
+  byte-identical.
+
+### 10.2 Stage F addition — decoration scatter (shrubs/tufts on grass)
+
+Purely visual; no simulation or protocol change.
+
+- Voxelizer generates a small set of alpha sprites (grass tuft, low
+  shrub, flowering variant) from the grass family's own pixels,
+  packed in the existing billboard atlas format.
+- Placement is derived client-side from world tile coordinates with
+  the noise module's integer hashing: for each exposed grass/dirt
+  ground tile, the hash picks 0–2 decorations, in-tile jitter, and
+  variant. Identical on every client and in both renderers from the
+  same snapshot; nothing new crosses IPC.
+- Density is modulated by the Stage D macro height layer so
+  decorations clump in patches rather than sprinkling uniformly.
+  Excluded: floors, water, under-roof tiles.
+- Rendering reuses the billboard pass (cylindrical Y-only instances,
+  frame order world → fields → billboards, depth-tested against
+  raster geometry and RT traced depth, floor-surface lift already
+  applied). Decorations are NOT registered for picking — clicks pass
+  through.
+- Perf gate: decoration instance count for the sample scene
+  reported; frame-time verdict waits for the RX 9070 XT (existing
+  billboard stress numbers are llvmpipe-only and do not settle it).
+
+## 11. Stage D outcome (2026-11-16)
+
+Stage D is DONE (plan.md Phase 5 record carries the full addendum).
+`quilt.rs` ships Efros–Freeman quilting on a torus (patch candidates
+wrap the exemplar; min-error boundary cut by DP over the overlap
+error surface; deterministic seeded candidate choice), wired into
+`generate.rs` as `generate_quilted` / `generate_macro` for grass and
+dirt alongside the untouched Stage C noise path. Macros are 128px
+with a stored height layer (per-pixel OKLab L); `height_blend` is
+the CPU reference composite (stored height + weight bias, higher
+wins). Parent-verified in the main tree (`stage_d_gate` 2/2, targets
+NOT relaxed): quilted grass seam 0.952 / ΔE 0.0034, dirt 0.782 /
+0.0051; macro grass seam 0.986 (height std 12.74), dirt 0.960 (std
+4.55); byte-identical determinism for tiles, macros, and height
+layers; blend endpoints exact and a synthetic high-height patch
+punches through at weight 0.5. Contact sheet visually checked —
+quilted tiles carry real sprite grain vs Stage C's mottled noise.
+One finding worth keeping: naive candidate rules collapse into
+tiling a single exemplar (an exact self-continuation always exists
+on a torus); the shipped rule — best candidate per exemplar, seeded
+pick among those within 4x global best — keeps the whole family in
+play (documented at `pick_candidate` in quilt.rs). Next: Stage E
+remaining materials + §10.1 shoreline autotiling; Stage F end-caps,
+side faces, world-space ground mapping, §10.2 decoration scatter,
+materials.json v2 migration.
