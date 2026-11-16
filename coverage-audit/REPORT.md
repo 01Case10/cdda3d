@@ -1149,6 +1149,12 @@ folders, overlay count).
   complete (61).** Items → 2,775. `draw_item24.py`,
   `draw_item25.py`.
 
+- **ITEM26 + ITEM27** — vegetable dishes (52 + 7): plated
+  roasted/fried vegetables, split beans-and-rice bowl,
+  pickles in their jars, aspic, vac-bagged salted veg.
+  **Veggy-dishes cluster complete (59).** Items → 2,716.
+  `draw_item26.py`, `draw_item27.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
