@@ -1184,6 +1184,12 @@ folders, overlay count).
   cases told apart by Rx glyph and cap tint. Items →
   2,470. `draw_item32.py`.
 
+- **ITEM33** — tailoring resources (44): fabric patches
+  with stitch borders by weave, wide sheets with hems,
+  patchwork grids, scrap handfuls, the Kevlar plate and
+  ballistic panel as themselves. Items → 2,426.
+  `draw_item33.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
