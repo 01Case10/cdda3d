@@ -1238,6 +1238,12 @@ folders, overlay count).
   prism with rainbow fan, portal ring vs. handheld
   teleporter. Items → 2,118. `draw_item41.py`.
 
+- **ITEM42** — inactive bots (34): dormant machines,
+  powered down — manhacks by payload, security drones by
+  hull color, turrets on folded tripods, slumped
+  humanoids and split-flesh cyborgs, Yrax gold forms.
+  Items → 2,084. `draw_item42.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
