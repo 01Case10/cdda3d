@@ -88,7 +88,7 @@ All paths are relative to the repo root.
 | 2. 32 px vs 64 px generated textures | **Recommendation: stay 32 px for v1 (Joey's call).** The LOD constant (delta = 5), the 6-level mip chain, and texel density all assume 32; 64 px doubles layer memory and changes delta everywhere. Revisit only if Stage C contact sheets show 32 px is the binding constraint. |
 | 3. Macro texture size 128 vs 256; height layer vs luminance | **128 px, stored height layer (draft's default).** 128 = 4×4 tiles at the same texel density, so delta is unchanged; a stored height layer is what §4.11's height-based blending needs, luminance is a lossy proxy. 256 px only if the 128 px repetition metric (§8) fails. |
 | 4. Shareable materials between tilesets | **Yes, document as a feature.** The design already supports it (recipes + per-tileset palettes); Stage B writes one paragraph in the voxelizer README. No code change. |
-| 5. How much original sprite look stays for furniture/decals | **Joey's call at the Stage E review.** Default: decals keep the sprite's alpha shape (draft §4.8); furniture stays extruded-sprite models (plan.md §8). Flag it in the Stage G sign-off, don't pre-decide. |
+| 5. How much original sprite look stays for furniture/decals | **Joey's call at the Stage E review.** Default: decals keep the sprite's alpha shape (draft §4.8); furniture stays extruded-sprite models (plan.md §8). Flag it in the Stage H sign-off, don't pre-decide. **Superseded in part 2026-11-16:** furniture no longer stays extruded-sprite by default — Joey directed props to become real 3D (Stage G, §12); the open call narrows to decals and how far the archetype set goes. |
 | 6–8. RT is software compute; raster stays fallback; one voxel per tile for now | **Resolved — already true in code.** No action. |
 
 ## 4. Decisions needed from Joey (nothing else blocks Stage A)
@@ -127,7 +127,7 @@ Sections 1–12 of the draft stand as written, with the corrections in §2
 applied and the open questions in §3 resolved as tabled. Stages B–H,
 the §8 metrics, and the §9 test plan need no further finishing — they
 were complete in the draft; the verification above is what was missing.
-Total estimate stays 8–10 weeks to Stage G; Stage A is a day or two and
+Total estimate stays 8–10 weeks to Stage H (Stage G Props 3D inserted 2026-11-16, §12; tuning/sign-off moved to Stage H); Stage A is a day or two and
 may shrink the rest.
 
 ## 7. Stage A outcome (2026-11-16, Joey's go; 32 px stays for v1)
@@ -235,7 +235,7 @@ Terrain data stays square tiles; the rounding lives in the texels.
   texture per voxel face (Stage A UV rules), so the curve appears in
   RT and raster identically. The SDF-in-shader alternative (perfectly
   smooth waterline) is deferred — at 32px texel density the
-  autotiled curve is expected to carry it; revisit only on Stage G
+  autotiled curve is expected to carry it; revisit only on Stage H
   A/B evidence.
 - Gate: sample-scene pond capture in both renderers; corner tiles
   show the arc (pixel check: corner texels on the land side of the
@@ -291,3 +291,75 @@ play (documented at `pick_candidate` in quilt.rs). Next: Stage E
 remaining materials + §10.1 shoreline autotiling; Stage F end-caps,
 side faces, world-space ground mapping, §10.2 decoration scatter,
 materials.json v2 migration.
+
+## 12. Stage G — Props 3D (2026-11-16, Joey's direction)
+
+Source: the lab mockup review. Joey's call: props (furniture) are to
+be rendered as real 3D objects based on their sprites, eventually —
+not extruded-sprite models. This inserts Stage G between Stage F and
+the tuning/sign-off stage, which moves to **Stage H**.
+
+Premise, stated plainly: a sprite is one flat projection; the depth
+is not in the data. Prop geometry is therefore *inference*, from
+three sources the pipeline already has:
+
+1. **Drawing convention.** UltiCa furniture sprites are 3/4-view:
+   top rows = top surface, the band below = front face, sometimes a
+   side sliver. `analyze.rs` (structure-tensor orientation, per-sprite
+   shading direction; anatomy in `docs/sprite-anatomy.md`) segments a
+   sprite into top / front / side regions.
+2. **Baked shading.** The sprite's light gradient gives surface
+   orientation hints — enough for bas-relief depth, not true shape.
+3. **Category.** The Stage B classifier already labels the archetype
+   (tank, table, console, bunk, shelf) — a strong shape prior.
+
+### Work items, in build order
+
+- **G.1 Box decomposition.** Segment the sprite (top/front/side),
+  un-project each region onto the matching face of a cuboid whose
+  proportions come from the segment sizes. Props gain real top faces
+  and depth. Shares segmentation machinery with Stage F's wall
+  end-caps; target: the furniture classes where a box is honest
+  (counters, lockers, shelves, crates, appliances).
+- **G.2 Column voxelization.** Each sprite pixel becomes a column
+  footprint on a sub-tile grid (32x32, matching the sprite 1:1);
+  column height derives from position within the front segment plus
+  shading relief. Output is plain voxels, so both renderers consume
+  it unchanged (raster mesher + RT tree) and lighting/shadows/
+  occlusion come for free. Carrier: the Stage F `materials.json` v2
+  migration gains an optional per-id voxel-model blob; the engine
+  stamps models into the world at build time; picking still resolves
+  to the owning tile. Target: irregular props (machinery, rubble,
+  tanks approximately) and everything G.1 can't box honestly.
+- **G.3 Parametric archetypes.** Hand-built procedural geometry
+  templates for the hero archetypes (containment tank, console desk,
+  dissection/autopsy table, bunk, shelf unit), dimensions fit to the
+  sprite silhouette, textured with the generated textures from the
+  sprite's palette, sprite front detail kept as a decal. Per-archetype
+  effort, so the set is prioritized by location: **lab set first**
+  (the mockup that prompted this stage), then jail, then city
+  interiors.
+
+### Rules
+
+- Deterministic generation only — same rules-and-gates discipline as
+  the texture stages (byte-identical re-runs). ML depth estimation /
+  image-to-3D is explicitly out: non-deterministic, untestable
+  against the gates.
+- Inferred geometry must never change gameplay meaning: prop voxels
+  are visual; collision, movement, and LOS (line of sight) stay with
+  the game's tile data, exactly as decoration scatter (§10.2).
+- Fallback is the current extruded-sprite model: any id the
+  segmentation can't read confidently keeps today's rendering rather
+  than getting a guessed shape.
+
+### Gates
+
+- Segmentation accuracy spot-checked on a cited sprite set (the
+  anatomy doc's method: measured, named sprites).
+- Lab room capture in both renderers with G.1/G.2 props vs the
+  extruded-sprite baseline: geometry counts reported, goldens
+  regenerated only after visual inspection.
+- Determinism: model blobs byte-identical on re-run.
+- Frame-time verdict on the RX 9070 XT (llvmpipe numbers do not
+  settle sub-tile voxel counts).
