@@ -176,6 +176,21 @@ are gone; what remains visibly "spritey" at close range — baked
 B–F address. (Joey's call, 2026-11-16: proceed — B and the noise
 foundation ran in parallel; see §8.)
 
+## 9. Stage C outcome (2026-11-16)
+
+Stage C is DONE (plan.md Phase 5 record carries the full
+addendum). `generate.rs` ships the recipe framework (family
+pooling with transition subtiles excluded, `deshade_palette`,
+content-hash seeding) and the first four recipes — grass, dirt,
+wood floor, plaster — all passing the §8 targets in
+`stage_c_gate` (seam 0.26–1.09 vs < 1.15; mean ΔE_OK
+0.006–0.028 vs < 0.04; 10 palette colors vs ≤ 24; byte-identical
+determinism). The sample scene renders with generated grass in
+both renderers. Next: Stage D quilting + macro ground, Stage E
+remaining materials (shingle included — it has its own UltiCa
+entry; other roof terrains inherit floor families via the game's
+`looks_like`, so no roof recipe is needed).
+
 ## 8. Stage B + noise outcome (2026-11-16)
 
 Stage B is DONE (plan.md Phase 5 record carries the full
