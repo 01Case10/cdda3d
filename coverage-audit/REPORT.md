@@ -1129,6 +1129,12 @@ folders, overlay count).
   **Swords cluster complete (64).** Items → 2,960.
   `draw_item18.py`, `draw_item19.py`.
 
+- **ITEM20 + ITEM21** — metal resources (52 + 10): ingots
+  scaled by volume and graded by metal, bar stock flat vs.
+  round, I-beams, rail profile, porous slag. **Metal
+  cluster complete (62).** Items → 2,898. `draw_item20.py`,
+  `draw_item21.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
