@@ -1215,6 +1215,12 @@ folders, overlay count).
   royal jelly), an embalmed brain in formaldehyde.
   Items → 2,261. `draw_item37.py`.
 
+- **ITEM38** — bludgeons (39): hafted weapons on the
+  diagonal frame — macuahuitls with edge blades per
+  material, battle axes and war hammers graded per
+  steel line, canes/crutches/sap as themselves.
+  Items → 2,222. `draw_item38.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
