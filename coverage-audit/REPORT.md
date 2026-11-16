@@ -1233,6 +1233,11 @@ folders, overlay count).
   the food and a printed band pictogram. Items → 2,152.
   `draw_item40.py`.
 
+- **ITEM41** — science tools (34): lab instruments as
+  themselves — burette, rotovap, still, Stirling engine,
+  prism with rainbow fan, portal ring vs. handheld
+  teleporter. Items → 2,118. `draw_item41.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
