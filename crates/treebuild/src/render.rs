@@ -98,7 +98,17 @@ struct Uniforms {
     /// the buffer at the shader's expected 112 bytes.
     lod_bias: f32,
     ndotv_weight: f32,
-    _pad_debug: u32,
+    /// Stage F debug view: nonzero = top faces of macro materials
+    /// shade with their macro *height* layer (grayscale) instead
+    /// of the macro color. Proves the height layer is uploaded
+    /// and sampled; border blending is a later round.
+    macro_debug_height: u32,
+    /// Stage F: the tree's origin in world (global grid) coords.
+    /// Hit points are tree-local; macro UVs are world-based (the
+    /// raster mesher's grid coords are global), so `tex_albedo`
+    /// adds this back before dividing by the macro span.
+    tree_origin: [f32; 3],
+    _pad_origin: u32,
 }
 
 #[repr(C)]
@@ -156,7 +166,9 @@ struct Uniforms {
     debug_lod: u32,
     lod_bias: f32,
     ndotv_weight: f32,
-    _pad: u32,
+    macro_debug_height: u32,
+    tree_origin: vec3<f32>,
+    _pad_o: u32,
 }
 @group(0) @binding(0) var<storage, read> nodes: array<GpuNode>;
 @group(1) @binding(0) var<storage, read> side: array<SideEntry>;
@@ -350,6 +362,8 @@ const RENDER_WGSL: &str = r#"
 @group(1) @binding(4) var tex_array: texture_2d_array<f32>;
 @group(1) @binding(5) var tex_samp: sampler;
 @group(1) @binding(6) var<storage, read> mat_layers: array<vec4<u32>>;
+@group(1) @binding(7) var macro_array: texture_2d_array<f32>;
+@group(1) @binding(8) var<storage, read> mat_macros: array<vec4<u32>>;
 
 // Ray-cone LOD (Phase 2e, docs/phase2e-mipmaps.md §2 — mirror of
 // crate::lod::ray_cone_lod): the compute shader has no implicit
@@ -415,6 +429,28 @@ fn tex_albedo(e: SideEntry, n: vec3<f32>, hitp: vec3<f32>, voxel_min: vec3<f32>,
     if abs(n.z) > 0.5 {
         uv = vec2<f32>(local.x, local.y);
         layer = select(ml.z, ml.x, n.z > 0.0);
+        // Stage F: a macro material's top (+z) face samples the
+        // macro array by WORLD position — uv = world_xy / span,
+        // Repeat-wrapped by the sampler (the macro texel density
+        // equals the tile density, so this is a pure replacement
+        // for the per-tile sample, at the cone LOD shifted by the
+        // span's log2). The debug view swaps in the height layer.
+        if n.z > 0.0 && e.material_id < arrayLength(&mat_macros) {
+            let mm = mat_macros[e.material_id];
+            if mm.w != 0u {
+                let world = hitp + u.tree_origin;
+                let muv = vec2<f32>(world.x, world.y) / f32(mm.z);
+                let mlod = max(lod - log2(f32(mm.z)), 0.0);
+                if u.macro_debug_height != 0u {
+                    return textureSampleLevel(macro_array, tex_samp, muv, i32(mm.y), mlod).rgb;
+                }
+                let mt = textureSampleLevel(macro_array, tex_samp, muv, i32(mm.x), mlod);
+                if (e.flags & 2u) != 0u && mt.a < 0.5 {
+                    return flat;
+                }
+                return mt.rgb;
+            }
+        }
     } else if abs(n.x) > 0.5 {
         uv = vec2<f32>(local.y, 1.0 - local.z);
     } else {
@@ -600,6 +636,17 @@ pub struct TextureSpec {
     pub layers: Vec<Vec<u8>>,
     /// Indexed by material id.
     pub material_layers: Vec<[u32; 4]>,
+    /// Stage F: edge length of the macro layers (128 for the
+    /// voxelizer's v2 macros); 0 = the spec carries no macro set.
+    pub macro_size: u32,
+    /// Stage F: the macro layer stack, `macro_size * macro_size *
+    /// 4` bytes per layer: color layers first (`0..C`), then
+    /// height layers (`C..2C`) in the same material order.
+    pub macro_layers: Vec<Vec<u8>>,
+    /// Stage F: per material id, `(color_layer, height_layer,
+    /// span_tiles, present)` into `macro_layers`. Materials with
+    /// `present == 0` (or no entry) keep the per-tile top face.
+    pub material_macros: Vec<[u32; 4]>,
 }
 
 /// GPU texture set bound to the render pipeline: texture array +
@@ -616,6 +663,14 @@ pub struct TextureSet {
     pub material_count: usize,
     /// Mip levels per layer, level 0 included (Phase 2e).
     pub mip_levels: u32,
+    /// Stage F: the macro texture array (kept alive for
+    /// `macro_view`) and the per-material macro lookup buffer.
+    /// Always present (a 1x1 dummy when the spec has no macros)
+    /// so the pipeline layout never changes.
+    _macro_texture: wgpu::Texture,
+    macro_view: wgpu::TextureView,
+    macro_buffer: wgpu::Buffer,
+    pub macro_layer_count: usize,
 }
 
 impl TextureSet {
@@ -631,6 +686,9 @@ impl TextureSet {
                 tile_size: 1,
                 layers: vec![vec![255, 255, 255, 255]],
                 material_layers: vec![[0, 0, 0, 0]],
+                macro_size: 0,
+                macro_layers: Vec::new(),
+                material_macros: Vec::new(),
             },
         )
         .expect("dummy texture spec is valid")
@@ -751,6 +809,99 @@ impl TextureSet {
             contents: bytemuck::cast_slice(&layers_data),
             usage: wgpu::BufferUsages::STORAGE,
         });
+        // Stage F: the macro set. Same construction as the tile
+        // array (CPU mip chain per layer, one texture array), at
+        // macro_size; a 1x1 dummy when the spec carries no macros.
+        let (macro_size, macro_layers, material_macros): (u32, Vec<Vec<u8>>, Vec<[u32; 4]>) =
+            if spec.macro_size > 0 && !spec.macro_layers.is_empty() {
+                let expect = (spec.macro_size * spec.macro_size * 4) as usize;
+                for (i, l) in spec.macro_layers.iter().enumerate() {
+                    if l.len() != expect {
+                        return Err(format!(
+                            "macro layer {i} has {} bytes, expected {expect}",
+                            l.len()
+                        ));
+                    }
+                }
+                for (id, mm) in spec.material_macros.iter().enumerate() {
+                    if mm[3] != 0
+                        && (mm[0] as usize >= spec.macro_layers.len()
+                            || mm[1] as usize >= spec.macro_layers.len())
+                    {
+                        return Err(format!(
+                            "material {id} references macro layer out of range ({} layers)",
+                            spec.macro_layers.len()
+                        ));
+                    }
+                }
+                (
+                    spec.macro_size,
+                    spec.macro_layers.clone(),
+                    if spec.material_macros.is_empty() {
+                        vec![[0, 0, 0, 0]]
+                    } else {
+                        spec.material_macros.clone()
+                    },
+                )
+            } else {
+                (1, vec![vec![255, 255, 255, 255]], vec![[0, 0, 0, 0]])
+            };
+        let macro_chains: Vec<Vec<Vec<u8>>> = macro_layers
+            .iter()
+            .map(|l| lod::mip_chain(l, macro_size))
+            .collect();
+        let macro_mips = macro_chains.first().map(|c| c.len() as u32).unwrap_or(1);
+        let macro_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rt-macro-array"),
+            size: wgpu::Extent3d {
+                width: macro_size,
+                height: macro_size,
+                depth_or_array_layers: macro_layers.len() as u32,
+            },
+            mip_level_count: macro_mips,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (i, chain) in macro_chains.iter().enumerate() {
+            for (level, data) in chain.iter().enumerate() {
+                let level_size = (macro_size >> level).max(1);
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &macro_texture,
+                        mip_level: level as u32,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: i as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(level_size * 4),
+                        rows_per_image: Some(level_size),
+                    },
+                    wgpu::Extent3d {
+                        width: level_size,
+                        height: level_size,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+        let macro_view = macro_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let macro_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-material-macros"),
+            contents: bytemuck::cast_slice(&material_macros),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
         Ok(Self {
             _texture: texture,
             view,
@@ -759,6 +910,10 @@ impl TextureSet {
             layer_count: spec.layers.len(),
             material_count: layers_data.len(),
             mip_levels,
+            _macro_texture: macro_texture,
+            macro_view,
+            macro_buffer,
+            macro_layer_count: macro_layers.len(),
         })
     }
 }
@@ -878,6 +1033,17 @@ impl RtRenderer {
                     count: None,
                 },
                 side_layout_entry(6),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                side_layout_entry(8),
             ],
         });
         let query_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -990,7 +1156,13 @@ impl RtRenderer {
             debug_lod: 0,
             lod_bias: crate::lod::LOD_BIAS,
             ndotv_weight: crate::lod::NDOTV_WEIGHT,
-            _pad_debug: 0,
+            macro_debug_height: 0,
+            tree_origin: [
+                scene.origin[0] as f32,
+                scene.origin[1] as f32,
+                scene.origin[2] as f32,
+            ],
+            _pad_origin: 0,
         }
     }
 
@@ -1004,7 +1176,7 @@ impl RtRenderer {
         size: (u32, u32),
         shadows: bool,
     ) -> RtFrame {
-        self.render_impl(device, queue, scene, camera, size, shadows, 0)
+        self.render_impl(device, queue, scene, camera, size, shadows, 0, 0)
     }
 
     /// Render with the Phase 2e debug LOD view: every hit shades as
@@ -1018,9 +1190,25 @@ impl RtRenderer {
         camera: &RtCamera,
         size: (u32, u32),
     ) -> RtFrame {
-        self.render_impl(device, queue, scene, camera, size, false, 1)
+        self.render_impl(device, queue, scene, camera, size, false, 1, 0)
     }
 
+    /// Render with the Stage F macro height debug view: top faces
+    /// of macro materials shade with their macro height layer
+    /// (grayscale) instead of the macro color. Validation only —
+    /// it proves the height layer is uploaded and sampled.
+    pub fn render_macro_debug_height(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene: &RtScene,
+        camera: &RtCamera,
+        size: (u32, u32),
+    ) -> RtFrame {
+        self.render_impl(device, queue, scene, camera, size, true, 0, 1)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn render_impl(
         &self,
         device: &wgpu::Device,
@@ -1030,6 +1218,7 @@ impl RtRenderer {
         size: (u32, u32),
         shadows: bool,
         debug_lod: u32,
+        macro_debug_height: u32,
     ) -> RtFrame {
         let (width, height) = (size.0.max(1), size.1.max(1));
         let origin = Vec3::new(
@@ -1048,6 +1237,7 @@ impl RtRenderer {
         uniforms.viewport = [width, height];
         uniforms.shadows = shadows as u32;
         uniforms.debug_lod = debug_lod;
+        uniforms.macro_debug_height = macro_debug_height;
         self.write_uniforms(queue, scene, &uniforms);
 
         let color = device.create_texture(&wgpu::TextureDescriptor {
@@ -1104,6 +1294,14 @@ impl RtRenderer {
                 wgpu::BindGroupEntry {
                     binding: 6,
                     resource: scene.textures.layers_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(&scene.textures.macro_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: scene.textures.macro_buffer.as_entire_binding(),
                 },
             ],
         });

@@ -34,3 +34,7 @@ serde_json = "1"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Stage F gate: build v1/v2 asset sets from the voxelizer fixture
+# tileset in-process.
+voxelizer = { path = "../voxelizer" }
+tileset = { path = "../tileset" }

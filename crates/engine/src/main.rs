@@ -242,6 +242,9 @@ fn headless_main(args: &[String]) -> ExitCode {
     if let Some(e) = value_after(args, "--effects") {
         cap.effects = Some(e.into());
     }
+    if args.iter().any(|a| a == "--macro-debug-height") {
+        cap.macro_debug_height = true;
+    }
     if args.iter().any(|a| a == "--fx-fields-off") {
         cap.fx_fields = false;
     }

@@ -9,6 +9,54 @@ use crate::block::Pass;
 /// falls back to the pre-2f flat shading math.
 pub const FLAT_LAYER: u32 = u32::MAX;
 
+/// Stage F macro-layer encoding in a vertex layer word. A top face
+/// whose material carries a world-space macro texture (see the
+/// voxelizer's materials.json v2) cannot address the scene texture
+/// array — the macro lives in a separate 128px array — so its layer
+/// word is packed as:
+///
+/// ```text
+/// bit  31     : macro flag
+/// bits 24..31 : span_tiles (the macro's world span, in tiles)
+/// bits  0..24 : layer index into the macro array
+/// ```
+///
+/// The mesher reads the span back out to emit world-based UVs; the
+/// raster fragment shader masks the layer index and samples the
+/// macro array. `FLAT_LAYER` (all bits set) also has bit 31 set, so
+/// consumers must test for flat *before* testing the macro flag —
+/// the mesher never stamps the encoding into a flat vertex, and the
+/// shader's flat check comes first.
+pub const MACRO_LAYER_BIT: u32 = 1 << 31;
+pub const MACRO_LAYER_MASK: u32 = 0x00FF_FFFF;
+pub const MACRO_SPAN_SHIFT: u32 = 24;
+
+/// Pack a macro-array layer index + world span into a vertex layer
+/// word (see [`MACRO_LAYER_BIT`]).
+pub fn encode_macro_layer(layer: u32, span_tiles: u32) -> u32 {
+    debug_assert!(layer <= MACRO_LAYER_MASK, "macro layer index too large");
+    debug_assert!(
+        span_tiles > 0 && span_tiles < 128,
+        "macro span must fit in 7 bits"
+    );
+    MACRO_LAYER_BIT | (span_tiles << MACRO_SPAN_SHIFT) | (layer & MACRO_LAYER_MASK)
+}
+
+/// Unpack a vertex layer word: `Some((macro layer, span_tiles))`
+/// when the macro flag is set, `None` for ordinary array layers.
+/// (Also returns `Some` for `FLAT_LAYER`'s all-ones word — check
+/// flat first, as documented on [`MACRO_LAYER_BIT`].)
+pub fn decode_macro_layer(word: u32) -> Option<(u32, u32)> {
+    if word & MACRO_LAYER_BIT != 0 {
+        Some((
+            word & MACRO_LAYER_MASK,
+            (word >> MACRO_SPAN_SHIFT) & 0x7F,
+        ))
+    } else {
+        None
+    }
+}
+
 /// An indexed mesh: 4 vertices + 6 indices per quad.
 #[derive(Debug, Clone, Default)]
 pub struct Mesh {

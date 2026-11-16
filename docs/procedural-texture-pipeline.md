@@ -418,3 +418,30 @@ waterline further in mid-edge) — a tuning decision recorded here
 for Stage H, not silently baked in. Engine-side mask assignment +
 the §10.1 engine pond capture belong to the Stage F integration
 round, as planned.
+
+## 15. Stage F part 1 outcome — v2 format + world-space macros (2026-11-16)
+
+DONE, parent re-verified in the main tree (full engine + mesher +
+treebuild + voxelizer suites green on lavapipe, including the v1
+golden gate at 0 mismatched px and the new `stage_f_gate` 3/3).
+The v2 contract as implemented: v1 stays a bare JSON array and the
+voxelizer default output is byte-identical to before (gate-asserted);
+`--v2` wraps the identical materials array as
+`{"version": 2, "materials": [...], "macros": [...]}` and writes
+128px `macro_<layer>_color.png` / `macro_<layer>_height.png` layers
+beside it. Grass/Dirt-class materials with a poolable family get a
+macro (span_tiles 4); unpoolable families are omitted and keep v1
+behavior. The engine loader accepts v1 and v2 and rejects other
+versions with a clear error (unit-tested). Sampling: raster top
+faces of macro materials carry world-position UVs from the mesher
+(encoded in the layer word: flag bit 31, span bits 24-30, layer
+bits 0-23) into a second texture array; RT `tex_albedo` branches on
+the material's macro entry for +Z faces with uv from the world hit
+position. The height layer is uploaded in the same array and proven
+sampled via `--macro-debug-height` in both renderers; it does not
+yet shade normal rendering. GPU proof: v2 vs v1 sample-scene
+captures differ by >500 px in both renderers; mesher macro UV phase
+repeats exactly every 4 tiles. NOT in this part (by design): border
+height-blending between materials, generated end-caps/decals,
+decoration scatter (§10.2) — Stage F part 2. This v2 carrier is
+also what Stage G engine stamping will ride on.

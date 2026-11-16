@@ -76,6 +76,10 @@ pub struct CaptureArgs {
     /// pre-Stage-A behavior, byte-for-byte). Sizes should be
     /// multiples of the scale for an exact integer upscale.
     pub render_scale: u32,
+    /// Stage F proof mode (`--macro-debug-height`): render macro
+    /// materials' top faces as their height-layer grayscale
+    /// instead of color, in both renderers. Off = normal render.
+    pub macro_debug_height: bool,
     pub out: PathBuf,
     /// Player z for the cutaway (levels <= this z are drawn).
     pub cutaway_z: i32,
@@ -116,6 +120,7 @@ impl Default for CaptureArgs {
             distance: 28.0,
             size: (1280, 720),
             render_scale: 1,
+            macro_debug_height: false,
             out: PathBuf::from("captures/house.png"),
             cutaway_z: 1,
             lighting: None,

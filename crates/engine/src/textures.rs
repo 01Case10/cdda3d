@@ -39,6 +39,9 @@ pub struct TextureStats {
     pub layers_uploaded: usize,
     /// Phase 2d variant entries emitted (multitile builds only).
     pub variants: usize,
+    /// Stage F: materials given a world-space macro entry (v2
+    /// voxelizer output only; always 0 for v1 dirs).
+    pub macros: usize,
 }
 
 /// Scene-local layer loading + compaction, shared by the base and
@@ -49,6 +52,14 @@ struct SpecBuilder<'a> {
     dir: &'a Path,
     compact_of: HashMap<usize, u32>,
     layers: Vec<Vec<u8>>,
+    /// Stage F: the separate macro layer set (see
+    /// `treebuild::render::TextureSpec`): color layers compacted
+    /// into `macro_colors`, height layers into `macro_heights`;
+    /// `finish` concatenates them (colors first).
+    macro_size: u32,
+    macro_compact_of: HashMap<(usize, bool), u32>,
+    macro_colors: Vec<Vec<u8>>,
+    macro_heights: Vec<Vec<u8>>,
 }
 
 impl<'a> SpecBuilder<'a> {
@@ -58,7 +69,45 @@ impl<'a> SpecBuilder<'a> {
             dir,
             compact_of: HashMap::new(),
             layers: Vec::new(),
+            macro_size: table.macro_size,
+            macro_compact_of: HashMap::new(),
+            macro_colors: Vec::new(),
+            macro_heights: Vec::new(),
         }
+    }
+
+    /// Stage F: load one macro layer PNG (`macro_<layer>_color.png`
+    /// or `macro_<layer>_height.png` beside materials.json) into
+    /// its half of the macro set, compacted like block layers.
+    /// Height PNGs are grayscale; `to_rgba8` replicates the gray
+    /// into RGB so the array format is uniform.
+    fn load_macro_layer(&mut self, src: usize, height: bool) -> Result<u32, String> {
+        if let Some(&c) = self.macro_compact_of.get(&(src, height)) {
+            return Ok(c);
+        }
+        let kind = if height { "height" } else { "color" };
+        let path = self.dir.join(format!("macro_{src:04}_{kind}.png"));
+        let img = image::open(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .to_rgba8();
+        if img.width() != self.macro_size || img.height() != self.macro_size {
+            return Err(format!(
+                "{}: {}x{} but macro_size is {}",
+                path.display(),
+                img.width(),
+                img.height(),
+                self.macro_size
+            ));
+        }
+        let half = if height {
+            &mut self.macro_heights
+        } else {
+            &mut self.macro_colors
+        };
+        let idx = half.len() as u32;
+        half.push(img.into_raw());
+        self.macro_compact_of.insert((src, height), idx);
+        Ok(idx)
     }
 
     fn load_layer(&mut self, src: usize) -> Result<u32, String> {
@@ -97,15 +146,17 @@ impl<'a> SpecBuilder<'a> {
 
     /// Base entries for every material in `id_map`, indexed by
     /// numeric id. Unresolvable materials are counted in `stats`
-    /// and left as the all-zero (flat) entry.
+    /// and left as the all-zero (flat) entry. Also returns the
+    /// Stage F macro entries (same indexing; all-zero = no macro).
     fn build_base(
         &mut self,
         table: &MaterialTable,
         id_map: &HashMap<u32, String>,
         stats: &mut TextureStats,
-    ) -> Vec<[u32; 4]> {
+    ) -> (Vec<[u32; 4]>, Vec<[u32; 4]>) {
         let max_id = id_map.keys().copied().max().unwrap_or(0);
         let mut material_layers = vec![[0u32; 4]; (max_id + 1) as usize];
+        let mut material_macros = vec![[0u32; 4]; (max_id + 1) as usize];
         // Deterministic order (sorted ids) so specs are reproducible.
         let mut ids: Vec<u32> = id_map.keys().copied().collect();
         ids.sort_unstable();
@@ -125,11 +176,34 @@ impl<'a> SpecBuilder<'a> {
                     stats.missing_materials += 1;
                 }
             }
+            // Stage F: the material's macro, when the v2 table
+            // carries one. A macro that fails to load leaves the
+            // material on its per-tile top face (v1 behavior).
+            if let Some(m) = mat.macro_ {
+                let loaded = self
+                    .load_macro_layer(m.color_layer, false)
+                    .and_then(|c| Ok((c, self.load_macro_layer(m.height_layer, true)?)));
+                match loaded {
+                    Ok((color, height)) => {
+                        material_macros[num_id as usize] =
+                            [color, height, m.span_tiles, 1];
+                        stats.macros += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("voxel-engine: material {game_id} macro skipped: {e}");
+                    }
+                }
+            }
         }
-        material_layers
+        (material_layers, material_macros)
     }
 
-    fn finish(self, material_layers: Vec<[u32; 4]>, stats: &mut TextureStats) -> TextureSpec {
+    fn finish(
+        self,
+        material_layers: Vec<[u32; 4]>,
+        mut material_macros: Vec<[u32; 4]>,
+        stats: &mut TextureStats,
+    ) -> TextureSpec {
         let mut layers = self.layers;
         stats.layers_uploaded = layers.len();
         if layers.is_empty() {
@@ -137,10 +211,31 @@ impl<'a> SpecBuilder<'a> {
             // 1-layer dummy shape at the table's tile size.
             layers.push(vec![255u8; (self.tile * self.tile * 4) as usize]);
         }
+        // Stage F: macro entries are indexed like material_layers;
+        // pad to the final length (variant builders may have grown
+        // material_layers after the base pass), then join the two
+        // macro halves: colors first, heights offset by the color
+        // count.
+        material_macros.resize(material_layers.len(), [0, 0, 0, 0]);
+        let color_count = self.macro_colors.len() as u32;
+        for entry in material_macros.iter_mut() {
+            if entry[3] != 0 {
+                entry[1] += color_count;
+            }
+        }
+        let mut macro_layers = self.macro_colors;
+        macro_layers.extend(self.macro_heights);
         TextureSpec {
             tile_size: self.tile,
             layers,
             material_layers,
+            macro_size: if macro_layers.is_empty() {
+                0
+            } else {
+                self.macro_size
+            },
+            macro_layers,
+            material_macros,
         }
     }
 }
@@ -157,8 +252,8 @@ pub fn build_texture_spec(
 ) -> Result<(TextureSpec, TextureStats), String> {
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
-    let material_layers = builder.build_base(table, id_map, &mut stats);
-    Ok((builder.finish(material_layers, &mut stats), stats))
+    let (material_layers, material_macros) = builder.build_base(table, id_map, &mut stats);
+    Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
 }
 
 /// Phase 2d: the base spec plus one variant entry per assignment.
@@ -177,7 +272,7 @@ pub fn build_texture_spec_multitile(
 ) -> Result<(TextureSpec, TextureStats), String> {
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
-    let mut material_layers = builder.build_base(table, id_map, &mut stats);
+    let (mut material_layers, material_macros) = builder.build_base(table, id_map, &mut stats);
     let mut sorted: Vec<&VariantAssignment> = assignments.iter().collect();
     sorted.sort_by_key(|a| a.virtual_id);
     for a in sorted {
@@ -205,7 +300,7 @@ pub fn build_texture_spec_multitile(
             }
         }
     }
-    Ok((builder.finish(material_layers, &mut stats), stats))
+    Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
 }
 
 /// One state-variant allocation (Phase 2d follow-up): voxels
@@ -236,7 +331,7 @@ pub fn build_texture_spec_state_variants(
 ) -> Result<(TextureSpec, TextureStats), String> {
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
-    let mut material_layers = builder.build_base(table, id_map, &mut stats);
+    let (mut material_layers, material_macros) = builder.build_base(table, id_map, &mut stats);
     let mut sorted: Vec<&StateVariantAssignment> = assignments.iter().collect();
     sorted.sort_by_key(|a| a.virtual_id);
     for a in sorted {
@@ -264,7 +359,7 @@ pub fn build_texture_spec_state_variants(
             }
         }
     }
-    Ok((builder.finish(material_layers, &mut stats), stats))
+    Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
 }
 
 #[cfg(test)]

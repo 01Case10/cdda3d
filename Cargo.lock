@@ -514,10 +514,12 @@ dependencies = [
  "pollster",
  "proto",
  "serde_json",
+ "tileset",
  "transient",
  "treebuild",
  "ui-share",
  "vehicles",
+ "voxelizer",
  "wgpu",
  "winit",
 ]

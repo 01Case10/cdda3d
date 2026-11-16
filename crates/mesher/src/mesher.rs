@@ -97,6 +97,29 @@ fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], _quad_ext: [f32; 3]) -> [
     }
 }
 
+/// Per-corner UVs for one textured quad whose face layer is
+/// `layer` (Stage F): a +Z (top) face carrying a macro-encoded
+/// layer samples the world-space macro texture, so its UVs are the
+/// corners' *absolute* grid coordinates divided by the macro span —
+/// two world points exactly `span` tiles apart share a macro phase
+/// (the macro array's Repeat sampler wraps the rest). Every other
+/// face keeps the Stage A tile-unit mapping ([`face_uv`]).
+fn quad_uvs(
+    di: usize,
+    grid_corners: &[[f32; 3]; 4],
+    quad_min: [f32; 3],
+    quad_ext: [f32; 3],
+    layer: u32,
+) -> [[f32; 2]; 4] {
+    if di == 4 {
+        if let Some((_, span)) = crate::mesh::decode_macro_layer(layer) {
+            let span = span.max(1) as f32;
+            return grid_corners.map(|g| [g[0] / span, g[1] / span]);
+        }
+    }
+    grid_corners.map(|g| face_uv(di, g, quad_min, quad_ext))
+}
+
 /// Grid-space point -> Y-up world point. This is a rotation about X
 /// (grid `(x, y_south, z_up)` -> world `(x, z_up, -y_south)`), NOT a plain
 /// axis swap: a swap is a reflection and would flip triangle winding.
@@ -142,8 +165,7 @@ pub fn mesh_naive(
                     match layer_for_dir(block, di) {
                         Some(layer) => {
                             let quad_min = [gx as f32, gy as f32, gz as f32];
-                            let uvs =
-                                grid_corners.map(|g| face_uv(di, g, quad_min, [1.0, 1.0, 1.0]));
+                            let uvs = quad_uvs(di, &grid_corners, quad_min, [1.0, 1.0, 1.0], layer);
                             mesh.push_quad_textured(corners, normal, block.color, uvs, layer);
                         }
                         None => mesh.push_quad(corners, normal, block.color),
@@ -318,7 +340,7 @@ fn emit_greedy_quad(
             quad_ext[u_ax] = w as f32;
             quad_min[v_ax] = (origin[v_ax] + v0) as f32;
             quad_ext[v_ax] = h as f32;
-            let uvs = grid_corners.map(|g| face_uv(di, g, quad_min, quad_ext));
+            let uvs = quad_uvs(di, &grid_corners, quad_min, quad_ext, layer);
             mesh.push_quad_textured(corners, n, block.color, uvs, layer);
         }
         None => mesh.push_quad(corners, n, block.color),

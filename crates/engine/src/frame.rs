@@ -836,6 +836,9 @@ fn render_frame_inner(
             .collect();
         stats.vehicle_tiles = tiles.len();
     }
+    if args.macro_debug_height {
+        renderer.set_macro_debug_height(true);
+    }
     if let Some(spec) = &spec {
         renderer.set_textures(device, queue, spec);
     }

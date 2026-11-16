@@ -5,6 +5,7 @@
 //!             [--ids <file: one game id per line>]
 //!             [--looks-like <file: TSV id<TAB>looks_like_id>]
 //!             [--game-json <dir-or-file>...]  (extract looks_like from CDDA game JSON)
+//!             [--v2]  (Stage F: emit materials.json v2 with macro layers for grass/dirt)
 //!
 //!   voxelizer preview --tileset <dir> --out <sheet.png> --ids a,b,c
 //!             [--ids-file <file>] [--overrides <file>] [--season <s>]
@@ -32,6 +33,7 @@ fn main() {
     let mut ll_path: Option<PathBuf> = None;
     let mut game_json: Vec<PathBuf> = Vec::new();
     let mut want_effects = false;
+    let mut want_v2 = false;
     let mut field_ids_path: Option<PathBuf> = None;
     let mut i = 0;
     while i < args.len() {
@@ -52,6 +54,7 @@ fn main() {
             "--looks-like" => ll_path = Some(take(&mut i)),
             "--game-json" => game_json.push(take(&mut i)),
             "--effects" => want_effects = true,
+            "--v2" => want_v2 = true,
             "--field-ids" => field_ids_path = Some(take(&mut i)),
             "-h" | "--help" => {
                 println!("voxelizer --tileset <dir> --out <dir> [--composed <tile_config.json>] [--overrides f] [--season s] [--ids f] [--looks-like f] [--game-json path...]");
@@ -97,6 +100,7 @@ fn main() {
         tile_size: ts.base_width.max(1),
         ..Default::default()
     };
+    cfg.emit_v2 = want_v2;
     if let Some(p) = &overrides_path {
         let text = std::fs::read_to_string(p).unwrap_or_else(|e| {
             eprintln!("voxelizer: cannot read overrides: {e}");

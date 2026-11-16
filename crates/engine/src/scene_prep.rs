@@ -37,7 +37,18 @@ fn stamp_tex_layers(map: &mut mesher::chunk::ChunkMap, spec: &TextureSpec) {
                     if let Some(ml) = spec.material_layers.get(b.id as usize) {
                         if ml[3] == 1 {
                             let mut stamped = b;
-                            stamped.tex_layers = Some([ml[0], ml[1], ml[2]]);
+                            // Stage F: a material with a macro
+                            // gets the macro-encoded layer word as
+                            // its top layer — the mesher turns it
+                            // into world-based UVs and the raster
+                            // shader samples the macro array.
+                            let top = match spec.material_macros.get(b.id as usize) {
+                                Some(mm) if mm[3] == 1 => {
+                                    mesher::mesh::encode_macro_layer(mm[0], mm[2])
+                                }
+                                _ => ml[0],
+                            };
+                            stamped.tex_layers = Some([top, ml[1], ml[2]]);
                             chunk.grid.set(x, y, z, stamped);
                         }
                     }

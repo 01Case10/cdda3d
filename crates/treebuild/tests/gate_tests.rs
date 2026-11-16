@@ -633,6 +633,9 @@ fn gate_texture_hookup_samples_array_and_falls_back_flat() {
                 tile_size: tile,
                 layers: vec![layer],
                 material_layers,
+                macro_size: 0,
+                macro_layers: Vec::new(),
+                material_macros: Vec::new(),
             },
         )
         .unwrap();

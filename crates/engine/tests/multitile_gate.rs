@@ -41,6 +41,7 @@ fn material(multitile: bool, subtile_layers: &[(&str, usize)]) -> Material {
             .iter()
             .map(|(k, v)| (k.to_string(), *v))
             .collect::<BTreeMap<_, _>>(),
+        macro_: None,
     }
 }
 

@@ -84,6 +84,9 @@ struct Uniforms { view_proj: mat4x4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var tex_array: texture_2d_array<f32>;
 @group(1) @binding(1) var tex_samp: sampler;
+@group(1) @binding(2) var macro_array: texture_2d_array<f32>;
+struct MacroParams { color_count: u32, debug_height: u32 };
+@group(1) @binding(3) var<uniform> macro_params: MacroParams;
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -120,7 +123,28 @@ fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
     // the result) so textureSample's implicit derivatives stay in
     // uniform control flow; the mip chain makes auto-LOD work.
     let sample_layer = select(i32(input.layer), 0, flat);
-    let texel = textureSample(tex_array, tex_samp, input.uv, sample_layer);
+    let texel_tile = textureSample(tex_array, tex_samp, input.uv, sample_layer);
+    // Stage F: macro vertices carry the mesher's packed layer word
+    // (bit 31 set; FLAT_LAYER also has it set, hence the !flat
+    // term). Their UVs are world-based (mesher-side), and the
+    // sample comes from the separate macro array — its color half
+    // normally, its height half (offset by color_count) in the
+    // height debug view. Sampled unconditionally like the tile
+    // array, selected after.
+    let is_macro = !flat && (input.layer & 2147483648u) != 0u;
+    let macro_idx = i32(input.layer & 16777215u);
+    let macro_layer = select(
+        macro_idx,
+        macro_idx + i32(macro_params.color_count),
+        macro_params.debug_height != 0u,
+    );
+    let texel_macro = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(macro_layer, 0, !is_macro),
+    );
+    let texel = select(texel_tile, texel_macro, is_macro);
     if flat {
         // Exactly the pre-2f flat shading math (gate 2f.4).
         return vec4<f32>(input.color.rgb * shade, input.color.a);
@@ -263,6 +287,18 @@ fn build_mip_chain(layer: &[u8], tile_size: u32) -> Vec<(Vec<u8>, u32, u32)> {
 
 /// The shared renderer: pipelines per pass + the camera uniform +
 /// the scene texture array (group 1).
+/// Stage F macro sampling parameters (group 1, binding 3):
+/// how many color layers the macro array's first half holds (the
+/// height half starts at that offset) and whether the height
+/// debug view is on.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct MacroParams {
+    color_count: u32,
+    debug_height: u32,
+    _pad: [u32; 2],
+}
+
 pub struct Renderer {
     pipelines: [wgpu::RenderPipeline; 3],
     uniform_buffer: wgpu::Buffer,
@@ -271,6 +307,11 @@ pub struct Renderer {
     tex_bind_group: wgpu::BindGroup,
     /// Keeps the texture array alive behind `tex_bind_group`'s view.
     _tex_texture: wgpu::Texture,
+    /// Stage F: keeps the macro array alive behind the same bind
+    /// group, plus the macro params buffer + current debug flag.
+    _macro_texture: wgpu::Texture,
+    macro_params_buffer: wgpu::Buffer,
+    macro_debug_height: bool,
 }
 
 impl Renderer {
@@ -327,6 +368,28 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // Stage F: the macro array + its params (see the
+                // shader's MacroParams).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let opaque = create_pipeline(
@@ -368,7 +431,14 @@ impl Renderer {
         // layer is left at wgpu's zero-initialized contents; flat
         // vertices sample it and ignore the result, and no textured
         // vertex can exist before set_textures runs.
-        let (_tex_texture, tex_bind_group) = Self::make_tex_bind_group(device, &tex_layout, 1, 1);
+        let macro_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("raster-macro-params"),
+            size: std::mem::size_of::<MacroParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let (_tex_texture, _macro_texture, tex_bind_group) =
+            Self::make_tex_bind_group(device, &tex_layout, 1, 1, 1, 1, &macro_params_buffer);
         Self {
             pipelines: [opaque, cutout, transparent],
             uniform_buffer,
@@ -376,6 +446,9 @@ impl Renderer {
             tex_layout,
             tex_bind_group,
             _tex_texture,
+            _macro_texture,
+            macro_params_buffer,
+            macro_debug_height: false,
         }
     }
 
@@ -386,7 +459,10 @@ impl Renderer {
         tex_layout: &wgpu::BindGroupLayout,
         tile_size: u32,
         layer_count: usize,
-    ) -> (wgpu::Texture, wgpu::BindGroup) {
+        macro_size: u32,
+        macro_layer_count: usize,
+        macro_params: &wgpu::Buffer,
+    ) -> (wgpu::Texture, wgpu::Texture, wgpu::BindGroup) {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("raster-texture-array"),
             size: wgpu::Extent3d {
@@ -429,6 +505,27 @@ impl Renderer {
             address_mode_v: wgpu::AddressMode::Repeat,
             ..Default::default()
         });
+        // Stage F: the macro array shares the tile array's sampler
+        // (Repeat wrap is what makes world-space macro UVs tile;
+        // Nearest mag keeps the quilt crisp like the tiles).
+        let macro_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("raster-macro-array"),
+            size: wgpu::Extent3d {
+                width: macro_size.max(1),
+                height: macro_size.max(1),
+                depth_or_array_layers: macro_layer_count.max(1) as u32,
+            },
+            mip_level_count: mip_level_count(macro_size.max(1)),
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let macro_view = macro_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("raster-texture-bg"),
             layout: tex_layout,
@@ -441,9 +538,17 @@ impl Renderer {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&macro_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: macro_params.as_entire_binding(),
+                },
             ],
         });
-        (texture, bind_group)
+        (texture, macro_texture, bind_group)
     }
 
     /// Upload `layers` (level 0) plus a CPU-generated mip chain
@@ -494,11 +599,36 @@ impl Renderer {
         queue: &wgpu::Queue,
         spec: &treebuild::render::TextureSpec,
     ) {
-        let (texture, bind_group) =
-            Self::make_tex_bind_group(device, &self.tex_layout, spec.tile_size, spec.layers.len());
+        let macro_count = spec.macro_layers.len();
+        let (texture, macro_texture, bind_group) = Self::make_tex_bind_group(
+            device,
+            &self.tex_layout,
+            spec.tile_size,
+            spec.layers.len(),
+            spec.macro_size.max(1),
+            macro_count,
+            &self.macro_params_buffer,
+        );
         Self::upload_layers(queue, &texture, spec.tile_size, &spec.layers);
+        if macro_count > 0 {
+            Self::upload_layers(queue, &macro_texture, spec.macro_size, &spec.macro_layers);
+        }
+        let params = MacroParams {
+            color_count: (macro_count / 2) as u32,
+            debug_height: u32::from(self.macro_debug_height),
+            _pad: [0; 2],
+        };
+        queue.write_buffer(&self.macro_params_buffer, 0, bytemuck::bytes_of(&params));
         self._tex_texture = texture;
+        self._macro_texture = macro_texture;
         self.tex_bind_group = bind_group;
+    }
+
+    /// Stage F proof hook (`--macro-debug-height`): render macro
+    /// materials' top faces as their height-layer grayscale
+    /// instead of color. Takes effect on the next `set_textures`.
+    pub fn set_macro_debug_height(&mut self, on: bool) {
+        self.macro_debug_height = on;
     }
 
     /// Upload mesher output to GPU buffers (shared by both paths).

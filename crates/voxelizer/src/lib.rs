@@ -114,6 +114,13 @@ pub struct VoxelizerConfig {
     /// Extra ids to materialize beyond the tileset's own entry ids.
     pub extra_ids: Vec<String>,
     pub tileset_license_text: Option<String>,
+    /// Stage F: emit `materials.json` in the v2 form (a
+    /// `{"version": 2, "materials": [...], "macros": [...]}` object
+    /// plus `macro_<layer>_color.png` / `macro_<layer>_height.png`
+    /// files beside it) instead of the v1 bare array. Default
+    /// false: the v1 output stays byte-identical to the pre-v2
+    /// pipeline.
+    pub emit_v2: bool,
 }
 
 impl Default for VoxelizerConfig {
@@ -125,6 +132,7 @@ impl Default for VoxelizerConfig {
             looks_like: BTreeMap::new(),
             extra_ids: Vec::new(),
             tileset_license_text: None,
+            emit_v2: false,
         }
     }
 }
@@ -201,6 +209,10 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
 
     let mut report = RunReport::default();
     let mut materials: Vec<MaterialOut> = Vec::new();
+    // Stage F (v2 only): generated ground macros, in material
+    // order — (material_index, color, height). Filled during the
+    // material loop when `cfg.emit_v2`; written after it.
+    let mut macros: Vec<(usize, RgbaImage, image::GrayImage)> = Vec::new();
     let mut layers: Vec<RgbaImage> = Vec::new(); // global layer list
     let mut missing_lines: Vec<String> = Vec::new();
 
@@ -331,6 +343,38 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             multitile: entry.multitile,
             subtile_layers,
         });
+
+        // Stage F (v2 only): a Grass/Dirt material whose family
+        // pools gets a generated macro (Stage D's generate_macro).
+        // Classification follows the preview's recipe: palette from
+        // the composited sprite's analysis, kind from the id
+        // prefix. A family that can't be pooled (no sprites) omits
+        // the macro — the engine then keeps the v1 per-tile top
+        // face for this material.
+        if cfg.emit_v2 {
+            if let Some(img) = &sprite {
+                let palette = analyze_image(img, 5).palette;
+                let class = classify(
+                    id,
+                    Some(TileKind::from_id_prefix(id)),
+                    Some(&palette),
+                    &cfg.overrides,
+                )
+                .class;
+                let kind = match class {
+                    MaterialClass::Grass => Some(RecipeKind::Grass),
+                    MaterialClass::Dirt => Some(RecipeKind::Dirt),
+                    _ => None,
+                };
+                if let Some(kind) = kind {
+                    let family = family_sprites(ts, &entry);
+                    if !family.is_empty() {
+                        let m = generate_macro(kind, &family);
+                        macros.push((mat_idx, m.image, m.height));
+                    }
+                }
+            }
+        }
     }
     report.materials = materials.len();
     report.layers = layers.len();
@@ -355,12 +399,47 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     )
     .map_err(|e| e.to_string())?;
 
-    // Materials
-    std::fs::write(
-        out_dir.join("materials.json"),
-        serde_json::to_string_pretty(&materials).unwrap(),
-    )
-    .map_err(|e| e.to_string())?;
+    // Materials. v1 (default) is the bare array, byte-identical to
+    // the pre-v2 pipeline. v2 wraps the same array in an object
+    // with a version field and the macro table, and writes each
+    // macro's color/height PNGs beside it: macro layer indices are
+    // assigned in material order, color = 2j, height = 2j + 1 for
+    // the j-th macro, and the files are named by that layer index
+    // (`macro_<layer>_color.png` / `macro_<layer>_height.png`).
+    if cfg.emit_v2 {
+        let mut macro_entries = Vec::new();
+        for (j, (mat_idx, color, height)) in macros.iter().enumerate() {
+            let (color_layer, height_layer) = (2 * j, 2 * j + 1);
+            color
+                .save(out_dir.join(format!("macro_{color_layer:04}_color.png")))
+                .map_err(|e| e.to_string())?;
+            height
+                .save(out_dir.join(format!("macro_{height_layer:04}_height.png")))
+                .map_err(|e| e.to_string())?;
+            macro_entries.push(serde_json::json!({
+                "material_index": mat_idx,
+                "color_layer": color_layer,
+                "height_layer": height_layer,
+                "span_tiles": color.width() / tile.max(1),
+            }));
+        }
+        let v2 = serde_json::json!({
+            "version": 2,
+            "materials": serde_json::to_value(&materials).unwrap(),
+            "macros": macro_entries,
+        });
+        std::fs::write(
+            out_dir.join("materials.json"),
+            serde_json::to_string_pretty(&v2).unwrap(),
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        std::fs::write(
+            out_dir.join("materials.json"),
+            serde_json::to_string_pretty(&materials).unwrap(),
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
     // Sprite atlas for billboards: pack every named sprite sorted by
     // name, shelf packing at real sizes, carrying w/h/offset.

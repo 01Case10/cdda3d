@@ -311,7 +311,11 @@ pub fn render_rt_frame(
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
     let aspect = width as f32 / height as f32;
     let camera = capture_camera(args, aspect);
-    let frame = renderer.render(device, queue, &scene, &camera, (width, height), true);
+    let frame = if args.macro_debug_height {
+        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
+    } else {
+        renderer.render(device, queue, &scene, &camera, (width, height), true)
+    };
     device.poll(wgpu::Maintain::Wait);
     Ok(RtFrameOut {
         color: frame.color,
