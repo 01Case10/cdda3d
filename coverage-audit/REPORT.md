@@ -1096,6 +1096,12 @@ folders, overlay count).
   boiled stomachs, folded hides. **Carnivore cluster complete
   (80).** Items → 3,315. `draw_item08.py`, `draw_item09.py`.
 
+- **ITEM10 + ITEM11** — meat dishes (52 + 24): canned goods
+  with visible contents, burgers graded plain/cheese/deluxe,
+  plated dishes, paella, dumplings, pemmican, sashimi, the
+  halo'd debugging SPAM. **Meat-dishes cluster complete
+  (76).** Items → 3,239. `draw_item10.py`, `draw_item11.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
