@@ -1091,6 +1091,11 @@ folders, overlay count).
   knock-on `looks_like` rescues — intact bot/exoskeleton items
   whose targets ITEM04 drew). `draw_item07.py`.
 
+- **ITEM08 + ITEM09** — carnivore comestibles (52 + 28):
+  parameterized meats/hearts/stomachs/seafood, offal piles,
+  boiled stomachs, folded hides. **Carnivore cluster complete
+  (80).** Items → 3,315. `draw_item08.py`, `draw_item09.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
