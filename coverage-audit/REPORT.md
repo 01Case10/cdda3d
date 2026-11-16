@@ -1178,6 +1178,12 @@ folders, overlay count).
   cartons, the debug angel cake under a golden halo.
   Items → 2,515. `draw_item31.py`.
 
+- **ITEM32** — medical items (45): pill bottles with per-
+  drug label motifs and loose pills, the panacea gel cap
+  as itself, birth-control dial pack, 13 contact-lens
+  cases told apart by Rx glyph and cap tint. Items →
+  2,470. `draw_item32.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
