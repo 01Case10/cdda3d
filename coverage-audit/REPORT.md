@@ -1122,6 +1122,13 @@ folders, overlay count).
   **Head-attachments cluster complete (69).** Items →
   3,024. `draw_item16.py`, `draw_item17.py`.
 
+- **ITEM18 + ITEM19** — swords and blades (52 + 12): one
+  analytic diagonal renderer, profiles per weapon (estoc
+  needle, khopesh hook, kukri belly, kris wave), shading
+  per steel grade, fakes blunt and inferiors nicked.
+  **Swords cluster complete (64).** Items → 2,960.
+  `draw_item18.py`, `draw_item19.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
