@@ -1197,6 +1197,12 @@ folders, overlay count).
   with glyph-ticked bases. Items → 2,383.
   `draw_item34.py`.
 
+- **ITEM35** — jewelry (43): pieces drawn large and
+  centered — band rings by metal and stone, loop and stud
+  piercings, badges and medals, costume ears/horns/tails
+  in fur, faux fur, and leather. Items → 2,340.
+  `draw_item35.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
