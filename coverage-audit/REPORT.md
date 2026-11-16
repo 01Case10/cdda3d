@@ -1203,6 +1203,12 @@ folders, overlay count).
   in fur, faux fur, and leather. Items → 2,340.
   `draw_item35.py`.
 
+- **ITEM36** — raw vegetables (40): whole produce as
+  itself — artichoke bud vs. heart, cauliflower head vs.
+  shreds, sprout vs. stalk, seaweeds by frond form, the
+  `veggy` id drawn as triffid flesh (its item entry).
+  Items → 2,300. `draw_item36.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
