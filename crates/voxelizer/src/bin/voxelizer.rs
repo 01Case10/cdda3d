@@ -5,6 +5,14 @@
 //!             [--ids <file: one game id per line>]
 //!             [--looks-like <file: TSV id<TAB>looks_like_id>]
 //!             [--game-json <dir-or-file>...]  (extract looks_like from CDDA game JSON)
+//!
+//!   voxelizer preview --tileset <dir> --out <sheet.png> --ids a,b,c
+//!             [--ids-file <file>] [--overrides <file>] [--season <s>]
+//!             (Phase 5 rework Stage B: contact sheet of source sprite +
+//!              extracted palette + classification band per id; the
+//!              per-id class/rule/analysis table goes to stdout — the
+//!              pipeline has no font renderer, so the PNG carries no
+//!              text; cell order matches the stdout table.)
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -12,6 +20,9 @@ use voxelizer::{field_ids_in_tileset, parse_overrides, run, run_effects, Voxeliz
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(|a| a == "preview").unwrap_or(false) {
+        std::process::exit(run_preview(&args[1..]));
+    }
     let mut tileset_dir: Option<PathBuf> = None;
     let mut composed: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
@@ -181,6 +192,216 @@ fn main() {
                 eprintln!("voxelizer: effects run failed: {e}");
                 std::process::exit(1);
             }
+        }
+    }
+}
+
+/// Stage B contact sheet: for each id, one cell with the source
+/// sprite (scaled to fit, nearest), its k-means palette as a
+/// weight-proportional swatch strip, and a bottom band filled with
+/// the classified material's anchor color. Prints the audit table
+/// (index, id, class, rule, shading, orientation) to stdout.
+fn run_preview(args: &[String]) -> i32 {
+    use image::{Rgba, RgbaImage};
+    use voxelizer::{
+        analyze_image, classify, composite_entry, TileKind,
+    };
+
+    let mut tileset_dir: Option<PathBuf> = None;
+    let mut composed: Option<PathBuf> = None;
+    let mut out: Option<PathBuf> = None;
+    let mut overrides_path: Option<PathBuf> = None;
+    let mut season = "spring".to_string();
+    let mut ids: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let mut take = |i: &mut usize| -> PathBuf {
+            *i += 1;
+            PathBuf::from(args.get(*i).cloned().unwrap_or_default())
+        };
+        match args[i].as_str() {
+            "--tileset" => tileset_dir = Some(take(&mut i)),
+            "--composed" => composed = Some(take(&mut i)),
+            "--out" => out = Some(take(&mut i)),
+            "--overrides" => overrides_path = Some(take(&mut i)),
+            "--season" => {
+                i += 1;
+                season = args.get(i).cloned().unwrap_or(season);
+            }
+            "--ids" => {
+                let v = take(&mut i);
+                for part in v.to_string_lossy().split(',') {
+                    let p = part.trim();
+                    if !p.is_empty() {
+                        ids.push(p.to_string());
+                    }
+                }
+            }
+            "--ids-file" => {
+                let p = take(&mut i);
+                match std::fs::read_to_string(&p) {
+                    Ok(text) => {
+                        for l in text.lines() {
+                            let l = l.trim();
+                            if !l.is_empty() {
+                                ids.push(l.to_string());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("voxelizer preview: cannot read ids file: {e}");
+                        return 1;
+                    }
+                }
+            }
+            "-h" | "--help" => {
+                println!("voxelizer preview --tileset <dir> --out <sheet.png> --ids a,b,c [--ids-file f] [--overrides f] [--season s]");
+                return 0;
+            }
+            other => {
+                eprintln!("voxelizer preview: unknown argument {other}");
+                return 2;
+            }
+        }
+        i += 1;
+    }
+    let out = match out {
+        Some(o) => o,
+        None => {
+            eprintln!("voxelizer preview: --out is required");
+            return 2;
+        }
+    };
+    if ids.is_empty() {
+        eprintln!("voxelizer preview: no ids given (--ids or --ids-file)");
+        return 2;
+    }
+    let ts = if let Some(cfg) = &composed {
+        match tileset::load_composed(cfg) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("voxelizer preview: composed load failed: {e}");
+                return 1;
+            }
+        }
+    } else if let Some(dir) = &tileset_dir {
+        match tileset::load_decomposed(dir) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("voxelizer preview: tileset load failed: {e}");
+                return 1;
+            }
+        }
+    } else {
+        eprintln!("voxelizer preview: --tileset or --composed is required");
+        return 2;
+    };
+    let overrides = match &overrides_path {
+        Some(p) => match std::fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|t| parse_overrides(&t))
+        {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("voxelizer preview: invalid overrides: {e}");
+                return 1;
+            }
+        },
+        None => voxelizer::Overrides::default(),
+    };
+
+    const CELL_W: u32 = 184;
+    const CELL_H: u32 = 184;
+    const SPRITE_BOX: u32 = 144;
+    let cols = (ids.len() as f64).sqrt().ceil() as u32;
+    let cols = cols.max(1);
+    let rows = (ids.len() as u32 + cols - 1) / cols;
+    let mut sheet = RgbaImage::from_pixel(cols * CELL_W, rows * CELL_H, Rgba([24, 24, 28, 255]));
+
+    println!("idx\tid\tclass\trule\tshading\torientation\tpalette (top 3)");
+    for (idx, id) in ids.iter().enumerate() {
+        let cx = (idx as u32 % cols) * CELL_W;
+        let cy = (idx as u32 / cols) * CELL_H;
+        let res = tileset::resolve(&ts, id, &BTreeMap::new(), None, &season);
+        let sprite = res
+            .entry
+            .as_ref()
+            .and_then(|e| composite_entry(&ts, e));
+        let analysis = sprite.as_ref().map(|img| analyze_image(img, 5));
+        let palette: Vec<voxelizer::PaletteColor> =
+            analysis.as_ref().map(|a| a.palette.clone()).unwrap_or_default();
+        let class = classify(
+            id,
+            Some(TileKind::from_id_prefix(id)),
+            Some(&palette),
+            &overrides,
+        );
+        // Sprite, scaled to fit the box (nearest), centered.
+        if let Some(img) = &sprite {
+            let scale = (SPRITE_BOX as f32 / img.width().max(img.height()) as f32).min(4.0);
+            let nw = ((img.width() as f32 * scale) as u32).max(1);
+            let nh = ((img.height() as f32 * scale) as u32).max(1);
+            let scaled = image::imageops::resize(
+                img,
+                nw,
+                nh,
+                image::imageops::FilterType::Nearest,
+            );
+            let ox = cx + 8 + (SPRITE_BOX - nw) / 2;
+            let oy = cy + 8 + (SPRITE_BOX - nh) / 2;
+            image::imageops::replace(&mut sheet, &scaled, ox as i64, oy as i64);
+        }
+        // Palette strip: swatches stacked by weight at the cell's
+        // right edge of the sprite box.
+        let strip_x = cx + 8 + SPRITE_BOX + 4;
+        let mut sy = cy + 8;
+        for p in &palette {
+            let h = ((p.weight * SPRITE_BOX as f32) as u32).max(2);
+            let h = h.min(cy + 8 + SPRITE_BOX - sy);
+            for y in sy..sy + h {
+                for x in strip_x..strip_x + 16 {
+                    sheet.put_pixel(x, y, Rgba([p.srgb[0], p.srgb[1], p.srgb[2], 255]));
+                }
+            }
+            sy += h;
+            if sy >= cy + 8 + SPRITE_BOX {
+                break;
+            }
+        }
+        // Classification band: the class anchor color.
+        let anchor = class.class.anchor_srgb();
+        for y in cy + CELL_H - 20..cy + CELL_H - 8 {
+            for x in cx + 8..cx + CELL_W - 8 {
+                sheet.put_pixel(x, y, Rgba([anchor[0], anchor[1], anchor[2], 255]));
+            }
+        }
+        let (shading, orient) = match &analysis {
+            Some(a) => (
+                format!("{:.2}", a.shading.shading_factor),
+                format!("{:?}", a.orientation.kind),
+            ),
+            None => ("-".to_string(), "-".to_string()),
+        };
+        let top3: Vec<String> = palette
+            .iter()
+            .take(3)
+            .map(|p| format!("#{:02x}{:02x}{:02x}:{:.0}%", p.srgb[0], p.srgb[1], p.srgb[2], p.weight * 100.0))
+            .collect();
+        println!(
+            "{idx}\t{id}\t{}\t{}\t{shading}\t{orient}\t{}",
+            class.class.name(),
+            class.rule.name(),
+            top3.join(" ")
+        );
+    }
+    match sheet.save(&out) {
+        Ok(()) => {
+            println!("voxelizer preview: wrote {}", out.display());
+            0
+        }
+        Err(e) => {
+            eprintln!("voxelizer preview: save failed: {e}");
+            1
         }
     }
 }

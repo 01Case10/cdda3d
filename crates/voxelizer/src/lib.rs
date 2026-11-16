@@ -3,10 +3,14 @@
 //! extrusion models, attribution, a contact sheet and a missing log.
 //! Everything iterates in sorted order so reruns are byte-identical.
 
+pub mod analyze;
+pub mod classify;
+pub mod color;
 pub mod effects;
 pub mod faces;
 pub mod material;
 pub mod multitile;
+pub mod noise;
 pub mod overrides;
 
 use image::{Rgba, RgbaImage};
@@ -15,10 +19,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tileset::{resolve, Stage, TileEntry, Tileset};
 
+pub use analyze::*;
+pub use classify::*;
+pub use color::*;
 pub use effects::*;
 pub use faces::*;
 pub use material::*;
 pub use multitile::*;
+pub use noise::*;
 pub use overrides::*;
 
 /// Deterministic placeholder: magenta/black checker (plan §8 fallback).

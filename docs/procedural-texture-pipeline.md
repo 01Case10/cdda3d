@@ -173,4 +173,21 @@ proceed at original scope. The A/B evidence says the worst
 symptoms (stretch, smear, close-up blur) were rendering bugs and
 are gone; what remains visibly "spritey" at close range — baked
 3/4-view wall tops, edge-row side faces — is exactly what Stages
-B–F address.
+B–F address. (Joey's call, 2026-11-16: proceed — B and the noise
+foundation ran in parallel; see §8.)
+
+## 8. Stage B + noise outcome (2026-11-16)
+
+Stage B is DONE (plan.md Phase 5 record carries the full
+addendum). Classifier coverage, measured on the live UltiCa
+tileset (12,206 entries): block scope 100.0% classified / 0.0%
+unknown; whole universe 93.5% with 37 fully unknown (fd_* and
+facial-hair overlays). The ≥90% exit is met on the scope the
+pipeline actually consumes. `docs/sprite-anatomy.md` records the
+measured anatomy: no top-face pixels exist in wall sprites,
+shading direction is per-sprite, ground sprites bake transition
+fringes. The noise foundation for Stage C is in (`noise.rs`,
+bit-exact edge tileability). One open input for Stage C: UltiCa
+has no `t_roof` terrain entry — roof palettes can only come from
+mapgen scene illustrations (shading factor 1.00) unless Joey
+picks another source.
