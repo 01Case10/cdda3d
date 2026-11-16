@@ -1172,6 +1172,12 @@ folders, overlay count).
   fermentable jugs, trefoiled cobalt/uranium. Items →
   2,562. `draw_item30.py`.
 
+- **ITEM31** — junk food (47): snacks in their packaging —
+  candy bags told apart by the candies themselves,
+  freeze-dried pouches sealed vs. hydrated, fast-food
+  cartons, the debug angel cake under a golden halo.
+  Items → 2,515. `draw_item31.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
