@@ -1227,6 +1227,12 @@ folders, overlay count).
   gold/ochre/white tech. Items → 2,187.
   `draw_item39.py`.
 
+- **ITEM40** — MREs (35): one parameterized retort-pouch
+  renderer — tan pouch torn open on its foil layer, the
+  dish heaped in the opening, entrée identity carried by
+  the food and a printed band pictogram. Items → 2,152.
+  `draw_item40.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
