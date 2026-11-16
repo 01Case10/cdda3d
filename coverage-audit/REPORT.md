@@ -1115,6 +1115,13 @@ folders, overlay count).
   boxes with per-game cover art. **Fluff cluster complete
   (71).** Items → 3,093. `draw_item14.py`, `draw_item15.py`.
 
+- **ITEM16 + ITEM17** — head attachments (52 + 17): NVGs
+  by tube count and state, face shields, and the 45-piece
+  chainmail family graded across five steels (tempered
+  gets gold inlay and a gem; high steel gets its mustache).
+  **Head-attachments cluster complete (69).** Items →
+  3,024. `draw_item16.py`, `draw_item17.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
