@@ -1102,6 +1102,13 @@ folders, overlay count).
   halo'd debugging SPAM. **Meat-dishes cluster complete
   (76).** Items → 3,239. `draw_item10.py`, `draw_item11.py`.
 
+- **ITEM12 + ITEM13** — tool-armor (52 + 23): the survivor-
+  mask matrix across sizes, goggles dim vs. lit, thermal-
+  electric garments with heating coils when on, smart
+  watches, welding/PAPR helmets. **Tool-armor cluster
+  complete (75).** Items → 3,164. `draw_item12.py`,
+  `draw_item13.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
