@@ -1221,6 +1221,12 @@ folders, overlay count).
   steel line, canes/crutches/sap as themselves.
   Items → 2,222. `draw_item38.py`.
 
+- **ITEM39** — alien resources (35): Exodii ingots shaded
+  per metal with glyph stamps, hex qt_steel chassis,
+  nether bone pieces, the pure-void ephemeral gem, Yrax
+  gold/ochre/white tech. Items → 2,187.
+  `draw_item39.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
