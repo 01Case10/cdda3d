@@ -13,6 +13,7 @@ pub mod material;
 pub mod multitile;
 pub mod noise;
 pub mod overrides;
+pub mod props;
 pub mod quilt;
 
 use image::{Rgba, RgbaImage};
@@ -31,6 +32,7 @@ pub use material::*;
 pub use multitile::*;
 pub use noise::*;
 pub use overrides::*;
+pub use props::*;
 pub use quilt::*;
 
 /// Deterministic placeholder: magenta/black checker (plan §8 fallback).

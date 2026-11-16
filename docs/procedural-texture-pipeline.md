@@ -363,3 +363,28 @@ three sources the pipeline already has:
 - Determinism: model blobs byte-identical on re-run.
 - Frame-time verdict on the RX 9070 XT (llvmpipe numbers do not
   settle sub-tile voxel counts).
+
+## 13. Stage G.1/G.2 outcome — generation side (2026-11-16)
+
+DONE in the voxelizer (engine stamping waits on the Stage F v2
+carrier). `props.rs`: `segment()` splits a furniture sprite into
+top/front regions (+ optional side sliver) — silhouette gating,
+boundary candidates scored on horizontal seam edge + local L-step,
+first-strong-edge choice (furniture fronts carry repeated internal
+seams below the true one); orientation corroboration is a bonus term
+only, because clean tops are flat isotropic fields with no
+orientation to flip. Low confidence returns None (caller keeps the
+extruded-sprite fallback, per §12 rules). `box_model` (G.1) builds a
+cuboid with faces un-projected from their sprite regions;
+`column_model` (G.2) builds a front wall + top cap shell on the
+32x32 sub-grid whose front projection reproduces the sprite
+silhouette exactly. Parent re-verified in the main tree
+(`props_gate` 2/2; lib 27/27): f_counter boundary 20 (conf 0.81),
+f_bookcase 27 (0.76), f_table 19 (0.86), f_fridge 17 (0.55 — weakest
+pass, top only 8 rows on a 47-row front). Known failure: f_locker
+segments at its mid door-seam (the stacked-seam mode) — excluded
+from the gate set; per §12 that's a G.3 per-id override case, not a
+cleverer global rule. Depth uses a documented 2:1 foreshortening
+heuristic, clamped to the tile. Showcase:
+`examples/props_showcase.rs` -> target/stage-g/props.png, presented
+to Joey 2026-11-16 for the §12 quality sign-off before G.3.
