@@ -1166,6 +1166,12 @@ folders, overlay count).
   trefoils. **Ammo cluster complete.** Items → 2,612.
   `draw_item28.py`.
 
+- **ITEM30** — chemicals and resources (50): substances in
+  their containers — acid bottles by liquid color, bagged
+  and piled powders by grain style, fertilizer sacks,
+  fermentable jugs, trefoiled cobalt/uranium. Items →
+  2,562. `draw_item30.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
