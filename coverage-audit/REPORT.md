@@ -1135,6 +1135,13 @@ folders, overlay count).
   cluster complete (62).** Items → 2,898. `draw_item20.py`,
   `draw_item21.py`.
 
+- **ITEM22 + ITEM23** — fake items (52 + 10): the internal
+  stand-ins drawn as the objects they name — workshop
+  machines (lathe, mill, presses, arc furnace), hoists and
+  anvils graded, training dummies, spinning wheel, kiln.
+  **Fake cluster complete (62).** Items → 2,836.
+  `draw_item22.py`, `draw_item23.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
