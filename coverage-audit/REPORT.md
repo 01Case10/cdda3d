@@ -1109,6 +1109,12 @@ folders, overlay count).
   complete (75).** Items → 3,164. `draw_item12.py`,
   `draw_item13.py`.
 
+- **ITEM14 + ITEM15** — fluff (52 + 19): board games drawn
+  as their actual boards (backgammon, go, hnefatafl, senet,
+  shogi, mahjong, Scrabble spelling PLAY) and euro-game
+  boxes with per-game cover art. **Fluff cluster complete
+  (71).** Items → 3,093. `draw_item14.py`, `draw_item15.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
