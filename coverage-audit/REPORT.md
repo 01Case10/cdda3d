@@ -1155,6 +1155,17 @@ folders, overlay count).
   **Veggy-dishes cluster complete (59).** Items → 2,716.
   `draw_item26.py`, `draw_item27.py`.
 
+- **ITEM29** — integrated armor (52): mutation-grown body
+  features as panels and mounts — fur/scale/bark/chitin
+  graded by coverage, antlers, horns, fang mouths, the
+  back-shell growth series, a glowing reality-fragment
+  shard. Items → 2,664. `draw_item29.py`.
+- **ITEM28** — ammo components (52): bullet cores sized by
+  caliber weight, gunpowders by grain form, primer cups,
+  gas bottles with real shoulder bands, RTG/uranium with
+  trefoils. **Ammo cluster complete.** Items → 2,612.
+  `draw_item28.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
