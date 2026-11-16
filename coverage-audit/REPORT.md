@@ -1190,6 +1190,13 @@ folders, overlay count).
   ballistic panel as themselves. Items → 2,426.
   `draw_item33.py`.
 
+- **ITEM34** — shell casings (43): one parameterized pile
+  renderer with real cartridge proportions (bottleneck,
+  straight, rimmed, belted); fired vs. unprimed told by
+  primer state and brass brightness; alien Diyua shells
+  with glyph-ticked bases. Items → 2,383.
+  `draw_item34.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
