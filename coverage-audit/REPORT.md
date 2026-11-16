@@ -1209,6 +1209,12 @@ folders, overlay count).
   `veggy` id drawn as triffid flesh (its item entry).
   Items → 2,300. `draw_item36.py`.
 
+- **ITEM37** — other comestibles (39): camp meals in
+  graded pouches, pet-food tins, tofu blocks, earthworms
+  boiled/fried/ground, honey three ways (jar, comb,
+  royal jelly), an embalmed brain in formaldehyde.
+  Items → 2,261. `draw_item37.py`.
+
 **Process note (2026-11-15):** a VM replacement wiped `/tmp`,
 taking the item batch lists and the overlay tool with it. All
 343 drawn item folders and every commit were intact under
