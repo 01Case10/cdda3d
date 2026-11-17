@@ -151,7 +151,7 @@
 //!   (most common) solid-paint color among the row's pixels,
 //!   ignoring the outermost 2 columns of the front extent on each
 //!   side, so edge trim and corner posts don't define the field.
-//! * **Sides.** A side cell takes its row's field darkened x0.85 —
+//! * **Sides.** A side cell takes its row's field at FULL value —
 //!   UNLESS a side sliver was detected on that side, in which case
 //!   the sliver un-projection (real sprite evidence) wins. Because
 //!   the field is per-row, horizontal structure wraps around the
@@ -195,6 +195,49 @@
 //!   whose largest non-shadow cluster is a trim color would
 //!   mislead it; and a two-material front split VERTICALLY (not by
 //!   rows) is read as its dominant material only.
+//! * **Albedo only — de-shading.** The model carries TEXTURE
+//!   (albedo); the engine's renderers shade faces by orientation,
+//!   so any light baked into the model would double-shade. The
+//!   solid model therefore applies NO directional multiplier
+//!   anywhere (an earlier iteration darkened sides x0.85 and the
+//!   interior x0.7 — both removed): side cells are the row field
+//!   at full value, interior cells are the front pixel verbatim,
+//!   the back panel is the primary at full value (its fBm grain
+//!   is texture variation, not light). The front plane and the
+//!   top face stay verbatim sprite — they ARE the texture.
+//!   Derived colors additionally have the sprite's own baked
+//!   vertical light gradient removed: UltiCa fronts are painted
+//!   with a top-to-bottom L falloff (Stage B measures it per
+//!   family as a shading factor), so a field color taken from a
+//!   low row would otherwise carry that row's shade onto the
+//!   flank. The correction fits the front region's mean-L
+//!   profile per row (structure pixels, detected sliver columns
+//!   excluded — a differently-lit face would bias the fit —
+//!   smoothed by a 5-row moving average) and scales each derived
+//!   color's OKLab L by gain(row) = (median row L) / (row L),
+//!   clamped to [0.80, 1.25], a/b preserved. This is the same
+//!   principle as [`deshade_palette`](crate::generate::deshade_palette)
+//!   — remove baked L variation toward a median-L anchor,
+//!   keeping hue/chroma — applied per row because prop inference
+//!   derives colors per row, where a palette-level compression
+//!   has nothing to act on. The back panel's primary (a palette
+//!   cluster spanning all rows) is re-anchored to the palette's
+//!   own weighted median L over the non-shadow clusters —
+//!   deshade_palette's anchor at full strength: a gradient
+//!   front's palette splits into near-equal L bands, so the
+//!   largest cluster alone is a band edge, not the material's
+//!   center, and no row-profile gain can fix a wrong anchor.
+//!   Same clamp. A sliver pixel carries
+//!   a second baked component — its face is drawn darker than
+//!   the front at the same row — so after the row gain it is
+//!   re-anchored: its L is scaled by (de-shaded field L at its
+//!   row) / (de-shaded sliver-band mean L at its row), pinning
+//!   the band's average to the material while preserving the
+//!   sliver's own pattern (vents, seams). Limit: the re-anchor
+//!   assumes the sliver is the SAME material as the front field
+//!   at that row — the 3/4 convention for these sprites; a side
+//!   genuinely painted in a darker albedo would be lightened
+//!   toward the front's material.
 //! * **Top** stays evidence-based: the top region un-projected
 //!   (see [`solid_model`]).
 //!
@@ -255,6 +298,16 @@ const SOLID_ALPHA: u8 = 254;
 /// painted shade), not a material color; unseen-face inference
 /// never uses it as one (module docs, "Inferred unseen faces").
 const SHADOW_L: f32 = 0.15;
+/// De-shading gain clamp (module docs, "Albedo only — de-shading"):
+/// a derived color's OKLab L is scaled by its row's gain, never by
+/// more than this either way — the correction removes a smooth
+/// baked gradient, it does not re-light the sprite.
+const DESHADE_GAIN_MIN: f32 = 0.80;
+const DESHADE_GAIN_MAX: f32 = 1.25;
+/// Radius (in rows) of the moving-average smoothing applied to a
+/// region's mean-L profile before de-shading gains are built
+/// from it.
+const PROFILE_SMOOTH_RADIUS: usize = 2;
 /// Floor-standing props (silhouette at least this many rows) get
 /// a minimum model depth — see [`Segmentation::depth_cells_for`].
 const MIN_DEPTH_SILHOUETTE_ROWS: u32 = 24;
@@ -1155,14 +1208,248 @@ fn row_field(sprite: &RgbaImage, r: u32, x0: u32, x1: u32) -> Option<Rgba<u8>> {
         .or_else(|| modal(x0, x1, ALPHA_OPAQUE).filter(|c| !is_fringe(*c)))
 }
 
-/// The primary material of a sprite region: the largest palette
-/// cluster (`analyze_image`, k=5) that is not shadow — shadow
-/// clusters are recesses, not material (f_bookcase's largest
-/// cluster overall is its wood, but the runner-up is pure-black
-/// shelf shadow at 24% of the front; a naive largest-cluster pick
-/// on a shadow-dominated front would hand the back to the shadow).
-/// Falls back to the largest cluster, then the region mean.
-fn primary_material(sprite: &RgbaImage, rows: &Range<u32>) -> Oklab {
+/// Scale a color's OKLab L by `gain`, a/b preserved — the
+/// de-shading primitive (module docs, "Albedo only — de-shading").
+/// Alpha forced opaque, like the rest of the inference path.
+fn deshade(px: Rgba<u8>, gain: f32) -> Rgba<u8> {
+    let lab = deshade_lab(lab_of(px), gain);
+    let [r, g, b] = lab.to_srgb_u8();
+    Rgba([r, g, b, 255])
+}
+
+/// [`deshade`] on an OKLab color.
+fn deshade_lab(lab: Oklab, gain: f32) -> Oklab {
+    Oklab {
+        l: (lab.l * gain).clamp(0.0, 1.0),
+        a: lab.a,
+        b: lab.b,
+    }
+}
+
+/// A region's mean-L profile (module docs, "Albedo only —
+/// de-shading"): per-row mean OKLab L over STRUCTURE pixels
+/// within the region's trimmed structure extent ([`FIELD_TRIM`]
+/// columns, as for [`row_field`]), optionally excluding a column
+/// range (the detected sliver's columns — a differently-lit
+/// face would bias the front's fit). Rows with no usable pixel
+/// are filled from the nearest usable row before the profile is
+/// smoothed by a moving average of radius
+/// [`PROFILE_SMOOTH_RADIUS`].
+struct LProfile {
+    /// Smoothed per-row mean L, in region row order.
+    smoothed: Vec<f32>,
+    /// Median of the smoothed values over rows that had data.
+    median: f32,
+}
+
+fn l_profile(
+    sprite: &RgbaImage,
+    rows: &Range<u32>,
+    exclude: Option<&Range<u32>>,
+) -> Option<LProfile> {
+    // Structure extent of the region.
+    let (mut x0, mut x1) = (sprite.width() - 1, 0u32);
+    let mut any = false;
+    for r in rows.clone() {
+        for x in 0..sprite.width() {
+            if structure(*sprite.get_pixel(x, r)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                any = true;
+            }
+        }
+    }
+    if !any {
+        return None;
+    }
+    let (tx0, tx1) = if x1 >= x0 + 2 * FIELD_TRIM {
+        (x0 + FIELD_TRIM, x1 - FIELD_TRIM)
+    } else {
+        (x0, x1)
+    };
+    let n_rows = (rows.end - rows.start) as usize;
+    let mut sum = vec![0.0f32; n_rows];
+    let mut cnt = vec![0u32; n_rows];
+    for (i, r) in rows.clone().enumerate() {
+        for x in tx0..=tx1 {
+            if exclude.map_or(false, |e| e.contains(&x)) {
+                continue;
+            }
+            let px = *sprite.get_pixel(x, r);
+            if structure(px) {
+                sum[i] += lab_of(px).l;
+                cnt[i] += 1;
+            }
+        }
+    }
+    let total: u32 = cnt.iter().sum();
+    if total == 0 {
+        return None;
+    }
+    let mean = sum.iter().sum::<f32>() / total as f32;
+    let raw: Vec<Option<f32>> = (0..n_rows)
+        .map(|i| {
+            if cnt[i] > 0 {
+                Some(sum[i] / cnt[i] as f32)
+            } else {
+                None
+            }
+        })
+        .collect();
+    // Fill empty rows from the nearest usable row (above wins ties,
+    // matching the side-field borrowing convention).
+    let filled: Vec<f32> = (0..n_rows)
+        .map(|i| {
+            raw[i]
+                .or_else(|| {
+                    (1..n_rows).find_map(|dist| {
+                        if i + dist < n_rows && raw[i + dist].is_some() {
+                            raw[i + dist]
+                        } else if dist <= i && raw[i - dist].is_some() {
+                            raw[i - dist]
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or(mean)
+        })
+        .collect();
+    let rad = PROFILE_SMOOTH_RADIUS;
+    let smoothed: Vec<f32> = (0..n_rows)
+        .map(|i| {
+            let lo = i.saturating_sub(rad);
+            let hi = (i + rad).min(n_rows - 1);
+            filled[lo..=hi].iter().sum::<f32>() / (hi - lo + 1) as f32
+        })
+        .collect();
+    let mut vals: Vec<f32> = (0..n_rows)
+        .filter(|&i| raw[i].is_some())
+        .map(|i| smoothed[i])
+        .collect();
+    vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = if vals.len() % 2 == 1 {
+        vals[vals.len() / 2]
+    } else {
+        0.5 * (vals[vals.len() / 2 - 1] + vals[vals.len() / 2])
+    };
+    Some(LProfile { smoothed, median })
+}
+
+/// Per-row de-shading gains for a region, in region row order:
+/// gain(row) = median row L / smoothed row L, clamped to
+/// [DESHADE_GAIN_MIN, DESHADE_GAIN_MAX]. All 1.0 when the region
+/// has no usable profile.
+fn row_gains(sprite: &RgbaImage, rows: &Range<u32>, exclude: Option<&Range<u32>>) -> Vec<f32> {
+    let n = (rows.end - rows.start) as usize;
+    match l_profile(sprite, rows, exclude) {
+        Some(p) => (0..n)
+            .map(|i| {
+                if p.smoothed[i] > 0.0 {
+                    (p.median / p.smoothed[i]).clamp(DESHADE_GAIN_MIN, DESHADE_GAIN_MAX)
+                } else {
+                    1.0
+                }
+            })
+            .collect(),
+        None => vec![1.0; n],
+    }
+}
+
+/// The sliver pixel a solid-model side cell at depth `z` samples:
+/// the same un-projection mapping as [`side_color`], but RAW —
+/// no darkening (the solid model is albedo only; the caller
+/// de-shades). None when the sampled pixel is not structure.
+fn sliver_sample(
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    r: u32,
+    z: u32,
+    d: u32,
+    on_right: bool,
+) -> Option<Rgba<u8>> {
+    let sl = seg.side.as_ref()?;
+    if sl.on_right != on_right {
+        return None;
+    }
+    let sw = sl.cols.end - sl.cols.start;
+    // Front of the model (z = d-1) meets the sliver column nearest
+    // the front face; walk back across the sliver.
+    let back_steps = d - 1 - z;
+    let off = (back_steps * sw / d).min(sw - 1);
+    let sx = if on_right {
+        sl.cols.end - 1 - off
+    } else {
+        sl.cols.start + off
+    };
+    let px = *sprite.get_pixel(sx, r);
+    if structure(px) {
+        Some(px)
+    } else {
+        None
+    }
+}
+
+/// Mean L of a sliver band's structure pixels in one row — the
+/// band's own lightness, for the de-shading re-anchor (module
+/// docs, "Albedo only — de-shading").
+fn sliver_band_mean_l(
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    r: u32,
+    on_right: bool,
+) -> Option<f32> {
+    let sl = seg.side.as_ref()?;
+    if sl.on_right != on_right {
+        return None;
+    }
+    let (mut s, mut n) = (0.0f32, 0u32);
+    for x in sl.cols.clone() {
+        let px = *sprite.get_pixel(x, r);
+        if structure(px) {
+            s += lab_of(px).l;
+            n += 1;
+        }
+    }
+    if n > 0 {
+        Some(s / n as f32)
+    } else {
+        None
+    }
+}
+
+/// Weight-weighted median of cluster lightness (the same rule
+/// as `generate::weighted_median_l`): sort by L, accumulate
+/// weights, return the L where the cumulative weight reaches
+/// half the total.
+fn weighted_median_l(clusters: &[(f32, f32)]) -> f32 {
+    let mut ls: Vec<(f32, f32)> = clusters.to_vec();
+    ls.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total: f32 = ls.iter().map(|x| x.1).sum();
+    let mut acc = 0.0f32;
+    for (l, w) in &ls {
+        acc += w;
+        if acc >= total * 0.5 {
+            return *l;
+        }
+    }
+    ls.last().map(|x| x.0).unwrap_or(0.0)
+}
+
+/// A region's primaries for the back panel: the RAW primary
+/// (material identity — the two-panel scan compares fields
+/// against it in the sprite's own color space) and the PANEL
+/// primary (the color the back is actually painted with): the
+/// raw primary DE-SHADED by re-anchoring its L to the palette's
+/// weighted median L — [`deshade_palette`](crate::generate::deshade_palette)'s
+/// anchor, applied at full strength to this one color. The
+/// re-anchor matters because a gradient front's palette splits
+/// into near-equal L bands and the largest cluster is then a
+/// band edge, not the material's center; the weighted median
+/// over the non-shadow clusters is the material's reference
+/// lightness. Gain clamped to [DESHADE_GAIN_MIN, DESHADE_GAIN_MAX]
+/// like the row gains.
+fn region_primaries(sprite: &RgbaImage, rows: &Range<u32>) -> (Oklab, Oklab) {
     let crop = image::imageops::crop_imm(
         sprite,
         0,
@@ -1172,12 +1459,30 @@ fn primary_material(sprite: &RgbaImage, rows: &Range<u32>) -> Oklab {
     )
     .to_image();
     let a = analyze_image(&crop, 5);
-    a.palette
+    let raw = a
+        .palette
         .iter()
         .find(|p| p.lab.l >= SHADOW_L)
         .or_else(|| a.palette.first())
         .map(|p| p.lab)
-        .unwrap_or_else(|| lab_of(region_mean(sprite, rows)))
+        .unwrap_or_else(|| lab_of(region_mean(sprite, rows)));
+    let non_shadow: Vec<(f32, f32)> = a
+        .palette
+        .iter()
+        .filter(|p| p.lab.l >= SHADOW_L)
+        .map(|p| (p.lab.l, p.weight))
+        .collect();
+    let median = if non_shadow.is_empty() {
+        raw.l
+    } else {
+        weighted_median_l(&non_shadow)
+    };
+    let panel = if raw.l > 0.0 {
+        deshade_lab(raw, (median / raw.l).clamp(DESHADE_GAIN_MIN, DESHADE_GAIN_MAX))
+    } else {
+        raw
+    };
+    (raw, panel)
 }
 
 /// Grain amplitude (fraction of L) for a back panel of the given
@@ -1230,7 +1535,11 @@ fn back_panels(
     fields: &[Option<Rgba<u8>>],
     fh: u32,
 ) -> BackPanels {
-    let front = primary_material(sprite, &seg.front_rows);
+    // Raw primaries drive the two-panel scan below (a material-
+    // identity test, run in the sprite's own color space); the
+    // panels themselves are colored with the DE-SHADED panel
+    // primaries (module docs, "Albedo only").
+    let (front, front_panel) = region_primaries(sprite, &seg.front_rows);
     let fbm = Fbm::new(content_hash(sprite.as_raw()), 16).octaves(2);
     let top_h = seg.top_rows.end - seg.top_rows.start;
     let silh = seg.silhouette_rows.end - seg.silhouette_rows.start;
@@ -1253,7 +1562,7 @@ fn back_panels(
         >= 0.15
         && top_h * 3 >= silh;
     let upper = if two_panel {
-        let top_primary = primary_material(sprite, &seg.top_rows);
+        let (top_primary, top_panel) = region_primaries(sprite, &seg.top_rows);
         // Upper rows: front fields that belong to the top material,
         // scanned from the boundary down.
         let mut count = 0u32;
@@ -1274,13 +1583,13 @@ fn back_panels(
             // fall back to the top's proportional silhouette share.
             count = ((fh as f32 * top_h as f32 / silh as f32).round() as u32).clamp(1, fh - 1);
         }
-        Some((top_primary, count))
+        Some((top_panel, count))
     } else {
         None
     };
     BackPanels {
         fbm,
-        front,
+        front: front_panel,
         upper,
     }
 }
@@ -1303,20 +1612,24 @@ fn back_panels(
 ///   primary material with a subtle noise grain — the rear
 ///   construction inferred as its own object (module docs,
 ///   "Inferred unseen faces"), NOT a darkened mirror of the front
-///   and NOT the row fields. Interior cells: the front pixel x0.7
-///   (never visible in a surface render, but correct if the model
-///   is sliced).
+///   and NOT the row fields. Interior cells: the front pixel
+///   verbatim (never visible in a surface render, but correct if
+///   the model is sliced). NO directional multipliers anywhere —
+///   the model is albedo only; the engine provides the lighting
+///   (module docs, "Albedo only — de-shading").
 /// * Side surfaces: each row's leftmost/rightmost solid columns are
 ///   real surface (the model is filled behind them), colored on the
 ///   interior depth cells by inference: the detected sliver
-///   un-projected where one exists on that side ([`side_color`] —
-///   real sprite evidence wins), else the row's field color x0.85,
-///   so horizontal bands wrap at their heights and vertical front
-///   detail does not. Shadow-colored sources (field or sliver,
-///   L < [`SHADOW_L`]) are replaced by the nearest non-shadow
-///   row's field — recesses are not material. The front/back
-///   planes keep their own colors, so side shading never touches
-///   the exact front projection.
+///   un-projected where one exists on that side ([`sliver_sample`]
+///   — real sprite evidence wins), else the row's field color at
+///   full value, so horizontal bands wrap at their heights and
+///   vertical front detail does not. All inferred colors are
+///   DE-SHADED (per-row gain; sliver pixels additionally
+///   re-anchored to the row's field — module docs). Shadow-colored
+///   sources (field or sliver, L < [`SHADOW_L`]) are replaced by
+///   the nearest non-shadow row's field — recesses are not
+///   material. The front/back planes keep their own colors, so
+///   side inference never touches the exact front projection.
 /// * Top surface: stepped, following the silhouette — each column
 ///   x's top surface is its own topmost solid voxel, colored for
 ///   z in 0..d-1 from the top region via [`top_row_for_z`] (the
@@ -1366,41 +1679,49 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let fields: Vec<Option<Rgba<u8>>> = (0..fh)
         .map(|y| row_field(sprite, bot - y, x0, x1))
         .collect();
-    // Side fields with SHADOW BORROWING: a shadow field (a recess
-    // row — f_bookcase's shelf interiors are pure black) borrows
-    // the nearest non-shadow row's field; ties prefer the row
-    // above (larger model y = smaller sprite row). A front that is
-    // shadow throughout keeps its own fields.
-    let side_fields: Vec<Option<Rgba<u8>>> = (0..fh)
+    // De-shading gains per front row, indexed by model y (module
+    // docs, "Albedo only — de-shading"). The detected sliver's
+    // columns are excluded from the profile fit.
+    let gains = row_gains(sprite, front, seg.side.as_ref().map(|sl| &sl.cols));
+    let gain_at = |y: u32| -> f32 { gains[(fh - 1 - y) as usize] };
+    // Side colors with SHADOW BORROWING + DE-SHADING: a shadow
+    // field (a recess row — f_bookcase's shelf interiors are pure
+    // black) borrows the nearest non-shadow row's field; ties
+    // prefer the row above (larger model y = smaller sprite row).
+    // Every field is de-shaded by its OWN row's gain — a borrowed
+    // field carries its source row's correction with it. A front
+    // that is shadow throughout keeps its own (de-shaded) fields.
+    let side_colors: Vec<Option<Rgba<u8>>> = (0..fh)
         .map(|y| {
             let own = fields[y as usize];
             if own.map_or(false, |f| lab_of(f).l >= SHADOW_L) {
-                return own;
+                return own.map(|f| deshade(f, gain_at(y)));
             }
             for dist in 1..fh {
                 if y + dist < fh {
                     if let Some(f) = fields[(y + dist) as usize] {
                         if lab_of(f).l >= SHADOW_L {
-                            return Some(f);
+                            return Some(deshade(f, gain_at(y + dist)));
                         }
                     }
                 }
                 if dist <= y {
                     if let Some(f) = fields[(y - dist) as usize] {
                         if lab_of(f).l >= SHADOW_L {
-                            return Some(f);
+                            return Some(deshade(f, gain_at(y - dist)));
                         }
                     }
                 }
             }
-            own
+            own.map(|f| deshade(f, gain_at(y)))
         })
         .collect();
     // The back: plain panel(s) in the primary material(s).
     let back = back_panels(sprite, seg, &fields, fh);
     let mut m = PropModel::new([w, fh, d]);
     // Base fill: front verbatim, back = the panel color, interior
-    // x0.7.
+    // = the front pixel verbatim. No directional multipliers —
+    // albedo only (module docs).
     for y in 0..fh {
         for x in 0..w {
             if !is_solid(x, y) {
@@ -1413,7 +1734,7 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 } else if z == 0 {
                     back.color(x, y, fh)
                 } else {
-                    shade(px, 0.7)
+                    px
                 };
                 m.set(x, y, z, Some(c));
             }
@@ -1422,8 +1743,8 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     // Side surfaces: each row's silhouette extremes, interior depth
     // cells only (front/back planes keep their colors above). A
     // detected sliver on that side is real evidence and wins;
-    // otherwise the row's field color x0.85 — horizontal bands wrap,
-    // vertical detail doesn't (module docs).
+    // otherwise the row's de-shaded field color at full value —
+    // horizontal bands wrap, vertical detail doesn't (module docs).
     for y in 0..fh {
         let mut extremes: Option<(u32, u32)> = None;
         for x in 0..w {
@@ -1441,21 +1762,43 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 .side
                 .as_ref()
                 .map_or(false, |sl| sl.on_right == on_right);
+            // De-shading scale for sliver evidence (module docs):
+            // the total L scale that lands the sliver band's
+            // average on this row's de-shaded field color is
+            // (de-shaded field L) / (raw band mean L) — the row
+            // gain is already inside the field's de-shading, so
+            // it is NOT applied again on top. Without a field to
+            // anchor to, the row gain alone applies.
+            let anchor = if sliver_here {
+                match (
+                    side_colors[y as usize],
+                    sliver_band_mean_l(sprite, seg, r, on_right),
+                ) {
+                    (Some(f), Some(band)) if band > 0.0 => Some(lab_of(f).l / band),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             for z in 1..d - 1 {
                 let mut c = if sliver_here {
-                    side_color(sprite, seg, edge_x, r, z, d, on_right)
+                    sliver_sample(sprite, seg, r, z, d, on_right).and_then(|px| {
+                        // A shadow-colored source (a sliver pixel
+                        // sampled from a recess row) is not
+                        // material evidence: fall back to the
+                        // row's field, as does missing evidence
+                        // (a non-structure sliver sample).
+                        if lab_of(px).l < SHADOW_L {
+                            None
+                        } else {
+                            Some(deshade(px, anchor.unwrap_or_else(|| gain_at(y))))
+                        }
+                    })
                 } else {
                     None
                 };
-                // A shadow-colored source (a sliver pixel sampled
-                // from a recess row) is not material evidence:
-                // fall back to the row's borrowed field, as does
-                // missing evidence (a transparent sliver sample).
-                if c.map_or(false, |col| lab_of(col).l < SHADOW_L) {
-                    c = None;
-                }
                 if c.is_none() {
-                    c = side_fields[y as usize].map(|f| shade(f, 0.85));
+                    c = side_colors[y as usize];
                 }
                 if let Some(c) = c {
                     m.set(edge_x, y, z, Some(c));

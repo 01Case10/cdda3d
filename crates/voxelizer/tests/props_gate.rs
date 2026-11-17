@@ -22,16 +22,34 @@
 //! faces: the test recomputes each front row's FIELD color itself
 //! (modal solid-paint color, outermost 2 extent columns trimmed)
 //! and asserts the solid model's non-sliver side cells are that
-//! field x0.85 — horizontal bands wrap the flanks, not a smeared
-//! edge column. The back is asserted differently (see below): it
-//! is a plain panel in the primary material, not the row fields.
+//! field DE-SHADED at full value (per-row gain recomputed
+//! independently below) — horizontal bands wrap the flanks, not a
+//! smeared edge column. The back is asserted differently (see
+//! below): it is a plain panel in the primary material, not the
+//! row fields.
+//!
+//! Albedo-only cleanup covered here (2026-11-16, third review
+//! round): the model carries NO baked light — every directional
+//! multiplier is gone (sides x0.85, interior x0.7 in the earlier
+//! solid model) and derived colors are de-shaded: the sprite's
+//! baked top-to-bottom L gradient is divided out of row-derived
+//! colors by a per-row gain (median row L / row L over a smoothed
+//! mean-L profile, clamped to [0.80, 1.25], a/b preserved), and
+//! the back panel's primary by re-anchoring its L to the palette's weighted median. The test
+//! recomputes both gains itself. `stage_g_solid_model_albedo_only`
+//! is the headline gate: a synthetic sprite of ONE uniform
+//! material with a fake baked gradient + darker sliver painted
+//! over it must yield side/back cells at the original material
+//! color, while its front plane keeps the gradient verbatim (the
+//! front IS the texture).
 //!
 //! Back-panel + artifact fixes covered here (2026-11-16, second
 //! review round):
 //! * Backs are plain panels: f_fridge/f_bookcase back cells sit
-//!   within OKLab 0.06 of the prop's primary material (largest
-//!   non-shadow palette cluster, recomputed here via the
-//!   analyzer), the bookcase back's row-mean L variance is tiny
+//!   within OKLab 0.06 of the prop's DE-SHADED primary material
+//!   (largest non-shadow palette cluster, recomputed here via the
+//!   analyzer, then re-anchored to the palette weighted median), the
+//!   bookcase back's row-mean L variance is tiny
 //!   (no banding), and f_counter's back is two-material (rim band
 //!   in the countertop material, body panel in the front primary).
 //! * Black artifacts, root-caused: (1) f_fridge's right edge
@@ -388,11 +406,173 @@ fn stage_g_locker_segments_via_override() {
     check_solid("f_locker", &sprite, &seg, false);
 }
 
-/// Independent shade (the module's rounding rule, re-derived here
-/// so the field checks below don't call the code under test).
-fn shade(px: image::Rgba<u8>, f: f32) -> image::Rgba<u8> {
-    let m = |v: u8| (v as f32 * f).round().clamp(0.0, 255.0) as u8;
-    image::Rgba([m(px[0]), m(px[1]), m(px[2]), 255])
+/// Independent de-shading recompute (the documented rule in
+/// props.rs, re-derived here so the checks below don't call the
+/// code under test): per-row mean L over structure pixels in the
+/// region's trimmed structure extent (outermost 2 columns), the
+/// given columns excluded, empty rows nearest-filled, radius-2
+/// moving-average smoothing. Returns (smoothed row L in region
+/// row order, median over rows with data, pixel-weighted mean).
+fn l_profile(
+    sprite: &image::RgbaImage,
+    rows: &std::ops::Range<u32>,
+    exclude: Option<&std::ops::Range<u32>>,
+) -> Option<(Vec<f32>, f32, f32)> {
+    let (mut x0, mut x1) = (sprite.width() - 1, 0u32);
+    let mut any = false;
+    for r in rows.clone() {
+        for x in 0..sprite.width() {
+            if structure(*sprite.get_pixel(x, r)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                any = true;
+            }
+        }
+    }
+    if !any {
+        return None;
+    }
+    let (tx0, tx1) = if x1 >= x0 + 4 { (x0 + 2, x1 - 2) } else { (x0, x1) };
+    let n_rows = (rows.end - rows.start) as usize;
+    let mut sum = vec![0.0f32; n_rows];
+    let mut cnt = vec![0u32; n_rows];
+    for (i, r) in rows.clone().enumerate() {
+        for x in tx0..=tx1 {
+            if exclude.map_or(false, |e| e.contains(&x)) {
+                continue;
+            }
+            let px = *sprite.get_pixel(x, r);
+            if structure(px) {
+                sum[i] += lab_of(px).l;
+                cnt[i] += 1;
+            }
+        }
+    }
+    let total: u32 = cnt.iter().sum();
+    if total == 0 {
+        return None;
+    }
+    let mean = sum.iter().sum::<f32>() / total as f32;
+    let raw: Vec<Option<f32>> = (0..n_rows)
+        .map(|i| {
+            if cnt[i] > 0 {
+                Some(sum[i] / cnt[i] as f32)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let filled: Vec<f32> = (0..n_rows)
+        .map(|i| {
+            raw[i]
+                .or_else(|| {
+                    (1..n_rows).find_map(|dist| {
+                        if i + dist < n_rows && raw[i + dist].is_some() {
+                            raw[i + dist]
+                        } else if dist <= i && raw[i - dist].is_some() {
+                            raw[i - dist]
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or(mean)
+        })
+        .collect();
+    let smoothed: Vec<f32> = (0..n_rows)
+        .map(|i| {
+            let lo = i.saturating_sub(2);
+            let hi = (i + 2).min(n_rows - 1);
+            filled[lo..=hi].iter().sum::<f32>() / (hi - lo + 1) as f32
+        })
+        .collect();
+    let mut vals: Vec<f32> = (0..n_rows)
+        .filter(|&i| raw[i].is_some())
+        .map(|i| smoothed[i])
+        .collect();
+    vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = if vals.len() % 2 == 1 {
+        vals[vals.len() / 2]
+    } else {
+        0.5 * (vals[vals.len() / 2 - 1] + vals[vals.len() / 2])
+    };
+    Some((smoothed, median, mean))
+}
+
+/// Per-row de-shading gains for the front region, indexed by
+/// MODEL y: gain = median row L / smoothed row L, clamped to
+/// [0.80, 1.25]; the segmentation's sliver columns are excluded
+/// from the profile.
+fn row_gains(sprite: &image::RgbaImage, seg: &Segmentation) -> Vec<f32> {
+    let fh = (seg.front_rows.end - seg.front_rows.start) as usize;
+    let exclude = seg.side.as_ref().map(|sl| &sl.cols);
+    match l_profile(sprite, &seg.front_rows, exclude) {
+        Some((smoothed, median, _)) => (0..fh)
+            .map(|y| {
+                let s = smoothed[fh - 1 - y];
+                if s > 0.0 {
+                    (median / s).clamp(0.80, 1.25)
+                } else {
+                    1.0
+                }
+            })
+            .collect(),
+        None => vec![1.0; fh],
+    }
+}
+
+/// Scale a color's OKLab L by `gain`, a/b preserved.
+fn deshade(px: image::Rgba<u8>, gain: f32) -> image::Rgba<u8> {
+    let mut lab = lab_of(px);
+    lab.l = (lab.l * gain).clamp(0.0, 1.0);
+    let [r, g, b] = lab.to_srgb_u8();
+    image::Rgba([r, g, b, 255])
+}
+
+/// A region's primary material, DE-SHADED by re-anchoring its L
+/// to the palette's weighted median L over the non-shadow
+/// clusters (cumulative-weight crossing rule, as in
+/// `generate::weighted_median_l`), gain clamped to [0.80, 1.25]
+/// — the back panel's expected base color, recomputed from the
+/// analyzer's palette directly.
+fn deshaded_primary(sprite: &image::RgbaImage, rows: &std::ops::Range<u32>) -> Oklab {
+    let crop = image::imageops::crop_imm(
+        sprite,
+        0,
+        rows.start,
+        sprite.width(),
+        rows.end - rows.start,
+    )
+    .to_image();
+    let a = analyze_image(&crop, 5);
+    let mut lab = a
+        .palette
+        .iter()
+        .find(|p| p.lab.l >= 0.15)
+        .or_else(|| a.palette.first())
+        .map(|p| p.lab)
+        .expect("region has a palette");
+    let mut ls: Vec<(f32, f32)> = a
+        .palette
+        .iter()
+        .filter(|p| p.lab.l >= 0.15)
+        .map(|p| (p.lab.l, p.weight))
+        .collect();
+    if !ls.is_empty() && lab.l > 0.0 {
+        ls.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(std::cmp::Ordering::Equal));
+        let total: f32 = ls.iter().map(|x| x.1).sum();
+        let mut acc = 0.0f32;
+        let mut median = ls[ls.len() - 1].0;
+        for (l, w) in &ls {
+            acc += w;
+            if acc >= total * 0.5 {
+                median = *l;
+                break;
+            }
+        }
+        lab.l = (lab.l * (median / lab.l).clamp(0.80, 1.25)).clamp(0.0, 1.0);
+    }
+    lab
 }
 
 /// The front region's opaque x-extent, recomputed from the sprite.
@@ -448,13 +628,15 @@ fn field_of(sprite: &image::RgbaImage, seg: &Segmentation, r: u32) -> image::Rgb
 fn stage_g_solid_model_inferred_faces() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
 
-    // ---- f_fridge: (a) non-sliver side == field x0.85, (b) back
-    // plane is a plain panel in the primary material.
+    // ---- f_fridge: (a) non-sliver side == DE-SHADED field at
+    // full value, (b) back plane is a plain panel in the
+    // de-shaded primary material.
     let sprite = load(&ts, "f_fridge");
     let seg = segment(&sprite).expect("f_fridge segments");
     let sm = solid_model(&sprite, &seg);
     let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
     let bot = seg.front_rows.end - 1;
+    let gains = row_gains(&sprite, &seg);
     // Per-column topmost STRUCTURE cell (model y); None for the
     // fringe-only column x=31, which has no cells at all now.
     let col_top = |x: u32| -> Option<u32> {
@@ -475,8 +657,8 @@ fn stage_g_solid_model_inferred_faces() {
             for z in 1..d - 1 {
                 assert_eq!(
                     sm.get(edge, y, z),
-                    Some(shade(field_of(&sprite, &seg, r), 0.85)),
-                    "f_fridge: side cell at ({edge},{y},{z}) must be the row field x0.85"
+                    Some(deshade(field_of(&sprite, &seg, r), gains[y as usize])),
+                    "f_fridge: side cell at ({edge},{y},{z}) must be the de-shaded row field at full value"
                 );
                 side_cells += 1;
             }
@@ -484,11 +666,11 @@ fn stage_g_solid_model_inferred_faces() {
     }
     assert!(side_cells > 100, "f_fridge: side assertion must be non-vacuous ({side_cells} cells)");
     // (b) Back plane: every non-rim back cell within OKLab 0.06 of
-    // the primary material — a single plain panel with only its
-    // noise grain. Non-vacuous: the sample must include cells
-    // whose FRONT pixel is far from the primary, so a mirrored or
-    // field-based back would fail here.
-    let primary = primary_of(&sprite, &seg.front_rows);
+    // the DE-SHADED primary material — a single plain panel with
+    // only its noise grain. Non-vacuous: the sample must include
+    // cells whose FRONT pixel is far from the primary, so a
+    // mirrored or field-based back would fail here.
+    let primary = deshaded_primary(&sprite, &seg.front_rows);
     let mut back_cells = 0usize;
     let mut non_vacuous = 0usize;
     for y in 0..fh {
@@ -514,7 +696,7 @@ fn stage_g_solid_model_inferred_faces() {
         non_vacuous > 100,
         "f_fridge: back sample must include much front detail the panel discards ({non_vacuous})"
     );
-    println!("f_fridge: {side_cells} side cells == field x0.85, {back_cells} back cells within 0.06 of the primary ({non_vacuous} over discarded front detail)");
+    println!("f_fridge: {side_cells} side cells == de-shaded field, {back_cells} back cells within 0.06 of the de-shaded primary ({non_vacuous} over discarded front detail)");
 
     // ---- f_bookcase: (c) horizontal shelf bands wrap around the
     // non-sliver side — some row's side color differs from both
@@ -548,7 +730,7 @@ fn stage_g_solid_model_inferred_faces() {
     }
     assert!(wrapped, "f_bookcase: at least one shelf-band row's side color must differ from both neighbors");
     // (d) plain wood panel back.
-    let primary = primary_of(&sprite, &seg.front_rows);
+    let primary = deshaded_primary(&sprite, &seg.front_rows);
     let mut row_means: Vec<f32> = Vec::new();
     let mut back_cells = 0usize;
     for y in 0..fh {
@@ -594,7 +776,8 @@ fn stage_g_solid_model_inferred_faces() {
 /// light), so the rim is asserted on its band MEAN (> 0.06 from
 /// the body primary) and its achromaticity (chroma < 0.025, vs
 /// the warm body primary's ~0.05), while every non-rim cell must
-/// be within 0.06 of the front primary — 2 base colors in total.
+/// be within 0.06 of the DE-SHADED front primary — 2 base colors
+/// in total.
 #[test]
 fn stage_g_counter_back_is_two_panels() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
@@ -613,6 +796,8 @@ fn stage_g_counter_back_is_two_panels() {
         "f_counter: the two panel materials must actually differ ({:.3})",
         front_primary.distance(top_primary)
     );
+    // Body cells are colored with the DE-SHADED front primary.
+    let front_primary_ds = deshaded_primary(&sprite, &seg.front_rows);
     let mut body_cells = 0usize;
     let mut rim_cells = 0usize;
     let mut rim_lab_sum = (0.0f32, 0.0f32, 0.0f32);
@@ -638,10 +823,10 @@ fn stage_g_counter_back_is_two_panels() {
                 rim_lab_sum.2 += l.b;
                 rim_cells += 1;
             } else {
-                let dist = lab_of(c).distance(front_primary);
+                let dist = lab_of(c).distance(front_primary_ds);
                 assert!(
                     dist <= 0.06,
-                    "f_counter: body back cell at ({x},{y},0) is {dist:.3} from the front primary"
+                    "f_counter: body back cell at ({x},{y},0) is {dist:.3} from the de-shaded front primary"
                 );
                 body_cells += 1;
             }
@@ -746,6 +931,140 @@ fn stage_g_no_black_inferred_cells() {
         assert!(checked > 100, "{id}: no-black assertion must be wide ({checked} cells)");
         println!("{id}: {checked} inferred side/back cells all L >= 0.10");
     }
+}
+
+/// Albedo-only headline gate: a synthetic sprite built from ONE
+/// uniform material color with only LIGHT painted over it — a
+/// brighter lit top, a smooth top-to-bottom L ramp on the front
+/// (factor 1.15 -> 0.85), and a right sliver under a further
+/// x0.78 face shade — must produce a solid model whose inferred
+/// side and back cells are the ORIGINAL material color: the
+/// de-shading divides the baked light back out. The front plane
+/// keeps the gradient verbatim (the front IS the texture; the
+/// engine lights it). Painting is done in OKLab (L scaled, a/b
+/// untouched) — the space the correction works in.
+///
+/// Tolerances (OKLab distance to the material): side cells
+/// 0.025 — the recovery there is near-exact (modal field +
+/// analytic gains; the budget is sRGB quantization plus the
+/// profile smoothing's bias at the ramp's end rows; measured
+/// max 0.013). Back cells 0.05 — the panel base is the palette
+/// primary re-anchored to the palette's weighted median L
+/// (residual ~0.01 on this ramp; measured max 0.023) plus the
+/// panel's grain (<= 3% of L for this flat tone, ~0.02), with a
+/// separate flatness bound on the back's row-mean L spread
+/// (0.03: grain only, no ramp; measured 0.012).
+#[test]
+fn stage_g_solid_model_albedo_only() {
+    let base = image::Rgba([150, 142, 132, 255]);
+    let base_lab = lab_of(base);
+    let paint = |l_factor: f32| -> image::Rgba<u8> {
+        let lab = Oklab {
+            l: (base_lab.l * l_factor).clamp(0.0, 1.0),
+            a: base_lab.a,
+            b: base_lab.b,
+        };
+        let [r, g, b] = lab.to_srgb_u8();
+        image::Rgba([r, g, b, 255])
+    };
+    let mut img = image::RgbaImage::new(32, 32);
+    // Lit top surface (rows 2..8).
+    for y in 2..8 {
+        for x in 0..32 {
+            img.put_pixel(x, y, paint(1.45));
+        }
+    }
+    // Front (rows 8..28): the baked ramp; right 5 columns are
+    // the same material as a darker side sliver.
+    for y in 8..28 {
+        let f = 1.15 - 0.30 * (y - 8) as f32 / 19.0;
+        for x in 0..32 {
+            img.put_pixel(x, y, paint(if x >= 27 { f * 0.78 } else { f }));
+        }
+    }
+    let seg = segment(&img).expect("synthetic albedo sprite must segment");
+    assert_eq!(seg.boundary(), 8, "the lit top must seam at row 8");
+    let sl = seg.side.as_ref().expect("the darker right band must read as a sliver");
+    assert!(
+        sl.on_right && sl.cols.end == 32 && (26..=28).contains(&sl.cols.start),
+        "sliver must be the right band, got {sl:?}"
+    );
+    let sm = solid_model(&img, &seg);
+    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+    // Side cells on BOTH flanks (left = field path, right =
+    // sliver path), rim row excluded (it belongs to the top
+    // surface): all at the material color, no top-to-bottom ramp.
+    let mut side_max = 0.0f32;
+    for edge in [0u32, w - 1] {
+        let mut ls: Vec<f32> = Vec::new();
+        for y in 0..fh - 1 {
+            let mut row_l = None;
+            for z in 1..d - 1 {
+                let c = sm.get(edge, y, z).expect("side cell exists");
+                let dist = lab_of(c).distance(base_lab);
+                side_max = side_max.max(dist);
+                assert!(
+                    dist <= 0.025,
+                    "side cell at ({edge},{y},{z}) is {dist:.3} from the material (rgb {:?})",
+                    c.0
+                );
+                row_l = Some(lab_of(c).l);
+            }
+            ls.push(row_l.expect("a side row was sampled"));
+        }
+        let spread = ls.iter().cloned().fold(0.0f32, f32::max)
+            - ls.iter().cloned().fold(1.0f32, f32::min);
+        assert!(
+            spread <= 0.025,
+            "side at x={edge} keeps a top-to-bottom ramp: L spread {spread:.3}"
+        );
+    }
+    // Back cells (rim row excluded): at the material color,
+    // row-mean L flat (grain only).
+    let mut back_max = 0.0f32;
+    let mut back_row_means: Vec<f32> = Vec::new();
+    for y in 0..fh - 1 {
+        let (mut s, mut n) = (0.0f32, 0u32);
+        for x in 0..w {
+            let c = sm.get(x, y, 0).expect("back cell exists");
+            back_max = back_max.max(lab_of(c).distance(base_lab));
+            s += lab_of(c).l;
+            n += 1;
+        }
+        back_row_means.push(s / n as f32);
+    }
+    assert!(
+        back_max <= 0.05,
+        "back cell is {back_max:.3} from the material (budget: weighted-median anchor + grain)"
+    );
+    let back_spread = back_row_means.iter().cloned().fold(0.0f32, f32::max)
+        - back_row_means.iter().cloned().fold(1.0f32, f32::min);
+    assert!(
+        back_spread <= 0.03,
+        "back row-mean L spread {back_spread:.3} must be grain only, no ramp"
+    );
+    // The front plane keeps the baked gradient VERBATIM — it is
+    // the texture, and the engine will light it.
+    let bot_px = *img.get_pixel(16, 27);
+    assert_eq!(
+        sm.get(16, 0, d - 1),
+        Some(bot_px),
+        "front bottom cell is the sprite pixel verbatim"
+    );
+    assert!(
+        lab_of(bot_px).l < base_lab.l - 0.05,
+        "the front's baked gradient must still be in the texture (bottom L {:.3} vs material {:.3})",
+        lab_of(bot_px).l,
+        base_lab.l
+    );
+    assert_eq!(
+        sm.get(16, fh - 1, d - 1),
+        Some(*img.get_pixel(16, 8)),
+        "front top cell is the sprite pixel verbatim"
+    );
+    println!(
+        "albedo synthetic: side max distance {side_max:.3}, back max distance {back_max:.3}, back L spread {back_spread:.3}"
+    );
 }
 
 #[test]

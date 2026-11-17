@@ -552,3 +552,28 @@ stretched fBm grain (amplitude by material: wood ±9%, flat/metal
 counter and table fire; the fridge's teal cap at 8/47 rows
 correctly does not). A no-black gate now covers all five props
 (986-2,200 inferred cells each, all L >= 0.10).
+
+## 20. Stage G albedo-only models (2026-11-16, Joey's ruling)
+
+Joey: the models carry baked light; the engine provides lighting,
+the voxelizer provides textures. All directional multipliers are
+removed from `solid_model` (side x0.85, sliver x0.85, interior
+x0.7, panel offsets): sides = de-shaded field at full value, back
+panel = de-shaded primary at full value (fBm grain stays — texture,
+not light), interior = front pixel verbatim. Derived colors are
+DE-SHADED so the front's baked top-to-bottom falloff doesn't leak:
+per-row OKLab-L gain (median row L / row L, clamped [0.80, 1.25],
+a/b preserved), aligned with Stage C's deshade_palette — the panel
+primary's L is re-anchored to the palette's weighted median L
+(measurement showed the largest cluster can be a band edge of the
+ramp, which no profile gain can correct). Sliver pixels get the
+row gain plus a re-anchor onto the row's de-shaded field (removes
+the sliver's baked face shading, keeps its pattern; assumes sliver
+and front are the same material — stated limit). Front plane and
+top face stay verbatim (they ARE the texture). New synthetic gate:
+one uniform material with a painted light ramp + darker sliver
+must yield sides/back at the original uniform color (measured:
+side max Δ 0.013 vs 0.025 tol, back max Δ 0.023 vs 0.05, back
+row-mean L spread 0.012 vs 0.03). Parent re-verified: props_gate
+8/8, lib 36/36. The deprecated box/column models keep their
+multipliers (reference-only, noted).
