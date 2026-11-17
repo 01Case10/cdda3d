@@ -3304,7 +3304,7 @@ pub const REST_EGG_PINS: &[&str] = &["f_egg_sackbw", "f_egg_sackcs"];
 /// a central axis — its arms sweep a disc, so discs around
 /// the axis are the faithful read (a solid extrusion made
 /// its sides flat gold planks, Joey's review 2026-11-17).
-pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ"];
+pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ", "f_roof_turbine_vent"];
 
 /// Closed solids on a raw segment with a fitted depth
 /// override (the depth rule misreads both: the anvil's
@@ -3313,6 +3313,43 @@ pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ"];
 /// silhouette trips the floor-standing floor and gets a
 /// plank ~10 deep although the mechanism is narrow).
 pub const REST_SOLID_DEPTH_PINS: &[(&str, u32)] = &[("f_anvil", 7)];
+
+/// Frame pins (class D1: poles, signs, lamps, chains,
+/// conduits): the sprite is the front view of a thin
+/// upright whose members are genuinely thin -- a post,
+/// a sign panel, a chain. The build is a structure
+/// extrusion at the pinned depth: front and back faces
+/// carry the sprite, structure pixels fill between.
+/// Depths: 2 for chains/ropes/cables, 3 default, 4 for
+/// chunky machines.
+pub const REST_FRAME_PINS: &[(&str, u32)] = &[
+    ("f_IV_pole", 3),
+    ("f_dancing_pole", 3),
+    ("f_flagpole", 3),
+    ("f_wooden_flagpole", 3),
+    ("f_utility_pole", 4),
+    ("f_street_light", 3),
+    ("f_floor_lamp", 3),
+    ("f_exodii_lamp", 3),
+    ("f_nl_exodii_lamp", 3),
+    ("f_machinery_light", 4),
+    ("f_sign_stop", 3),
+    ("f_sign_warning", 3),
+    ("f_wind_vane", 3),
+    ("f_TV_antenna", 2),
+    ("f_cellphone_booster", 3),
+    ("f_ventilator", 4),
+    ("f_battlefield_cross", 3),
+    ("f_rope_up", 2),
+    ("f_hoist_chain", 2),
+    ("f_hoist_rope", 2),
+    ("f_hoist_pulley", 2),
+    ("f_hanging_meathook", 2),
+    ("f_ground_cable", 2),
+    ("f_electrical_conduit", 2),
+    ("f_LIXA_electrical_conduit", 4),
+    ("f_lane", 3),
+];
 
 /// Uniform-material pins: the whole model repaints in
 /// the sprite's modal structure tone (the anvil's black
@@ -3719,6 +3756,84 @@ fn hammock_model(sprite: &RgbaImage, net: bool) -> Option<PropModel> {
     Some(m)
 }
 
+/// A thin upright (poles, signs, chains -- class D1):
+/// the sprite's structure extruded `depth` cells at the
+/// model's z center; opaque fringe pixels paint the
+/// front and back faces only. The band is any-opaque
+/// rows (a chain's links and a lamp's finial are sparse
+/// rows the seamless band test would trim).
+fn frame_model(sprite: &RgbaImage, depth: u32) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let zc = 16i32;
+    let z0 = zc - (depth as i32) / 2;
+    let z1 = z0 + depth as i32 - 1;
+    let mut m = PropModel::new([w, fh, 32]);
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if !opaque(px) {
+                continue;
+            }
+            if structure(px) {
+                for z in z0..=z1 {
+                    m.set(x, y, z as u32, Some(px));
+                }
+            } else {
+                m.set(x, y, z0 as u32, Some(px));
+                m.set(x, y, z1 as u32, Some(px));
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
+/// The small satellite dish. The sprite's rows 8..20
+/// are a reflector disc (center ~(18.5, 14), radii
+/// ~7 x 6.5) with a feed arm at its right edge; rows
+/// 21..24 are the mount post. A flat extrusion made the
+/// reflector a plate edge-on; here the disc's pixels
+/// sit on a paraboloid (rim forward at z 19, center
+/// recessed to z 15, shell 2 thick) and everything else
+/// (arm, mount) extrudes flat behind the bowl.
+fn dish_model(sprite: &RgbaImage) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let mut m = PropModel::new([w, fh, 32]);
+    let (cx, cy) = (18.5f32, 14.0f32);
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if !opaque(px) {
+                continue;
+            }
+            let e = ((x as f32 - cx) / 7.0).powi(2) + ((r as f32 - cy) / 6.5).powi(2);
+            if e <= 1.0 {
+                let z = 19 - (4.0 * (1.0 - e)).round() as u32;
+                m.set(x, y, z, Some(px));
+                m.set(x, y, z - 1, Some(px));
+            } else {
+                for z in 13..=15 {
+                    m.set(x, y, z, Some(px));
+                }
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -3763,6 +3878,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
             if let Some(m) = lathe_model(sprite, &seg) {
                 return Some(m);
             }
+        }
+    }
+    if let Some((_, depth)) = REST_FRAME_PINS.iter().find(|(k, _)| *k == id) {
+        if let Some(m) = frame_model(sprite, *depth) {
+            return Some(m);
         }
     }
     if let Some((_, depth)) = REST_SOLID_DEPTH_PINS.iter().find(|(k, _)| *k == id) {
@@ -3810,6 +3930,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
     if id == "f_orrery" {
         if let Some(m) = orrery_model(sprite) {
+            return Some(m);
+        }
+    }
+    if id == "f_small_satellite_dish" {
+        if let Some(m) = dish_model(sprite) {
             return Some(m);
         }
     }
