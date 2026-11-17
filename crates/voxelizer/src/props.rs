@@ -2606,7 +2606,7 @@ pub const EGG_PINS: &[&str] = &["f_egg_sacke", "f_egg_sackws"];
 /// asymmetric, never a disc profile. Every voxel carries its
 /// column's sprite paint (mottled rock/fungal texture wraps
 /// the mass). Depth budget = the widest row (<= 32).
-fn blob_base(sprite: &RgbaImage, seg: &Segmentation, cone: bool) -> Option<PropModel> {
+fn blob_base(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
@@ -2719,23 +2719,10 @@ fn blob_base(sprite: &RgbaImage, seg: &Segmentation, cone: bool) -> Option<PropM
             // the mockup's side profile).
             let (cy0, cy1) = col_ext[x as usize].unwrap_or((y, y));
             let v = (y - cy0) as f32 / ((cy1 - cy0) as f32).max(1.0);
-            let depth = if cone {
-                // Upside-down cone (Joey, 2026-11-17, egg
-                // sacks): depth grows with height — a
-                // narrow point at the bottom, wide at the
-                // top. No dome, no ground boost (both fight
-                // the cone: the boost made the base the
-                // widest part, and the side profile read as
-                // a flat-fronted wedge).
-                let prof = 0.22 + 0.78 * v.powf(0.8);
-                d as f32 * prof * dfrac.powf(0.5) * lump
-            } else {
-                let dome = 1.0 - 0.38 * v * v;
-                let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
-                let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
-                depth = depth.max(d as f32 * 0.45 * gfrac);
-                depth
-            };
+            let dome = 1.0 - 0.38 * v * v;
+            let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
+            let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
+            depth = depth.max(d as f32 * 0.45 * gfrac);
             let depth = (depth.round() as u32).clamp(2, d);
             for z in (d - depth)..d {
                 m.set(x, y, z, Some(px));
@@ -2751,7 +2738,7 @@ fn blob_base(sprite: &RgbaImage, seg: &Segmentation, cone: bool) -> Option<PropM
 /// The blob mass with the pattern wrap (boulders, fungal
 /// clump).
 fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
-    let mut m = blob_base(sprite, seg, false)?;
+    let mut m = blob_base(sprite, seg)?;
     let fh = seg.front_rows.end - seg.front_rows.start;
     let bot = seg.front_rows.end - 1;
     let rows: Vec<Option<(u32, u32)>> = (0..fh)
@@ -2789,7 +2776,7 @@ fn hash01(a: u32, b: u32) -> f32 {
 /// half (z <= d-3), so the front face and its silhouette
 /// stay exactly the sprite.
 fn egg_pile_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
-    let mut m = blob_base(sprite, seg, true)?;
+    let mut m = blob_base(sprite, seg)?;
     let (w, fh, d) = (sprite.width(), m.size[1], m.size[2]);
     let bot = seg.front_rows.end - 1;
     // Back endpoint (z-min) of the base mass per column.
