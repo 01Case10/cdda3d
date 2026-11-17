@@ -1003,3 +1003,89 @@ tuning decision.
 Stage F part 2 status: end-caps (§29), scatter (§30), pond
 (§31) landed. Border height-blending remains HELD until
 Phase 9 item 9.5 lands.
+
+## 32. Stage G coverage drive — prop models 119 -> 222 of 351 (2026-11-17)
+
+Parent-run audit first (`examples/prop_coverage_audit.rs`,
+chain-identical to the v2 emitter): of 351 furniture materials
+in the decomposed UltiCa universe, 119 emitted a prop model and
+232 emitted none — and every one of the 232 was
+`segment() == None` (0 composite failures, 0
+segment-but-no-model). The drive extended the builders for the
+unsegmentable remainder; it did not touch `segment()` /
+`segment_for()` / `solid_model()` behavior for the 119
+(`prop_coverage_gate` embeds the 119 (id, model_cells) pairs and
+asserts them identical; `approved_models_gate` hashes
+unchanged). New routing in `model_for`'s fallthrough (fires only
+when `segment_for` returns None and the id is not view-pinned):
+archetype -> segment solid -> `coverage_model`.
+
+THREE CLASSES CLOSED 103 IDS:
+
+- **Seamless solid — 71.** `seamless_segment()` synthesizes a
+  segmentation (front = full silhouette band; top face colored
+  from the front's top edge row, the texture pipeline's
+  edge-row precedent) and reuses the solid-model machinery;
+  depth follows the precedented `depth_cells_for` rule. Firing
+  criteria measured from the audit distribution and stated in
+  code: band height >= 12, thin-row fraction <= 0.15, band mean
+  coverage >= 0.42 (band-relative — a sprite-relative floor
+  wrongly rejects 64px centered sprites like gun safes at
+  0.305), structure bbox fill >= 0.65, mean per-row extent
+  coverage > 0.75, chamfer deep-fraction > 0.20. Includes
+  f_toilet and f_armchair as BASE silhouette solids only — the
+  G.4 archetype drops (§29) stand; no tank/bowl or arm/seat
+  fitting was done.
+- **Plan slab — 16** via `PLAN_SLAB_PINS` (each visually
+  reviewed): groundsheets x6, f_leather_tarp, f_tatami,
+  f_fiber_mat, f_canvas_floor at thickness 2; f_down_mattress,
+  f_floor_mattress at 6; f_ash, f_leaves_pile, f_firering,
+  f_scrap_bridge at 3. The sprite IS the top face; f_firering's
+  hole is preserved. Thicknesses are ASSUMED (documented).
+- **Panel slab — 16** via `PANEL_SLAB_PINS`, all thickness 3:
+  canvas/skin/beaded doors x8, f_bigmirror, f_bigmirror_b,
+  f_bulletin, f_grave_stone, f_grave_stone_old, f_grave_head,
+  f_sign, f_target. Front verbatim, plain panel back.
+
+An 11-id `SEAMLESS_EXCLUSIONS` list blocks ids whose metrics
+pass but whose sprites would be misrepresented (visually
+reviewed): f_traffic_light, f_bed_frame, f_deckchair, f_chair,
+f_bullettrailer_table_bottom/middle/top, f_scrap_antenna,
+f_small_satelitte_dish, f_alien_anemone, f_winter_wreath (the
+wreath was caught in the §27 sheet review — a wall-hung ring,
+not a solid body; its exclusion took the total 223 -> 222).
+
+§27 SECOND PASS found a real defect: `base_plan`'s open-base
+(table) reading hollowed f_toilet — structure pixels below the
+slab in ungrounded columns were dropped (3,432 cells, visibly
+wrong). `coverage_model` now detects dropped structure pixels
+under an open plan and rebuilds closed (`force_closed`
+parameter on `solid_model_impl`; all pre-existing callers pass
+false). The toilet is 4,004 cells and renders tank + bowl +
+pedestal. True open bases (bench sections) drop 0 pixels and
+keep the open reading.
+
+UNMODELED REMAINDER — 129 of 351, by reason: vegetation /
+seasonal / fungal flora 46 (no invented mass, §24);
+skeleton-thin / below-criteria 55 (poles, racks, hoists, lamps,
+ladders, antennas, conduits, plus narrow bodies like
+f_pinball_machine, f_drill_press, f_hydraulic_press);
+exclusion pins 11; ambiguous view / organism / section 17
+(alien pod family, hammocks, f_absence, f_magic_circle,
+f_orrery, f_anvil, f_birdbath, egg-sack pair bw/cs — the e/ws
+sacks fire seamless, bw/cs fail the deep-fraction criterion).
+
+Known thin-depth edge: short silhouettes take depth 2 under the
+precedent rule — f_wood_keg (32 wide, 21 tall, 2 deep) and
+f_sand_castle are the visible instances; honest per the rule,
+flagged for Joey's eye.
+
+Verification: built by a subagent in worktree `cdda-voxel-gcov`
+(branch `prop-coverage`), parent re-verified (audit re-run:
+222; TSV diff: 119 identical, +103; battery 63/63) and the full
+voxelizer suite ran 98/98 in the main tree before the branch
+commit `fce048e`; merged to main as `3242629` (with the
+pre-existing `archetypes_showcase` G.4 match-arm fix it exposed,
+`2d60601`). Showcase `examples/prop_coverage_showcase.rs` ->
+`target/stage-g/prop_coverage.png` (12 rows spanning every
+closed class), presented to Joey 2026-11-17 for sign-off.
