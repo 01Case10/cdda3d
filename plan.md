@@ -1654,3 +1654,16 @@ All items below checked 2026-11-15 against CDDA `master` @ `6a3e59e0` (raw sourc
 - **Not verified / deliberately left open:** exact readback cost of the SDL `display_buffer` (measured by spike 0.6, budgeted in 4.12); whether a stable release branch differs from `master` in any of the APIs above (re-check this appendix if the fork pins a release instead).
 
 > **Addendum (2026-11-17, Stage H pond circularity — worktree `cdda-voxel-pond` branch `pond-tuning` off 60b70da, Joey sign-off 2026-11-17, MERGED to main @ 35cdafd, NOT pushed):** shore.rs box blur replaced by a windowed morphological opening of the waterline region (adaptive radius <= 28, pond-corner detection via 1-water-incident grid points + >= 2-edge shore runs both directions; land-point isthmus tiles like 0xF8 deliberately excluded). 3x3 mosaic: best-disk IoU 0.837 -> 0.951, radial std 4.14 -> 1.25 px, corner coverage 38.6% -> 21.3%; straights unchanged. Gates: stage_e 3/3, shore unit 3/3, engine pond 4/4, golden 3/3; only failure is the known gate_5_1 worktree path artifact (reproduced on pristine HEAD). Full record: pipeline doc §34. Remaining Stage H items unchanged (tank barrel ribbing, `assets/ultica_run1` regeneration, fine-aware lighting occlusion candidate).
+
+D2 (frames/racks) addendum (2026-11-17): all 15 hand-built in props.rs
+(d2_model, sprite-referent builds): stepladder (stepped front + runged
+rear A-frame), ladder (single plane, rails + rungs + top board),
+butcher rack (A-frame ends, top rail + pegs, hanging hook blocks),
+smoking racks (tripod over a stone fire ring; active adds fire + meat
+chunks), coat rack (post, 4 hooks, 4 feet), rotary clothesline (pole,
+4 arms, 3 line squares), stooks (pole stand; full = bound sheaf with
+flared grain head), target box (stamped crate), police barricade
+(stamped board, A-frame ends), counter gate (open slab on hinge post +
+counter stub), trailer bed head (ribbed panel), camp chair (X-frame +
+fabric), stool (round seat, splayed legs). Coverage 263 -> 278 of 351.
+64px sprites built at tile scale from their proportions.

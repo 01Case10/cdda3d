@@ -184,7 +184,7 @@ const REGRESSION: &[(&str, usize)] = &[
 /// props batch 1 (2026-11-17: 11 ambiguous-class ids —
 /// 2 slabs, 2 egg piles, 2 lathe pods, 2 depth solids,
 /// 2 thin extrusions, the birdbath).
-const COVERAGE_TOTAL: usize = 263;
+const COVERAGE_TOTAL: usize = 278;
 
 #[test]
 fn pre_drive_models_unchanged() {
@@ -636,7 +636,6 @@ fn panel_slab_is_thin_and_front_verbatim() {
 fn exclusions_and_skeletons_still_decline() {
     for id in [
         "f_dandelion_season_spring", // vegetation
-        "f_ladder",                   // skeleton frame (class D2, pending)
         "f_mannequin",                // skeleton body (class D3, pending)
         "f_traffic_light",            // exclusion pin (pole)
         "f_bed_frame",                // exclusion pin (slatted frame)

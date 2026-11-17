@@ -4314,6 +4314,469 @@ fn manual_cellphone_booster() -> PropModel {
 /// sides carry the mockup's surfaces (plain head
 /// back + conduit, seamed body access panel with
 /// vents, lamp pods in profile, plain flanks).
+
+/// A stepped beam of 2x2 cells from (x0, y0, z0) to
+/// (x1, y1, z1): the D2 frames' slanted legs, arms
+/// and braces.
+#[allow(clippy::too_many_arguments)]
+fn beam(
+    m: &mut PropModel,
+    x0: i32,
+    y0: i32,
+    z0: i32,
+    x1: i32,
+    y1: i32,
+    z1: i32,
+    color: Rgba<u8>,
+) {
+    let steps = (x1 - x0).abs().max((y1 - y0).abs()).max((z1 - z0).abs()).max(1);
+    for i in 0..=steps {
+        let x = x0 + (x1 - x0) * i / steps;
+        let y = y0 + (y1 - y0) * i / steps;
+        let z = z0 + (z1 - z0) * i / steps;
+        for dx in 0..2 {
+            for dz in 0..2 {
+                m.set(
+                    (x + dx) as u32,
+                    y as u32,
+                    (z + dz) as u32,
+                    Some(color),
+                );
+            }
+        }
+    }
+}
+
+/// Class D2 (frames and racks), hand-built from each
+/// sprite's real-world referent. Sprites wider than
+/// 32 (the 64px racks, tripod, clothesline, stooks)
+/// are built at tile scale from their proportions.
+fn d2_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match id {
+        "f_aluminum_stepladder" => Some(d2_stepladder()),
+        "f_ladder" => Some(d2_ladder()),
+        "f_butcher_rack" => Some(d2_butcher_rack()),
+        "f_smoking_rack" => Some(d2_smoking_rack(false)),
+        "f_smoking_rack_active" => Some(d2_smoking_rack(true)),
+        "f_rack_coat" => Some(d2_coat_rack()),
+        "f_rotary_clothesline" => Some(d2_clothesline()),
+        "f_stook_empty" => Some(d2_stook_empty()),
+        "f_stook_full" => Some(d2_stook_full()),
+        "f_archery_target_box" => Some(d2_target_box(sprite)),
+        "f_barricade_road" => Some(d2_barricade(sprite)),
+        "f_counter_gate_o" => Some(d2_counter_gate()),
+        "f_bullettrailer_bed_head" => Some(d2_bed_head(sprite)),
+        "f_camp_chair" => Some(d2_camp_chair()),
+        "f_stool" => Some(d2_stool()),
+        _ => None,
+    }
+}
+
+/// Stepladder: stepped front section, runged rear
+/// section slanting back to the hinge, top cap.
+fn d2_stepladder() -> PropModel {
+    let mut m = PropModel::new([32, 28, 32]);
+    let alu = rgb(168, 173, 178);
+    let alu_lt = rgb(203, 208, 213);
+    let dark = rgb(90, 93, 97);
+    for x in [9u32, 22] {
+        box_fill(&mut m, x, x + 1, 0, 25, 12, 14, alu);
+        m.set(x, 0, 13, Some(dark));
+        m.set(x + 1, 0, 13, Some(dark));
+    }
+    for (i, y) in [4u32, 10, 16, 22].iter().enumerate() {
+        let _ = i;
+        box_fill(&mut m, 9, 23, *y, *y + 1, 12, 16, alu_lt);
+    }
+    box_fill(&mut m, 8, 24, 26, 27, 11, 17, alu_lt);
+    // Rear section: rails slant from the hinge (z 17)
+    // down-back to z 25, with three rungs.
+    for x in [9i32, 22] {
+        beam(&mut m, x, 0, 25, x, 25, 17, alu);
+    }
+    for (y, z) in [(6u32, 23i32), (12, 21), (18, 19)] {
+        box_fill(&mut m, 9, 23, y, y, z as u32, z as u32, alu);
+    }
+    m
+}
+
+/// A plain wooden ladder: rails, round rungs, and
+/// the sprite's wide top board.
+fn d2_ladder() -> PropModel {
+    let mut m = PropModel::new([32, 28, 32]);
+    let wood = rgb(176, 120, 40);
+    let wood_dk = rgb(140, 92, 30);
+    for x in [9u32, 22] {
+        box_fill(&mut m, x, x + 1, 0, 24, 14, 16, wood_dk);
+    }
+    for y in [5u32, 10, 15, 20] {
+        tube_x(&mut m, 10, 22, y as i32, 15, 0.9, wood);
+    }
+    box_fill(&mut m, 8, 24, 25, 27, 12, 18, wood);
+    m
+}
+
+/// Butcher rack: two A-frame ends, a top rail with
+/// pegs, and two hanging hook blocks.
+fn d2_butcher_rack() -> PropModel {
+    let mut m = PropModel::new([32, 24, 32]);
+    let wood = rgb(165, 120, 50);
+    let wood_dk = rgb(120, 84, 34);
+    let lump = rgb(190, 188, 180);
+    let lump_dk = rgb(120, 118, 110);
+    for x in [5i32, 25] {
+        beam(&mut m, x, 0, 7, x, 21, 13, wood);
+        beam(&mut m, x, 0, 25, x, 21, 19, wood);
+        box_fill(
+            &mut m,
+            x as u32,
+            (x + 1) as u32,
+            9,
+            10,
+            11,
+            21,
+            wood_dk,
+        );
+    }
+    tube_x(&mut m, 5, 27, 22, 16, 1.1, wood);
+    for x in [8u32, 12, 16, 20, 24] {
+        m.set(x, 23, 16, Some(wood_dk));
+    }
+    for x0 in [10u32, 19] {
+        box_fill(&mut m, x0, x0 + 3, 13, 18, 14, 18, lump);
+        m.set(x0 + 1, 15, 16, Some(lump_dk));
+        m.set(x0 + 2, 17, 15, Some(lump_dk));
+        m.set(x0 + 1, 20, 16, Some(wood_dk));
+        m.set(x0 + 1, 19, 16, Some(wood_dk));
+    }
+    m
+}
+
+/// Smoking rack: a tripod over a stone fire ring.
+/// The active variant adds the fire and two meat
+/// chunks on the crossbar.
+fn d2_smoking_rack(active: bool) -> PropModel {
+    let mut m = PropModel::new([32, 22, 32]);
+    let wood = rgb(140, 100, 45);
+    let wood_dk = rgb(105, 74, 32);
+    // Tripod legs to the apex (16, 21, 16).
+    beam(&mut m, 15, 0, 5, 15, 21, 15, wood);
+    beam(&mut m, 6, 0, 23, 15, 21, 15, wood);
+    beam(&mut m, 24, 0, 23, 15, 21, 15, wood);
+    box_fill(&mut m, 15, 17, 21, 21, 15, 17, wood_dk);
+    // Crossbar between the two back legs.
+    tube_x(&mut m, 10, 22, 11, 21, 0.9, wood);
+    // Stone ring and ash bed.
+    for a in 0..48 {
+        let t = a as f32 / 48.0 * std::f32::consts::TAU;
+        let x = (16.0 + 8.0 * t.cos()) as u32;
+        let z = (16.0 + 8.0 * t.sin()) as u32;
+        let g = 118 + ((a * 37) % 40) as u8;
+        m.set(x, 0, z, Some(rgb(g, g, g - 4)));
+        if a % 2 == 0 {
+            m.set(x, 1, z, Some(rgb(g - 14, g - 14, g - 18)));
+        }
+    }
+    for dx in -5i32..=5 {
+        for dz in -5i32..=5 {
+            if dx * dx + dz * dz <= 25 {
+                m.set((16 + dx) as u32, 0, (16 + dz) as u32, Some(rgb(64, 59, 54)));
+            }
+        }
+    }
+    if active {
+        // Fire in the pit.
+        let fire = [
+            rgb(232, 120, 26),
+            rgb(245, 178, 44),
+            rgb(250, 214, 96),
+        ];
+        for (i, (dx, dz)) in [(0i32, 0i32), (1, 0), (-1, 1), (0, -1), (1, 1)]
+            .iter()
+            .enumerate()
+        {
+            m.set((16 + dx) as u32, 1, (16 + dz) as u32, Some(fire[i % 3]));
+        }
+        m.set(16, 2, 16, Some(fire[2]));
+        m.set(16, 3, 16, Some(fire[1]));
+        // Two meat chunks on the crossbar.
+        for x0 in [12u32, 18] {
+            box_fill(&mut m, x0, x0 + 2, 7, 10, 20, 22, rgb(168, 42, 36));
+            m.set(x0 + 1, 10, 21, Some(rgb(238, 230, 220)));
+            m.set(x0, 9, 20, Some(rgb(238, 230, 220)));
+        }
+    } else {
+        // Cold ash pile.
+        for dx in -1i32..=1 {
+            for dz in -1i32..=1 {
+                m.set((16 + dx) as u32, 1, (16 + dz) as u32, Some(rgb(150, 138, 116)));
+            }
+        }
+    }
+    m
+}
+
+/// Coat rack: turned post, four upturned hooks,
+/// four splayed feet.
+fn d2_coat_rack() -> PropModel {
+    let mut m = PropModel::new([32, 44, 32]);
+    let wood = rgb(146, 99, 47);
+    let wood_dk = rgb(110, 72, 33);
+    cyl_y(&mut m, 16, 16, 1.2, 2, 40, wood);
+    cyl_y(&mut m, 16, 16, 3.0, 0, 3, wood_dk);
+    // Feet: radiating bars stepping down to the floor.
+    for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+        for d in 1..=6i32 {
+            let y = if d <= 2 { 1 } else { 0 };
+            m.set((16 + dx * d) as u32, y, (16 + dz * d) as u32, Some(wood));
+            m.set(
+                (16 + dx * d) as u32,
+                y,
+                (16 + dz * d + if dx != 0 { 0 } else { 0 }) as u32,
+                Some(wood),
+            );
+        }
+    }
+    // Hooks: arms stepping up and out, with a tip.
+    for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+        for d in 1..=4i32 {
+            let y = 36 + (d / 2) as u32;
+            m.set((16 + dx * d) as u32, y, (16 + dz * d) as u32, Some(wood));
+        }
+        m.set((16 + dx * 5) as u32, 39, (16 + dz * 5) as u32, Some(wood_dk));
+    }
+    // Top knob.
+    box_fill(&mut m, 15, 17, 41, 42, 15, 17, wood_dk);
+    m.set(16, 43, 16, Some(wood));
+    m
+}
+
+/// Rotary clothesline: pole, four diagonal arms,
+/// three concentric line squares on the arms' plane.
+fn d2_clothesline() -> PropModel {
+    let mut m = PropModel::new([32, 27, 32]);
+    let steel = rgb(168, 172, 176);
+    let steel_dk = rgb(110, 114, 118);
+    let line = rgb(203, 198, 172);
+    cyl_y(&mut m, 16, 16, 1.3, 0, 20, steel_dk);
+    cyl_y(&mut m, 16, 16, 3.0, 0, 1, steel_dk);
+    box_fill(&mut m, 14, 18, 20, 21, 14, 18, steel_dk);
+    for (cx, cz) in [(3i32, 3i32), (27, 3), (3, 27), (27, 27)] {
+        beam(&mut m, 15, 21, 15, cx, 25, cz, steel);
+    }
+    for (r, y) in [(5i32, 22u32), (9, 24), (13, 25)] {
+        let lo = 16 - r;
+        let hi = 16 + r;
+        for t in lo..=hi {
+            m.set(t as u32, y, lo as u32, Some(line));
+            m.set(t as u32, y, hi as u32, Some(line));
+            m.set(lo as u32, y, t as u32, Some(line));
+            m.set(hi as u32, y, t as u32, Some(line));
+        }
+    }
+    m
+}
+
+/// The empty stook: a single pole on a cross foot.
+fn d2_stook_empty() -> PropModel {
+    let mut m = PropModel::new([32, 13, 32]);
+    let wood = rgb(150, 112, 52);
+    box_fill(&mut m, 11, 21, 0, 0, 15, 17, wood);
+    box_fill(&mut m, 15, 17, 0, 0, 11, 21, wood);
+    cyl_y(&mut m, 16, 16, 1.0, 0, 12, wood);
+    m
+}
+
+/// The full stook: a bound sheaf -- stalk bundle
+/// flaring into a ragged grain head.
+fn d2_stook_full() -> PropModel {
+    let mut m = PropModel::new([32, 21, 32]);
+    let wood = rgb(150, 112, 52);
+    let stalk = rgb(190, 160, 100);
+    let grain = rgb(205, 175, 105);
+    let grain_dk = rgb(178, 144, 78);
+    box_fill(&mut m, 11, 21, 0, 0, 15, 17, wood);
+    box_fill(&mut m, 15, 17, 0, 0, 11, 21, wood);
+    cyl_y(&mut m, 16, 16, 1.0, 0, 5, wood);
+    for y in 1..=9u32 {
+        let r = if y <= 5 { 2.2 } else { 1.8 };
+        cyl_y(&mut m, 16, 16, r, y, y, stalk);
+    }
+    box_fill(&mut m, 14, 18, 8, 9, 14, 18, rgb(150, 115, 60));
+    for y in 10..=19u32 {
+        let r = 2.5 + (y - 10) as f32 * 0.45;
+        for dx in -7i32..=7 {
+            for dz in -7i32..=7 {
+                let d = ((dx * dx + dz * dz) as f32).sqrt();
+                if d <= r {
+                    let c = if hash01(((16 + dx) * 57 + (16 + dz)) as u32, y) < 0.3 {
+                        grain_dk
+                    } else {
+                        grain
+                    };
+                    m.set((16 + dx) as u32, y, (16 + dz) as u32, Some(c));
+                }
+            }
+        }
+    }
+    // Ragged ear tips above the head.
+    for dx in -6i32..=6 {
+        for dz in -6i32..=6 {
+            let d = ((dx * dx + dz * dz) as f32).sqrt();
+            if (4.0..=6.6).contains(&d) && hash01((dx * 57 + dz) as u32, 77) < 0.4 {
+                m.set((16 + dx) as u32, 20, (16 + dz) as u32, Some(grain));
+            }
+        }
+    }
+    m
+}
+
+/// Archery target box: a plank crate with the
+/// sprite's target face stamped on the front.
+fn d2_target_box(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 12, 32]);
+    let plank = rgb(186, 152, 96);
+    let plank_dk = rgb(150, 118, 70);
+    box_fill(&mut m, 10, 23, 0, 11, 11, 20, plank);
+    for y in [3u32, 7] {
+        for z in 11..=20u32 {
+            m.set(10, y, z, Some(plank_dk));
+            m.set(23, y, z, Some(plank_dk));
+        }
+    }
+    for x in 10..=21u32 {
+        for y in 0..=11u32 {
+            let px = *sprite.get_pixel(x, 22 - y);
+            if opaque(px) {
+                m.set(x, y, 20, Some(px));
+            }
+        }
+    }
+    m
+}
+
+/// Police barricade: a long lettered board on two
+/// A-frame ends.
+fn d2_barricade(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 25, 32]);
+    let blue = rgb(96, 130, 180);
+    let blue_dk = rgb(70, 100, 148);
+    box_fill(&mut m, 1, 30, 16, 20, 14, 17, blue);
+    for x in 1..=30u32 {
+        for y in 16..=20u32 {
+            let px = *sprite.get_pixel(x, 25 - y);
+            if opaque(px) {
+                m.set(x, y, 17, Some(px));
+            }
+        }
+    }
+    for x in [4i32, 26] {
+        beam(&mut m, x, 0, 8, x, 16, 13, blue_dk);
+        beam(&mut m, x, 0, 24, x, 16, 18, blue_dk);
+        box_fill(
+            &mut m,
+            x as u32,
+            (x + 1) as u32,
+            0,
+            1,
+            7,
+            25,
+            blue_dk,
+        );
+        box_fill(
+            &mut m,
+            x as u32,
+            (x + 1) as u32,
+            7,
+            8,
+            11,
+            21,
+            blue_dk,
+        );
+    }
+    box_fill(&mut m, 5, 27, 6, 7, 15, 16, blue_dk);
+    m
+}
+
+/// Counter gate (open): a grey slab swung out from
+/// the counter end on its hinge post.
+fn d2_counter_gate() -> PropModel {
+    let mut m = PropModel::new([32, 22, 32]);
+    let counter = rgb(190, 165, 120);
+    let grey = rgb(140, 142, 145);
+    let grey_dk = rgb(104, 107, 110);
+    box_fill(&mut m, 12, 19, 0, 9, 5, 10, counter);
+    box_fill(&mut m, 14, 16, 0, 20, 9, 11, grey_dk);
+    for t in 0..=15i32 {
+        let x = 16 + t / 3;
+        let z = 11 + t;
+        for y in 2..=20i32 {
+            let border = y == 2 || y == 20 || t == 0 || t == 15;
+            let c = if border { grey_dk } else { grey };
+            m.set(x as u32, y as u32, z as u32, Some(c));
+            m.set((x + 1) as u32, y as u32, z as u32, Some(c));
+        }
+    }
+    m
+}
+
+/// Trailer bed head: a ribbed metal panel fragment.
+fn d2_bed_head(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 18, 32]);
+    let metal = rgb(186, 189, 191);
+    let metal_dk = rgb(140, 143, 146);
+    box_fill(&mut m, 0, 10, 0, 17, 14, 15, metal);
+    for x in [2u32, 5, 8] {
+        box_fill(&mut m, x, x, 0, 17, 16, 16, metal_dk);
+    }
+    box_fill(&mut m, 0, 10, 4, 5, 16, 16, metal_dk);
+    for x in 0..=10u32 {
+        for y in 0..=16u32 {
+            let px = *sprite.get_pixel(x, 17 - y);
+            if opaque(px) {
+                m.set(x, y, 16, Some(px));
+            }
+        }
+    }
+    m
+}
+
+/// Camp chair: X-frame sides, a fabric seat and
+/// backrest.
+fn d2_camp_chair() -> PropModel {
+    let mut m = PropModel::new([32, 17, 32]);
+    let frame = rgb(219, 219, 216);
+    let fabric = rgb(206, 201, 195);
+    for x in [11i32, 20] {
+        beam(&mut m, x, 0, 10, x, 15, 19, frame);
+        beam(&mut m, x, 0, 20, x, 9, 11, frame);
+    }
+    box_fill(&mut m, 11, 21, 8, 9, 11, 19, fabric);
+    box_fill(&mut m, 11, 21, 13, 16, 18, 19, fabric);
+    box_fill(&mut m, 11, 21, 8, 8, 11, 12, rgb(215, 180, 175));
+    m
+}
+
+/// Stool: a round padded seat on four splayed legs
+/// with a stretcher frame.
+fn d2_stool() -> PropModel {
+    let mut m = PropModel::new([32, 16, 32]);
+    let wood = rgb(150, 105, 60);
+    let wood_dk = rgb(112, 76, 40);
+    for (sx, sz) in [(11i32, 10i32), (19, 10), (11, 20), (19, 20)] {
+        let fx = if sx < 16 { sx - 2 } else { sx + 2 };
+        let fz = if sz < 16 { sz - 2 } else { sz + 2 };
+        beam(&mut m, fx, 0, fz, sx, 12, sz, wood);
+    }
+    box_fill(&mut m, 10, 21, 5, 5, 11, 11, wood_dk);
+    box_fill(&mut m, 10, 21, 5, 5, 20, 20, wood_dk);
+    box_fill(&mut m, 10, 10, 5, 5, 11, 20, wood_dk);
+    box_fill(&mut m, 21, 21, 5, 5, 11, 20, wood_dk);
+    cyl_y(&mut m, 16, 15, 6.2, 13, 14, wood_dk);
+    cyl_y(&mut m, 16, 15, 6.2, 15, 15, rgb(96, 96, 99));
+    m
+}
+
 fn manual_machinery_light(sprite: &RgbaImage) -> PropModel {
     let olive = rgb(140, 152, 66);
     let olive_dk = rgb(96, 106, 44);
@@ -4540,6 +5003,9 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     // 2026-11-17: the procedural builds for these still
     // looked wrong; edit the models manually).
     if let Some(m) = manual_model(id, sprite) {
+        return Some(m);
+    }
+    if let Some(m) = d2_model(id, sprite) {
         return Some(m);
     }
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {
