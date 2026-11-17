@@ -4137,9 +4137,9 @@ fn manual_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         "f_floor_lamp" => Some(manual_floor_lamp()),
         "f_wind_vane" => Some(manual_wind_vane(sprite)),
         "f_TV_antenna" => Some(manual_tv_antenna()),
-        "f_cellphone_booster" => Some(section_solid(sprite, 0.6, 6)),
+        "f_cellphone_booster" => Some(manual_cellphone_booster()),
         "f_ventilator" => Some(manual_ventilator()),
-        "f_machinery_light" => Some(section_solid(sprite, 0.55, 11)),
+        "f_machinery_light" => Some(section_solid(sprite, 0.45, 9)),
         "f_ground_cable" => Some(manual_ground_cable()),
         _ => None,
     }
@@ -4252,6 +4252,57 @@ fn manual_tv_antenna() -> PropModel {
 /// sprite composes them) joined by two bracket arms.
 /// Whites/greys from the sprite ((255,255,255),
 /// (155,155,155)).
+/// Cellphone booster, hand-built to the tile's
+/// measured layout (Joey: the section-solid version
+/// looked worse than this composition): the main panel
+/// (6 wide, x 17..22, grey top section over a white
+/// face), the thin second panel (x 6..8), a diagonal
+/// brace lattice between them, a base bar, and the
+/// stand foot the sprite's lower diagonal runs to.
+fn manual_cellphone_booster() -> PropModel {
+    let mut m = PropModel::new([32, 30, 32]);
+    let white = rgb(233, 233, 230);
+    let grey = rgb(158, 158, 158);
+    let back = rgb(128, 128, 128);
+    let dark = rgb(88, 88, 88);
+    // Depth layout: the main panel stands forward
+    // (z 17..19), the second panel and the lattice sit
+    // behind it (z 10..13) -- the front view is the
+    // tile's composition unchanged, but the side
+    // profile shows the assembly's structure (panel
+    // edge, brace plane, panel edge) instead of one
+    // featureless line.
+    // Main panel: y 3..29; grey top (the sprite's
+    // upper section), white below.
+    box_fill(&mut m, 17, 22, 22, 29, 17, 19, grey);
+    box_fill(&mut m, 17, 22, 3, 21, 17, 19, white);
+    box_fill(&mut m, 17, 22, 3, 29, 16, 16, back);
+    // Second panel: x 6..8, y 7..25, z 11..12.
+    box_fill(&mut m, 6, 8, 7, 25, 11, 12, white);
+    box_fill(&mut m, 6, 8, 7, 25, 10, 10, back);
+    // Diagonal lattice between the panels (z 11..12):
+    // arm A descends from the left panel's top, arm B
+    // ascends from its base -- the sprite's X brace.
+    for i in 0..=7u32 {
+        box_fill(&mut m, 9 + i, 10 + i, 20 - i, 21 - i, 11, 12, grey);
+        box_fill(&mut m, 9 + i, 10 + i, 11 + i, 12 + i, 11, 12, grey);
+    }
+    // Two standoff arms reach forward from the lattice
+    // plane to the main panel's back.
+    box_fill(&mut m, 15, 17, 19, 20, 11, 16, dark);
+    box_fill(&mut m, 15, 17, 10, 11, 11, 16, dark);
+    // Base bar (the sprite's wide lower rows) ties
+    // both depth planes; the stand post and diagonal
+    // leg run to the foot.
+    box_fill(&mut m, 6, 22, 6, 7, 10, 19, dark);
+    box_fill(&mut m, 10, 11, 2, 6, 11, 12, dark);
+    for i in 0..=5u32 {
+        box_fill(&mut m, 11 + i, 12 + i, 5 - i, 6 - i, 11, 18, dark);
+    }
+    box_fill(&mut m, 9, 13, 0, 1, 11, 18, dark);
+    m
+}
+
 /// A sprite-faithful section solid (hand-fitted for
 /// the machinery light and the cellphone booster, whose
 /// freehand builds did not match their tiles -- Joey,
@@ -4299,12 +4350,15 @@ fn section_solid(sprite: &RgbaImage, factor: f32, max_d: u32) -> PropModel {
             }
             let z0 = 16 - (d - 1) / 2;
             let z1 = z0 + d - 1;
-            // De-void: near-black paint is the sprite's
-            // outline/shadow, not surface color -- on a
-            // side face it smears into a black slab (the
-            // orrery lesson). Surface voxels showing a
-            // near-black pixel take the cluster's modal
-            // solid tone instead.
+            // De-void the two SIDE-EDGE columns only:
+            // near-black paint is the sprite's outline/
+            // shadow, and on a side face it smears into
+            // a black slab (the orrery lesson) -- but
+            // the front keeps the sprite's pixels
+            // verbatim, dark shading included. (v3
+            // washed every dark pixel in the fill to
+            // modal and flattened the front; Joey
+            // flagged it as worse than the start.)
             let modal = modal_color((a..=b).filter_map(|px| {
                 let c = *sprite.get_pixel(px, r);
                 let v = c.0;
@@ -4317,7 +4371,7 @@ fn section_solid(sprite: &RgbaImage, factor: f32, max_d: u32) -> PropModel {
             for vx in a..=b {
                 let mut px = *sprite.get_pixel(vx, r);
                 let v = px.0;
-                if v[0] < 40 && v[1] < 40 && v[2] < 40 {
+                if (vx == a || vx == b) && v[0] < 40 && v[1] < 40 && v[2] < 40 {
                     if let Some(mc) = modal {
                         px = mc;
                     }
