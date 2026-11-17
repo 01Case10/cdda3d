@@ -551,6 +551,7 @@ impl PropScene {
             y,
             level: 0,
             furn_id,
+            quarter_turns: 0,
         };
         let placements = match snapshot {
             "sample-scene" => vec![

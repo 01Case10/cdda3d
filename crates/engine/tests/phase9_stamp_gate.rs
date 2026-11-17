@@ -306,18 +306,21 @@ fn phase9_stamp_round_trip_suppression_and_dedupe() {
             y: 2,
             level: 0,
             furn_id: FURN_COUNTER,
+            quarter_turns: 0,
         },
         FurniturePlacement {
             x: 3,
             y: 2,
             level: 0,
             furn_id: FURN_TANK,
+            quarter_turns: 0,
         },
         FurniturePlacement {
             x: 4,
             y: 2,
             level: 0,
             furn_id: FURN_NONE,
+            quarter_turns: 0,
         },
     ];
     let report = stamp_furniture(&mut fx.map, &mut fx.layer, &placements, scale, &resolve).unwrap();
@@ -367,6 +370,7 @@ fn phase9_stamp_round_trip_suppression_and_dedupe() {
             y: 2,
             level: 0,
             furn_id: FURN_NONE,
+            quarter_turns: 0,
         },
         scale,
         &resolve,
@@ -400,6 +404,7 @@ fn phase9_stamp_round_trip_suppression_and_dedupe() {
             y: 2,
             level: 0,
             furn_id: FURN_TANK,
+            quarter_turns: 0,
         },
         scale,
         &resolve,
@@ -420,12 +425,14 @@ fn phase9_stamp_round_trip_suppression_and_dedupe() {
                 y: 6,
                 level: 0,
                 furn_id: FURN_COUNTER,
+                quarter_turns: 0,
             },
             FurniturePlacement {
                 x: 5,
                 y: 5,
                 level: 0,
                 furn_id: FURN_HUGE,
+                quarter_turns: 0,
             },
         ],
         scale,
@@ -438,4 +445,79 @@ fn phase9_stamp_round_trip_suppression_and_dedupe() {
         fx.layer.volumes_for_tile((6, 6)).is_empty(),
         "batch validation happens before any stamping"
     );
+}
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3b (9.7 engine half): placement facing
+// ---------------------------------------------------------------------
+
+#[test]
+fn phase9_rotated_placement_matches_mesher_rotated_stamp() {
+    let scale = WorldScale::default();
+    let z0 = fine_z_origin(scale, 0);
+    for turns in 0..=3u8 {
+        let mut fx = fixture();
+        let block_fn = prop_block_for(&fx.colors, BASE_ID, fx.first_layer);
+        let counter_adapter = PropModelCells::new(&fx.counter, &block_fn);
+        let resolve = |id: u32| -> Option<&dyn ModelCells> {
+            match id {
+                FURN_COUNTER => Some(&counter_adapter),
+                _ => None,
+            }
+        };
+        // Engine path: one rotated placement, plus a second
+        // adjacent tile at a different facing (multitile scope:
+        // per-tile stamps, neither leaks into the other).
+        let report = stamp_furniture(
+            &mut fx.map,
+            &mut fx.layer,
+            &[
+                FurniturePlacement {
+                    x: 2,
+                    y: 2,
+                    level: 0,
+                    furn_id: FURN_COUNTER,
+                    quarter_turns: turns,
+                },
+                FurniturePlacement {
+                    x: 3,
+                    y: 2,
+                    level: 0,
+                    furn_id: FURN_COUNTER,
+                    quarter_turns: (turns + 1) % 4,
+                },
+            ],
+            scale,
+            &resolve,
+        )
+        .unwrap();
+        assert_eq!(report.volumes, 2);
+        assert_eq!(
+            report.stamped_cells,
+            2 * fx.counter.solid_count(),
+            "turns {turns}: rotation copies every cell on both tiles"
+        );
+        // Reference: the mesher's own rotated stamp of the same
+        // adapter, tile by tile — voxel-for-voxel over both tiles.
+        for (tile, t) in [((2, 2), turns), ((3, 2), (turns + 1) % 4)] {
+            let mut want_layer = FineLayer::default();
+            mesher::fine::stamp_model_rotated(&mut want_layer, tile, z0, &counter_adapter, t)
+                .unwrap();
+            for ly in 0..FINE {
+                for lx in 0..FINE {
+                    for fz in 0..96 {
+                        let (fx_c, fy_c) = (tile.0 * FINE + lx, tile.1 * FINE + ly);
+                        assert_eq!(
+                            fx.layer.block_at_fine(fx_c, fy_c, fz),
+                            want_layer.block_at_fine(fx_c, fy_c, fz),
+                            "turns {t} tile {tile:?}: fine ({fx_c},{fy_c},{fz})"
+                        );
+                    }
+                }
+            }
+        }
+        // No spill: the tile north of both placements is empty.
+        assert!(fx.layer.volumes_for_tile((2, 3)).is_empty());
+        assert!(fx.layer.volumes_for_tile((3, 3)).is_empty());
+    }
 }

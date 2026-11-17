@@ -136,6 +136,16 @@ pub struct FurniturePlacement {
     /// Furniture def id, resolved to a prop model by the
     /// caller's resolver.
     pub furn_id: u32,
+    /// Facing in quarter turns (plan §11b, 9.7): the stamped
+    /// model is rotated by `quarter_turns % 4` steps inside
+    /// its tile (0 = front south, 1 = west, 2 = north,
+    /// 3 = east — see `mesher::fine::stamp_model_rotated`).
+    /// Callers with no facing information supply 0, which is
+    /// exactly the pre-9.7 unrotated stamp. Multitile
+    /// furniture stays per-tile: each tile's placement
+    /// carries its own model and its own facing, and a stamp
+    /// never writes outside its tile.
+    pub quarter_turns: u8,
 }
 
 /// The absolute fine-z origin a level's prop volume starts
@@ -224,8 +234,10 @@ pub fn prop_block_for<'a>(
 /// For each placement whose `furn_id` resolves to a model
 /// (via `resolve`), the model is stamped at the tile's fine
 /// volume with origin [`fine_z_origin`] (floor-slab top, plan
-/// 9.0) through `mesher::fine::stamp_model`, and the owning
-/// chunk's `has_fine` flag is recomputed from the layer.
+/// 9.0) through `mesher::fine::stamp_model_rotated` with the
+/// placement's `quarter_turns` facing (9.7; 0 = the pre-9.7
+/// unrotated stamp), and the owning chunk's `has_fine` flag
+/// is recomputed from the layer.
 ///
 /// SUPPRESSION contract (9.0): a modelled furniture gets NO
 /// coarse block. `build_columns` writes none (it stamps
@@ -273,7 +285,7 @@ pub fn stamp_furniture<'m>(
         layer.remove_tile_in_z_range(tile, z0, z0 + layer.depth_z);
         match resolve(p.furn_id) {
             Some(model) => {
-                let r = mesher::fine::stamp_model(layer, tile, z0, model)?;
+                let r = mesher::fine::stamp_model_rotated(layer, tile, z0, model, p.quarter_turns)?;
                 report.stamped_cells += r.stamped_cells;
                 report.volumes += r.volumes;
                 report.memory_bytes += r.memory_bytes;
