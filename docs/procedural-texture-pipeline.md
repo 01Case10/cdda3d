@@ -1292,6 +1292,21 @@ generate from it; mockups in target/stage-g/mockups/):
   flagged to Joey as a faithfulness question, not silently
   redesigned.
 
+EGG SACK CORRECTION (Joey, 2026-11-17: the mockup-round
+egg sack "clearly does not match the source sprite — we
+either need to fix our code or the generated mockups";
+both): the first egg mockup reused the boulder template —
+wrong referent. The sprite is a LOW crumpled drape (wider
+than tall, vertical fold shading), not a rock. The mockup
+was redrawn sprite-derived (back = the front mirrored with
+a wobble; side = the sprite's own columns rearranged by
+height into a low fold profile), and the code gained a
+DRAPE variant of the blob (DRAPE_PINS: f_egg_sacke,
+f_egg_sackws): depth budget 0.62 x widest row, harder edge
+thinning (dfrac^0.8), no ground boost, and per-column fold
+modulation from the column's mean L (dark fold valleys end
+shallower — scalloped back edge).
+
 ## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
 
 DONE, merged to main @ 0ace695 (not pushed), parent re-verified.

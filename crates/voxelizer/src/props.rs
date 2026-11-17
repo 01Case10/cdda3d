@@ -2573,7 +2573,7 @@ pub const LATHE_PINS: &[&str] = &[
     "f_kiln_full",
 ];
 
-/// Irregular lump pins: boulders, the fungal clump, egg sacks
+/// Irregular lump pins: boulders and the fungal clump
 /// (Joey's reviews, 2026-11-17: "Literally a boulder" — the
 /// lathe made them surfaces of revolution, i.e. cylinders with
 /// a profile; these objects are NOT round in plan, they are
@@ -2584,9 +2584,20 @@ pub const BLOB_PINS: &[&str] = &[
     "f_boulder_small",
     "f_glow_boulder",
     "f_fungal_clump",
-    "f_egg_sacke",
-    "f_egg_sackws",
 ];
+
+/// Drape pins: the egg sacks are NOT rocks — the sprite is a
+/// low, crumpled, draped pile (wider than tall, fold shading
+/// running vertically). The mass blob's distance-transform
+/// inflation made them thick slabs (Joey, 2026-11-17: "clearly
+/// does not match"). The drape variant keeps the depth
+/// modest (0.62 x widest row), thins the edges harder, and
+/// modulates each column's depth by its fold shading (dark
+/// fold columns end shallower — a scalloped back edge).
+/// Mockup: target/stage-g/mockups/f_egg_sacke_sides.png
+/// (sprite-derived: mirrored back, columns rearranged for
+/// the side profile).
+pub const DRAPE_PINS: &[&str] = &["f_egg_sacke", "f_egg_sackws"];
 
 /// An irregular lump fitted to the sprite: the front face is
 /// the sprite verbatim (every structure pixel is a column at
@@ -2598,7 +2609,7 @@ pub const BLOB_PINS: &[&str] = &[
 /// asymmetric, never a disc profile. Every voxel carries its
 /// column's sprite paint (mottled rock/fungal texture wraps
 /// the mass). Depth budget = the widest row (<= 32).
-fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
+fn blob_model(sprite: &RgbaImage, seg: &Segmentation, drape: bool) -> Option<PropModel> {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
@@ -2628,7 +2639,44 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
     if d_max < 4 {
         return None;
     }
-    let d = d_max.min(32);
+    // Mass: depth budget = the widest row. Drape: a modest
+    // 0.62 x — a pile of sacks is much thinner than a rock.
+    let d = if drape {
+        ((d_max as f32 * 0.62).round() as u32).max(4).min(32)
+    } else {
+        d_max.min(32)
+    };
+    // Per-column fold shading for the drape: the mean L of
+    // the column's structure pixels, normalized over columns
+    // (dark fold columns are the drape's valleys).
+    let col_fold: Vec<f32> = if drape {
+        let means: Vec<Option<f32>> = (0..w)
+            .map(|x| {
+                let ls: Vec<f32> = (0..fh)
+                    .map(|y| *sprite.get_pixel(x, bot - y))
+                    .filter(|p| structure(*p))
+                    .map(|p| lab_of(p).l)
+                    .collect();
+                if ls.is_empty() {
+                    None
+                } else {
+                    Some(ls.iter().sum::<f32>() / ls.len() as f32)
+                }
+            })
+            .collect();
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for m in means.iter().flatten() {
+            lo = lo.min(*m);
+            hi = hi.max(*m);
+        }
+        let span = (hi - lo).max(0.01);
+        means
+            .iter()
+            .map(|m| m.map_or(1.0, |v| 0.85 + 0.15 * (v - lo) / span))
+            .collect()
+    } else {
+        vec![1.0; w as usize]
+    };
     // Depth from the silhouette's DISTANCE TRANSFORM (mockup
     // round, 2026-11-17): a column's depth follows how deep
     // inside the silhouette it sits — the mass is an inflated
@@ -2708,13 +2756,26 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
             // not slab backwards at full depth) and a ground
             // boost at the base (the back face reaches the
             // ground across the width — a grounded mass, per
-            // the mockup's side profile).
+            // the mockup's side profile). The drape skips the
+            // ground boost (it is a soft pile, not a grounded
+            // rock), thins its edges harder, and applies the
+            // fold modulation.
             let (cy0, cy1) = col_ext[x as usize].unwrap_or((y, y));
             let v = (y - cy0) as f32 / ((cy1 - cy0) as f32).max(1.0);
-            let dome = 1.0 - 0.38 * v * v;
-            let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
-            let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
-            depth = depth.max(d as f32 * 0.45 * gfrac);
+            let depth = if drape {
+                let dome = 1.0 - 0.25 * v * v;
+                d as f32
+                    * dfrac.powf(0.8)
+                    * lump
+                    * dome
+                    * col_fold[x as usize]
+            } else {
+                let dome = 1.0 - 0.38 * v * v;
+                let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
+                let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
+                depth = depth.max(d as f32 * 0.45 * gfrac);
+                depth
+            };
             let depth = (depth.round() as u32).clamp(2, d);
             for z in (d - depth)..d {
                 m.set(x, y, z, Some(px));
@@ -3128,7 +3189,12 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         }
     }
     if BLOB_PINS.contains(&id) {
-        if let Some(m) = blob_model(sprite, &seg) {
+        if let Some(m) = blob_model(sprite, &seg, false) {
+            return Some(m);
+        }
+    }
+    if DRAPE_PINS.contains(&id) {
+        if let Some(m) = blob_model(sprite, &seg, true) {
             return Some(m);
         }
     }
