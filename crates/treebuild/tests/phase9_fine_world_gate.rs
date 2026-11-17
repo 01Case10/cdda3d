@@ -109,3 +109,97 @@ fn fine_world_builds_a_tree_with_one_leaf_per_stamped_cell() {
     // (gate 2c.2's mechanism, at fine coordinates).
     treebuild::build::verify_side_table(&built, &world).unwrap();
 }
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3f (9.5 CPU two-tree trace): nearer hit wins
+// ---------------------------------------------------------------------
+
+use glam::Vec3;
+use treebuild::build::BuildConfig;
+use treebuild::cpu::{cast_ray, cast_ray_two, TraceMode};
+use treebuild::world::VoxelCell;
+
+fn coarse_wall_world() -> VoxelWorld {
+    // One wall block at block (4, 0, 1), material 7.
+    let mut w = VoxelWorld::new();
+    w.set([4, 0, 1], VoxelCell::new([0.5, 0.5, 0.5], 7));
+    w
+}
+
+fn fine_prop_layer() -> FineLayer {
+    // A 2x1x2 prop (material 1001) on tile (1, 0) at fine z 32:
+    // fine x 32..34, fine y 30..32, fine z 32 — i.e. block
+    // x 1.0..1.0625, y 0.9375..1.0, z 1.0..1.03125.
+    let mut layer = FineLayer::default();
+    stamp_model(&mut layer, (1, 0), 32, &TestModel::filled([2, 1, 2], blk(1001, Pass::Opaque))).unwrap();
+    layer
+}
+
+#[test]
+fn two_tree_nearer_fine_hit_wins_and_miss_falls_through() {
+    let coarse = treebuild::build_tree(
+        &coarse_wall_world(),
+        BuildConfig { depth: None, origin: Some([0, 0, 0]) },
+    )
+    .unwrap();
+    let fine_world = VoxelWorld::from_fine_layer(&fine_prop_layer());
+    let fine = treebuild::build_tree(
+        &fine_world,
+        BuildConfig { depth: None, origin: Some([0, 0, 0]) },
+    )
+    .unwrap();
+    let rd = Vec3::new(1.0, 0.0, 0.0);
+
+    // Ray through the prop (y 0.97, z 1.01 in block units):
+    // the fine hit at block x = 1.0 beats the wall at x = 4.
+    let (hit, is_fine) = cast_ray_two(&coarse, Some(&fine), Vec3::new(0.0, 0.97, 1.01), rd, 100.0, TraceMode::FirstHit)
+        .expect("prop hit");
+    assert!(is_fine, "the nearer fine hit wins");
+    assert_eq!(hit.material_id, 1001);
+    assert!((hit.dist - 1.0).abs() < 1e-3, "fine dist in block units: {}", hit.dist);
+    assert_eq!(hit.voxel, [32, 31, 32], "fine hit voxel is in fine coords");
+    assert_eq!(hit.normal, [-1, 0, 0]);
+
+    // Ray above the prop (z 1.5): falls through to the wall.
+    let (hit, is_fine) = cast_ray_two(&coarse, Some(&fine), Vec3::new(0.0, 0.5, 1.5), rd, 100.0, TraceMode::FirstHit)
+        .expect("wall hit");
+    assert!(!is_fine);
+    assert_eq!(hit.material_id, 7);
+    assert!((hit.dist - 4.0).abs() < 1e-3);
+    assert_eq!(hit.voxel, [4, 0, 1]);
+
+    // Ray that misses everything (pointing -x, or above both).
+    assert!(cast_ray_two(&coarse, Some(&fine), Vec3::new(0.0, 0.5, 1.5), Vec3::new(-1.0, 0.0, 0.0), 100.0, TraceMode::FirstHit).is_none());
+    assert!(cast_ray_two(&coarse, Some(&fine), Vec3::new(0.0, 5.5, 1.5), rd, 100.0, TraceMode::FirstHit).is_none());
+
+    // max_dist in block units applies to the fine tree too:
+    // the prop at dist 1.0 is beyond a 0.5 limit.
+    assert!(cast_ray_two(&coarse, Some(&fine), Vec3::new(0.0, 0.97, 1.01), rd, 0.5, TraceMode::FirstHit).is_none());
+}
+
+#[test]
+fn two_tree_without_fine_is_exactly_cast_ray() {
+    let coarse = treebuild::build_tree(
+        &coarse_wall_world(),
+        BuildConfig { depth: None, origin: Some([0, 0, 0]) },
+    )
+    .unwrap();
+    let empty_fine = treebuild::build_tree(
+        &VoxelWorld::from_fine_layer(&FineLayer::default()),
+        BuildConfig { depth: None, origin: Some([0, 0, 0]) },
+    );
+    for ro in [Vec3::new(0.0, 0.5, 1.5), Vec3::new(0.0, 0.97, 1.01), Vec3::new(9.0, 0.5, 1.5)] {
+        let want = cast_ray(&coarse, ro, Vec3::new(1.0, 0.0, 0.0), 100.0, TraceMode::FirstHit);
+        for fine in [None, empty_fine.as_ref().ok()] {
+            let got = cast_ray_two(&coarse, fine, ro, Vec3::new(1.0, 0.0, 0.0), 100.0, TraceMode::FirstHit);
+            match (want, got) {
+                (None, None) => {}
+                (Some(w), Some((g, is_fine))) => {
+                    assert!(!is_fine);
+                    assert_eq!(g, w, "no-fine two-tree hit must equal cast_ray exactly");
+                }
+                (w, g) => panic!("mismatch: cast_ray {w:?} vs two-tree {g:?}"),
+            }
+        }
+    }
+}

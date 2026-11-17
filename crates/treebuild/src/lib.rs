@@ -23,7 +23,7 @@ pub mod world;
 
 pub use build::{build_tree, BuiltTree, BuildConfig, BuildError, SideEntry};
 pub use connect::{assign_variants, connection_mask, same_material, VariantAssignment};
-pub use cpu::{cast_ray, dda_reference, occupied_at, RayHit, TraceMode};
+pub use cpu::{cast_ray, cast_ray_two, dda_reference, occupied_at, RayHit, TraceMode};
 pub use lod::{
     downsample2x, mip_chain, ray_cone_lod, ray_cone_lod_fine, spread_angle, FINE_LOD_ADJUST,
     LOD_BIAS, NDOTV_WEIGHT,
