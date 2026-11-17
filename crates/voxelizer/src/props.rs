@@ -1855,14 +1855,14 @@ pub fn construction_for(
 /// point whenever the caller knows the id.
 pub fn solid_model_for(id: &str, sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let construction = construction_for(Some(id), sprite, seg);
-    solid_model_impl(sprite, seg, construction, false)
+    solid_model_impl(sprite, seg, construction, false, None)
 }
 
 /// The solid model with the default construction assignment
 /// ([`construction_for`] with no id — no per-id pins).
 pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let construction = construction_for(None, sprite, seg);
-    solid_model_impl(sprite, seg, construction, false)
+    solid_model_impl(sprite, seg, construction, false, None)
 }
 
 fn solid_model_impl(
@@ -1870,6 +1870,7 @@ fn solid_model_impl(
     seg: &Segmentation,
     construction: Construction,
     force_closed: bool,
+    fitted_top: Option<Rgba<u8>>,
 ) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
@@ -2050,14 +2051,24 @@ fn solid_model_impl(
     }
     // Top surface: per column, its topmost solid voxel, colored
     // from the top region across the depth behind the front plane.
+    // Coverage-drive seamless models pass `fitted_top`: their
+    // segmentation's "top region" is a single edge row, and
+    // stretching that row across the depth produced streak
+    // artifacts on every top (Joey's review, 2026-11-17) — a
+    // seamless body has no top-face evidence, so its top is one
+    // fitted material instead, the back-panel treatment.
     for x in 0..w {
         let Some(ytop) = (0..fh).rev().find(|&y| is_solid(x, y)) else {
             continue;
         };
         for z in 0..d - 1 {
-            let sr = top_row_for_z(seg, d, z);
-            if let Some(px) = row_pixel(sprite, x, sr, x0, x1) {
-                m.set(x, ytop, z, Some(px));
+            if let Some(c) = fitted_top {
+                m.set(x, ytop, z, Some(c));
+            } else {
+                let sr = top_row_for_z(seg, d, z);
+                if let Some(px) = row_pixel(sprite, x, sr, x0, x1) {
+                    m.set(x, ytop, z, Some(px));
+                }
             }
         }
     }
@@ -2279,12 +2290,13 @@ fn opaque_band(sprite: &RgbaImage) -> Option<Range<u32>> {
 
 /// A synthesized segmentation for a solid-body sprite that has
 /// no readable top/front seam: the whole silhouette band is the
-/// front, and the top region is the front's top edge row only
-/// (so the solid model's top face is colored from that edge
-/// row — the texture pipeline's edge-row precedent — and the
-/// depth follows [`Segmentation::depth_cells_for`] as usual:
-/// floor-standing silhouettes get at least width/3, short ones
-/// stay thin). Fires only on the measured criteria above
+/// front, and the top region is the front's top edge row only —
+/// it exists to drive [`Segmentation::depth_cells_for`] (the
+/// depth follows it as usual: floor-standing silhouettes get at
+/// least width/3, short ones stay thin). The coverage path does
+/// NOT color the top face from that row (the streak artifacts of
+/// Joey's 2026-11-17 review); it passes a fitted top material
+/// ([`seamless_top_color`]) to the solid model instead. Fires only on the measured criteria above
 /// ([`SEAMLESS_MIN_BAND_ROWS`] etc.); `confidence` carries the
 /// band coverage, as there is no seam to be confident about.
 pub fn seamless_segment(sprite: &RgbaImage) -> Option<Segmentation> {
@@ -2438,11 +2450,119 @@ fn panel_slab(sprite: &RgbaImage, thickness: u32) -> Option<PropModel> {
     Some(m)
 }
 
+/// The fitted top material for a seamless model: the modal
+/// structure paint of the front's top quarter band, de-shaded by
+/// the top row's gain. A seamless sprite carries no top-face
+/// evidence (that is what "seamless" means), so — like the back
+/// — the top is one fitted material, not a texture.
+fn seamless_top_color(sprite: &RgbaImage, seg: &Segmentation) -> Option<Rgba<u8>> {
+    let (w, _) = (sprite.width(), sprite.height());
+    let front = &seg.front_rows;
+    let fh = front.end - front.start;
+    let band = (fh / 4).max(1);
+    let modal = modal_color(
+        (front.start..front.start + band)
+            .flat_map(|r| (0..w).map(move |x| (x, r)))
+            .filter(|&(x, r)| structure(*sprite.get_pixel(x, r)))
+            .map(|(x, r)| *sprite.get_pixel(x, r)),
+    )
+    .or_else(|| {
+        modal_color(
+            front
+                .clone()
+                .flat_map(|r| (0..w).map(move |x| (x, r)))
+                .filter(|&(x, r)| structure(*sprite.get_pixel(x, r)))
+                .map(|(x, r)| *sprite.get_pixel(x, r)),
+        )
+    })?;
+    let gains = row_gains(sprite, front, None);
+    Some(deshade(modal, gains.first().copied().unwrap_or(1.0)))
+}
+
+/// Round-plan referents among the seamless ids: barrels, vats,
+/// a water heater, a keg, a trash can, a stump stool, a hanging
+/// bag, boulders, a sand pile, a fungal mass. Their sprite is
+/// the elevation of a body whose plan is a disc, so the
+/// rectangular seamless footprint made them square blocks
+/// (Joey's review, 2026-11-17). Each pin was verified against
+/// its sprite: the depicted object is round in plan.
+pub const CYLINDER_PINS: &[&str] = &[
+    "f_30gal_firebarrel",
+    "f_30gal_firebarrel_fd_fire",
+    "f_55gal_firebarrel",
+    "f_55gal_firebarrel_fd_fire",
+    "f_fvat_empty",
+    "f_fvat_full",
+    "f_water_heater",
+    "f_wood_keg",
+    "f_trashcan",
+    "f_logstool",
+    "f_punching_bag",
+    "f_boulder_large",
+    "f_boulder_medium",
+    "f_boulder_small",
+    "f_glow_boulder",
+    "f_sand_castle",
+    "f_fungal_clump",
+];
+
+/// A round-plan body from its elevation sprite: every sprite
+/// column becomes a voxel column carrying that column's sprite
+/// paint at every height (the front-most voxel of each column
+/// is the sprite pixel verbatim, and the column's top voxel is
+/// the sprite's own top pixel in that column — real data, no
+/// fitted top needed), and the set of columns is clipped to the
+/// ellipse inscribed in the silhouette extent, with depth =
+/// extent width (a disc), capped at 32 (one tile). Per-column
+/// vertical ranges follow the sprite's structure mask exactly:
+/// solid where the sprite says object in that column, empty
+/// where not (a hanging bag does not grow to the floor).
+fn cylinder_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
+    let w = sprite.width();
+    let front = &seg.front_rows;
+    let fh = front.end - front.start;
+    let bot = front.end - 1;
+    let (x0, x1) = front_structure_extent(sprite, seg);
+    let width = x1 - x0 + 1;
+    if width < 6 {
+        return None;
+    }
+    let d = width.min(32);
+    let cx = (x0 + x1) as f32 / 2.0;
+    let cz = (d - 1) as f32 / 2.0;
+    let (rx, rz) = (width as f32 / 2.0, d as f32 / 2.0);
+    let inside = |x: u32, z: u32| {
+        let dx = (x as f32 - cx) / rx;
+        let dz = (z as f32 - cz) / rz;
+        dx * dx + dz * dz <= 1.0
+    };
+    let mut m = PropModel::new([w, fh, d]);
+    for x in x0..=x1 {
+        for y in 0..fh {
+            let px = *sprite.get_pixel(x, bot - y);
+            if !structure(px) {
+                continue;
+            }
+            for z in 0..d {
+                if inside(x, z) {
+                    m.set(x, y, z, Some(px));
+                }
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The coverage-drive fallback (see the section header):
 /// reached only when [`segment_for`] declines and the id is not
 /// view-pinned. Pin lists first (plan, then panel), then the
 /// seamless solid via [`seamless_segment`] +
 /// [`solid_model_for`], minus [`SEAMLESS_EXCLUSIONS`].
+/// Round-plan pins ([`CYLINDER_PINS`]) route to
+/// [`cylinder_model`] instead of the rectangular solid.
 pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {
         return plan_slab(sprite, *t);
@@ -2454,6 +2574,12 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         return None;
     }
     let seg = seamless_segment(sprite)?;
+    if CYLINDER_PINS.contains(&id) {
+        if let Some(m) = cylinder_model(sprite, &seg) {
+            return Some(m);
+        }
+    }
+    let top = seamless_top_color(sprite, &seg);
     // The open-base reading (base_plan) is a table reading: it
     // keeps the header slab + grounded columns and drops the
     // rest. That is faithful only when nothing real is dropped.
@@ -2482,10 +2608,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         }
         if dropped > 0 {
             let construction = construction_for(Some(id), sprite, &seg);
-            return Some(solid_model_impl(sprite, &seg, construction, true));
+            return Some(solid_model_impl(sprite, &seg, construction, true, top));
         }
     }
-    Some(solid_model_for(id, sprite, &seg))
+    let construction = construction_for(Some(id), sprite, &seg);
+    Some(solid_model_impl(sprite, &seg, construction, false, top))
 }
 
 /// The sprite's structure mask in plan order (index y * w + x).

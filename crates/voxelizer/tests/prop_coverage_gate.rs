@@ -332,6 +332,88 @@ fn seamless_solid_front_verbatim_back_closed() {
 }
 
 #[test]
+fn seamless_top_is_one_fitted_material() {
+    // Joey's review (2026-11-17): coloring the seamless top from
+    // the sprite's single top edge row streaked every top face.
+    // The top (each column's topmost solid voxel, z < d-1) must
+    // now be ONE fitted material per model.
+    for id in ["f_chest", "f_toilet", "f_workbench"] {
+        let sprite = load_sprite(id);
+        let m = model_for(id, &sprite).expect("models");
+        let (w, fh, d) = (m.size[0], m.size[1], m.size[2]);
+        let mut tops = std::collections::HashSet::new();
+        for x in 0..w {
+            let ytop = (0..fh)
+                .rev()
+                .find(|&y| (0..d).any(|z| m.get(x, y, z).is_some()));
+            if let Some(ytop) = ytop {
+                for z in 0..d - 1 {
+                    if let Some(c) = m.get(x, ytop, z) {
+                        tops.insert(c.0);
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            tops.len(),
+            1,
+            "{id}: top face is one fitted material, got {tops:?}"
+        );
+    }
+}
+
+#[test]
+fn cylinder_footprint_is_round() {
+    // Joey's review (2026-11-17): round-plan objects (barrels,
+    // vats, heaters) came out square. A pinned cylinder's plan
+    // is the inscribed disc: full depth at the center column,
+    // shallow at the silhouette edges, and the front-most voxel
+    // of every column is still the sprite pixel verbatim.
+    let sprite = load_sprite("f_30gal_firebarrel");
+    let seg = seamless_segment(&sprite).expect("seamless fires");
+    let m = model_for("f_30gal_firebarrel", &sprite).expect("barrel models");
+    assert_same_model(&m, &model_for("f_30gal_firebarrel", &sprite).expect("rebuild"));
+    let d = m.size[2];
+    let bot = seg.front_rows.end - 1;
+    let (mut x0, mut x1) = (32u32, 0u32);
+    for y in seg.front_rows.clone() {
+        for x in 0..32 {
+            if structure(*sprite.get_pixel(x, y)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+            }
+        }
+    }
+    assert_eq!(d, (x1 - x0 + 1).min(32), "depth = silhouette diameter");
+    let y = m.size[1] / 2;
+    let depth_at = |x: u32| (0..d).filter(|&z| m.get(x, y, z).is_some()).count();
+    let cx = (x0 + x1) / 2;
+    assert!(
+        depth_at(cx) >= (d - 2) as usize,
+        "center column near-full depth: {} of {d}",
+        depth_at(cx)
+    );
+    assert!(
+        depth_at(x0) * 3 <= depth_at(cx) * 2 && depth_at(x0) < depth_at(cx),
+        "edge column shallow (disc, not block): {} vs center {}",
+        depth_at(x0),
+        depth_at(cx)
+    );
+    for yy in 0..m.size[1] {
+        for x in x0..=x1 {
+            let px = *sprite.get_pixel(x, bot - yy);
+            if structure(px) {
+                let front = (0..d)
+                    .rev()
+                    .find(|&z| m.get(x, yy, z).is_some())
+                    .map(|z| m.get(x, yy, z).expect("found"));
+                assert_eq!(front, Some(px), "front-most is sprite paint {x},{yy}");
+            }
+        }
+    }
+}
+
+#[test]
 fn plan_slab_is_low_and_top_is_the_sprite() {
     let sprite = load_sprite("f_groundsheet");
     let m = model_for("f_groundsheet", &sprite).expect("groundsheet models");
