@@ -4139,7 +4139,7 @@ fn manual_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         "f_TV_antenna" => Some(manual_tv_antenna()),
         "f_cellphone_booster" => Some(manual_cellphone_booster()),
         "f_ventilator" => Some(manual_ventilator()),
-        "f_machinery_light" => Some(section_solid(sprite)),
+        "f_machinery_light" => Some(manual_machinery_light(sprite)),
         "f_ground_cable" => Some(manual_ground_cable()),
         _ => None,
     }
@@ -4303,110 +4303,124 @@ fn manual_cellphone_booster() -> PropModel {
     m
 }
 
-/// A sprite-faithful section solid (hand-fitted for
-/// the machinery light and the cellphone booster, whose
-/// freehand builds did not match their tiles -- Joey,
-/// 2026-11-17): every row's opaque clusters fill as
-/// boxes whose depth scales with the cluster's width
-/// (factor, clamped 3..=max_d), so the front IS the
-/// sprite, open gaps between members stay open, and
-/// every section has real depth. Clusters that are
-/// entirely near-black are the sprite's ground shadow
-/// and are dropped.
-fn section_solid(sprite: &RgbaImage) -> PropModel {
-    let (w, h) = (sprite.width(), sprite.height());
-    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
-    let band = rows.next().unwrap_or(0)..rows.last().map(|r| r + 1).unwrap_or(0);
-    let fh = band.end - band.start;
-    let mut m = PropModel::new([w, fh.max(1), 32]);
-    for y in 0..fh {
-        let r = band.end - 1 - y;
-        let mut x = 0;
-        while x < w {
-            if !opaque(*sprite.get_pixel(x, r)) {
-                x += 1;
-                continue;
-            }
-            let a = x;
-            while x < w && opaque(*sprite.get_pixel(x, r)) {
-                x += 1;
-            }
-            let b = x - 1;
-            // Drop pure-shadow clusters.
-            let solid_px = (a..=b).any(|px| {
-                let c = sprite.get_pixel(px, r).0;
-                c[0] >= 40 || c[1] >= 40 || c[2] >= 40
-            });
-            if !solid_px {
-                continue;
-            }
-            // Depth placement by section, from the
-            // sprite's layout (Joey: front/back fine,
-            // side wrong -- every section was centered,
-            // so the side collapsed to a uniform column.
-            // The machine's mass is placed where the
-            // object puts it: head over the back posts,
-            // the drive housing as the deep mass, the
-            // table jutting forward, a front leg below
-            // it with the cabinet behind):
-            let wdt = b - a + 1;
-            let (z0, z1) = if y >= 51 {
-                (10, 21) // head housing
-            } else if (40..=50).contains(&y) {
-                if wdt <= 3 {
-                    (11, 14) // the twin rods, at the back
-                } else {
-                    (10, 17) // left column block
-                }
-            } else if (35..=39).contains(&y) {
-                if a >= 16 {
-                    (9, 22) // drive housing: the deep mass
-                } else if wdt <= 3 {
-                    (11, 14)
-                } else {
-                    (10, 17)
-                }
-            } else if (32..=34).contains(&y) {
-                (9, 23) // table, jutting forward
-            } else if (18..=31).contains(&y) {
-                if a >= 27 {
-                    (19, 23) // front leg
-                } else {
-                    (9, 16) // cabinet behind the leg line
-                }
-            } else if (10..=17).contains(&y) {
-                (9, 20) // lower cabinet
-            } else {
-                (9, 23) // plinth / feet
-            };
-            // De-void the two SIDE-EDGE columns only:
-            // near-black paint is the sprite's outline/
-            // shadow, and on a side face it smears into
-            // a black slab (the orrery lesson) -- but
-            // the front keeps the sprite's pixels
-            // verbatim, dark shading included.
-            let modal = modal_color((a..=b).filter_map(|px| {
-                let c = *sprite.get_pixel(px, r);
-                let v = c.0;
-                if v[0] < 40 && v[1] < 40 && v[2] < 40 {
-                    None
-                } else {
-                    Some(c)
-                }
-            }));
-            for vx in a..=b {
-                let mut px = *sprite.get_pixel(vx, r);
-                let v = px.0;
-                if (vx == a || vx == b) && v[0] < 40 && v[1] < 40 && v[2] < 40 {
-                    if let Some(mc) = modal {
-                        px = mc;
-                    }
-                }
-                for z in z0..=z1 {
-                    m.set(vx, y, z, Some(px));
+/// Machinery light, built from the approved
+/// all-views mockup (Joey, 2026-11-17, after a
+/// pixel-level study of the sprite): a twin-lamp head
+/// on three posts (brown column left, two steel rods)
+/// over a bell housing and a solid body; the body
+/// raised on four legs with open space beneath,
+/// standing in a shallow floor pan. Front faces are
+/// stamped with the sprite's own pixels; back and
+/// sides carry the mockup's surfaces (plain head
+/// back + conduit, seamed body access panel with
+/// vents, lamp pods in profile, plain flanks).
+fn manual_machinery_light(sprite: &RgbaImage) -> PropModel {
+    let olive = rgb(140, 152, 66);
+    let olive_dk = rgb(96, 106, 44);
+    let pan_c = rgb(78, 88, 36);
+    let brown = rgb(128, 98, 66);
+    let steel = rgb(172, 174, 166);
+    let steel_dk = rgb(110, 112, 104);
+    let dark = rgb(38, 40, 30);
+    let lens = rgb(238, 234, 196);
+    let conduit = rgb(52, 54, 44);
+    let mut m = PropModel::new([32, 62, 32]);
+    // Stamp helper: paint a component's front layer
+    // with the sprite's pixels (model y -> sprite row
+    // 63 - y).
+    let stamp = |m: &mut PropModel, x0: u32, x1: u32, y0: u32, y1: u32, z: u32| {
+        for x in x0..=x1 {
+            for y in y0..=y1 {
+                let px = *sprite.get_pixel(x, 63 - y);
+                if opaque(px) {
+                    m.set(x, y, z, Some(px));
                 }
             }
         }
+    };
+    // --- floor pan: slab + rim walls ----------------
+    box_fill(&mut m, 6, 25, 0, 1, 6, 26, pan_c);
+    for x in 6..=25 {
+        for z in 6..=26 {
+            if x == 6 || x == 25 || z == 6 || z == 26 {
+                box_fill(&mut m, x, x, 2, 4, z, z, pan_c);
+                m.set(x, 5, z, Some(olive_dk));
+            }
+        }
+    }
+    // --- legs (feet inside the pan) -----------------
+    box_fill(&mut m, 8, 10, 2, 17, 20, 23, brown); // front-left
+    stamp(&mut m, 8, 10, 5, 17, 23);
+    box_fill(&mut m, 6, 8, 2, 17, 9, 12, rgb(96, 72, 46)); // back-left
+    box_fill(&mut m, 22, 24, 2, 17, 20, 23, steel); // front-right
+    stamp(&mut m, 22, 24, 5, 17, 23);
+    box_fill(&mut m, 18, 20, 2, 17, 9, 12, steel_dk); // back-right
+    // --- body block ---------------------------------
+    box_fill(&mut m, 4, 27, 18, 34, 9, 23, olive);
+    stamp(&mut m, 4, 27, 18, 34, 23);
+    // Back face (z = 9): access panel seam, fasteners,
+    // vent slots.
+    for x in 6..=25 {
+        m.set(x, 20, 9, Some(olive_dk));
+        m.set(x, 32, 9, Some(olive_dk));
+    }
+    for y in 20..=32 {
+        m.set(6, y, 9, Some(olive_dk));
+        m.set(25, y, 9, Some(olive_dk));
+    }
+    for (x, y) in [(6, 20), (25, 20), (6, 32), (25, 32)] {
+        m.set(x, y, 9, Some(dark));
+    }
+    for x in (8..=22).step_by(2) {
+        m.set(x, 30, 9, Some(dark));
+        m.set(x, 31, 9, Some(dark));
+    }
+    // Side details from the mockup: trim strip end on
+    // the right flank's front-top, bright patch edge
+    // on the left flank's front-top.
+    box_fill(&mut m, 27, 27, 31, 34, 21, 23, steel);
+    box_fill(&mut m, 4, 4, 30, 34, 21, 23, rgb(172, 184, 88));
+    m.set(4, 32, 22, Some(lens));
+    // --- bell housing (dome levels on the body) -----
+    box_fill(&mut m, 16, 23, 35, 37, 10, 21, olive);
+    stamp(&mut m, 16, 23, 35, 37, 21);
+    box_fill(&mut m, 17, 22, 38, 39, 11, 20, olive);
+    stamp(&mut m, 17, 22, 38, 39, 20);
+    m.set(23, 35, 16, Some(rgb(66, 74, 30))); // side boss
+    box_fill(&mut m, 18, 18, 40, 41, 15, 16, lens); // top peg
+    // --- posts ---------------------------------------
+    box_fill(&mut m, 4, 6, 35, 50, 13, 16, brown); // column
+    stamp(&mut m, 4, 6, 35, 50, 16);
+    box_fill(&mut m, 10, 10, 35, 50, 15, 16, steel); // rod 1
+    stamp(&mut m, 10, 10, 35, 50, 16);
+    box_fill(&mut m, 12, 13, 35, 50, 15, 16, steel); // rod 2
+    stamp(&mut m, 12, 13, 35, 50, 16);
+    // The bright fitting at the column's top.
+    box_fill(&mut m, 5, 9, 47, 48, 13, 17, steel_dk);
+    stamp(&mut m, 5, 9, 47, 48, 17);
+    // Conduit: clipped behind the rods, landing on
+    // the head's back and the body's back top.
+    box_fill(&mut m, 11, 11, 35, 50, 13, 13, conduit);
+    box_fill(&mut m, 11, 11, 51, 51, 9, 13, conduit);
+    m.set(11, 34, 9, Some(conduit));
+    // --- head ----------------------------------------
+    box_fill(&mut m, 1, 15, 51, 58, 9, 24, olive);
+    stamp(&mut m, 1, 15, 51, 58, 24);
+    // Underside notch (the sprite's dark recess).
+    for x in 8..=9 {
+        for z in 18..=24 {
+            m.set(x, 51, z, None);
+        }
+    }
+    // Top posts, recessed from the front plane.
+    box_fill(&mut m, 2, 5, 59, 61, 13, 16, brown);
+    stamp(&mut m, 2, 5, 59, 61, 16);
+    box_fill(&mut m, 8, 14, 59, 61, 13, 19, olive_dk);
+    stamp(&mut m, 8, 14, 59, 61, 19);
+    // Lamp pods in profile on both side faces.
+    for xf in [1u32, 15] {
+        box_fill(&mut m, xf, xf, 52, 56, 21, 24, dark);
+        box_fill(&mut m, xf, xf, 53, 55, 23, 24, lens);
     }
     m
 }
