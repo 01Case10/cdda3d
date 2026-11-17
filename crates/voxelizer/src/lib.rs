@@ -319,7 +319,7 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
         }
         let entry = res.entry.unwrap().clone();
         let sprite = composite_entry(ts, &entry);
-        let (top_img, alpha) = match &sprite {
+        let (sprite_top, alpha) = match &sprite {
             Some(img) => {
                 let t = make_top_face(img, ts, &entry, tile);
                 let a = analyze_alpha(&t);
@@ -331,7 +331,36 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             ),
         };
         let wall_like = is_wall_like(id, &entry);
-        let side_img = make_side_face(&top_img, wall_like, mat_idx as u32);
+        // Side: wall sides stay the sprite verbatim (its trim band
+        // sits at the wall's top and its baseboard at its bottom —
+        // their correct positions on a side face; see the Stage F
+        // part 2 record). Non-wall sides follow the edge-row rule.
+        let side_img = make_side_face(&sprite_top, wall_like, mat_idx as u32);
+        // Top: Stage F part 2 generated end-cap for wall materials.
+        // A wall sprite has no top-face pixels (sprite-anatomy §4),
+        // so a wall's top is generated from its family palette
+        // (generate_wall_cap), never the sprite lying flat. Only
+        // the top layer changes: side, bottom and subtile (side
+        // variant) layers keep the sprite. Furniture is excluded —
+        // its top feeds the extrusion columns.
+        let top_img = if wall_like && !id.starts_with("f_") && tile == TEXTURE_SIZE {
+            let family = family_sprites(ts, &entry);
+            if family.is_empty() {
+                sprite_top.clone()
+            } else {
+                let palette = analyze_image(&sprite_top, 5).palette;
+                let class = classify(
+                    id,
+                    Some(TileKind::from_id_prefix(id)),
+                    Some(&palette),
+                    &cfg.overrides,
+                )
+                .class;
+                generate_wall_cap(class, &family).image
+            }
+        } else {
+            sprite_top.clone()
+        };
         let bottom_img = darken(&side_img, 0.5);
         let top_layer = push_layer(&mut layers, top_img.clone());
         let side_layer = push_layer(&mut layers, side_img);

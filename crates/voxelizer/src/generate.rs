@@ -34,6 +34,7 @@ use image::{Rgba, RgbaImage};
 use tileset::{SpriteRef, TileEntry, Tileset};
 
 use crate::analyze::{analyze_family, content_hash, PaletteColor, SpriteAnalysis};
+use crate::classify::MaterialClass;
 use crate::color::Oklab;
 use crate::faces::composite_over;
 use crate::load_sprite_image;
@@ -309,6 +310,133 @@ pub fn generate(kind: RecipeKind, family: &[RgbaImage]) -> GeneratedTexture {
         image,
         palette,
         analysis,
+    }
+}
+
+/// Stage F part 2 — generated wall end-cap (top face) for one wall
+/// family.
+///
+/// A wall sprite is a face-on illustration of the wall's SIDE
+/// (docs/sprite-anatomy.md §4): it contains no top-face pixels, so
+/// the cap is GENERATED from the family's own palette, never
+/// sampled from the sprite. The palette pipeline is the Stage C
+/// one — analyze the family, de-shade by the measured shading
+/// factor (per-sprite direction: t_concrete_wall gradients
+/// light-at-bottom, others the reverse; the factor is measured,
+/// never assumed) — and the render is albedo only: periodic noise
+/// and structural albedo pattern, no directional light term (the
+/// engine provides lighting).
+///
+/// The structure is what a wall's top actually is, per class:
+/// plaster/concrete caps are the material's cross-section surface
+/// (near-flat field, pore grain for concrete); a brick cap is
+/// plan-view brick tops (coarser rows than the face courses);
+/// a wood cap is the top plate — boards running along the wall
+/// with grain along the board. Classes without a cap-specific
+/// structure fall back to their Stage C/E surface render (stone
+/// cells, metal panels, glass) or a generic mottled cross-section.
+pub fn generate_wall_cap(class: MaterialClass, family: &[RgbaImage]) -> GeneratedTexture {
+    assert!(!family.is_empty(), "generate_wall_cap: empty family for {}", class.name());
+    let refs: Vec<&RgbaImage> = family.iter().collect();
+    let analysis = analyze_family(&refs, PALETTE_K);
+    let palette = deshade_palette(&analysis.palette, analysis.shading.shading_factor);
+    let seed = family_seed(family) ^ seed_from_str("wall_cap") ^ seed_from_str(class.name());
+    let ramp = Ramp::new(&palette);
+    let mut image = RgbaImage::new(TEXTURE_SIZE, TEXTURE_SIZE);
+    match class {
+        MaterialClass::Plaster => render_plaster(&mut image, &ramp, seed),
+        MaterialClass::Concrete => render_concrete(&mut image, &ramp, seed),
+        MaterialClass::Brick => render_brick_cap(&mut image, &ramp, seed),
+        MaterialClass::Wood | MaterialClass::WoodFloor => render_wood_cap(&mut image, &ramp, seed),
+        MaterialClass::Stone => render_stone(&mut image, &ramp, seed),
+        MaterialClass::Metal => render_metal(&mut image, &ramp, seed),
+        MaterialClass::Glass => render_glass(&mut image, &ramp, seed),
+        _ => render_generic_cap(&mut image, &ramp, seed),
+    }
+    GeneratedTexture {
+        image,
+        palette,
+        analysis,
+    }
+}
+
+/// Brick cap: plan-view brick tops. Rows are 8 px (vs the 4 px
+/// face courses of [`render_brick`]) — from above, a brick's top
+/// is its 65 mm width, not its course height — lengths 16 px,
+/// odd rows offset half a brick, both phases shifted so wrap
+/// edges fall mid-brick and mid-row. Mortar takes the ramp's
+/// light end, as in the face render.
+fn render_brick_cap(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let grain = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 16).octaves(2);
+    let brick_seed = seed ^ 0x2545_F491_4F6C_DD1D;
+    let row_h: u32 = 8;
+    let brick_len: u32 = 16;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let sy = (y + row_h / 2) % TEXTURE_SIZE;
+            let row = sy / row_h;
+            let row_off = if row % 2 == 1 { brick_len / 2 } else { 0 };
+            // Base shift 4 (not brick_len / 2): with a half-brick
+            // row offset, an 8 px base would put the odd rows'
+            // vertical mortar joint exactly on the wrap edge
+            // (measured seam 1.244); 4 px keeps every joint in
+            // the tile interior and the wrap columns in the same
+            // brick on both sides.
+            let sx = (x + 4 + row_off) % TEXTURE_SIZE;
+            if sy % row_h == 0 || sx % brick_len == 0 {
+                put(img, x, y, ramp.at(0.93));
+                continue;
+            }
+            let brick_id = sx / brick_len + row * (TEXTURE_SIZE / brick_len);
+            let brick_off = (white_noise(brick_seed, brick_id, row) - 0.5) * 0.34;
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.48 + brick_off + (grain.sample_uv(u, v) - 0.5) * 0.14;
+            put(img, x, y, ramp.at(t.clamp(0.0, 1.0)));
+        }
+    }
+}
+
+/// Wood cap: the wall's top plate — boards running along the
+/// wall (x), stacked across its thickness (y). Board width 8 px,
+/// phase shifted half a board so the wrap edge falls mid-board.
+/// Grain is noise stretched along the board (the wood-floor
+/// idiom); each board takes a deterministic ramp offset; the
+/// first row of each board is its seam.
+fn render_wood_cap(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let grain = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 8).octaves(3);
+    let board_seed = seed ^ 0x2545_F491_4F6C_DD1D;
+    let board_w: u32 = 8;
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let sy = (y + board_w / 2) % TEXTURE_SIZE;
+            let board = sy / board_w;
+            let board_off = (white_noise(board_seed, board, 0) - 0.5) * 0.40;
+            let g = grain.sample(x as f32 * 0.25, y as f32);
+            let t = (0.5 + board_off + (g - 0.5) * 0.3).clamp(0.0, 1.0);
+            let mut lab = ramp.at(t);
+            let within = sy % board_w;
+            if within == 0 {
+                lab.l = (lab.l - 0.085).max(0.0);
+            } else if within == 1 {
+                lab.l = (lab.l + 0.018).min(1.0);
+            }
+            put(img, x, y, lab);
+        }
+    }
+}
+
+/// Generic cap: a mottled cross-section of the wall material —
+/// broad + fine fBm through a mid ramp band, no pattern at tile
+/// scale. For wall classes with no cap-specific structure.
+fn render_generic_cap(img: &mut RgbaImage, ramp: &Ramp, seed: u64) {
+    let broad = Fbm::new(seed, 4).octaves(2);
+    let fine = Fbm::new(seed ^ 0x9E37_79B9_7F4A_7C15, 12).octaves(2);
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            let (u, v) = (x as f32 / TEXTURE_SIZE as f32, y as f32 / TEXTURE_SIZE as f32);
+            let t = 0.5 + (broad.sample_uv(u, v) - 0.5) * 0.24 + (fine.sample_uv(u, v) - 0.5) * 0.10;
+            put(img, x, y, ramp.at(t.clamp(0.0, 1.0)));
+        }
     }
 }
 
