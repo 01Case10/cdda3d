@@ -1381,7 +1381,7 @@ nodes); raster blend words cap at 2048 compact macro colors
 (today's set is 2), beyond which tiles fall back to plain macro
 words.
 
-## 34. Stage H — pond circularity tuning (2026-11-17, worktree `pond-tuning`, AWAITING JOEY SIGN-OFF, not merged)
+## 34. Stage H — pond circularity tuning (2026-11-17; Joey sign-off same day, merged to main @ 35cdafd, NOT pushed)
 
 The Stage E verdict (rounded-square, §14) is addressed in
 `voxelizer::shore`: the box blur is gone. The field is now the
