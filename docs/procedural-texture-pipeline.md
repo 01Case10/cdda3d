@@ -1266,6 +1266,32 @@ shading. The vat's back head also carried a phantom tap
 painted onto both heads) — back-head paint now excludes
 tap-blue; both heads de-outline via the head_paint scan.
 
+MOCKUP ROUND (Joey's instruction, 2026-11-17: review the
+round-4 set against the sprites; where a side/back does not
+match, draw a mockup of what it should look like and
+generate from it; mockups in target/stage-g/mockups/):
+- Verdicts: kiln BACK wrong (the lathe carried the front
+  firebox's near-black paint onto the back face — a black
+  arch); blob BACKs wrong (front-anchored taper relief read
+  as a heart/dart with drips); blob sides wedge-like;
+  gasper BACK correct; kiln sides correct after the wrap.
+- Blob v2: depth from the silhouette's distance transform
+  (puffy inflation of the 2D shape; smooth by construction)
+  x low-frequency lump x column-top dome, with a ground
+  boost so the back face reaches the ground across the
+  width. Backs are now full rounded faces in the column
+  paint; sides are mounds.
+- Lathe back de-feature: a back-most voxel whose sprite
+  pixel is near-black feature paint (L < 0.10) takes the
+  row's nearest non-black structure paint — the kiln's back
+  is cobbles throughout; the front keeps the firebox.
+- Wrap wobble now varies the sampled ROW as well as the
+  column. The gasper's side stripes persist regardless:
+  they are the sprite's own longitudinal markings continued
+  around the body (they run lengthwise in the sprite too) —
+  flagged to Joey as a faithfulness question, not silently
+  redesigned.
+
 ## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
 
 DONE, merged to main @ 0ace695 (not pushed), parent re-verified.

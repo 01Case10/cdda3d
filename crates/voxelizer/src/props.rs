@@ -2629,7 +2629,41 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
         return None;
     }
     let d = d_max.min(32);
-    let noise = crate::noise::Fbm::new(0xB10B, 8).octaves(3);
+    // Depth from the silhouette's DISTANCE TRANSFORM (mockup
+    // round, 2026-11-17): a column's depth follows how deep
+    // inside the silhouette it sits — the mass is an inflated
+    // ("puffy") version of the 2D shape, so the back relief
+    // and the side profile are smooth lumps. The first blob
+    // version's per-column taper x noise left a spiky relief
+    // (the back read as a heart/dart with drips) — the
+    // distance field cannot spike: it is smooth by
+    // construction. A low-frequency lump field keeps it
+    // irregular.
+    let dist = {
+        let mut dm = vec![0u32; (w * fh) as usize];
+        let mut maxd = 0u32;
+        for y in 0..fh {
+            for x in 0..w {
+                if !structure(*sprite.get_pixel(x, bot - y)) {
+                    continue;
+                }
+                // Brute-force distance to the nearest
+                // non-structure cell (grid is at most 32x64).
+                let mut best = u32::MAX;
+                for yy in 0..fh {
+                    for xx in 0..w {
+                        if !structure(*sprite.get_pixel(xx, bot - yy)) {
+                            best = best.min(x.abs_diff(xx) + y.abs_diff(yy));
+                        }
+                    }
+                }
+                dm[(y * w + x) as usize] = best;
+                maxd = maxd.max(best);
+            }
+        }
+        (dm, maxd.max(1))
+    };
+    let noise = crate::noise::Fbm::new(0xB10B, 8).octaves(2);
     let mut m = PropModel::new([w, fh, d]);
     for y in 0..fh {
         let Some((rx0, rx1)) = row_ext[y as usize] else {
@@ -2668,20 +2702,20 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
                     }
                 }
             }
-            let (cy0, cy1) = col_ext[x as usize].unwrap();
-            // Horizontal falloff, floored: edge columns keep a
-            // third of the depth (a boulder is a mass, not a
-            // lens — the unfloored elliptical taper left a thin
-            // wedge from the side, §27 review of round 4).
-            let tx = 1.0 - ((x as f32 - rcx) / rhalf).abs().min(1.0);
-            let tx = 0.30 + 0.70 * tx;
-            // Vertical: NO taper toward the ground — the base
-            // is the widest part of a grounded mass; the dome
-            // taper applies toward the column's top only.
+            let dfrac = dist.0[(y * w + x) as usize] as f32 / dist.1 as f32;
+            let lump = 0.85 + 0.30 * noise.sample(x as f32 * 0.09, y as f32 * 0.09);
+            // Dome toward the column's top (the top rows must
+            // not slab backwards at full depth) and a ground
+            // boost at the base (the back face reaches the
+            // ground across the width — a grounded mass, per
+            // the mockup's side profile).
+            let (cy0, cy1) = col_ext[x as usize].unwrap_or((y, y));
             let v = (y - cy0) as f32 / ((cy1 - cy0) as f32).max(1.0);
-            let ty = (1.0 - 0.55 * v * v).sqrt();
-            let n = 0.75 + 0.50 * noise.sample(x as f32 * 0.14, y as f32 * 0.14);
-            let depth = ((d as f32 * tx * ty * n).round() as u32).clamp(3, d);
+            let dome = 1.0 - 0.38 * v * v;
+            let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
+            let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
+            depth = depth.max(d as f32 * 0.45 * gfrac);
+            let depth = (depth.round() as u32).clamp(2, d);
             for z in (d - depth)..d {
                 m.set(x, y, z, Some(px));
             }
@@ -2843,6 +2877,48 @@ fn lathe_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
     if m.solid_count() == 0 {
         return None;
     }
+    // The back face must not inherit FRONT features: the
+    // kiln's firebox is drawn near-black, and the lathe's
+    // back-most voxel is the column's sprite pixel — so the
+    // kiln's back grew a black firebox arch (mockup round,
+    // 2026-11-17). A back-most voxel whose sprite pixel is
+    // near-black feature paint takes the row's nearest
+    // non-black structure paint instead. The front keeps the
+    // feature (it IS the opening).
+    for y in 0..fh {
+        let r = bot - y;
+        let Some((rx0, rx1)) = rows[y as usize] else {
+            continue;
+        };
+        for x in rx0..=rx1 {
+            let px = *sprite.get_pixel(x, r);
+            if !structure(px) || lab_of(px).l >= 0.10 {
+                continue;
+            }
+            let Some(zb) = (0..d).find(|&z| m.get(x, y, z).is_some()) else {
+                continue;
+            };
+            for dist in 1..=(rx1 - rx0) {
+                let mut done = false;
+                for cand in [x.checked_sub(dist), x.checked_add(dist)]
+                    .into_iter()
+                    .flatten()
+                {
+                    if (rx0..=rx1).contains(&cand) {
+                        let c = *sprite.get_pixel(cand, r);
+                        if structure(c) && lab_of(c).l >= 0.10 {
+                            m.set(x, y, zb, Some(c));
+                            done = true;
+                            break;
+                        }
+                    }
+                }
+                if done {
+                    break;
+                }
+            }
+        }
+    }
     wrap_row_pattern(&mut m, sprite, seg, &rows);
     Some(m)
 }
@@ -2875,14 +2951,31 @@ fn wrap_row_pattern(
             r
         })
         .collect();
+    // The pattern column wobbles smoothly as it wraps
+    // (mockup round, 2026-11-17): a straight linear map
+    // carries a wide dark patch on the gasper's rows around
+    // the side as a hard vertical stripe; a low-frequency
+    // wobble breaks the stripes into organic blotches while
+    // leaving fine texture (cobbles, rock) essentially
+    // unshifted in character.
+    let wobble = crate::noise::Fbm::new(0xB0B1E, 8).octaves(2);
     wrap_side_faces(m, |y, z| {
-        let (rx0, rx1) = rows[y as usize]?;
         let (zlo, zhi) = zext[y as usize]?;
         if zhi == zlo {
             return None;
         }
-        let r = bot - y;
-        let col = rx0 + (z - zlo) * (rx1 - rx0) / (zhi - zlo);
+        // The ROW wobbles too: a column-only wobble cannot
+        // break a marking that runs vertically through the
+        // sprite's own rows (the gasper's streaks) — sampling
+        // a few rows up or down, smoothly varying with depth,
+        // interrupts the streak into blotches.
+        let rwob = (wobble.sample(z as f32 * 0.13 + 40.0, y as f32 * 0.13) - 0.5) * 8.0;
+        let yy = (y as i32 + rwob.round() as i32).clamp(0, fh as i32 - 1) as u32;
+        let (rx0, rx1) = rows[yy as usize]?;
+        let r = bot - yy;
+        let base = rx0 + (z - zlo) * (rx1 - rx0) / (zhi - zlo);
+        let wob = (wobble.sample(z as f32 * 0.16, y as f32 * 0.16) - 0.5) * 7.0;
+        let col = (base as i32 + wob.round() as i32).clamp(rx0 as i32, rx1 as i32) as u32;
         let c = row_paint(sprite, r, col, rx0, rx1);
         // Pure black is a front-face feature (a firebox
         // opening) or outline — never wrap it onto a side.
