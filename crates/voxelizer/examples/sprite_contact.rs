@@ -29,12 +29,13 @@ fn main() {
         .filter(|l| !l.is_empty())
         .collect();
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
-    let (cell, cols, scale) = (128u32, 6u32, 3u32);
+    let (cell, cols) = (128u32, 6u32);
     let rows = (ids.len() as u32 + cols - 1) / cols;
     let mut sheet = RgbaImage::from_pixel(cols * cell, rows * cell, Rgba([24, 24, 28, 255]));
     for (i, id) in ids.iter().enumerate() {
         let Some(entry) = ts.entries.get(id) else { continue };
         let Some(sprite) = composite_entry(&ts, entry) else { continue };
+        let scale = (96 / sprite.width().max(sprite.height())).max(1);
         let big = image::imageops::resize(
             &sprite,
             sprite.width() * scale,
@@ -43,7 +44,7 @@ fn main() {
         );
         let (cx, cy) = ((i as u32 % cols) * cell, (i as u32 / cols) * cell);
         let x = cx + (cell - big.width()) / 2;
-        let y = cy + cell - big.height() - 4;
+        let y = cy + cell - big.height().min(cell - 4) - 4;
         image::imageops::overlay(&mut sheet, &big, x as i64, y as i64);
     }
     sheet.save(&out).expect("save sheet");

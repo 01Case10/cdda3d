@@ -1872,10 +1872,21 @@ fn solid_model_impl(
     force_closed: bool,
     fitted_top: Option<Rgba<u8>>,
 ) -> PropModel {
+    solid_model_impl_d(sprite, seg, construction, force_closed, fitted_top, None)
+}
+
+fn solid_model_impl_d(
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    construction: Construction,
+    force_closed: bool,
+    fitted_top: Option<Rgba<u8>>,
+    depth_override: Option<u32>,
+) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
-    let d = seg.depth_cells_for(w);
+    let d = depth_override.unwrap_or_else(|| seg.depth_cells_for(w));
     let bot = front.end - 1;
     // Front region's STRUCTURE x-extent (base_plan + row_pixel
     // ranges): fringe pixels never extend it (module docs).
@@ -3265,12 +3276,248 @@ fn row_paint(sprite: &RgbaImage, r: u32, x: u32, rx0: u32, rx1: u32) -> Rgba<u8>
 /// [`solid_model_for`], minus [`SEAMLESS_EXCLUSIONS`].
 /// Round-plan pins ([`CYLINDER_PINS`]) route to
 /// [`cylinder_model`] instead of the rectangular solid.
+/// Rest-of-props pins (Joey, 2026-11-17: model the
+/// remaining 129). These ids fail the seamless criteria
+/// (thin, sparse, or low-fill sprites), so they route
+/// through [`raw_segment`] — the opaque band with no
+/// criteria — into the established builders. Case-by-case
+/// pins only, each reviewed from all angles before
+/// landing (plan.md standing workflow).
+pub const REST_SLAB_PINS: &[(&str, u32)] = &[
+    // A ritual circle is a flat ground marking; the sprite
+    // is its perspective drawing, used as the plan.
+    ("f_magic_circle", 1),
+    // f_absence is a shadow on the ground.
+    ("f_absence", 1),
+];
+
+/// Egg sacks bw/cs: the same draped egg piles as e/ws
+/// (their sprites are flatter, failing the deep-fraction
+/// criterion the e/ws pair passes).
+pub const REST_EGG_PINS: &[&str] = &["f_egg_sackbw", "f_egg_sackcs"];
+
+/// Lathe fits on a raw segment: the birdbath is a basin on
+/// a pedestal (rotationally symmetric); the alien pods are
+/// small bulbs on stems.
+pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ"];
+
+/// Closed solids on a raw segment with a fitted depth
+/// override (the depth rule misreads both: the anvil's
+/// short silhouette gets paper depth 2 although an anvil
+/// body runs ~1/3 as deep as long; the orrery's tall
+/// silhouette trips the floor-standing floor and gets a
+/// plank ~10 deep although the mechanism is narrow).
+pub const REST_SOLID_DEPTH_PINS: &[(&str, u32)] = &[
+    ("f_anvil", 7),
+    ("f_orrery", 5),
+];
+
+/// Thin opaque extrusions: curved / spiky organisms whose
+/// paint IS thin structure — a closed solid fills their
+/// concavities into slabs (the tendril became a blue
+/// block) and the structure mask drops their 1px stalks
+/// (the zapper lost everything above its roots).
+pub const REST_THIN_PINS: &[&str] = &["f_alien_tendril", "f_alien_zapper"];
+
+/// A thin extrusion of the sprite's opaque mask (every
+/// opaque pixel a column of the given depth, sprite paint
+/// throughout). For organisms whose drawn structure is
+/// genuinely thin — no fill, no dropped stalks.
+fn thin_model(sprite: &RgbaImage, depth: u32) -> Option<PropModel> {
+    // Own band: opaque_band requires MIN_ROW_COVERAGE per
+    // edge row, which collapses a 1-3px stalk's band to
+    // its bushy base (the zapper lost its whole stalk).
+    // A thin sprite's band is every row with any paint.
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let mut m = PropModel::new([w, fh, depth]);
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if opaque(px) {
+                for z in 0..depth {
+                    m.set(x, y, z, Some(px));
+                }
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
+/// The birdbath (mockup: target/stage-g/mockups/
+/// f_birdbath_sides.png). The sprite is a 3/4 view INTO
+/// the basin: the big dark oval is the basin's interior
+/// face, not a ball — a lathe of the profile made a
+/// lollipop. The model: a shallow basin (4 layers:
+/// underside, rim side, dished interior floor, rim lip)
+/// on a pedestal of per-row discs from the sprite's stem
+/// rows. The sprite's drop shadow (near-black, right of
+/// the stem) is excluded from every measurement.
+fn birdbath_model(sprite: &RgbaImage) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let solid = |x: u32, y: u32| -> bool {
+        let p = *sprite.get_pixel(x, y);
+        p[3] >= 128 && !(p[0] < 40 && p[1] < 40 && p[2] < 40)
+    };
+    let extent = |r: u32| -> Option<(u32, u32)> {
+        let xs: Vec<u32> = (0..w).filter(|&x| solid(x, r)).collect();
+        if xs.is_empty() {
+            None
+        } else {
+            Some((xs[0], xs[xs.len() - 1]))
+        }
+    };
+    let band = opaque_band(sprite)?;
+    let rows: Vec<u32> = band.clone().filter(|&r| extent(r).is_some()).collect();
+    let basin_rows: Vec<u32> = rows
+        .iter()
+        .copied()
+        .filter(|&r| {
+            let (a, b) = extent(r).unwrap();
+            b - a + 1 >= 12
+        })
+        .collect();
+    let last_basin = *basin_rows.last()?;
+    let stem_rows: Vec<u32> = rows
+        .iter()
+        .copied()
+        .filter(|&r| r > last_basin)
+        .collect();
+    if basin_rows.is_empty() || stem_rows.is_empty() {
+        return None;
+    }
+    let (bx0, bx1) = extent(*basin_rows.iter().max_by_key(|&&r| {
+        let (a, b) = extent(r).unwrap();
+        b - a
+    })?)?;
+    let radius = (bx1 - bx0 + 1) / 2;
+    let cx = (bx0 + bx1) as f32 / 2.0;
+    let depth = radius * 2;
+    let zc = radius as f32 - 0.5;
+    let row_modal = |r: u32| -> Option<Rgba<u8>> {
+        modal_color(
+            (0..w)
+                .filter(|&x| solid(x, r))
+                .map(|x| *sprite.get_pixel(x, r)),
+        )
+    };
+    let rows_modal = |rs: &[u32]| -> Option<Rgba<u8>> {
+        modal_color(
+            rs.iter()
+                .flat_map(|&r| (0..w).map(move |x| (x, r)))
+                .filter(|&(x, r)| solid(x, r))
+                .map(|(x, r)| *sprite.get_pixel(x, r)),
+        )
+    };
+    let rim = rows_modal(&basin_rows[..basin_rows.len().min(4)])?;
+    let interior = rows_modal(&basin_rows[basin_rows.len() / 3..(basin_rows.len() * 2 / 3).max(basin_rows.len() / 3 + 1)])?;
+    let underside = row_modal(*basin_rows.last()?)?;
+    let stem_h = stem_rows.len() as u32;
+    let mut m = PropModel::new([w, stem_h + 4, depth]);
+    let disc = |m: &mut PropModel, y: u32, r: f32, paint: Rgba<u8>, ring_inner: Option<f32>| {
+        for x in 0..w {
+            for z in 0..depth {
+                let dd = ((x as f32 - cx).powi(2) + (z as f32 - zc).powi(2)).sqrt();
+                if dd <= r && ring_inner.map_or(true, |ri| dd > ri) {
+                    m.set(x, y, z, Some(paint));
+                }
+            }
+        }
+    };
+    // Pedestal: per-row discs, bottom row first.
+    for (i, &r) in stem_rows.iter().rev().enumerate() {
+        let (a, b) = extent(r)?;
+        disc(&mut m, i as u32, (b - a) as f32 / 2.0 + 0.5, row_modal(r)?, None);
+    }
+    // Basin: underside, rim side, interior floor (dished:
+    // the inner disc sits at this layer, the rim ring
+    // rises one more as the lip).
+    disc(&mut m, stem_h, radius as f32 - 2.0, underside, None);
+    disc(&mut m, stem_h + 1, radius as f32, rim, None);
+    disc(&mut m, stem_h + 2, radius as f32, interior, None);
+    disc(&mut m, stem_h + 2, radius as f32, rim, Some(radius as f32 - 3.0));
+    disc(&mut m, stem_h + 3, radius as f32, rim, Some(radius as f32 - 2.0));
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
+/// The opaque band as a segmentation, with none of
+/// [`seamless_segment`]'s firing criteria — for rest-of-
+/// props pins whose sprites are too thin, sparse, or
+/// low-fill to pass them.
+pub fn raw_segment(sprite: &RgbaImage) -> Option<Segmentation> {
+    let (w, h) = (sprite.width(), sprite.height());
+    if w < 4 || h < 4 {
+        return None;
+    }
+    let band = opaque_band(sprite)?;
+    if band.end - band.start < 3 {
+        return None;
+    }
+    Some(Segmentation {
+        silhouette_rows: band.clone(),
+        top_rows: band.start..band.start + 1,
+        front_rows: band,
+        side: None,
+        confidence: 0.5,
+    })
+}
+
 pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {
         return plan_slab(sprite, *t);
     }
     if let Some((_, t)) = PANEL_SLAB_PINS.iter().find(|(k, _)| *k == id) {
         return panel_slab(sprite, *t);
+    }
+    if let Some((_, t)) = REST_SLAB_PINS.iter().find(|(k, _)| *k == id) {
+        return plan_slab(sprite, *t);
+    }
+    if REST_EGG_PINS.contains(&id) {
+        if let Some(seg) = raw_segment(sprite) {
+            if let Some(m) = egg_pile_model(sprite, &seg) {
+                return Some(m);
+            }
+        }
+    }
+    if REST_LATHE_PINS.contains(&id) {
+        if let Some(seg) = raw_segment(sprite) {
+            if let Some(m) = lathe_model(sprite, &seg) {
+                return Some(m);
+            }
+        }
+    }
+    if let Some((_, depth)) = REST_SOLID_DEPTH_PINS.iter().find(|(k, _)| *k == id) {
+        if let Some(seg) = raw_segment(sprite) {
+            let top = seamless_top_color(sprite, &seg);
+            let construction = construction_for(Some(id), sprite, &seg);
+            return Some(solid_model_impl_d(
+                sprite,
+                &seg,
+                construction,
+                true,
+                top,
+                Some(*depth),
+            ));
+        }
+    }
+    if REST_THIN_PINS.contains(&id) {
+        if let Some(m) = thin_model(sprite, 2) {
+            return Some(m);
+        }
+    }
+    if id == "f_birdbath" {
+        if let Some(m) = birdbath_model(sprite) {
+            return Some(m);
+        }
     }
     if SEAMLESS_EXCLUSIONS.contains(&id) {
         return None;

@@ -180,8 +180,11 @@ const REGRESSION: &[(&str, usize)] = &[
 ];
 
 /// Models over the full furniture universe after the drive
-/// (audit example, parent-measured).
-const COVERAGE_TOTAL: usize = 222;
+/// (audit example, parent-measured). 233 after rest-of-
+/// props batch 1 (2026-11-17: 11 ambiguous-class ids —
+/// 2 slabs, 2 egg piles, 2 lathe pods, 2 depth solids,
+/// 2 thin extrusions, the birdbath).
+const COVERAGE_TOTAL: usize = 233;
 
 #[test]
 fn pre_drive_models_unchanged() {
@@ -637,7 +640,7 @@ fn exclusions_and_skeletons_still_decline() {
         "f_IV_pole",                  // skeleton pole
         "f_traffic_light",            // exclusion pin (pole)
         "f_bed_frame",                // exclusion pin (slatted frame)
-        "f_alien_pod",                // organism, below criteria
+        "f_hammock",                  // class B, deferred (drape sheet)
     ] {
         let sprite = load_sprite(id);
         assert!(model_for(id, &sprite).is_none(), "{id} must stay unmodeled");
