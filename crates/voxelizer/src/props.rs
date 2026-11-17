@@ -3299,7 +3299,12 @@ pub const REST_EGG_PINS: &[&str] = &["f_egg_sackbw", "f_egg_sackcs"];
 /// Lathe fits on a raw segment: the birdbath is a basin on
 /// a pedestal (rotationally symmetric); the alien pods are
 /// small bulbs on stems.
-pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ"];
+/// Lathe fits on a raw segment: the alien pods are small
+/// bulbs on stems; the orrery is a brass instrument around
+/// a central axis — its arms sweep a disc, so discs around
+/// the axis are the faithful read (a solid extrusion made
+/// its sides flat gold planks, Joey's review 2026-11-17).
+pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ", "f_orrery"];
 
 /// Closed solids on a raw segment with a fitted depth
 /// override (the depth rule misreads both: the anvil's
@@ -3307,39 +3312,58 @@ pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ"];
 /// body runs ~1/3 as deep as long; the orrery's tall
 /// silhouette trips the floor-standing floor and gets a
 /// plank ~10 deep although the mechanism is narrow).
-pub const REST_SOLID_DEPTH_PINS: &[(&str, u32)] = &[
-    ("f_anvil", 7),
-    ("f_orrery", 5),
-];
+pub const REST_SOLID_DEPTH_PINS: &[(&str, u32)] = &[("f_anvil", 7)];
 
-/// Thin opaque extrusions: curved / spiky organisms whose
-/// paint IS thin structure — a closed solid fills their
-/// concavities into slabs (the tendril became a blue
-/// block) and the structure mask drops their 1px stalks
-/// (the zapper lost everything above its roots).
-pub const REST_THIN_PINS: &[&str] = &["f_alien_tendril", "f_alien_zapper"];
+/// Uniform-material pins: the whole model repaints in
+/// the sprite's modal structure tone (the anvil's black
+/// iron — Joey's instruction, 2026-11-17).
+pub const REST_UNIFORM_PINS: &[&str] = &["f_anvil"];
 
-/// A thin extrusion of the sprite's opaque mask (every
-/// opaque pixel a column of the given depth, sprite paint
-/// throughout). For organisms whose drawn structure is
-/// genuinely thin — no fill, no dropped stalks.
-fn thin_model(sprite: &RgbaImage, depth: u32) -> Option<PropModel> {
-    // Own band: opaque_band requires MIN_ROW_COVERAGE per
-    // edge row, which collapses a 1-3px stalk's band to
-    // its bushy base (the zapper lost its whole stalk).
-    // A thin sprite's band is every row with any paint.
+/// Plant pins: fern-like organisms whose fronds spread
+/// in depth as well as width (Joey, 2026-11-17, on the
+/// zapper's flat extrusion: "It shouldn't be flat. It is
+/// a plant"). Routed to [`plant_model`].
+pub const REST_PLANT_PINS: &[&str] = &["f_alien_tendril", "f_alien_zapper"];
+
+/// A plant: every opaque pixel becomes a short column
+/// in z, centered, whose half-depth grows with the
+/// pixel's distance from its row's center — fronds that
+/// spread sideways in the sprite also spread in depth,
+/// the stalk stays thin. The side view reads as a
+/// tapered plant mass, not a flat cutout. (Own band:
+/// opaque_band's coverage floor collapses thin stalks.)
+fn plant_model(sprite: &RgbaImage) -> Option<PropModel> {
     let (w, h) = (sprite.width(), sprite.height());
     let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
     let band = rows.next()?..rows.last()? + 1;
     let fh = band.end - band.start;
+    let depth = 9u32;
+    let zc = (depth / 2) as i32;
     let mut m = PropModel::new([w, fh, depth]);
     for y in 0..fh {
         let r = band.end - 1 - y;
-        for x in 0..w {
+        let xs: Vec<u32> = (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            continue;
+        }
+        let cx = xs[xs.len() / 2] as i32;
+        // Phyllotaxis: the z-center spirals slowly with
+        // height and the spread jitters per row, so the
+        // side silhouette is an irregular plant outline,
+        // not a straight ribbon with banded edges.
+        let zoff = (1.6 * (y as f32 * 2.4).sin()).round() as i32;
+        let jitter = 0.75 + hash01(r, 0x91A7) * 0.5;
+        for &x in &xs {
             let px = *sprite.get_pixel(x, r);
-            if opaque(px) {
-                for z in 0..depth {
-                    m.set(x, y, z, Some(px));
+            let s = ((1 + ((x as i32 - cx).abs() as f32 * 0.75).round() as i32) as f32
+                * jitter)
+                .round()
+                .clamp(1.0, 4.0) as i32;
+            for z in (zc + zoff - s)..=(zc + zoff + s) {
+                if z >= 0 && (z as u32) < depth {
+                    m.set(x, y, z as u32, Some(px));
                 }
             }
         }
@@ -3499,18 +3523,37 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         if let Some(seg) = raw_segment(sprite) {
             let top = seamless_top_color(sprite, &seg);
             let construction = construction_for(Some(id), sprite, &seg);
-            return Some(solid_model_impl_d(
+            let mut m = solid_model_impl_d(
                 sprite,
                 &seg,
                 construction,
                 true,
                 top,
                 Some(*depth),
-            ));
+            );
+            // Uniform-material pins (Joey, 2026-11-17, the
+            // anvil: "a uniform shiny black metal material
+            // all the way around"): repaint every voxel in
+            // the sprite's modal structure tone — one
+            // material, no mottling, no highlight stripe
+            // carried around the sides.
+            if REST_UNIFORM_PINS.contains(&id) {
+                if let Some(c) = modal_color(
+                    sprite
+                        .pixels()
+                        .copied()
+                        .filter(|&px| structure(px)),
+                ) {
+                    for cell in m.voxels.iter_mut().flatten() {
+                        *cell = c;
+                    }
+                }
+            }
+            return Some(m);
         }
     }
-    if REST_THIN_PINS.contains(&id) {
-        if let Some(m) = thin_model(sprite, 2) {
+    if REST_PLANT_PINS.contains(&id) {
+        if let Some(m) = plant_model(sprite) {
             return Some(m);
         }
     }
