@@ -3322,29 +3322,38 @@ pub const REST_SOLID_DEPTH_PINS: &[(&str, u32)] = &[("f_anvil", 7)];
 /// carry the sprite, structure pixels fill between.
 /// Depths: 2 for chains/ropes/cables, 3 default, 4 for
 /// chunky machines.
-pub const REST_FRAME_PINS: &[(&str, u32)] = &[
-    ("f_flagpole", 3),
-    ("f_wooden_flagpole", 3),
-    ("f_utility_pole", 4),
-    ("f_exodii_lamp", 3),
-    ("f_nl_exodii_lamp", 3),
-    ("f_machinery_light", 4),
-    ("f_sign_stop", 3),
-    ("f_sign_warning", 3),
-    ("f_wind_vane", 3),
-    ("f_TV_antenna", 2),
-    ("f_cellphone_booster", 3),
-    ("f_ventilator", 4),
-    ("f_battlefield_cross", 3),
-    ("f_rope_up", 2),
-    ("f_hoist_chain", 2),
-    ("f_hoist_rope", 2),
-    ("f_hoist_pulley", 2),
-    ("f_hanging_meathook", 2),
-    ("f_ground_cable", 2),
-    ("f_electrical_conduit", 2),
-    ("f_LIXA_electrical_conduit", 4),
-    ("f_lane", 3),
+/// Member pins (class D1: poles, signs, lamps, chains,
+/// conduits): built by member_model -- every sprite row
+/// decomposes into contiguous clusters; a cluster up to
+/// 6 wide is a MEMBER and gets a round plan
+/// cross-section (a pipe, post, or chain run), a wider
+/// cluster is a PANEL/BODY and gets a box of real
+/// thickness. Joey's group rule (2026-11-17): front and
+/// back look good, but NOTHING should be flat -- no
+/// planar extrusions.
+pub const REST_MEMBER_PINS: &[&str] = &[
+    "f_flagpole",
+    "f_wooden_flagpole",
+    "f_utility_pole",
+    "f_exodii_lamp",
+    "f_nl_exodii_lamp",
+    "f_machinery_light",
+    "f_sign_stop",
+    "f_sign_warning",
+    "f_wind_vane",
+    "f_TV_antenna",
+    "f_cellphone_booster",
+    "f_ventilator",
+    "f_battlefield_cross",
+    "f_rope_up",
+    "f_hoist_chain",
+    "f_hoist_rope",
+    "f_hoist_pulley",
+    "f_hanging_meathook",
+    "f_ground_cable",
+    "f_electrical_conduit",
+    "f_LIXA_electrical_conduit",
+    "f_lane",
 ];
 
 /// Stand pins (class D1 fix round): uprights whose
@@ -3774,68 +3783,74 @@ fn hammock_model(sprite: &RgbaImage, net: bool) -> Option<PropModel> {
 /// front and back faces only. The band is any-opaque
 /// rows (a chain's links and a lamp's finial are sparse
 /// rows the seamless band test would trim).
-fn frame_model(sprite: &RgbaImage, depth: u32) -> Option<PropModel> {
+fn member_model(sprite: &RgbaImage) -> Option<PropModel> {
     let (w, h) = (sprite.width(), sprite.height());
     let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
     let band = rows.next()?..rows.last()? + 1;
     let fh = band.end - band.start;
-    let zc = 16i32;
-    let z0 = zc - (depth as i32) / 2;
-    let z1 = z0 + depth as i32 - 1;
+    let zc = 16.0f32;
     let mut m = PropModel::new([w, fh, 32]);
     for y in 0..fh {
         let r = band.end - 1 - y;
-        for x in 0..w {
-            let px = *sprite.get_pixel(x, r);
-            if !opaque(px) {
-                continue;
-            }
-            if structure(px) {
-                for z in z0..=z1 {
-                    m.set(x, y, z as u32, Some(px));
+        // Contiguous opaque clusters in this row.
+        let mut clusters: Vec<(u32, u32)> = Vec::new();
+        let mut x = 0;
+        while x < w {
+            if opaque(*sprite.get_pixel(x, r)) {
+                let a = x;
+                while x < w && opaque(*sprite.get_pixel(x, r)) {
+                    x += 1;
                 }
+                clusters.push((a, x - 1));
             } else {
-                m.set(x, y, z0 as u32, Some(px));
-                m.set(x, y, z1 as u32, Some(px));
+                x += 1;
             }
         }
-    }
-    if m.solid_count() == 0 {
-        return None;
-    }
-    Some(m)
-}
-
-/// The small satellite dish. The sprite's rows 8..20
-/// are a reflector disc (center ~(18.5, 14), radii
-/// ~7 x 6.5) with a feed arm at its right edge; rows
-/// 21..24 are the mount post. A flat extrusion made the
-/// reflector a plate edge-on; here the disc's pixels
-/// sit on a paraboloid (rim forward at z 19, center
-/// recessed to z 15, shell 2 thick) and everything else
-/// (arm, mount) extrudes flat behind the bowl.
-fn dish_model(sprite: &RgbaImage) -> Option<PropModel> {
-    let (w, h) = (sprite.width(), sprite.height());
-    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
-    let band = rows.next()?..rows.last()? + 1;
-    let fh = band.end - band.start;
-    let mut m = PropModel::new([w, fh, 32]);
-    let (cx, cy) = (18.5f32, 14.0f32);
-    for y in 0..fh {
-        let r = band.end - 1 - y;
-        for x in 0..w {
-            let px = *sprite.get_pixel(x, r);
-            if !opaque(px) {
-                continue;
-            }
-            let e = ((x as f32 - cx) / 7.0).powi(2) + ((r as f32 - cy) / 6.5).powi(2);
-            if e <= 1.0 {
-                let z = 19 - (4.0 * (1.0 - e)).round() as u32;
-                m.set(x, y, z, Some(px));
-                m.set(x, y, z - 1, Some(px));
+        for (a, b) in clusters {
+            let wdt = b - a + 1;
+            let cx = (a + b) as f32 / 2.0;
+            if wdt <= 6 {
+                // Member: a disc in plan (a tube). Paint
+                // wraps the row by quadrant, like the
+                // lathe discs.
+                let rad = wdt as f32 / 2.0 + 0.3;
+                for vx in 0..w {
+                    for vz in 0..32u32 {
+                        let (dx, dz) = (vx as f32 - cx, vz as f32 - zc);
+                        if dx * dx + dz * dz > rad * rad {
+                            continue;
+                        }
+                        let sx = if dz.abs() >= dx.abs() {
+                            vx.clamp(a, b)
+                        } else {
+                            (cx + dz.signum() * dz.abs())
+                                .round()
+                                .clamp(a as f32, b as f32) as u32
+                        };
+                        m.set(vx, y, vz, Some(*sprite.get_pixel(sx, r)));
+                    }
+                }
             } else {
-                for z in 13..=15 {
-                    m.set(x, y, z, Some(px));
+                // Panel/body: a box of real thickness
+                // (width / 3, clamped 3..6). Front and
+                // back faces carry the row's paint by x;
+                // the end faces carry the edge pixels.
+                let d = ((wdt as f32 / 3.0).round() as u32).clamp(3, 6);
+                let z0 = 16 - d / 2;
+                let z1 = z0 + d - 1;
+                for vx in a..=b {
+                    for vz in z0..=z1 {
+                        let px = if vz == z0 || vz == z1 {
+                            *sprite.get_pixel(vx, r)
+                        } else if vx == a {
+                            *sprite.get_pixel(a, r)
+                        } else if vx == b {
+                            *sprite.get_pixel(b, r)
+                        } else {
+                            *sprite.get_pixel(vx, r)
+                        };
+                        m.set(vx, y, vz, Some(px));
+                    }
                 }
             }
         }
@@ -3960,6 +3975,46 @@ fn stand_model(sprite: &RgbaImage, head_mode: u8) -> Option<PropModel> {
     Some(m)
 }
 
+/// The small satellite dish. The sprite's rows 8..20
+/// are a reflector disc (center ~(18.5, 14), radii
+/// ~7 x 6.5) with a feed arm at its right edge; rows
+/// 21..24 are the mount post. A flat extrusion made the
+/// reflector a plate edge-on; here the disc's pixels
+/// sit on a paraboloid (rim forward at z 19, center
+/// recessed to z 15, shell 2 thick) and everything else
+/// (arm, mount) extrudes flat behind the bowl.
+fn dish_model(sprite: &RgbaImage) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let mut m = PropModel::new([w, fh, 32]);
+    let (cx, cy) = (18.5f32, 14.0f32);
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if !opaque(px) {
+                continue;
+            }
+            let e = ((x as f32 - cx) / 7.0).powi(2) + ((r as f32 - cy) / 6.5).powi(2);
+            if e <= 1.0 {
+                let z = 19 - (4.0 * (1.0 - e)).round() as u32;
+                m.set(x, y, z, Some(px));
+                m.set(x, y, z - 1, Some(px));
+            } else {
+                for z in 13..=15 {
+                    m.set(x, y, z, Some(px));
+                }
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -4006,8 +4061,8 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
             }
         }
     }
-    if let Some((_, depth)) = REST_FRAME_PINS.iter().find(|(k, _)| *k == id) {
-        if let Some(m) = frame_model(sprite, *depth) {
+    if REST_MEMBER_PINS.contains(&id) {
+        if let Some(m) = member_model(sprite) {
             return Some(m);
         }
     }
