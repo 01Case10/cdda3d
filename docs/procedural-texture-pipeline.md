@@ -1121,3 +1121,38 @@ cylinder shaped but we have made them squares"; committed
   `cylinder_footprint_is_round` asserts disc geometry + front
   verbatim on f_30gal_firebarrel. All 103 strips re-rendered
   (`examples/prop_strips.rs`) and re-presented 2026-11-17.
+
+FIX ROUND 2 (Joey's review of the fix-round strips, 2026-11-17:
+the cylinders still carried artifacts on top — "you need to
+have an archetype for hollow cylinder or cylinder with liquid
+in it"): the per-column extrusion colored each column's top
+with the sprite's drawn rim-ellipse pixels, but the barrel
+sprites' top band IS the container's interior (dark inside;
+literal fire paint for fd_fire) — so the "cap" was interior
+paint extruded into a jagged dome. Two new archetypes
+(`archetypes.rs`, routed via ARCHETYPE_IDS; `model_for` falls
+back to the seamless segmentation for archetype ids that do
+not segment):
+
+- **HollowCylinder** (f_30gal_firebarrel, its fd_fire variant,
+  f_55gal_firebarrel + variant, f_trashcan): wall shell
+  (thickness 2, per-column sprite paint, front verbatim) around
+  a genuine cavity; the cavity floor is the CONTENTS surface —
+  modal paint of the top band's inner columns — at
+  interior_depth = round(0.55 * diameter) below the rim (the
+  drawn ellipse ratio, measured 9/16 on the barrel family).
+  Empty barrel: dark interior surface; fd_fire: the surface is
+  the fire paint (the liquid case).
+- **ClosedCylinder** (f_wood_keg, f_fvat_empty, f_fvat_full):
+  the same shell/disc filled solid, column paint clamped at
+  each column's own top (the perspective ellipse un-projects
+  into a level top), the interior disc's top face set to one
+  fitted LID material (modal of the top ellipse band).
+
+The 8 ids left CYLINDER_PINS; the remaining 9 pins (heater,
+boulders, punching bag, log stool, sand castle, fungal clump)
+keep the column extrusion — closed domes/profiles whose tops
+are real surface. Gates: archetypes_gate gains cavity +
+fire-surface + flat-lid tests; coverage total stays 222, the
+pre-drive 119 unchanged. Strips re-rendered and re-presented
+2026-11-17.
