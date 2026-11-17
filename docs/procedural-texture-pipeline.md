@@ -577,3 +577,30 @@ side max Δ 0.013 vs 0.025 tol, back max Δ 0.023 vs 0.05, back
 row-mean L spread 0.012 vs 0.03). Parent re-verified: props_gate
 8/8, lib 36/36. The deprecated box/column models keep their
 multipliers (reference-only, noted).
+
+## 21. Stage G case-by-case side construction (2026-11-16, Joey's ruling)
+
+Joey: the bookcase's sides should be flat wooden slabs; missing
+detail can't be filled by a global rule — it goes case by case.
+The row-field side wrap is replaced by CONSTRUCTION PROFILES:
+`Construction { Panel, Structural, FieldWrap }` via
+`construction_for(id, sprite, seg)` with a per-id
+CONSTRUCTION_OVERRIDES pin table (empty today; pins accrete as
+cases are reviewed, mirroring BOUNDARY_OVERRIDES). Defaults:
+open-base -> Structural (table: sides are legs + apron geometry);
+everything else that segments -> Panel (flanks = the back-panel
+treatment: de-shaded primary + grain, grain running vertically on
+flanks; two-panel split applies). FieldWrap (the old row wrap) is
+assigned to NOTHING by default — it exists for per-case pinning
+(e.g. slatted crates). A detected sliver still wins on its flank
+(real evidence over inference); a shadow/missing sliver sample on
+a Panel flank now falls back to the panel, not the field. Parent
+re-verified (props_gate 9/9, lib 36/36): bookcase right flank 420
+cells panel-uniform (variance 0.00002), left flank = sliver
+un-projection asserted cell-exact (312 cells); fridge flank 532
+cells panel (variance 0.00001) — its old side==field test was
+REPLACED by the panel assertions; locker flank 315 cells panel, no
+louver banding; counter flank carries the two-panel split (30
+stone rim cells over 330 body cells). The albedo synthetic's left
+flank is Panel by default and now uses the panel budget (measured
+side max 0.023 overall).

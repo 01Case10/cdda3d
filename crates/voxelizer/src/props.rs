@@ -103,6 +103,41 @@
 //! 0..30 to 0..31 at row 28, and L settles to the door field's flat
 //! ~0.49 from row 28 down.
 //!
+//! ## Construction profiles (side inference is per-case)
+//!
+//! How an unseen flank is filled is a property of how the object
+//! is BUILT, not a law derivable from the sprite: a bookcase's
+//! side is a solid panel (its shelves do not continue through
+//! it), a table's side is its legs and apron, a crate's side
+//! really is its slats continued around. One global rule got the
+//! bookcase wrong (the row-field wrap carried shelf bands onto
+//! its flanks), so [`solid_model`] colors sides by a
+//! [`Construction`] profile, assigned per case by
+//! [`construction_for`]:
+//!
+//! * [`Construction::Panel`] — enclosed furniture: the flank is a
+//!   flat panel in the prop's primary material, built exactly
+//!   like the back panel (de-shaded primary + fBm grain, the
+//!   two-panel slab split included), only with the grain
+//!   stretched vertically. Default for everything that segments
+//!   with a closed base.
+//! * [`Construction::Structural`] — open-base props (the table):
+//!   the flank IS the base geometry (legs + apron), colored by
+//!   the row-field rule that predates profiles. Default when
+//!   [`base_plan`] reads the base as open.
+//! * [`Construction::FieldWrap`] — the row-field wrap itself,
+//!   kept for slatted/open construction (crates and the like).
+//!   Assigned to NOTHING by default; it exists so a reviewed case
+//!   can be pinned to it.
+//!
+//! [`CONSTRUCTION_OVERRIDES`] is the per-id pin table, consulted
+//! before the default assignment — the case-by-case layer. It
+//! starts empty: the five reviewed gate props are all served by
+//! the defaults, and entries are added as individual cases are
+//! reviewed, exactly like [`BOUNDARY_OVERRIDES`]. Whichever
+//! profile a flank gets, a detected side sliver on that flank
+//! still wins — it is real sprite evidence, not inference.
+//!
 //! ## Base structure (box model)
 //!
 //! A solid cuboid lies for legged furniture: f_table's front is a
@@ -151,22 +186,30 @@
 //!   (most common) solid-paint color among the row's pixels,
 //!   ignoring the outermost 2 columns of the front extent on each
 //!   side, so edge trim and corner posts don't define the field.
-//! * **Sides.** A side cell takes its row's field at FULL value —
-//!   UNLESS a side sliver was detected on that side, in which case
-//!   the sliver un-projection (real sprite evidence) wins. Because
-//!   the field is per-row, horizontal structure wraps around the
-//!   side at the same heights: shelf lines, aprons and seams
-//!   continue around the flank. Vertical front detail (door
-//!   splits, handles, vents) does NOT wrap: it never dominates a
-//!   row's mode, so it never enters the field. One correction:
-//!   SHADOW rows are recesses, not material — f_bookcase's shelf
-//!   interiors are fully-opaque pure black (24% of its front), so
-//!   their field IS black and the raw rule painted black bands
-//!   down the flanks and across the back. A side source (field or
-//!   sliver pixel) whose L < [`SHADOW_L`] is therefore replaced by
-//!   the nearest non-shadow row's field (ties prefer the row
-//!   above): the flank reads as the continuous side panel the
-//!   object actually has.
+//! * **Sides.** Colored by the prop's [`Construction`] profile
+//!   (see "Construction profiles" above). Under
+//!   [`Construction::Panel`] (the enclosed-furniture default) a
+//!   side cell is the primary-material panel — the same
+//!   construction as the back, grain stretched vertically — so
+//!   the flank is one flat slab: no shelf lines, no door detail,
+//!   nothing wraps. Under [`Construction::Structural`] and
+//!   [`Construction::FieldWrap`] a side cell takes its row's
+//!   field at FULL value, so horizontal structure wraps around
+//!   the side at the same heights (shelf lines, aprons and seams
+//!   continue around the flank) while vertical front detail
+//!   (door splits, handles, vents) does NOT wrap: it never
+//!   dominates a row's mode, so it never enters the field. In
+//!   every profile a side sliver detected on that flank wins
+//!   over the profile's fill (real sprite evidence). One
+//!   correction for the field-based profiles: SHADOW rows are
+//!   recesses, not material — f_bookcase's shelf interiors are
+//!   fully-opaque pure black (24% of its front), so their field
+//!   IS black and the raw rule painted black bands down the
+//!   flanks and across the back. A field-based side source
+//!   (field or sliver pixel) whose L < [`SHADOW_L`] is therefore
+//!   replaced by the nearest non-shadow row's field (ties prefer
+//!   the row above). (Under Panel the same shadow-sliver case
+//!   falls back to the panel itself.)
 //! * **Back.** The back is its own construction, NOT a symmetry
 //!   of the front: a plain panel (or two) in the prop's primary
 //!   material, where the primary material is the largest
@@ -332,6 +375,35 @@ pub const BOUNDARY_OVERRIDES: &[(&str, u32)] = &[("f_locker", 28)];
 pub const DEPTH_PER_TOP_ROW: f32 = 2.0;
 /// Depth is clamped to the tile footprint.
 const MAX_DEPTH: u32 = 32;
+
+/// How a prop's unseen side surfaces are constructed (module
+/// docs, "Construction profiles"). Side inference is per-case:
+/// the profile says what a flank IS, and the color rule follows
+/// from that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Construction {
+    /// Enclosed furniture: the flank is a flat panel in the
+    /// prop's primary material — the back panel's construction,
+    /// grain stretched vertically. Nothing from the front wraps.
+    Panel,
+    /// Open-base props: the flank is the base structure itself
+    /// (legs + apron), colored by the row-field rule.
+    Structural,
+    /// Slatted/open construction: the row-field wrap — horizontal
+    /// front structure continues around the flank. Assigned to
+    /// nothing by default; pin it per id in
+    /// [`CONSTRUCTION_OVERRIDES`] when a reviewed case calls for
+    /// it.
+    FieldWrap,
+}
+
+/// Per-id construction pins, consulted by [`construction_for`]
+/// before the default assignment. The case-by-case layer: an
+/// entry is added when a specific prop is reviewed and the
+/// default profile is wrong for how that object is built.
+/// Starts empty — the reviewed gate props (counter, bookcase,
+/// table, fridge, locker) are all served by the defaults.
+pub const CONSTRUCTION_OVERRIDES: &[(&str, Construction)] = &[];
 
 /// A detected side sliver: a vertical band of sprite columns at one
 /// edge of the front region, shaded distinctly from the front field
@@ -1502,11 +1574,15 @@ fn grain_amp(lab: Oklab) -> f32 {
     }
 }
 
-/// The solid model's back: one plain panel in the front region's
-/// primary material — or two, when the top region is a distinct
-/// slab component (module docs, "Inferred unseen faces"). Panels
-/// are colored per cell by [`BackPanels::color`]: the panel's
-/// primary with its L grain-modulated by stretched fBm.
+/// The solid model's plain panels: the back — and, under
+/// [`Construction::Panel`], the side flanks — in the front
+/// region's primary material: one panel, or two when the top
+/// region is a distinct slab component (module docs, "Inferred
+/// unseen faces"). Panels are colored per cell by
+/// [`BackPanels::color`] (back) / [`BackPanels::side_color`]
+/// (flank): the panel's primary with its L grain-modulated by
+/// stretched fBm — horizontally on the back, vertically on a
+/// flank.
 struct BackPanels {
     fbm: Fbm,
     front: Oklab,
@@ -1515,17 +1591,40 @@ struct BackPanels {
 }
 
 impl BackPanels {
-    fn color(&self, x: u32, y: u32, fh: u32) -> Rgba<u8> {
-        let base = match self.upper {
+    /// The panel material covering model row `y` (the upper
+    /// panel, when the two-panel split fired, covers the top
+    /// `count` rows).
+    fn base(&self, y: u32, fh: u32) -> Oklab {
+        match self.upper {
             Some((top, count)) if y >= fh - count => top,
             _ => self.front,
-        };
-        let n = self.fbm.sample(x as f32 / 6.0, y as f32);
+        }
+    }
+
+    /// A panel cell's color: the base primary with its L
+    /// grain-modulated by the fBm sampled at (u, v).
+    fn grain_color(&self, base: Oklab, u: f32, v: f32) -> Rgba<u8> {
+        let n = self.fbm.sample(u, v);
         let t = ((n - 0.5) * 2.0).clamp(-1.0, 1.0);
         let mut lab = base;
         lab.l = (lab.l * (1.0 + grain_amp(base) * t)).clamp(0.02, 0.98);
         let [r, g, b] = lab.to_srgb_u8();
         Rgba([r, g, b, 255])
+    }
+
+    /// Back-plane color at (x, y): grain sampled at (x/6, y), so
+    /// the streaks run horizontally.
+    fn color(&self, x: u32, y: u32, fh: u32) -> Rgba<u8> {
+        self.grain_color(self.base(y, fh), x as f32 / 6.0, y as f32)
+    }
+
+    /// Side-flank color at depth cell `z`, model row `y`
+    /// ([`Construction::Panel`] flanks): the same panels as the
+    /// back, but the grain is stretched VERTICALLY — sampled at
+    /// (z, y/6), since a flank's horizontal axis is depth, so the
+    /// streaks run along y.
+    fn side_color(&self, z: u32, y: u32, fh: u32) -> Rgba<u8> {
+        self.grain_color(self.base(y, fh), z as f32, y as f32 / 6.0)
     }
 }
 
@@ -1594,6 +1693,47 @@ fn back_panels(
     }
 }
 
+/// The front region's STRUCTURE x-extent: fringe pixels never
+/// extend it (module docs, "Inferred unseen faces").
+fn front_structure_extent(sprite: &RgbaImage, seg: &Segmentation) -> (u32, u32) {
+    let (mut x0, mut x1) = (sprite.width() - 1, 0u32);
+    for y in seg.front_rows.clone() {
+        for x in 0..sprite.width() {
+            if structure(*sprite.get_pixel(x, y)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+            }
+        }
+    }
+    (x0, x1)
+}
+
+/// The construction profile for a prop (module docs,
+/// "Construction profiles"): [`CONSTRUCTION_OVERRIDES`] first
+/// (the per-case layer), then the default assignment — open-base
+/// props are [`Construction::Structural`] (their flanks are their
+/// legs and apron), everything else that segments is enclosed
+/// furniture and gets [`Construction::Panel`]. The defaults are a
+/// starting assignment, not a law: a case that builds differently
+/// gets pinned in the table.
+pub fn construction_for(
+    id: Option<&str>,
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+) -> Construction {
+    if let Some(id) = id {
+        if let Some((_, c)) = CONSTRUCTION_OVERRIDES.iter().find(|(k, _)| *k == id) {
+            return *c;
+        }
+    }
+    let (x0, x1) = front_structure_extent(sprite, seg);
+    if base_plan(sprite, seg, x0, x1).open {
+        Construction::Structural
+    } else {
+        Construction::Panel
+    }
+}
+
 /// THE prop model: the front silhouette extruded through the full
 /// model depth and filled at *every* depth cell — a real solid, so
 /// no viewing angle can see into a hollow interior or a side gap
@@ -1619,17 +1759,23 @@ fn back_panels(
 ///   (module docs, "Albedo only — de-shading").
 /// * Side surfaces: each row's leftmost/rightmost solid columns are
 ///   real surface (the model is filled behind them), colored on the
-///   interior depth cells by inference: the detected sliver
+///   interior depth cells by the prop's [`Construction`] profile
+///   (module docs, "Construction profiles"): the detected sliver
 ///   un-projected where one exists on that side ([`sliver_sample`]
-///   — real sprite evidence wins), else the row's field color at
-///   full value, so horizontal bands wrap at their heights and
+///   — real sprite evidence wins in every profile); otherwise
+///   [`Construction::Panel`] flanks take the primary-material
+///   panel color (the back's construction, grain stretched
+///   vertically), while [`Construction::Structural`] /
+///   [`Construction::FieldWrap`] flanks take the row's field color
+///   at full value, so horizontal bands wrap at their heights and
 ///   vertical front detail does not. All inferred colors are
 ///   DE-SHADED (per-row gain; sliver pixels additionally
 ///   re-anchored to the row's field — module docs). Shadow-colored
-///   sources (field or sliver, L < [`SHADOW_L`]) are replaced by
-///   the nearest non-shadow row's field — recesses are not
-///   material. The front/back planes keep their own colors, so
-///   side inference never touches the exact front projection.
+///   sources (field or sliver, L < [`SHADOW_L`]) are not material:
+///   field-based profiles replace them with the nearest
+///   non-shadow row's field, Panel flanks with the panel itself.
+///   The front/back planes keep their own colors, so side
+///   inference never touches the exact front projection.
 /// * Top surface: stepped, following the silhouette — each column
 ///   x's top surface is its own topmost solid voxel, colored for
 ///   z in 0..d-1 from the top region via [`top_row_for_z`] (the
@@ -1642,7 +1788,22 @@ fn back_panels(
 ///   solid through the depth, and the under-space is empty at every
 ///   z — including the front plane, whose "silhouette" there is
 ///   painted shadow, not structure.
+/// [`solid_model`] with the prop's id, so per-id construction
+/// pins ([`CONSTRUCTION_OVERRIDES`]) apply. Prefer this entry
+/// point whenever the caller knows the id.
+pub fn solid_model_for(id: &str, sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let construction = construction_for(Some(id), sprite, seg);
+    solid_model_impl(sprite, seg, construction)
+}
+
+/// The solid model with the default construction assignment
+/// ([`construction_for`] with no id — no per-id pins).
 pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let construction = construction_for(None, sprite, seg);
+    solid_model_impl(sprite, seg, construction)
+}
+
+fn solid_model_impl(sprite: &RgbaImage, seg: &Segmentation, construction: Construction) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
@@ -1650,15 +1811,7 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let bot = front.end - 1;
     // Front region's STRUCTURE x-extent (base_plan + row_pixel
     // ranges): fringe pixels never extend it (module docs).
-    let (mut x0, mut x1) = (w - 1, 0u32);
-    for y in front.clone() {
-        for x in 0..w {
-            if structure(*sprite.get_pixel(x, y)) {
-                x0 = x0.min(x);
-                x1 = x1.max(x);
-            }
-        }
-    }
+    let (x0, x1) = front_structure_extent(sprite, seg);
     let plan = base_plan(sprite, seg, x0, x1);
     let slab_bottom = fh - plan.header_rows; // model y; only if plan.open
     // The solidity mask: the whole model is this mask extruded
@@ -1742,9 +1895,12 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     }
     // Side surfaces: each row's silhouette extremes, interior depth
     // cells only (front/back planes keep their colors above). A
-    // detected sliver on that side is real evidence and wins;
-    // otherwise the row's de-shaded field color at full value —
-    // horizontal bands wrap, vertical detail doesn't (module docs).
+    // detected sliver on that side is real evidence and wins in
+    // every profile; otherwise the construction profile fills the
+    // flank: Panel takes the primary-material panel color (the
+    // back's construction), Structural/FieldWrap take the row's
+    // de-shaded field color at full value — horizontal bands wrap,
+    // vertical detail doesn't (module docs).
     for y in 0..fh {
         let mut extremes: Option<(u32, u32)> = None;
         for x in 0..w {
@@ -1786,7 +1942,7 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                         // A shadow-colored source (a sliver pixel
                         // sampled from a recess row) is not
                         // material evidence: fall back to the
-                        // row's field, as does missing evidence
+                        // profile's fill, as does missing evidence
                         // (a non-structure sliver sample).
                         if lab_of(px).l < SHADOW_L {
                             None
@@ -1798,7 +1954,13 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                     None
                 };
                 if c.is_none() {
-                    c = side_colors[y as usize];
+                    c = match construction {
+                        // A Panel flank falls back to the panel
+                        // itself; the field-based profiles fall
+                        // back to the row's field, as before.
+                        Construction::Panel => Some(back.side_color(z, y, fh)),
+                        _ => side_colors[y as usize],
+                    };
                 }
                 if let Some(c) = c {
                     m.set(edge_x, y, z, Some(c));

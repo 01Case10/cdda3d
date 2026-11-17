@@ -231,7 +231,7 @@ fn main() {
         let sx = (CELL_W - big.width()) / 2;
         let sy = oy + CELL_H - big.height() - 10;
         image::imageops::overlay(&mut sheet, &big, sx as i64, sy as i64);
-        let sm = solid_model(&sprite, &seg);
+        let sm = solid_model_for(id, &sprite, &seg);
         // Azimuth views at ~33 degrees elevation (0.65 over a unit
         // horizontal), matching the old 3/4 views' tilt.
         render_model(&mut sheet, &sm, V3(0.0, 0.65, 1.0), CELL_W, oy); // FRONT

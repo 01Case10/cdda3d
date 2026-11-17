@@ -19,14 +19,23 @@
 //! still run (both models are kept, deprecated).
 //!
 //! `stage_g_solid_model_inferred_faces` covers the inferred unseen
-//! faces: the test recomputes each front row's FIELD color itself
-//! (modal solid-paint color, outermost 2 extent columns trimmed)
-//! and asserts the solid model's non-sliver side cells are that
-//! field DE-SHADED at full value (per-row gain recomputed
-//! independently below) — horizontal bands wrap the flanks, not a
-//! smeared edge column. The back is asserted differently (see
-//! below): it is a plain panel in the primary material, not the
-//! row fields.
+//! faces. Side inference is PER-CONSTRUCTION (2026-11-16, fourth
+//! review round): a bookcase's flank is a flat wooden slab — the
+//! shelves do not continue through it — so enclosed furniture
+//! (Construction::Panel, the default) gets primary-material panel
+//! flanks, asserted here as panel-uniformity (every non-rim cell
+//! within OKLab 0.06 of the DE-SHADED primary, row-mean L
+//! variance < 0.001 — no banding) for f_fridge, f_bookcase and
+//! f_locker. This REPLACES the previous fridge assertion (side
+//! cells == the de-shaded row field): the field rule no longer
+//! colors enclosed flanks. The field rule survives for
+//! open-base/structural props (f_table) and as the sliver
+//! re-anchor reference; the bookcase's sliver flank is still
+//! asserted cell-by-cell against the recomputed sliver
+//! un-projection. f_counter's flank carries its two-panel split
+//! (see `stage_g_counter_back_is_two_panels`). The back is a
+//! plain panel in the primary material, not the row fields.
+//! `stage_g_construction_profiles` pins the assignment itself.
 //!
 //! Albedo-only cleanup covered here (2026-11-16, third review
 //! round): the model carries NO baked light — every directional
@@ -620,57 +629,110 @@ fn field_of(sprite: &image::RgbaImage, seg: &Segmentation, r: u32) -> image::Rgb
         .unwrap_or_else(|| panic!("front row {r} has a field color"))
 }
 
-/// Inferred unseen faces of the solid model (f_fridge sides, plain
-/// panel backs, f_bookcase band wrap). The top rim is excluded
-/// throughout: a column's topmost cell belongs to the top surface
-/// (top-region un-projection), not to the side/back inference.
+/// Panel-flank assertion (Construction::Panel): every non-rim
+/// side cell on the given flank sits within OKLab 0.06 of the
+/// DE-SHADED primary (a flat slab — only the panel's noise grain
+/// varies), and the flank's row-mean L variance is < 0.001 (no
+/// banding: no front structure wraps a panel flank). The edge
+/// column's rim row is excluded — it belongs to the top surface.
+fn assert_panel_flank(
+    id: &str,
+    sprite: &image::RgbaImage,
+    seg: &Segmentation,
+    sm: &PropModel,
+    on_right: bool,
+    primary: Oklab,
+) -> usize {
+    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+    let bot = seg.front_rows.end - 1;
+    let mut row_means: Vec<f32> = Vec::new();
+    let mut cells = 0usize;
+    for y in 0..fh {
+        let r = bot - y;
+        let cols: Vec<u32> = (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
+        if cols.is_empty() {
+            continue;
+        }
+        let edge = if on_right {
+            *cols.last().unwrap()
+        } else {
+            *cols.first().unwrap()
+        };
+        let rim = (0..fh)
+            .rev()
+            .find(|&yy| structure(*sprite.get_pixel(edge, bot - yy)));
+        if rim == Some(y) {
+            continue; // top surface row, not flank inference
+        }
+        let (mut lsum, mut n) = (0.0f32, 0u32);
+        for z in 1..d - 1 {
+            let c = sm.get(edge, y, z).expect("panel side cell exists");
+            let dist = lab_of(c).distance(primary);
+            assert!(
+                dist <= 0.06,
+                "{id}: panel side cell at ({edge},{y},{z}) is {dist:.3} from the de-shaded primary (rgb {:?})",
+                c.0
+            );
+            lsum += lab_of(c).l;
+            n += 1;
+            cells += 1;
+        }
+        if n > 0 {
+            row_means.push(lsum / n as f32);
+        }
+    }
+    assert!(
+        cells > 50,
+        "{id}: panel flank assertion must be non-vacuous ({cells} cells)"
+    );
+    let mean = row_means.iter().sum::<f32>() / row_means.len() as f32;
+    let var = row_means.iter().map(|m| (m - mean) * (m - mean)).sum::<f32>()
+        / row_means.len() as f32;
+    assert!(
+        var < 0.001,
+        "{id}: panel flank row-mean L variance {var:.5} must show no banding (< 0.001)"
+    );
+    println!(
+        "{id}: panel flank (on_right={on_right}): {cells} cells within 0.06 of the primary, row-mean L variance {var:.5}"
+    );
+    cells
+}
+
+/// Inferred unseen faces of the solid model (panel flanks for
+/// enclosed furniture, plain panel backs, the bookcase's sliver
+/// flank). The top rim is excluded throughout: a column's
+/// topmost cell belongs to the top surface (top-region
+/// un-projection), not to the side/back inference.
 #[test]
 fn stage_g_solid_model_inferred_faces() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
 
-    // ---- f_fridge: (a) non-sliver side == DE-SHADED field at
-    // full value, (b) back plane is a plain panel in the
-    // de-shaded primary material.
+    // ---- f_fridge: (a) the non-sliver flank is a flat PANEL
+    // (Construction::Panel — enclosed furniture; this replaces
+    // the old assertion that side cells equal the de-shaded row
+    // field: the field rule no longer colors fridge flanks),
+    // (b) back plane is a plain panel in the de-shaded primary
+    // material.
     let sprite = load(&ts, "f_fridge");
     let seg = segment(&sprite).expect("f_fridge segments");
-    let sm = solid_model(&sprite, &seg);
-    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+    let sm = solid_model_for("f_fridge", &sprite, &seg);
+    let (w, fh, _d) = (sm.size[0], sm.size[1], sm.size[2]);
     let bot = seg.front_rows.end - 1;
-    let gains = row_gains(&sprite, &seg);
     // Per-column topmost STRUCTURE cell (model y); None for the
     // fringe-only column x=31, which has no cells at all now.
     let col_top = |x: u32| -> Option<u32> {
         (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
     };
-    let sliver_on = |on_right: bool| {
-        seg.side.as_ref().map_or(false, |sl| sl.on_right == on_right)
-    };
-    let mut side_cells = 0usize;
-    for y in 0..fh {
-        let r = bot - y;
-        let cols: Vec<u32> = (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
-        let (lo, hi) = (*cols.first().unwrap(), *cols.last().unwrap());
-        for (edge, on_right) in [(lo, false), (hi, true)] {
-            if sliver_on(on_right) || col_top(edge) == Some(y) {
-                continue; // sliver evidence wins there; top rim is the top surface
-            }
-            for z in 1..d - 1 {
-                assert_eq!(
-                    sm.get(edge, y, z),
-                    Some(deshade(field_of(&sprite, &seg, r), gains[y as usize])),
-                    "f_fridge: side cell at ({edge},{y},{z}) must be the de-shaded row field at full value"
-                );
-                side_cells += 1;
-            }
-        }
-    }
-    assert!(side_cells > 100, "f_fridge: side assertion must be non-vacuous ({side_cells} cells)");
+    let primary = deshaded_primary(&sprite, &seg.front_rows);
+    // The flank WITHOUT the sliver is the panel flank (the
+    // sliver flank keeps the sprite evidence, as before).
+    let panel_on_right = seg.side.as_ref().map_or(true, |sl| !sl.on_right);
+    let side_cells = assert_panel_flank("f_fridge", &sprite, &seg, &sm, panel_on_right, primary);
     // (b) Back plane: every non-rim back cell within OKLab 0.06 of
     // the DE-SHADED primary material — a single plain panel with
     // only its noise grain. Non-vacuous: the sample must include
     // cells whose FRONT pixel is far from the primary, so a
     // mirrored or field-based back would fail here.
-    let primary = deshaded_primary(&sprite, &seg.front_rows);
     let mut back_cells = 0usize;
     let mut non_vacuous = 0usize;
     for y in 0..fh {
@@ -696,41 +758,91 @@ fn stage_g_solid_model_inferred_faces() {
         non_vacuous > 100,
         "f_fridge: back sample must include much front detail the panel discards ({non_vacuous})"
     );
-    println!("f_fridge: {side_cells} side cells == de-shaded field, {back_cells} back cells within 0.06 of the de-shaded primary ({non_vacuous} over discarded front detail)");
+    println!("f_fridge: {side_cells} panel side cells, {back_cells} back cells within 0.06 of the de-shaded primary ({non_vacuous} over discarded front detail)");
 
-    // ---- f_bookcase: (c) horizontal shelf bands wrap around the
-    // non-sliver side — some row's side color differs from both
-    // vertical neighbors'; (d) the back is ONE plain wood panel:
-    // every non-rim cell within 0.06 of the primary and the
-    // row-mean L variance across rows is tiny (no banding — the
-    // old field-based back had whole pure-black rows).
+    // ---- f_bookcase: (c) BOTH flanks are flat wooden slabs —
+    // the non-sliver flank is a primary-material panel (the old
+    // shelf-band wrap assertion is gone: bands must NOT wrap a
+    // bookcase), and the sliver flank keeps the sliver
+    // un-projection, asserted cell-by-cell below; (d) the back
+    // is ONE plain wood panel: every non-rim cell within 0.06
+    // of the primary and the row-mean L variance across rows is
+    // tiny (no banding — the old field-based back had whole
+    // pure-black rows).
     let sprite = load(&ts, "f_bookcase");
     let seg = segment(&sprite).expect("f_bookcase segments");
-    let sm = solid_model(&sprite, &seg);
+    let sm = solid_model_for("f_bookcase", &sprite, &seg);
     let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
     let bot = seg.front_rows.end - 1;
     let col_top = |x: u32| -> Option<u32> {
         (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
     };
-    let sliver_left = seg.side.as_ref().map_or(false, |sl| !sl.on_right);
-    let side_at = |y: u32| -> Option<image::Rgba<u8>> {
+    let primary = deshaded_primary(&sprite, &seg.front_rows);
+    // (c1) panel flank: the side WITHOUT the sliver.
+    let panel_on_right = seg.side.as_ref().map_or(true, |sl| !sl.on_right);
+    assert_panel_flank("f_bookcase", &sprite, &seg, &sm, panel_on_right, primary);
+    // (c2) sliver flank: still the sliver un-projection. On rows
+    // whose own field is non-shadow (no borrowing involved), each
+    // interior side cell must equal the sliver sample DE-SHADED
+    // by the re-anchor (de-shaded field L / sliver band mean L)
+    // — recomputed here from the documented rule.
+    let sl = seg.side.as_ref().expect("f_bookcase: a sliver was detected");
+    let sw = sl.cols.end - sl.cols.start;
+    let gains = row_gains(&sprite, &seg);
+    let mut sliver_cells = 0usize;
+    for y in 0..fh {
         let r = bot - y;
+        let field = field_of(&sprite, &seg, r);
+        if lab_of(field).l < 0.15 {
+            continue; // shadow-field row: the module borrows; not exact-recomputable here
+        }
+        let (mut bs, mut bn) = (0.0f32, 0u32);
+        for x in sl.cols.clone() {
+            let px = *sprite.get_pixel(x, r);
+            if structure(px) {
+                bs += lab_of(px).l;
+                bn += 1;
+            }
+        }
+        if bn == 0 {
+            continue;
+        }
+        let anchor = lab_of(deshade(field, gains[y as usize])).l / (bs / bn as f32);
         let cols: Vec<u32> = (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
-        let edge = if sliver_left { *cols.last().unwrap() } else { *cols.first().unwrap() };
-        sm.get(edge, y, d / 2)
-    };
-    let mut wrapped = false;
-    for y in 1..fh - 2 {
-        let (a, b, c) = (side_at(y - 1), side_at(y), side_at(y + 1));
-        if b.is_some() && b != a && b != c {
-            wrapped = true;
-            println!("f_bookcase: shelf band wraps at model y={y} (side {b:?} vs {a:?} / {c:?})");
-            break;
+        let edge = if sl.on_right {
+            *cols.last().unwrap()
+        } else {
+            *cols.first().unwrap()
+        };
+        if col_top(edge) == Some(y) {
+            continue;
+        }
+        for z in 1..d - 1 {
+            let back_steps = d - 1 - z;
+            let off = (back_steps * sw / d).min(sw - 1);
+            let sx = if sl.on_right {
+                sl.cols.end - 1 - off
+            } else {
+                sl.cols.start + off
+            };
+            let px = *sprite.get_pixel(sx, r);
+            if !structure(px) || lab_of(px).l < 0.15 {
+                continue; // shadow/missing sample: the flank falls back to the panel there
+            }
+            assert_eq!(
+                sm.get(edge, y, z),
+                Some(deshade(px, anchor)),
+                "f_bookcase: sliver side cell at ({edge},{y},{z}) must be the re-anchored sliver sample"
+            );
+            sliver_cells += 1;
         }
     }
-    assert!(wrapped, "f_bookcase: at least one shelf-band row's side color must differ from both neighbors");
+    assert!(
+        sliver_cells > 30,
+        "f_bookcase: sliver assertion must be non-vacuous ({sliver_cells} cells)"
+    );
+    println!("f_bookcase: {sliver_cells} sliver flank cells == re-anchored sliver samples");
     // (d) plain wood panel back.
-    let primary = deshaded_primary(&sprite, &seg.front_rows);
     let mut row_means: Vec<f32> = Vec::new();
     let mut back_cells = 0usize;
     for y in 0..fh {
@@ -763,9 +875,22 @@ fn stage_g_solid_model_inferred_faces() {
         "f_bookcase: back row-mean L variance {var:.5} must show no banding (< 0.001)"
     );
     println!("f_bookcase: {back_cells} back cells within 0.06 of the primary, row-mean L variance {var:.5}");
+
+    // ---- f_locker: the non-sliver flank is a flat dark panel —
+    // in particular it must NOT show the front's louver banding
+    // (the old field wrap carried the vent rows around the
+    // flank). Panel-uniformity + the variance bound assert
+    // exactly that.
+    let sprite = load(&ts, "f_locker");
+    let seg = segment_for("f_locker", &sprite).expect("f_locker segments via override");
+    let sm = solid_model_for("f_locker", &sprite, &seg);
+    let primary = deshaded_primary(&sprite, &seg.front_rows);
+    let panel_on_right = seg.side.as_ref().map_or(true, |sl| !sl.on_right);
+    assert_panel_flank("f_locker", &sprite, &seg, &sm, panel_on_right, primary);
 }
 
-/// f_counter's back is TWO plain panels: the countertop is a
+/// f_counter's back is TWO plain panels, and its Panel flank
+/// carries the same split: the countertop is a
 /// distinct slab material (top/front means 0.155 apart, top = 20
 /// of 32 silhouette rows), so the back's rim band carries the
 /// countertop material and everything below the rim is the front
@@ -783,8 +908,8 @@ fn stage_g_counter_back_is_two_panels() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
     let sprite = load(&ts, "f_counter");
     let seg = segment(&sprite).expect("f_counter segments");
-    let sm = solid_model(&sprite, &seg);
-    let (w, fh, _d) = (sm.size[0], sm.size[1], sm.size[2]);
+    let sm = solid_model_for("f_counter", &sprite, &seg);
+    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
     let bot = seg.front_rows.end - 1;
     let col_top = |x: u32| -> Option<u32> {
         (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
@@ -844,6 +969,89 @@ fn stage_g_counter_back_is_two_panels() {
         rim_mean.distance(front_primary)
     );
     println!("f_counter: back = achromatic rim band (mean {:.3} from body) + {body_cells} body cells within 0.06 of the front primary", rim_mean.distance(front_primary));
+
+    // Side: the two-panel split applies to the Panel flank too.
+    // The counter's sliver is on its right, so the LEFT flank is
+    // the panel flank: its rim row is the countertop's edge
+    // (achromatic stone, via the top surface — the same material
+    // split as the back's rim band) and every row below it is
+    // the front-primary panel at full value — two plain panels,
+    // no field banding anywhere on the flank.
+    let mut side_body = 0usize;
+    let mut side_rim = 0usize;
+    for y in 0..fh {
+        let r = bot - y;
+        let cols: Vec<u32> = (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
+        if cols.is_empty() {
+            continue;
+        }
+        let edge = *cols.first().unwrap(); // left flank (sliver is on the right)
+        let is_rim = col_top(edge) == Some(y);
+        for z in 1..d - 1 {
+            let c = sm.get(edge, y, z).expect("f_counter: side cell exists");
+            if is_rim {
+                let l = lab_of(c);
+                let chroma = (l.a * l.a + l.b * l.b).sqrt();
+                assert!(
+                    chroma < 0.03,
+                    "f_counter: side rim cell at ({edge},{y},{z}) must be achromatic stone (chroma {chroma:.3}, rgb {:?})",
+                    c.0
+                );
+                side_rim += 1;
+            } else {
+                let dist = lab_of(c).distance(front_primary_ds);
+                assert!(
+                    dist <= 0.06,
+                    "f_counter: side body cell at ({edge},{y},{z}) is {dist:.3} from the de-shaded front primary"
+                );
+                side_body += 1;
+            }
+        }
+    }
+    assert!(
+        side_body > 100 && side_rim > 5,
+        "f_counter: side split must sample both panels (body {side_body}, rim {side_rim})"
+    );
+    println!("f_counter: side = stone rim ({side_rim} cells) over {side_body} body panel cells");
+}
+
+/// Construction profiles (fourth review round): side inference
+/// is assigned per case. The defaults pin the reviewed gate set —
+/// enclosed furniture is Panel, the open-base table is
+/// Structural, and NOTHING defaults to FieldWrap (it is the
+/// opt-in profile for slatted construction, pinned per id via
+/// CONSTRUCTION_OVERRIDES — which starts empty, so for these ids
+/// the id-threaded and default model entry points must agree
+/// exactly).
+#[test]
+fn stage_g_construction_profiles() {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    for (id, want) in [
+        ("f_counter", Construction::Panel),
+        ("f_bookcase", Construction::Panel),
+        ("f_table", Construction::Structural),
+        ("f_fridge", Construction::Panel),
+        ("f_locker", Construction::Panel),
+    ] {
+        let sprite = load(&ts, id);
+        let seg = segment_for(id, &sprite).unwrap_or_else(|| panic!("{id} segments"));
+        assert_eq!(
+            construction_for(Some(id), &sprite, &seg),
+            want,
+            "{id}: id-threaded construction"
+        );
+        assert_eq!(
+            construction_for(None, &sprite, &seg),
+            want,
+            "{id}: default construction (no pin in CONSTRUCTION_OVERRIDES)"
+        );
+        assert_eq!(
+            solid_model_for(id, &sprite, &seg),
+            solid_model(&sprite, &seg),
+            "{id}: solid_model_for == solid_model under the default assignment"
+        );
+        println!("{id}: construction {want:?}");
+    }
 }
 
 /// Minimum depth (deliverable A): floor-standing props (silhouette
@@ -944,11 +1152,16 @@ fn stage_g_no_black_inferred_cells() {
 /// engine lights it). Painting is done in OKLab (L scaled, a/b
 /// untouched) — the space the correction works in.
 ///
-/// Tolerances (OKLab distance to the material): side cells
-/// 0.025 — the recovery there is near-exact (modal field +
-/// analytic gains; the budget is sRGB quantization plus the
-/// profile smoothing's bias at the ramp's end rows; measured
-/// max 0.013). Back cells 0.05 — the panel base is the palette
+/// Tolerances (OKLab distance to the material): the RIGHT
+/// (sliver) flank's side cells 0.025 — the recovery there is
+/// near-exact (sliver re-anchor + analytic gains; the budget is
+/// sRGB quantization plus the profile smoothing's bias at the
+/// ramp's end rows; measured max 0.013). The LEFT flank is
+/// Construction::Panel under the default assignment (closed
+/// base), so its cells carry the panel budget — the same 0.05
+/// as the back (palette anchor + grain), with the row-mean L
+/// spread bound (0.03) standing in for the per-row ramp check.
+/// Back cells 0.05 — the panel base is the palette
 /// primary re-anchored to the palette's weighted median L
 /// (residual ~0.01 on this ramp; measured max 0.023) plus the
 /// panel's grain (<= 3% of L for this flat tone, ~0.02), with a
@@ -991,11 +1204,24 @@ fn stage_g_solid_model_albedo_only() {
     );
     let sm = solid_model(&img, &seg);
     let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
-    // Side cells on BOTH flanks (left = field path, right =
-    // sliver path), rim row excluded (it belongs to the top
-    // surface): all at the material color, no top-to-bottom ramp.
+    // Side cells on BOTH flanks, rim row excluded (it belongs to
+    // the top surface): all at the material color, no
+    // top-to-bottom ramp — but the flanks exercise different
+    // construction paths now. The synthetic's base is closed, so
+    // the default assignment is Panel: the LEFT flank is the
+    // primary-material panel (palette anchor + grain budget,
+    // like the back), the RIGHT flank is the sliver path
+    // (near-exact recovery budget).
+    assert_eq!(
+        construction_for(None, &img, &seg),
+        Construction::Panel,
+        "the synthetic's closed base must default to Panel"
+    );
     let mut side_max = 0.0f32;
-    for edge in [0u32, w - 1] {
+    // Right flank: sliver path, per-cell 0.025, per-row L spread
+    // 0.025 (no ramp survives the re-anchor).
+    {
+        let edge = w - 1;
         let mut ls: Vec<f32> = Vec::new();
         for y in 0..fh - 1 {
             let mut row_l = None;
@@ -1005,7 +1231,7 @@ fn stage_g_solid_model_albedo_only() {
                 side_max = side_max.max(dist);
                 assert!(
                     dist <= 0.025,
-                    "side cell at ({edge},{y},{z}) is {dist:.3} from the material (rgb {:?})",
+                    "sliver side cell at ({edge},{y},{z}) is {dist:.3} from the material (rgb {:?})",
                     c.0
                 );
                 row_l = Some(lab_of(c).l);
@@ -1016,7 +1242,36 @@ fn stage_g_solid_model_albedo_only() {
             - ls.iter().cloned().fold(1.0f32, f32::min);
         assert!(
             spread <= 0.025,
-            "side at x={edge} keeps a top-to-bottom ramp: L spread {spread:.3}"
+            "sliver side at x={edge} keeps a top-to-bottom ramp: L spread {spread:.3}"
+        );
+    }
+    // Left flank: panel path, per-cell 0.05 (palette anchor +
+    // grain, the back's budget), row-mean L spread 0.03 (grain
+    // only, no ramp in the panel).
+    {
+        let edge = 0u32;
+        let mut row_means: Vec<f32> = Vec::new();
+        for y in 0..fh - 1 {
+            let (mut s, mut n) = (0.0f32, 0u32);
+            for z in 1..d - 1 {
+                let c = sm.get(edge, y, z).expect("side cell exists");
+                let dist = lab_of(c).distance(base_lab);
+                side_max = side_max.max(dist);
+                assert!(
+                    dist <= 0.05,
+                    "panel side cell at ({edge},{y},{z}) is {dist:.3} from the material (rgb {:?})",
+                    c.0
+                );
+                s += lab_of(c).l;
+                n += 1;
+            }
+            row_means.push(s / n as f32);
+        }
+        let spread = row_means.iter().cloned().fold(0.0f32, f32::max)
+            - row_means.iter().cloned().fold(1.0f32, f32::min);
+        assert!(
+            spread <= 0.03,
+            "panel side row-mean L spread {spread:.3} must be grain only, no ramp"
         );
     }
     // Back cells (rim row excluded): at the material color,
