@@ -26,7 +26,7 @@ use std::path::Path;
 use treebuild::connect::VariantAssignment;
 use treebuild::render::TextureSpec;
 
-use crate::materials::{Material, MaterialTable};
+use crate::materials::{Material, MaterialTable, PropModelData};
 
 /// What a spec build resolved, for capture reporting and gates.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -42,6 +42,11 @@ pub struct TextureStats {
     /// Stage F: materials given a world-space macro entry (v2
     /// voxelizer output only; always 0 for v1 dirs).
     pub macros: usize,
+    /// Phase 9 (9.3): distinct prop colours given a synthetic
+    /// solid material by
+    /// [`extend_texture_spec_with_props`]. The extend call
+    /// returns the count; builders that call it assign it here.
+    pub prop_colors: usize,
 }
 
 /// Scene-local layer loading + compaction, shared by the base and
@@ -301,6 +306,133 @@ pub fn build_texture_spec_multitile(
         }
     }
     Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
+}
+
+/// Phase 9 (9.3): the scene-wide set of distinct prop-model
+/// palette colours, each of which gets a **synthetic material**
+/// — a solid-colour texture layer appended to the scene
+/// texture array by [`extend_texture_spec_with_props`].
+///
+/// Order is deterministic and meaningful: colours are stored
+/// in FIRST-APPEARANCE order across the models the set was
+/// built from (caller order, then each model's voxel order),
+/// deduped scene-wide (plan 9.0: "deduped scene-wide"). The
+/// colour at index `i` gets synthetic material id
+/// `base_id + 1 + i` for whatever `base_id` the caller picks —
+/// the caller must pick a `base_id` above every real
+/// block/material id in the scene, so synthetic ids never
+/// collide with atlas materials.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PropColorSet {
+    colors: Vec<[u8; 3]>,
+}
+
+impl PropColorSet {
+    /// An empty set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Build from an iterator of prop models, in caller order:
+    /// every distinct palette colour actually used by a voxel,
+    /// first-appearance order preserved (model voxel order is
+    /// `(y * d + z) * w + x`, the `PropModelData` layout).
+    pub fn from_models<'a>(models: impl Iterator<Item = &'a PropModelData>) -> Self {
+        let mut set = Self::new();
+        for model in models {
+            for &idx in &model.voxels {
+                if idx != PropModelData::EMPTY {
+                    if let Some(&rgb) = model.palette.get(idx as usize) {
+                        set.push(rgb);
+                    }
+                }
+            }
+        }
+        set
+    }
+
+    /// Add `rgb` if not already present; returns its colour
+    /// index either way.
+    pub fn push(&mut self, rgb: [u8; 3]) -> usize {
+        if let Some(i) = self.index_of(rgb) {
+            return i;
+        }
+        self.colors.push(rgb);
+        self.colors.len() - 1
+    }
+
+    /// The distinct colours, in first-appearance order.
+    pub fn colors(&self) -> &[[u8; 3]] {
+        &self.colors
+    }
+
+    /// Number of distinct colours.
+    pub fn len(&self) -> usize {
+        self.colors.len()
+    }
+
+    /// Whether the set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.colors.is_empty()
+    }
+
+    /// Colour index of `rgb`, if the set contains it.
+    pub fn index_of(&self, rgb: [u8; 3]) -> Option<usize> {
+        self.colors.iter().position(|&c| c == rgb)
+    }
+
+    /// The synthetic material id for `rgb` under `base_id`:
+    /// `base_id + 1 + colour_index`. `None` when the set does
+    /// not contain the colour. The caller picks `base_id`
+    /// above every real block/material id in the scene.
+    pub fn id_of(&self, base_id: u32, rgb: [u8; 3]) -> Option<u32> {
+        self.index_of(rgb).map(|i| base_id + 1 + i as u32)
+    }
+
+    /// The texture-array layer [`extend_texture_spec_with_props`]
+    /// assigned to `rgb`, given `first_layer` — the value of
+    /// `spec.layers.len()` immediately before that extend call
+    /// (colour `i` lands at layer `first_layer + i`).
+    pub fn layer_of(&self, first_layer: u32, rgb: [u8; 3]) -> Option<u32> {
+        self.index_of(rgb).map(|i| first_layer + i as u32)
+    }
+}
+
+/// Phase 9 (9.3): append one solid-colour layer per colour in
+/// `colors` to `spec`, and map each colour's synthetic
+/// material id (`base_id + 1 + i`, see [`PropColorSet`]) to
+/// `[layer, layer, layer, 1]` in `spec.material_layers`
+/// (growing it as needed). Returns the number of layers
+/// appended (== `colors.len()`); assign it to
+/// `TextureStats::prop_colors` if you keep stats.
+///
+/// Plan 9.0 calls these "1x1 solid-colour images": the texture
+/// array's uniform layer size forces each appended layer to be
+/// a full `tile_size` x `tile_size` RGBA buffer, but every
+/// pixel is the same `(r, g, b, 255)`, so the layer IS a 1x1
+/// solid colour semantically — mip/LOD behaviour is trivial
+/// (every mip level is the same colour).
+pub fn extend_texture_spec_with_props(
+    spec: &mut TextureSpec,
+    colors: &PropColorSet,
+    base_id: u32,
+) -> usize {
+    let first_layer = spec.layers.len() as u32;
+    let layer_bytes = (spec.tile_size as usize) * (spec.tile_size as usize) * 4;
+    for (i, &rgb) in colors.colors().iter().enumerate() {
+        let mut bytes = vec![0u8; layer_bytes];
+        for px in bytes.chunks_exact_mut(4) {
+            px.copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+        }
+        spec.layers.push(bytes);
+        let layer = first_layer + i as u32;
+        let id = base_id as usize + 1 + i;
+        if id >= spec.material_layers.len() {
+            spec.material_layers.resize(id + 1, [0, 0, 0, 0]);
+        }
+        spec.material_layers[id] = [layer, layer, layer, 1];
+    }
+    colors.len()
 }
 
 /// One state-variant allocation (Phase 2d follow-up): voxels

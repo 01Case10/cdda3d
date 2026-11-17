@@ -20,11 +20,24 @@
 //! would show in both. Block choice per def id is the caller's
 //! (`block_for`): real scenes resolve ids through TileDefs +
 //! the voxelizer materials; the gates use the fake-data blocks.
+//!
+//! Phase 9 (plan §11b) adds furniture stamping on top of the
+//! columns this module builds: [`stamp_furniture`] stamps
+//! prop models into a `mesher::fine::FineLayer` over the built
+//! map (see that module for the fine-grid terms). `build_columns`
+//! itself is unchanged and never writes a furniture block —
+//! that absence IS the 9.0 suppression contract (below).
+
+use std::collections::BTreeSet;
 
 use hardcases::{floor_at, Column, DefTable, Floor};
-use mesher::block::Block;
+use mesher::block::{Block, Pass};
 use mesher::chunk::ChunkMap;
+use mesher::fine::{FineLayer, ModelCells, StampError, StampReport, FINE};
 use mesher::scale::WorldScale;
+
+use crate::materials::PropModelData;
+use crate::textures::PropColorSet;
 
 /// One vertical column of terrain def ids, bottom first:
 /// `terrain[i]` is the tile at game z `z_min + i`.
@@ -102,4 +115,190 @@ pub fn build_columns(
     }
     map.clear_dirty();
     map
+}
+
+// ---------------------------------------------------------------------
+// Phase 9 (plan §11b, 9.2): furniture prop-model stamping
+// ---------------------------------------------------------------------
+
+/// One furniture placement to stamp: the game tile `(x, y)` at
+/// 0-based z-level index `level` (the same indexing
+/// `build_columns` feeds to `WorldScale::level_base_block`)
+/// carries furniture id `furn_id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FurniturePlacement {
+    /// Game tile x (east).
+    pub x: i32,
+    /// Game tile y (south).
+    pub y: i32,
+    /// 0-based z-level index of the tile.
+    pub level: u32,
+    /// Furniture def id, resolved to a prop model by the
+    /// caller's resolver.
+    pub furn_id: u32,
+}
+
+/// The absolute fine-z origin a level's prop volume starts
+/// at: the level's floor-slab top, per plan 9.0 —
+/// `(level_base_block(level) + floor_slab_blocks) * FINE`.
+pub fn fine_z_origin(scale: WorldScale, level: u32) -> i32 {
+    (scale.level_base_block(level) + scale.floor_slab_blocks) as i32 * FINE
+}
+
+/// The `mesher::fine::ModelCells` adapter over a
+/// [`PropModelData`] plus a colour->Block resolver: `cell`
+/// reads the model's RGB at `(x, y, z)` and hands it to the
+/// resolver (see [`prop_block_for`] for the synthetic-material
+/// resolver built on `textures::PropColorSet`).
+pub struct PropModelCells<'a> {
+    /// The furniture material's prop model.
+    pub model: &'a PropModelData,
+    /// Colour -> stamped block resolver.
+    pub block_for: &'a dyn Fn([u8; 3]) -> Block,
+}
+
+impl<'a> PropModelCells<'a> {
+    /// An adapter for `model` resolving colours via
+    /// `block_for`.
+    pub fn new(model: &'a PropModelData, block_for: &'a dyn Fn([u8; 3]) -> Block) -> Self {
+        Self { model, block_for }
+    }
+}
+
+impl ModelCells for PropModelCells<'_> {
+    fn size(&self) -> [u32; 3] {
+        self.model.size
+    }
+
+    fn cell(&self, x: u32, y: u32, z: u32) -> Option<Block> {
+        self.model.get(x, y, z).map(|rgb| (self.block_for)(rgb))
+    }
+}
+
+/// The synthetic-material colour resolver for
+/// [`PropModelCells`]: a palette RGB becomes a `Block` whose
+/// id is the colour's synthetic material id in `colors`
+/// (under `base_id`), whose flat colour is the RGB itself,
+/// opaque pass, with all three texture layers set to the
+/// colour's solid layer (`first_layer` is the value of
+/// `spec.layers.len()` before
+/// `textures::extend_texture_spec_with_props` appended the
+/// set — see `PropColorSet::layer_of`).
+///
+/// A colour missing from the set (the set was not built from
+/// this model — a caller bug) yields the magenta unknown-id
+/// placeholder at `base_id` with no texture layers, the same
+/// fallback convention as `mesher::block_for_tile`.
+pub fn prop_block_for<'a>(
+    colors: &'a PropColorSet,
+    base_id: u32,
+    first_layer: u32,
+) -> impl Fn([u8; 3]) -> Block + 'a {
+    move |rgb: [u8; 3]| match (
+        colors.id_of(base_id, rgb),
+        colors.layer_of(first_layer, rgb),
+    ) {
+        (Some(id), Some(layer)) => Block {
+            id,
+            color: [
+                rgb[0] as f32 / 255.0,
+                rgb[1] as f32 / 255.0,
+                rgb[2] as f32 / 255.0,
+                1.0,
+            ],
+            pass: Pass::Opaque,
+            tex_layers: Some([layer, layer, layer]),
+        },
+        _ => Block {
+            id: base_id,
+            color: [1.0, 0.0, 1.0, 1.0],
+            pass: Pass::Opaque,
+            tex_layers: None,
+        },
+    }
+}
+
+/// Stamp a batch of furniture placements into `layer` over
+/// the coarse world `map` (built by [`build_columns`]).
+///
+/// For each placement whose `furn_id` resolves to a model
+/// (via `resolve`), the model is stamped at the tile's fine
+/// volume with origin [`fine_z_origin`] (floor-slab top, plan
+/// 9.0) through `mesher::fine::stamp_model`, and the owning
+/// chunk's `has_fine` flag is recomputed from the layer.
+///
+/// SUPPRESSION contract (9.0): a modelled furniture gets NO
+/// coarse block. `build_columns` writes none (it stamps
+/// terrain floors only) and this function writes none either —
+/// the coarse grid above the floor slab at a modelled tile
+/// stays all AIR, and the prop exists only in the fine layer.
+/// Placements with no model are skipped and counted in the
+/// report's `skipped`.
+///
+/// RESTAMP semantics (the 9.0 Deltas paragraph, at layer
+/// level): every placement first drops the tile's existing
+/// volume in its level's z-range, so re-running this for a
+/// tile whose furniture changed replaces the old model —
+/// and drops the volume entirely when the new furniture has
+/// no model. Other levels' volumes on the tile survive.
+///
+/// Errors: any placement resolving to an out-of-tile model
+/// fails the whole batch with [`StampError::ExceedsTile`]
+/// BEFORE anything is stamped (all models are validated up
+/// front), leaving `layer` and `map` unchanged.
+pub fn stamp_furniture<'m>(
+    map: &mut ChunkMap,
+    layer: &mut FineLayer,
+    placements: &[FurniturePlacement],
+    scale: WorldScale,
+    resolve: &dyn Fn(u32) -> Option<&'m dyn ModelCells>,
+) -> Result<StampReport, StampError> {
+    // Validate first: a build error must not half-stamp a
+    // batch (stamp_model's own unchanged-on-error contract,
+    // extended to the batch).
+    for p in placements {
+        if let Some(model) = resolve(p.furn_id) {
+            let size = model.size();
+            if size[0] > FINE as u32 || size[2] > FINE as u32 || size[1] > layer.depth_z as u32 {
+                return Err(StampError::ExceedsTile { size });
+            }
+        }
+    }
+    let mut report = StampReport::default();
+    let mut touched: BTreeSet<[i32; 2]> = BTreeSet::new();
+    for p in placements {
+        let tile = (p.x, p.y);
+        let z0 = fine_z_origin(scale, p.level);
+        // Restamp: drop the tile's old volume at this level.
+        layer.remove_tile_in_z_range(tile, z0, z0 + layer.depth_z);
+        match resolve(p.furn_id) {
+            Some(model) => {
+                let r = mesher::fine::stamp_model(layer, tile, z0, model)?;
+                report.stamped_cells += r.stamped_cells;
+                report.volumes += r.volumes;
+                report.memory_bytes += r.memory_bytes;
+            }
+            None => report.skipped += 1,
+        }
+        touched.insert(ChunkMap::chunk_coord_of(p.x, p.y));
+    }
+    for coord in touched {
+        map.refresh_chunk_fine(coord, layer);
+    }
+    Ok(report)
+}
+
+/// Restamp ONE tile after its furniture changed (a delta):
+/// exactly [`stamp_furniture`] over a single placement — the
+/// old volume at that tile+level is dropped first, and the
+/// volume disappears entirely when the new furniture has no
+/// model.
+pub fn restamp_tile<'m>(
+    map: &mut ChunkMap,
+    layer: &mut FineLayer,
+    placement: &FurniturePlacement,
+    scale: WorldScale,
+    resolve: &dyn Fn(u32) -> Option<&'m dyn ModelCells>,
+) -> Result<StampReport, StampError> {
+    stamp_furniture(map, layer, std::slice::from_ref(placement), scale, resolve)
 }

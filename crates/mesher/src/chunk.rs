@@ -20,6 +20,13 @@ pub struct Chunk {
     pub levels: usize,
     pub grid: VoxelGrid,
     pub dirty: bool,
+    /// Phase 9 (plan §11b, 9.0): this chunk column contains at
+    /// least one tile with a fine volume in the world's
+    /// `fine::FineLayer`, so it takes the fine meshing path
+    /// instead of the coarse fast path. Maintained from the
+    /// layer via `ChunkMap::refresh_chunk_fine` /
+    /// `refresh_fine_flags`; the layer is the source of truth.
+    pub has_fine: bool,
 }
 
 impl Chunk {
@@ -30,6 +37,7 @@ impl Chunk {
             levels,
             grid: VoxelGrid::new([CHUNK_W, CHUNK_H, height]),
             dirty: true,
+            has_fine: false,
         }
     }
 

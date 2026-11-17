@@ -12,6 +12,7 @@
 pub mod block;
 pub mod chunk;
 pub mod connect;
+pub mod fine;
 pub mod grid;
 pub mod mesh;
 pub mod mesher;
@@ -19,6 +20,10 @@ pub mod scale;
 
 pub use block::{block_for_tile, tile_shape, Block, Pass, TileShape, AIR_ID};
 pub use chunk::{Chunk, ChunkMap, CHUNK_H, CHUNK_W};
+pub use fine::{
+    stamp_model, FineLayer, FineRun, FineSampler, FineVolume, ModelCells, StampError, StampReport,
+    FINE,
+};
 pub use grid::{ClosureSampler, VoxelGrid, VoxelSampler};
 pub use mesh::{covered_face_cells, Mesh, PassMeshes};
 pub use mesher::{face_visible, mesh_greedy, mesh_naive};

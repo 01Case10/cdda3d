@@ -1,0 +1,542 @@
+//! Phase 9 fine grid (plan §11b, design lock 9.0): per-tile
+//! fine volumes, the fine layer that holds them, model
+//! stamping, and the fine sampler — the unified read path over
+//! (fine layer, coarse world).
+//!
+//! Terms, as locked in 9.0:
+//!
+//! - **Fine cell**: the world's sub-tile unit. [`FINE`] = 32
+//!   cells span one block (tile) edge, so one game z-level
+//!   (3 blocks at the default [`crate::WorldScale`]) is 96 fine
+//!   cells tall. Fine coordinates are written `(fx, fy, fz)`:
+//!   `fx` east, `fy` south, `fz` up, all in fine cells.
+//! - **Fine volume**: the stamped cells of ONE tile at one
+//!   z-range, stored as run-length columns (see
+//!   [`FineVolume`]). Only tiles whose furniture carries a
+//!   prop model get a volume; everything else stays coarse.
+//! - **Fine layer**: the map from tile coordinates to fine
+//!   volumes ([`FineLayer`]). It sits beside the coarse
+//!   `ChunkMap`, never inside it.
+//! - **Fine sampler** ([`FineSampler`]): resolves a fine cell
+//!   to (a) its stamped cell when its tile has a fine volume
+//!   covering it, else (b) its containing coarse block,
+//!   expanded — the existing [`crate::VoxelSampler`] contract
+//!   honoured at fine resolution.
+//! - **Model cell**: one voxel of a prop model (1 sprite
+//!   pixel). A model cell is exactly 1 fine cell — stamping is
+//!   a COPY, never a resample or rescale (9.0), even though
+//!   sprite-derived model heights are far below the 96-cell
+//!   level depth.
+//!
+//! This module is deliberately engine-free: models arrive
+//! through the [`ModelCells`] trait, which mirrors the layout
+//! of the engine's `PropModelData` (model voxel index
+//! `(y * d + z) * w + x`; model `z = d - 1` is the FRONT).
+
+use std::collections::BTreeMap;
+use std::fmt;
+
+use crate::block::Block;
+use crate::chunk::{ChunkMap, CHUNK_H, CHUNK_W};
+use crate::grid::VoxelSampler;
+
+/// Fine cells per block (tile) edge — the Phase 9 resolution
+/// lock (plan §11b, 9.0). A z-level is
+/// `blocks_per_z_level * FINE` fine cells tall: 96 at the
+/// default scale (3 blocks per level).
+pub const FINE: i32 = 32;
+
+/// One run in a fine volume's run-length column: `len`
+/// consecutive fine cells (along fine z) carrying `block`
+/// (`None` = no stamped cell in this run).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FineRun {
+    /// Number of fine cells this run covers (always >= 1).
+    pub len: u32,
+    /// The stamped block for the whole run, or `None` for an
+    /// unstamped (empty) run.
+    pub block: Option<Block>,
+}
+
+/// A per-tile fine volume in run-length columns (plan §11b's
+/// words): for each `(lx, ly)` column of the 32x32 tile
+/// footprint, a `Vec` of [`FineRun`]s along fine z covering
+/// `depth_z` cells starting at the volume's absolute fine-z
+/// origin `z0`.
+///
+/// Props are mostly solid/empty runs, so a column is typically
+/// 1-3 runs; the dense equivalent (32 * 32 * `depth_z` blocks)
+/// is what [`FineVolume::memory_bytes`] is measured against in
+/// the 9.1 gate.
+///
+/// Local coordinates: `lx`/`ly` are fine offsets within the
+/// tile footprint (`0..FINE`, x east, y south); `fz` in
+/// [`FineVolume::get`] is an ABSOLUTE fine z, matched against
+/// `z0..z0 + depth_z`.
+#[derive(Debug, Clone)]
+pub struct FineVolume {
+    /// Tile this volume belongs to, in game tile coordinates.
+    pub tile: (i32, i32),
+    /// Absolute fine-z origin: the first fine z this volume
+    /// covers (the floor-slab top of its z-level when stamped
+    /// by the engine, see `engine::snapshot_world`).
+    pub z0: i32,
+    /// Fine cells of z this volume covers (one z-level's fine
+    /// depth: 96 at the default scale).
+    pub depth_z: i32,
+    /// Columns in `(ly * FINE + lx)` order; each column's runs
+    /// sum to exactly `depth_z`.
+    columns: Vec<Vec<FineRun>>,
+}
+
+impl FineVolume {
+    /// An empty volume (every column one unstamped run) for
+    /// `tile` at absolute fine-z origin `z0`, covering
+    /// `depth_z` fine cells.
+    pub fn new(tile: (i32, i32), z0: i32, depth_z: i32) -> Self {
+        debug_assert!(depth_z > 0, "a fine volume covers at least one cell");
+        let depth = depth_z.max(1);
+        Self {
+            tile,
+            z0,
+            depth_z: depth,
+            columns: vec![
+                vec![FineRun {
+                    len: depth as u32,
+                    block: None,
+                }];
+                (FINE * FINE) as usize
+            ],
+        }
+    }
+
+    fn column_index(lx: i32, ly: i32) -> usize {
+        (ly * FINE + lx) as usize
+    }
+
+    /// The stamped block at local `(lx, ly)` and ABSOLUTE fine
+    /// z `fz`, or `None` when the cell is unstamped or outside
+    /// this volume (wrong column or z outside `z0..z0+depth_z`).
+    pub fn get(&self, lx: i32, ly: i32, fz: i32) -> Option<Block> {
+        if !(0..FINE).contains(&lx) || !(0..FINE).contains(&ly) {
+            return None;
+        }
+        let off = fz - self.z0;
+        if off < 0 || off >= self.depth_z {
+            return None;
+        }
+        let mut rest = off;
+        for run in &self.columns[Self::column_index(lx, ly)] {
+            if rest < run.len as i32 {
+                return run.block;
+            }
+            rest -= run.len as i32;
+        }
+        None
+    }
+
+    /// Set one cell during construction: local `(lx, ly)`,
+    /// z OFFSET `off` within the volume (`0..depth_z`), to
+    /// `block` (`None` clears). Splits/merges runs so the
+    /// column stays a minimal run list covering `depth_z`.
+    pub fn set(&mut self, lx: i32, ly: i32, off: i32, block: Option<Block>) {
+        debug_assert!((0..FINE).contains(&lx) && (0..FINE).contains(&ly));
+        debug_assert!(off >= 0 && off < self.depth_z);
+        if !(0..FINE).contains(&lx) || !(0..FINE).contains(&ly) || off < 0 || off >= self.depth_z {
+            return;
+        }
+        let col = &mut self.columns[Self::column_index(lx, ly)];
+        // Find the run containing `off`.
+        let mut start = 0i32;
+        let mut idx = 0usize;
+        while idx < col.len() {
+            let end = start + col[idx].len as i32;
+            if off < end {
+                break;
+            }
+            start = end;
+            idx += 1;
+        }
+        let run = col[idx];
+        let run_end = start + run.len as i32;
+        if run.block == block {
+            return; // already carries the value; runs stay minimal
+        }
+        // Replace the run with (before?, single, after?).
+        let mut replacement: Vec<FineRun> = Vec::with_capacity(3);
+        if off > start {
+            replacement.push(FineRun {
+                len: (off - start) as u32,
+                block: run.block,
+            });
+        }
+        replacement.push(FineRun { len: 1, block });
+        if off + 1 < run_end {
+            replacement.push(FineRun {
+                len: (run_end - off - 1) as u32,
+                block: run.block,
+            });
+        }
+        let at = idx;
+        col.splice(at..at + 1, replacement);
+        // Merge the (at most) single-cell run with equal-valued
+        // neighbours so repeated sets stay run-minimal.
+        merge_at(col, at.saturating_sub(1));
+        merge_at(col, at);
+        merge_at(col, at + 1);
+    }
+
+    /// Number of stamped (non-empty, non-air) cells in the
+    /// volume.
+    pub fn solid_count(&self) -> usize {
+        let mut n = 0usize;
+        for col in &self.columns {
+            for run in col {
+                if let Some(b) = run.block {
+                    if !b.is_air() {
+                        n += run.len as usize;
+                    }
+                }
+            }
+        }
+        n
+    }
+
+    /// Actual heap footprint estimate: this struct, the column
+    /// vector's capacity, and every column's run-vector
+    /// capacity times `size_of::<FineRun>()`. This is the
+    /// number the 9.1 gate compares against the dense
+    /// equivalent (`32 * 32 * depth_z * size_of::<Block>()`).
+    pub fn memory_bytes(&self) -> usize {
+        let mut bytes = std::mem::size_of::<Self>()
+            + self.columns.capacity() * std::mem::size_of::<Vec<FineRun>>();
+        for col in &self.columns {
+            bytes += col.capacity() * std::mem::size_of::<FineRun>();
+        }
+        bytes
+    }
+}
+
+/// Merge runs `i` and `i + 1` of a column when they carry the
+/// same block (helper for [`FineVolume::set`]).
+fn merge_at(col: &mut Vec<FineRun>, i: usize) {
+    if i + 1 < col.len() && col[i].block == col[i + 1].block {
+        col[i].len += col[i + 1].len;
+        col.remove(i + 1);
+    }
+}
+
+/// Read access to a prop model's cells, engine-free (the
+/// engine adapts its `PropModelData` onto this trait).
+///
+/// Layout mirrors `engine::materials::PropModelData`: size is
+/// `[w, h, d]` — `w` = x east, `h` = y up, `d` = z depth —
+/// the voxel index is `(y * d + z) * w + x`, and model
+/// `z = d - 1` is the FRONT (the face the sprite shows).
+pub trait ModelCells {
+    /// `[width (x, east), height (y, up), depth (z)]` in
+    /// model cells.
+    fn size(&self) -> [u32; 3];
+    /// The block for model cell `(x, y, z)`, or `None` for an
+    /// empty cell. `y = 0` is the object's bottom.
+    fn cell(&self, x: u32, y: u32, z: u32) -> Option<Block>;
+}
+
+/// Why a stamp was refused. On error the target layer is
+/// unchanged (validation happens before any mutation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StampError {
+    /// The model exceeds its tile footprint (width or depth
+    /// over [`FINE`]) or the level's fine depth (height) —
+    /// a build error per 9.0, never a silent clip.
+    ExceedsTile {
+        /// The offending model's `[w, h, d]`.
+        size: [u32; 3],
+    },
+}
+
+impl fmt::Display for StampError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StampError::ExceedsTile { size } => write!(
+                f,
+                "prop model size {size:?} exceeds its tile footprint \
+                 ({FINE}x{FINE} cells) or the level fine depth"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for StampError {}
+
+/// What a stamp (or a batch of stamps) wrote.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct StampReport {
+    /// Model cells copied into fine volumes.
+    pub stamped_cells: usize,
+    /// Fine volumes inserted.
+    pub volumes: usize,
+    /// Sum of the inserted volumes' `memory_bytes()`.
+    pub memory_bytes: usize,
+    /// Placements skipped because they resolved to no model
+    /// (only the engine's batch stamper fills this in;
+    /// [`stamp_model`] always reports 0).
+    pub skipped: usize,
+}
+
+/// The fine layer: tile coordinates -> that tile's fine
+/// volumes. A tile can hold volumes at multiple z-ranges
+/// (usually one — one modelled furniture per tile per level);
+/// volumes are keyed additionally by their `z0` for lookup
+/// and restamping.
+///
+/// The layer also owns the level fine depth used to bound
+/// model heights at stamp time (`depth_z`: 96 at the default
+/// scale — pass `scale.blocks_per_z_level * FINE` for other
+/// scales; [`FineLayer::default`] is the default-scale 96).
+#[derive(Debug, Clone)]
+pub struct FineLayer {
+    /// Fine cells of z in one z-level; stamped volumes cover
+    /// exactly this depth and models taller than it are a
+    /// [`StampError::ExceedsTile`].
+    pub depth_z: i32,
+    /// BTreeMap so every iteration (chunk scans, reports) is
+    /// in deterministic tile order.
+    volumes: BTreeMap<(i32, i32), Vec<FineVolume>>,
+}
+
+impl Default for FineLayer {
+    fn default() -> Self {
+        // Default WorldScale: 3 blocks per z-level.
+        Self::new(3 * FINE)
+    }
+}
+
+impl FineLayer {
+    /// A layer whose z-level fine depth is `depth_z` cells.
+    pub fn new(depth_z: i32) -> Self {
+        Self {
+            depth_z: depth_z.max(1),
+            volumes: BTreeMap::new(),
+        }
+    }
+
+    /// Insert a volume. A volume with the same tile AND the
+    /// same `z0` as an existing one replaces it (restamping a
+    /// level never leaves two volumes claiming the same
+    /// cells); a different `z0` stacks beside it.
+    pub fn insert(&mut self, volume: FineVolume) {
+        let entry = self.volumes.entry(volume.tile).or_default();
+        if let Some(slot) = entry.iter_mut().find(|v| v.z0 == volume.z0) {
+            *slot = volume;
+        } else {
+            entry.push(volume);
+        }
+    }
+
+    /// All volumes held for `tile` (empty slice when none).
+    pub fn volumes_for_tile(&self, tile: (i32, i32)) -> &[FineVolume] {
+        self.volumes.get(&tile).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// The volume covering absolute fine coordinate
+    /// `(fx, fy, fz)`: the volume of the containing tile whose
+    /// z-range covers `fz`, if any.
+    pub fn volume_at(&self, fx: i32, fy: i32, fz: i32) -> Option<&FineVolume> {
+        let tile = (fx.div_euclid(FINE), fy.div_euclid(FINE));
+        self.volumes
+            .get(&tile)?
+            .iter()
+            .find(|v| fz >= v.z0 && fz < v.z0 + v.depth_z)
+    }
+
+    /// The stamped block at absolute fine coordinate
+    /// `(fx, fy, fz)`, or `None` when no volume covers it or
+    /// the covered cell is unstamped. Exact for negative
+    /// coordinates (`div_euclid` / `rem_euclid`).
+    pub fn block_at_fine(&self, fx: i32, fy: i32, fz: i32) -> Option<Block> {
+        let vol = self.volume_at(fx, fy, fz)?;
+        vol.get(fx.rem_euclid(FINE), fy.rem_euclid(FINE), fz)
+    }
+
+    /// Drop EVERY volume of `tile` (the delta/restamp drop:
+    /// the tile's furniture went away or changed). Returns how
+    /// many volumes were removed.
+    pub fn remove_tile(&mut self, tile: (i32, i32)) -> usize {
+        self.volumes.remove(&tile).map(|v| v.len()).unwrap_or(0)
+    }
+
+    /// Drop `tile`'s volumes whose z-range OVERLAPS
+    /// `z_lo..z_hi` (the level-scoped restamp drop: other
+    /// levels' volumes on the same tile survive). Returns how
+    /// many volumes were removed.
+    pub fn remove_tile_in_z_range(&mut self, tile: (i32, i32), z_lo: i32, z_hi: i32) -> usize {
+        let Some(entry) = self.volumes.get_mut(&tile) else {
+            return 0;
+        };
+        let before = entry.len();
+        entry.retain(|v| v.z0 + v.depth_z <= z_lo || v.z0 >= z_hi);
+        let removed = before - entry.len();
+        if entry.is_empty() {
+            self.volumes.remove(&tile);
+        }
+        removed
+    }
+
+    /// Tiles holding at least one volume inside chunk column
+    /// `chunk` (chunk coords are tile coords / 12, the
+    /// `ChunkMap` convention), in ascending tile order.
+    pub fn tiles_in_chunk(&self, chunk: [i32; 2]) -> Vec<(i32, i32)> {
+        self.volumes
+            .keys()
+            .filter(|t| {
+                t.0.div_euclid(CHUNK_W as i32) == chunk[0]
+                    && t.1.div_euclid(CHUNK_H as i32) == chunk[1]
+            })
+            .copied()
+            .collect()
+    }
+
+    /// Whether any volume's tile lies in chunk column `chunk`
+    /// — the [`crate::chunk::Chunk::has_fine`] flag's source
+    /// of truth.
+    pub fn chunk_has_fine(&self, chunk: [i32; 2]) -> bool {
+        self.volumes.keys().any(|t| {
+            t.0.div_euclid(CHUNK_W as i32) == chunk[0] && t.1.div_euclid(CHUNK_H as i32) == chunk[1]
+        })
+    }
+
+    /// Number of tiles holding at least one volume.
+    pub fn tile_count(&self) -> usize {
+        self.volumes.len()
+    }
+
+    /// Whether the layer holds no volumes at all.
+    pub fn is_empty(&self) -> bool {
+        self.volumes.is_empty()
+    }
+
+    /// Total `memory_bytes()` over all volumes (the fine
+    /// layer's heap footprint estimate).
+    pub fn memory_bytes(&self) -> usize {
+        self.volumes
+            .values()
+            .flat_map(|vs| vs.iter())
+            .map(|v| v.memory_bytes())
+            .sum()
+    }
+}
+
+/// Stamp `model` into `layer` as tile `tile`'s fine volume at
+/// absolute fine-z origin `fine_z0`.
+///
+/// Mapping (the v2 contract in `engine::materials`): model
+/// cell `(mx, my, mz)` lands at fine coordinate
+/// `(tile_x * FINE + mx, tile_y * FINE + (FINE - d) + mz,
+/// fine_z0 + my)` — the model's FRONT (`mz = d - 1`) lands
+/// flush on the tile's SOUTH edge (local fine y = `FINE - 1`),
+/// model `y = 0` is the bottom, and a model cell is exactly
+/// one fine cell (copy, never resample — 9.0).
+///
+/// Errors: a model with `w > FINE`, `d > FINE`, or
+/// `h > layer.depth_z` returns [`StampError::ExceedsTile`]
+/// and leaves `layer` unchanged.
+pub fn stamp_model(
+    layer: &mut FineLayer,
+    tile: (i32, i32),
+    fine_z0: i32,
+    model: &dyn ModelCells,
+) -> Result<StampReport, StampError> {
+    let [w, h, d] = model.size();
+    if w > FINE as u32 || d > FINE as u32 || h > layer.depth_z as u32 {
+        return Err(StampError::ExceedsTile { size: [w, h, d] });
+    }
+    let mut volume = FineVolume::new(tile, fine_z0, layer.depth_z);
+    let mut cells = 0usize;
+    // y (up) outermost so each column is filled bottom-up.
+    for my in 0..h {
+        for mz in 0..d {
+            for mx in 0..w {
+                if let Some(block) = model.cell(mx, my, mz) {
+                    let ly = (FINE - d as i32) + mz as i32;
+                    volume.set(mx as i32, ly, my as i32, Some(block));
+                    cells += 1;
+                }
+            }
+        }
+    }
+    let memory_bytes = volume.memory_bytes();
+    layer.insert(volume);
+    Ok(StampReport {
+        stamped_cells: cells,
+        volumes: 1,
+        memory_bytes,
+        skipped: 0,
+    })
+}
+
+/// The fine sampler: the unified read path over a coarse
+/// [`VoxelSampler`] (in practice the world `ChunkMap`) plus a
+/// [`FineLayer`]. Slice 2's fine mesher reads through this.
+#[derive(Clone, Copy)]
+pub struct FineSampler<'a> {
+    /// The coarse world (block-resolution sampler).
+    pub coarse: &'a dyn VoxelSampler,
+    /// The fine layer laid over it.
+    pub layer: &'a FineLayer,
+}
+
+impl<'a> FineSampler<'a> {
+    /// A sampler over `coarse` with `layer` stamped on top.
+    pub fn new(coarse: &'a dyn VoxelSampler, layer: &'a FineLayer) -> Self {
+        Self { coarse, layer }
+    }
+
+    /// Resolve absolute fine coordinate `(fx, fy, fz)`:
+    /// (a) the stamped cell, when the containing tile has a
+    /// fine volume covering `fz` with a stamped cell there;
+    /// (b) otherwise the containing coarse block, expanded —
+    /// `coarse.block_at(fx / FINE, fy / FINE, fz / FINE)` with
+    /// Euclidean division, exact for negative coordinates.
+    pub fn block_at_fine(&self, fx: i32, fy: i32, fz: i32) -> Block {
+        if let Some(b) = self.layer.block_at_fine(fx, fy, fz) {
+            return b;
+        }
+        self.coarse.block_at(
+            fx.div_euclid(FINE),
+            fy.div_euclid(FINE),
+            fz.div_euclid(FINE),
+        )
+    }
+
+    /// Whether fine cell `(fx, fy, fz)` is a STAMPED cell
+    /// (case (a) of [`FineSampler::block_at_fine`]) as opposed
+    /// to a coarse-expanded one — the distinction slice 2's
+    /// mesher needs at fine/coarse boundaries.
+    pub fn is_stamped(&self, fx: i32, fy: i32, fz: i32) -> bool {
+        self.layer.block_at_fine(fx, fy, fz).is_some()
+    }
+}
+
+impl ChunkMap {
+    /// Recompute chunk column `coord`'s `has_fine` flag from
+    /// `layer` (flagged iff any volume's tile lies in it).
+    /// Returns the flag's new value; a missing chunk reports
+    /// `false` and is left alone.
+    pub fn refresh_chunk_fine(&mut self, coord: [i32; 2], layer: &FineLayer) -> bool {
+        let flag = layer.chunk_has_fine(coord);
+        if let Some(chunk) = self.chunks.get_mut(&coord) {
+            chunk.has_fine = flag;
+            flag
+        } else {
+            false
+        }
+    }
+
+    /// Recompute EVERY chunk's `has_fine` flag from `layer`.
+    pub fn refresh_fine_flags(&mut self, layer: &FineLayer) {
+        for (coord, chunk) in self.chunks.iter_mut() {
+            chunk.has_fine = layer.chunk_has_fine(*coord);
+        }
+    }
+}
