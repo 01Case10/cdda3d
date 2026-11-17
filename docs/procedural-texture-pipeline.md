@@ -496,3 +496,27 @@ direction, same day: the next showcase must show front / back /
 left / right views, and the faces the sprite never shows (sides,
 back) should be EDUCATED DECISIONS, not edge-stretch or mirrored
 front detail — that inference pass is the next G work item.
+
+## 18. Stage G inferred unseen faces + 4-angle showcase (2026-11-16)
+
+Joey's requirement: unseen faces are educated decisions, and the
+showcase shows front / back / left / right. Implemented in
+`solid_model` (geometry unchanged): `row_field()` computes each
+front row's modal solid-paint color (edge 2 columns trimmed;
+deterministic tie-break). Side interior cells = field x0.85; back
+plane = field x0.7 — horizontal bands wrap at their heights,
+vertical front detail (door splits, handles) never dominates a
+row's mode so it never wraps. A detected side sliver (real sprite
+evidence) still wins over inference on its side. Parent re-verified
+(props_gate 4/4, lib 34/34): fridge — 532 side cells == independently
+recomputed field x0.85, 195 back cells == field x0.7, 45 of them
+over front detail the old mirrored back would have ghosted;
+bookcase shelf band wraps on the non-sliver side. The showcase
+renderer also had a handedness bug (screen basis mirrored every
+render); fixed to a right-handed basis, so FRONT now matches the
+sprite's handedness — earlier sheets' model renders were mirrored
+(the sprite column was not). Showcase is now sprite | FRONT | BACK
+| LEFT | RIGHT at ~33 deg elevation. Remaining honest weakness
+(parent, from the sheet): f_locker's depth is 4 sub-cells (its cap
+is 2 rows at the 2:1 rule), so side views read paper-thin — a
+category minimum-depth decision, recorded for Joey's call.

@@ -18,6 +18,14 @@
 //! z, no gaps — for all five props. The box/column assertions below
 //! still run (both models are kept, deprecated).
 //!
+//! `stage_g_solid_model_inferred_faces` covers the inferred unseen
+//! faces: the test recomputes each front row's FIELD color itself
+//! (modal solid-paint color, outermost 2 extent columns trimmed)
+//! and asserts the solid model's non-sliver side cells are that
+//! field x0.85 and its back plane is that field x0.7 — so the
+//! sides/back are the object's own material with horizontal bands
+//! wrapped, not a smeared edge column or a mirrored front.
+//!
 //! Weak-case fixes covered here (2026-11-16):
 //! * f_table's box is slab-and-legs: its front base is painted
 //!   shadow (alpha 128) between two leg runs, so the under-space
@@ -323,6 +331,164 @@ fn stage_g_locker_segments_via_override() {
     // (asserted inside check_models).
     check_models("f_locker", &sprite, &seg, true);
     check_solid("f_locker", &sprite, &seg, false);
+}
+
+/// Independent shade (the module's rounding rule, re-derived here
+/// so the field checks below don't call the code under test).
+fn shade(px: image::Rgba<u8>, f: f32) -> image::Rgba<u8> {
+    let m = |v: u8| (v as f32 * f).round().clamp(0.0, 255.0) as u8;
+    image::Rgba([m(px[0]), m(px[1]), m(px[2]), 255])
+}
+
+/// The front region's opaque x-extent, recomputed from the sprite.
+fn front_extent(sprite: &image::RgbaImage, seg: &Segmentation) -> (u32, u32) {
+    let (mut x0, mut x1) = (sprite.width() - 1, 0u32);
+    for r in seg.front_rows.clone() {
+        for x in 0..sprite.width() {
+            if sprite.get_pixel(x, r)[3] >= 128 {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+            }
+        }
+    }
+    (x0, x1)
+}
+
+/// Independent recompute of a front row's FIELD color: the modal
+/// (most common) solid-paint (alpha >= 254) color over the front
+/// extent with the outermost 2 columns on each side ignored;
+/// fallbacks: untrimmed solid paint, then untrimmed opaque paint.
+/// Ties break toward the smallest RGBA key.
+fn field_of(sprite: &image::RgbaImage, seg: &Segmentation, r: u32) -> image::Rgba<u8> {
+    let (x0, x1) = front_extent(sprite, seg);
+    let modal = |lo: u32, hi: u32, min_alpha: u8| -> Option<image::Rgba<u8>> {
+        let mut counts: std::collections::BTreeMap<[u8; 4], u32> =
+            std::collections::BTreeMap::new();
+        for x in lo..=hi {
+            let px = *sprite.get_pixel(x, r);
+            if px[3] >= min_alpha {
+                *counts.entry(px.0).or_insert(0) += 1;
+            }
+        }
+        let mut best: Option<([u8; 4], u32)> = None;
+        for (k, n) in counts {
+            if best.map_or(true, |(_, bn)| n > bn) {
+                best = Some((k, n));
+            }
+        }
+        best.map(|(k, _)| image::Rgba(k))
+    };
+    let (tx0, tx1) = if x1 >= x0 + 4 { (x0 + 2, x1 - 2) } else { (x0, x1) };
+    modal(tx0, tx1, 254)
+        .or_else(|| modal(x0, x1, 254))
+        .or_else(|| modal(x0, x1, 128))
+        .unwrap_or_else(|| panic!("front row {r} has a field color"))
+}
+
+/// Inferred unseen faces of the solid model (f_fridge sides + back,
+/// f_bookcase band wrap). The top rim is excluded throughout: a
+/// column's topmost cell belongs to the top surface (top-region
+/// un-projection), not to the side/back inference.
+#[test]
+fn stage_g_solid_model_inferred_faces() {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+
+    // ---- f_fridge: (a) non-sliver side == field x0.85, (b) back
+    // plane == field x0.7 across the door area.
+    let sprite = load(&ts, "f_fridge");
+    let seg = segment(&sprite).expect("f_fridge segments");
+    let sm = solid_model(&sprite, &seg);
+    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+    let bot = seg.front_rows.end - 1;
+    // Per-column topmost silhouette cell (model y).
+    let col_top = |x: u32| -> u32 {
+        (0..fh)
+            .rev()
+            .find(|&y| sprite.get_pixel(x, bot - y)[3] >= 128)
+            .expect("column has silhouette")
+    };
+    let sliver_on = |on_right: bool| {
+        seg.side.as_ref().map_or(false, |sl| sl.on_right == on_right)
+    };
+    let mut side_cells = 0usize;
+    for y in 0..fh {
+        let r = bot - y;
+        let cols: Vec<u32> = (0..w).filter(|&x| sprite.get_pixel(x, r)[3] >= 128).collect();
+        let (lo, hi) = (*cols.first().unwrap(), *cols.last().unwrap());
+        for (edge, on_right) in [(lo, false), (hi, true)] {
+            if sliver_on(on_right) || y == col_top(edge) {
+                continue; // sliver evidence wins there; top rim is the top surface
+            }
+            for z in 1..d - 1 {
+                assert_eq!(
+                    sm.get(edge, y, z),
+                    Some(shade(field_of(&sprite, &seg, r), 0.85)),
+                    "f_fridge: side cell at ({edge},{y},{z}) must be the row field x0.85"
+                );
+                side_cells += 1;
+            }
+        }
+    }
+    assert!(side_cells > 100, "f_fridge: side assertion must be non-vacuous ({side_cells} cells)");
+    // (b) Back plane over sampled rows spanning the door area: the
+    // rear panel is the row field x0.7 — and the sample must
+    // contain cells whose front pixel differs from the field, so
+    // the equality would have failed for the old mirrored back.
+    let mut back_cells = 0usize;
+    let mut non_vacuous = 0usize;
+    for y in 0..fh {
+        let r = bot - y;
+        if y == fh - 1 || (r - seg.front_rows.start) % 3 != 1 {
+            continue;
+        }
+        let f = field_of(&sprite, &seg, r);
+        for x in (0..w).step_by(2) {
+            if sprite.get_pixel(x, r)[3] < 128 || y == col_top(x) {
+                continue;
+            }
+            assert_eq!(
+                sm.get(x, y, 0),
+                Some(shade(f, 0.7)),
+                "f_fridge: back cell at ({x},{y},0) must be the row field x0.7"
+            );
+            back_cells += 1;
+            if *sprite.get_pixel(x, r) != f {
+                non_vacuous += 1;
+            }
+        }
+    }
+    assert!(back_cells > 50, "f_fridge: back assertion must sample widely ({back_cells} cells)");
+    assert!(
+        non_vacuous > 0,
+        "f_fridge: sampled back cells must include front detail the field discards"
+    );
+    println!("f_fridge: {side_cells} side cells == field x0.85, {back_cells} back cells == field x0.7 ({non_vacuous} with front detail discarded)");
+
+    // ---- (c) f_bookcase: horizontal shelf bands wrap around the
+    // non-sliver side — some row's side color differs from both
+    // vertical neighbors'.
+    let sprite = load(&ts, "f_bookcase");
+    let seg = segment(&sprite).expect("f_bookcase segments");
+    let sm = solid_model(&sprite, &seg);
+    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+    let bot = seg.front_rows.end - 1;
+    let sliver_left = seg.side.as_ref().map_or(false, |sl| !sl.on_right);
+    let side_at = |y: u32| -> Option<image::Rgba<u8>> {
+        let r = bot - y;
+        let cols: Vec<u32> = (0..w).filter(|&x| sprite.get_pixel(x, r)[3] >= 128).collect();
+        let edge = if sliver_left { *cols.last().unwrap() } else { *cols.first().unwrap() };
+        sm.get(edge, y, d / 2)
+    };
+    let mut wrapped = false;
+    for y in 1..fh - 2 {
+        let (a, b, c) = (side_at(y - 1), side_at(y), side_at(y + 1));
+        if b.is_some() && b != a && b != c {
+            wrapped = true;
+            println!("f_bookcase: shelf band wraps at model y={y} (side {b:?} vs {a:?} / {c:?})");
+            break;
+        }
+    }
+    assert!(wrapped, "f_bookcase: at least one shelf-band row's side color must differ from both neighbors");
 }
 
 #[test]

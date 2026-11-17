@@ -1,7 +1,13 @@
 //! Stage G showcase: contact sheet of inferred 3D prop models for
 //! sign-off. One row per furniture id, ONE model per prop (the
 //! solid model), columns:
-//!   [original sprite | solid front-3/4 | solid back-3/4]
+//!   [original sprite | FRONT | BACK | LEFT | RIGHT]
+//! The four views are orthographic azimuths around the model
+//! (front = the sprite's face, +z; back = -z; left = the sprite's
+//! left flank, -x; right = +x), each with a slight elevation
+//! (~33 degrees) so the top surface stays visible. The sheet has
+//! no text labels (the pipeline has no font renderer) — the column
+//! order above is fixed and explained in chat.
 //! Models are drawn with a tiny software isometric cube renderer
 //! (surface voxels only, painter-sorted, three shaded faces).
 //! Output: target/stage-g/props.png (relative to the worktree root).
@@ -100,14 +106,19 @@ fn fill_quad(img: &mut RgbaImage, pts: [(f32, f32); 4], color: Rgba<u8>) {
 }
 
 /// Render a prop model into `sheet` at cell origin (ox, oy).
-/// `view` points from the model toward the camera: (1,1,1)-style for
-/// the front-3/4 (front = +z face), (-1,1,-1) for the back-3/4.
+/// `view` points from the model toward the camera, so the face it
+/// names is the one whose outward normal aligns with it: FRONT
+/// (0,e,1), BACK (0,e,-1), LEFT (-1,e,0), RIGHT (1,e,0), with e the
+/// elevation component.
 fn render_model(sheet: &mut RgbaImage, model: &PropModel, view: V3, ox: u32, oy: u32) {
     let [w, h, d] = model.size;
     let v = view.norm();
-    // Screen basis: right = norm(cross(view, up)), up2 = cross(right, view).
-    let right = v.cross(V3(0.0, 1.0, 0.0)).norm();
-    let up2 = right.cross(v).norm();
+    // Screen basis: right = up x view, up2 = view x right (a true
+    // right-handed camera basis — an earlier version used
+    // view x up for `right`, which mirrored every render
+    // horizontally against the sprite column).
+    let right = V3(0.0, 1.0, 0.0).cross(v).norm();
+    let up2 = v.cross(right).norm();
     let center = V3(w as f32 / 2.0, h as f32 / 2.0, d as f32 / 2.0);
     // Fit: projected extent of the bounding box, sub-cell = 3px max.
     let mut extent = 0.0f32;
@@ -195,7 +206,7 @@ fn render_model(sheet: &mut RgbaImage, model: &PropModel, view: V3, ox: u32, oy:
 
 fn main() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
-    let mut sheet = RgbaImage::from_pixel(CELL_W * 3, CELL_H * IDS.len() as u32, BACKDROP);
+    let mut sheet = RgbaImage::from_pixel(CELL_W * 5, CELL_H * IDS.len() as u32, BACKDROP);
     for (row, id) in IDS.iter().enumerate() {
         let entry = ts.entries.get(*id).unwrap_or_else(|| panic!("tileset has {id}"));
         let sprite = composite_entry(&ts, entry).unwrap_or_else(|| panic!("{id} composites"));
@@ -221,8 +232,12 @@ fn main() {
         let sy = oy + CELL_H - big.height() - 10;
         image::imageops::overlay(&mut sheet, &big, sx as i64, sy as i64);
         let sm = solid_model(&sprite, &seg);
-        render_model(&mut sheet, &sm, V3(1.0, 0.9, 1.0), CELL_W, oy);
-        render_model(&mut sheet, &sm, V3(-1.0, 0.9, -1.0), CELL_W * 2, oy);
+        // Azimuth views at ~33 degrees elevation (0.65 over a unit
+        // horizontal), matching the old 3/4 views' tilt.
+        render_model(&mut sheet, &sm, V3(0.0, 0.65, 1.0), CELL_W, oy); // FRONT
+        render_model(&mut sheet, &sm, V3(0.0, 0.65, -1.0), CELL_W * 2, oy); // BACK
+        render_model(&mut sheet, &sm, V3(-1.0, 0.65, 0.0), CELL_W * 3, oy); // LEFT
+        render_model(&mut sheet, &sm, V3(1.0, 0.65, 0.0), CELL_W * 4, oy); // RIGHT
     }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let out = manifest.join("../../target/stage-g/props.png");

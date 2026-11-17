@@ -124,6 +124,32 @@
 //! is grounded (a wall-mounted shelf would qualify), the solid box
 //! is kept — a floating slab is worse than a solid block.
 //!
+//! ## Inferred unseen faces (solid model)
+//!
+//! A sprite shows only the front (plus the top, and sometimes a
+//! side sliver). The solid model's sides and back are therefore
+//! *inferred* — educated decisions from the sprite's own materials
+//! and structure, not smears or mirrors:
+//!
+//! * **Row field.** Each front row has a FIELD color: the modal
+//!   (most common) solid-paint color among the row's pixels,
+//!   ignoring the outermost 2 columns of the front extent on each
+//!   side, so edge trim and corner posts don't define the field.
+//! * **Sides.** A side cell takes its row's field darkened x0.85 —
+//!   UNLESS a side sliver was detected on that side, in which case
+//!   the sliver un-projection (real sprite evidence) wins. Because
+//!   the field is per-row, horizontal structure wraps around the
+//!   side at the same heights: shelf lines, aprons and seams
+//!   continue around the flank. Vertical front detail (door
+//!   splits, handles, vents) does NOT wrap: it never dominates a
+//!   row's mode, so it never enters the field.
+//! * **Back.** The back plane takes the row field darkened x0.7:
+//!   the object's rear panel in the same material with the same
+//!   horizontal banding — not a darkened mirror of the front, so
+//!   handles and door detail don't ghost through.
+//! * **Top** stays evidence-based: the top region un-projected
+//!   (see [`solid_model`]).
+//!
 //! ## Failure modes (all return `None`, caller keeps the extrusion)
 //!
 //! * Low coverage / ragged silhouette: chairs, creatures, plants.
@@ -993,6 +1019,48 @@ pub fn column_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     m
 }
 
+/// Columns of the front extent ignored on each side when computing
+/// a row's field color (edge trim / corner posts shouldn't define
+/// the field).
+const FIELD_TRIM: u32 = 2;
+
+/// The FIELD color of one front row (module docs, "Inferred unseen
+/// faces"): the modal (most common) solid-paint color among the
+/// row's pixels in the front extent, ignoring the outermost
+/// [`FIELD_TRIM`] columns on each side. Fallbacks, in order: solid
+/// paint over the untrimmed extent, then merely-opaque paint over
+/// the untrimmed extent (a row of pure painted shadow). `None` only
+/// when the row carries no usable pixel at all. Ties break toward
+/// the smallest RGBA key (BTreeMap order + strict >), so the result
+/// is deterministic.
+fn row_field(sprite: &RgbaImage, r: u32, x0: u32, x1: u32) -> Option<Rgba<u8>> {
+    let modal = |lo: u32, hi: u32, min_alpha: u8| -> Option<Rgba<u8>> {
+        let mut counts: std::collections::BTreeMap<[u8; 4], u32> =
+            std::collections::BTreeMap::new();
+        for x in lo..=hi {
+            let px = *sprite.get_pixel(x, r);
+            if px[3] >= min_alpha {
+                *counts.entry(px.0).or_insert(0) += 1;
+            }
+        }
+        let mut best: Option<([u8; 4], u32)> = None;
+        for (k, n) in counts {
+            if best.map_or(true, |(_, bn)| n > bn) {
+                best = Some((k, n));
+            }
+        }
+        best.map(|(k, _)| Rgba(k))
+    };
+    let (tx0, tx1) = if x1 >= x0 + 2 * FIELD_TRIM {
+        (x0 + FIELD_TRIM, x1 - FIELD_TRIM)
+    } else {
+        (x0, x1)
+    };
+    modal(tx0, tx1, SOLID_ALPHA)
+        .or_else(|| modal(x0, x1, SOLID_ALPHA))
+        .or_else(|| modal(x0, x1, ALPHA_OPAQUE))
+}
+
 /// THE prop model: the front silhouette extruded through the full
 /// model depth and filled at *every* depth cell — a real solid, so
 /// no viewing angle can see into a hollow interior or a side gap
@@ -1006,15 +1074,20 @@ pub fn column_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
 /// * Front plane (z = d-1): the sprite pixel verbatim — the front
 ///   projection is the front silhouette exactly, colors included.
 ///   Nothing below overwrites the front plane.
-/// * Back plane (z = 0): the front pixel darkened x0.55. Interior
-///   cells: x0.7 (never visible in a surface render, but correct if
-///   the model is sliced).
+/// * Back plane (z = 0): the row's field color darkened x0.7 — the
+///   rear panel inferred from the front's own material (module
+///   docs, "Inferred unseen faces"), NOT a darkened mirror of the
+///   front pixel. Interior cells: the front pixel x0.7 (never
+///   visible in a surface render, but correct if the model is
+///   sliced).
 /// * Side surfaces: each row's leftmost/rightmost solid columns are
 ///   real surface (the model is filled behind them), colored on the
-///   interior depth cells by [`side_color`] — the sliver
-///   un-projection where a sliver was detected, else the front
-///   pixel x0.7. The front/back planes keep their own colors, so
-///   side shading never touches the exact front projection.
+///   interior depth cells by inference: the detected sliver
+///   un-projected where one exists on that side ([`side_color`] —
+///   real sprite evidence wins), else the row's field color x0.85,
+///   so horizontal bands wrap at their heights and vertical front
+///   detail does not. The front/back planes keep their own colors,
+///   so side shading never touches the exact front projection.
 /// * Top surface: stepped, following the silhouette — each column
 ///   x's top surface is its own topmost solid voxel, colored for
 ///   z in 0..d-1 from the top region via [`top_row_for_z`] (the
@@ -1058,8 +1131,15 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
         // (x is within the extent: its front pixel is opaque.)
         plan.grounded[(x - x0) as usize]
     };
+    // Per-row field colors for the inferred faces (back + sides),
+    // indexed by model y.
+    let fields: Vec<Option<Rgba<u8>>> = (0..fh)
+        .map(|y| row_field(sprite, bot - y, x0, x1))
+        .collect();
     let mut m = PropModel::new([w, fh, d]);
-    // Base fill: front verbatim, back x0.55, interior x0.7.
+    // Base fill: front verbatim, back = row field x0.7 (the front
+    // pixel x0.55 only when the row has no field at all), interior
+    // x0.7.
     for y in 0..fh {
         for x in 0..w {
             if !is_solid(x, y) {
@@ -1070,7 +1150,10 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 let c = if z == d - 1 {
                     px
                 } else if z == 0 {
-                    shade(px, 0.55)
+                    match fields[y as usize] {
+                        Some(f) => shade(f, 0.7),
+                        None => shade(px, 0.55),
+                    }
                 } else {
                     shade(px, 0.7)
                 };
@@ -1079,7 +1162,10 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
         }
     }
     // Side surfaces: each row's silhouette extremes, interior depth
-    // cells only (front/back planes keep their colors above).
+    // cells only (front/back planes keep their colors above). A
+    // detected sliver on that side is real evidence and wins;
+    // otherwise the row's field color x0.85 — horizontal bands wrap,
+    // vertical detail doesn't (module docs).
     for y in 0..fh {
         let mut extremes: Option<(u32, u32)> = None;
         for x in 0..w {
@@ -1093,8 +1179,17 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
         let Some((lo, hi)) = extremes else { continue };
         let r = bot - y;
         for (edge_x, on_right) in [(lo, false), (hi, true)] {
+            let sliver_here = seg
+                .side
+                .as_ref()
+                .map_or(false, |sl| sl.on_right == on_right);
             for z in 1..d - 1 {
-                if let Some(c) = side_color(sprite, seg, edge_x, r, z, d, on_right) {
+                let c = if sliver_here {
+                    side_color(sprite, seg, edge_x, r, z, d, on_right)
+                } else {
+                    fields[y as usize].map(|f| shade(f, 0.85))
+                };
+                if let Some(c) = c {
                     m.set(edge_x, y, z, Some(c));
                 }
             }
