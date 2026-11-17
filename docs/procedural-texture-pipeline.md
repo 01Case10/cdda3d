@@ -797,3 +797,17 @@ the bed passed its gates with a missing side wall and no
 footboard). The review loop is: generate -> render 4 angles ->
 compare against the depicted object -> tweak -> re-render.
 Joey's sign-off remains the final acceptance for showcase sets.
+
+## 28. Stamping decision: Route A — fine-grid world (Joey, 2026-11-16)
+
+SS12 left engine stamping open; the blocker was that the engine
+world is a coarse block grid with no sub-tile space. Joey chose
+Route A (fine-grid world) over Route B (model-instancing pass).
+The full phase is plan.md Phase 9 (SS11b): FINE = 32 cells per
+block edge, sparse per-tile fine volumes behind a fine VoxelSampler
+(no uniform dense subdivision), prop colours as synthetic 1x1
+solid materials in the scene texture array, stamping inside
+snapshot_world::build_columns with the coarse furniture block
+suppressed, delta restamps on furniture id changes, rollout behind
+--fine-props with byte-identical proofs. Picking/LOS/collision
+untouched (game tile data governs).

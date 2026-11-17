@@ -1526,6 +1526,34 @@ All comparisons in this section are fork-side Catch2 tests calling the game's ow
 
 ---
 
+## 11b. Phase 9: Fine-grid world — prop model stamping (Route A)
+
+> **Decision (Joey, 2026-11-16): Route A.** The v2 carrier (Stage G) emits per-furniture voxel models (`Material.model`, 119 over full UltiCa) but the engine world is a coarse block grid (Phase 0 `WorldScale`: 1 tile = 1 block, 3 blocks per z-level) with no sub-tile space, so furniture renders as textured blocks and no model is ever drawn. Route B (a model-instancing pass parallel to billboards) was considered and set aside. Route A gives the world a fine resolution and stamps models into it at world-build time, so props become ordinary world geometry for both renderers. Picking, LOS and collision are untouched by construction: they run on game tile data, never on the visual grid (Stage G rule).
+
+**Design lock (9.0):**
+- **Resolution.** FINE = 32 cells per block edge: 1 cell = 1/32 tile in plan, and a z-level is 3 blocks = 96 cells. A model cell (1 sprite pixel) is exactly 1 fine cell — stamping is a copy, never a resample.
+- **Representation.** NOT a uniform dense subdivision (a flat 32× blow-up of the dense `VoxelGrid` is a non-starter on memory). The world stays a `ChunkMap` of coarse `Block`s; a **fine layer** stores per-tile fine volumes only for tiles whose furniture carries a model, in run-length columns (props are mostly solid/empty runs). The unified read path is a **fine sampler** honouring the existing `VoxelSampler` contract (`mesher::grid`) at fine resolution: a fine cell resolves to (a) the stamped cell if its tile has a fine volume, else (b) its containing coarse block, expanded. Chunks containing no fine tiles keep today's coarse fast path end to end; a per-chunk flag records which path a chunk takes.
+- **Prop colours.** Model voxels carry RGB, not atlas layers. At scene build, every distinct palette colour across the scene's models is assigned a **synthetic material** whose texture layers are 1×1 solid-colour images appended to the scene texture array (deduped scene-wide; `engine::textures::build_texture_spec`). Stamped cells store that material index, so the mesher's layer/UV machinery and the RT `tex_albedo` path work unchanged, and 1×1 layers make mip/LOD behaviour trivial. Model voxels are opaque albedo; EMPTY stays air.
+- **Stamping.** In `snapshot_world::build_columns` — the one builder feeding both renderers. A furniture placement whose material has a model **suppresses** its coarse furniture block and stamps the model into the tile's fine volume. Origin: the tile footprint's south-west corner at floor-slab top (fine z = (`level_base_block` + `floor_slab_blocks`) × 32). Orientation per the v2 contract (model front → tile south); 90°-step rotation by tile facing where the snapshot supplies one (9.7), unrotated until then. A model exceeding its tile footprint is a build error, never a silent clip (the shipped set is within-tile by construction: width ≤ 32, tank length = cap diameter).
+- **Deltas.** A furniture change on a tile restamps that tile's fine volume (dropping it if the new furniture has no model) and recomputes the chunk's fine flag — the 8.4 door/furniture id-change path is the test vehicle.
+
+| # | Work item | Method | Pass criteria |
+|---|---|---|---|
+| 9.1 | Fine volume + fine sampler | `mesher` crate: per-tile run-length fine volumes + a `VoxelSampler` at fine resolution over (fine layer, coarse `ChunkMap`) | sampler unit tests: stamped cell wins, coarse expansion exact, cross-boundary reads correct; memory per prop tile measured and recorded |
+| 9.2 | World-build stamping | `snapshot_world::build_columns` stamps + suppresses; fake/sample scenes gain prop fixtures (counter, bookcase, fridge, table, tank, bed) | stamped scene's fine volumes match the source `PropModel`s voxel-for-voxel (round-trip through the world, not just the file) |
+| 9.3 | Synthetic solid materials | scene texture spec appends 1×1 layers for prop colours; material index space shared with atlas materials | colour round-trip: a stamped cell's rendered colour equals its palette RGB in both renderers; dedupe count = distinct colours |
+| 9.4 | Raster mesher fine path | flagged chunks mesh at fine resolution (naive per-cell faces first); boundary rule: a coarse face against a fine tile is culled iff all 32×32 fine cells behind it are opaque, and vice versa via the fine sampler | boundary fixture (prop against a wall, prop in a doorway) renders with no holes and no z-fighting; face-count budget recorded for the lab scene |
+| 9.5 | RT tree over the fine grid | `treebuild` `VoxelWorld` gains a fine adapter; `build_tree` consumes the fine sampler; per-leaf texture scale: a fine cell of a coarse material maps 1/32 of the block's texture per axis, so the Phase 2e LOD constant Δ adjusts by the leaf's cell fraction (synthetic solids are scale-free) | node-count and build-time budgets recorded on the sample scenes; analytic mip gates (2e.2 family) extended to fine leaves and passing |
+| 9.6 | Lighting | v1: a fine cell takes its containing coarse block's baked light | capture documents the known limit — props do not occlude the coarse bake (light can leak through a fridge) — as a named Stage H candidate, not a silent acceptance |
+| 9.7 | Rotation + multitile scope | rotate stamped models in 90° steps by snapshot facing where present; multitile furniture stays per-tile (models are per-tile by construction) | rotated fixture matches the unrotated model under the same rotation, voxel-for-voxel; out-of-tile model is a build error (9.0) |
+| 9.8 | Frame composition regression | fields / vehicles / transients passes (Phase 8 wiring: vehicles stamped in the world pass before the visibility mask) run against a fine-layer world | Phase 8 harness gates 3.21/3.22 and the cross-phase regression suite (§12) all pass unchanged |
+| 9.9 | Perf + memory | world-build time, tree nodes, fine-layer memory, lavapipe frame captures on the sample scenes + a prop-dense lab stress scene | numbers recorded in the phase record; RX 9070 XT frame-time verdict stays the standing deferred measurement (raster remains default until it exists) |
+| 9.10 | Rollout | behind a world-build flag (`--fine-props`), default OFF | flag OFF: renders byte-identical to today (golden gate); flag ON with no models in the scene: also byte-identical. Default flips only after 9.1–9.9 pass and Joey's sign-off on the lab-scene capture |
+
+**Gate (Phase 9):** 9.1–9.5 and 9.8 pass; 9.6's limit documented; 9.9's numbers recorded; 9.10's byte-identical proofs green. Then the two-pass rule (pipeline doc §27) applies to in-scene prop review exactly as it did to showcases.
+
+---
+
 ## 12. Cross-phase regression suite
 
 These run on every PR once their phase has shipped:
