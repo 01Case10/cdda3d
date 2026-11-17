@@ -1089,3 +1089,35 @@ pre-existing `archetypes_showcase` G.4 match-arm fix it exposed,
 `2d60601`). Showcase `examples/prop_coverage_showcase.rs` ->
 `target/stage-g/prop_coverage.png` (12 rows spanning every
 closed class), presented to Joey 2026-11-17 for sign-off.
+
+FIX ROUND (Joey's review of the individual strips, 2026-11-17:
+"weird artifacts on top for a lot of them; some of these are
+cylinder shaped but we have made them squares"; committed
+`0484649`, suite 100/100, total still 222, 119 identical):
+
+- **Tops.** The seamless top face had been colored by
+  stretching the sprite's single top edge row across the depth
+  per column — streaks on every top, and the row's dark corner
+  pixels wrapped onto backs (visible on f_chest). A seamless
+  sprite has no top-face evidence, so the top now takes the
+  back-panel treatment: ONE fitted material
+  (`seamless_top_color`: modal structure paint of the front's
+  top quarter, de-shaded by the top row's gain), passed into
+  `solid_model_impl` as `fitted_top` (segmenting callers pass
+  None — unchanged). Gate: `seamless_top_is_one_fitted_material`
+  asserts exactly one top color per model (chest/toilet/
+  workbench).
+- **Cylinders.** New `cylinder_model` + `CYLINDER_PINS` (17
+  round-plan ids: firebarrels x4, f_fvat_empty/full,
+  f_water_heater, f_wood_keg, f_trashcan, f_logstool,
+  f_punching_bag, f_boulder_large/medium/small, f_glow_boulder,
+  f_sand_castle, f_fungal_clump). Every sprite column becomes a
+  voxel column carrying its own paint (front-most voxel
+  verbatim; column tops are the sprite's own top pixels — real
+  data, no fitted top), clipped to the ellipse inscribed in the
+  silhouette extent; depth = extent width capped at 32.
+  Per-column vertical ranges follow the structure mask (a
+  hanging bag does not grow to the floor). Gate:
+  `cylinder_footprint_is_round` asserts disc geometry + front
+  verbatim on f_30gal_firebarrel. All 103 strips re-rendered
+  (`examples/prop_strips.rs`) and re-presented 2026-11-17.
