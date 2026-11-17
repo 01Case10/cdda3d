@@ -1156,3 +1156,62 @@ are real surface. Gates: archetypes_gate gains cavity +
 fire-surface + flat-lid tests; coverage total stays 222, the
 pre-drive 119 unchanged. Strips re-rendered and re-presented
 2026-11-17.
+
+## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
+
+DONE, merged to main @ 0ace695 (not pushed), parent re-verified.
+This was the last held F part 2 slice; its hold was released by
+Phase 9 item 9.5 landing (§11b slice 3 record). Stage F part 2
+is now COMPLETE: end-caps (§29), scatter (§30), pond (§31),
+height-blending (§33).
+
+Design (documented in crates/engine/src/blend.rs): the
+pre-blended variant-texture pattern (multitile/shore precedent)
+cannot carry a border blend — macros are world-anchored (128px
+over span 4, sampled by world position), so no per-tile texture
+can hold every border phase. Assignment therefore reuses the
+shore/multitile virtual-id machinery in the shared scene-prep/
+spec path, and the DECISION runs per-pixel in both shaders:
+each samples its own and the neighbor's macro color+height at
+the same world UV and applies the Stage D rule. Weight field
+W = clamp(0.5 − dist_into_own / (2 × 0.5 tiles), 0, 1): 0.5 at
+the border line, 0 half a tile in, so the band never leaves the
+two border tiles. Neighbor wins iff h_nbr + W·2 > h_own +
+(1−W)·2, ties to own material — height_blend's semantics
+re-parameterized spatially; the gate proves the mirror agrees
+with voxelizer::quilt::height_blend per-pixel on a synthetic
+case (endpoints exact, patch punch-through). RT carries the
+neighbor macro in TextureSpec::material_blends (storage buffer,
+render pipeline only); raster packs the blend into the mesher's
+top-face layer word (bit 30 blend flag, bits 22–23 dir, 11-bit
+neighbor/own color indices) — no raster spec change.
+
+Gate (stage_f2_blend_gate 5/5, parent re-run in the merged main
+tree on lavapipe, numbers identical to the agent's): hand-built
+v2 fixture, 8×4 grass|dirt scene — raster interpenetration
+dirt-on-grass 78 px / grass-on-dirt 80 px (unblended controls
+0), diffs inside band 359, outside band 1 px at max channel
+Δ=1 (a greedy-quad re-split diagonal flip, sub-texel; gate
+bounds raster confinement ≤8 px / Δ≤24, a material flip would
+be Δ≈50+); RT 63 / 70 px, band 333, outside exactly 0. Uniform
+all-grass scene renders byte-identical through the blend
+pipeline vs the plain pipeline in both renderers; blended
+re-renders byte-identical. Full affected suites: 44 binaries
+green; the only failures were gate_5_1 (worktree path artifact)
+and stage_g_model_round_trip_fixture — the latter reproduced by
+the parent in the MAIN tree at the pre-merge HEAD, i.e. a
+pre-existing regression from the coverage-drive merge, not
+this slice (a Stage G coverage fix round was already in flight
+in the main tree at merge time).
+
+Scope limits (all in blend.rs): one border per tile (first
+matching direction of +X, −X, +Y, −Y); same-span_tiles pairs
+only (all current macros are span 4); water excluded by
+construction (no macro — shore owns water borders, no
+double-blending); RT at range progressively shades far borders
+unblended via the traversal's existing LOD node shading (full
+strip measured at 6 and 9 units, near rows only at 10.5 — the
+same approximation applied to all texture decisions at LOD
+nodes); raster blend words cap at 2048 compact macro colors
+(today's set is 2), beyond which tiles fall back to plain macro
+words.
