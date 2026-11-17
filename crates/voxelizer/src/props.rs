@@ -3599,6 +3599,64 @@ fn orrery_model(sprite: &RgbaImage) -> Option<PropModel> {
     Some(m)
 }
 
+/// A hammock (mockup: target/stage-g/mockups/
+/// f_hammock_sides.png). Both hammock sprites are PLAN
+/// views: a leaf-shaped sling (pointed gathered ends,
+/// wide middle) with gold suspension ropes running off
+/// both ends. The model is that plan, hung: the sprite
+/// supplies the plan shape and the paint (light rim,
+/// dark trough center; the net's checkerboard for
+/// f_hammock_net), the sheet sags along its length
+/// (ends at rope height 12, middle at 7) and curls up
+/// across its width (a trough section, +3 at the
+/// edges). The sprite's 48-row length scales onto the
+/// tile's 32 in z; the ropes run to the tile edges.
+fn hammock_model(sprite: &RgbaImage) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let extent = |r: u32| -> Option<(u32, u32)> {
+        let xs: Vec<u32> = (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            None
+        } else {
+            Some((xs[0], xs[xs.len() - 1]))
+        }
+    };
+    // Fabric rows: extent at least 4 wide (the ropes are
+    // 2 wide).
+    let fabric: Vec<u32> = (0..h)
+        .filter(|&r| extent(r).map_or(false, |(a, b)| b - a + 1 >= 4))
+        .collect();
+    let (f0, f1) = (fabric.first()?, fabric.last()?);
+    let mut m = PropModel::new([w, 16, 32]);
+    for z in 0..32u32 {
+        let r = (z * (h - 1)) / 31;
+        let (a, b) = extent(r)?;
+        if fabric.contains(&r) {
+            let t = (r - f0) as f32 / (f1 - f0) as f32;
+            let cy = 12.0 - 5.0 * (std::f32::consts::PI * t).sin();
+            let cx = (a + b) as f32 / 2.0;
+            let hw = ((b - a) as f32 / 2.0).max(1.0);
+            for x in a..=b {
+                let curl = 3.0 * ((x as f32 - cx) / hw).powi(2);
+                let y = (cy + curl).round() as u32;
+                m.set(x, y, z, Some(*sprite.get_pixel(x, r)));
+            }
+        } else {
+            // Suspension rope: the row's own pixels at
+            // rope height.
+            for x in a..=b {
+                m.set(x, 12, z, Some(*sprite.get_pixel(x, r)));
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -3690,6 +3748,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
     if id == "f_orrery" {
         if let Some(m) = orrery_model(sprite) {
+            return Some(m);
+        }
+    }
+    if id == "f_hammock" || id == "f_hammock_net" {
+        if let Some(m) = hammock_model(sprite) {
             return Some(m);
         }
     }
