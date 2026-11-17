@@ -4545,39 +4545,56 @@ fn d3_ergometer() -> PropModel {
     m
 }
 
-/// Bench press station: two uprights, a barbell,
-/// and the red bench between them.
+/// Bench press station, read from the sprite's
+/// pixel map: the bench runs TOWARD the viewer on a
+/// central pedestal (pad face foreshortened, raised
+/// head section at the far end), and the rack stands
+/// behind it -- two uprights rising past the bar,
+/// plates hanging on the bar just outside them.
 fn d3_exercise_bench() -> PropModel {
     let mut m = PropModel::new([32, 39, 32]);
     let steel = rgb(158, 160, 163);
     let steel_dk = rgb(102, 104, 108);
     let red = rgb(172, 34, 36);
     let red_dk = rgb(128, 24, 28);
+    let red_lt = rgb(196, 96, 62);
+    // Rack uprights at the back, rising past the bar.
     for x in [5u32, 25] {
-        box_fill(&mut m, x, x + 2, 0, 36, 14, 17, steel);
-        box_fill(&mut m, x - 1, x + 3, 0, 2, 9, 22, steel_dk);
+        box_fill(&mut m, x, x + 1, 0, 38, 12, 14, steel);
+        box_fill(&mut m, x - 1, x + 2, 0, 1, 8, 18, steel_dk);
     }
-    // Barbell: bar + plate discs at both ends.
-    tube_x(&mut m, 2, 30, 34, 15, 0.9, steel);
-    for xc in [3i32, 28] {
-        for dy in -5i32..=5 {
-            for dz in -5i32..=5 {
+    // Bar at y 31, resting in hooks below the tops.
+    tube_x(&mut m, 1, 30, 31, 13, 0.9, steel);
+    for x in [7u32, 24] {
+        m.set(x, 30, 13, Some(steel_dk));
+    }
+    // Plates: pairs of discs just outside the
+    // uprights, centered on the bar.
+    for xc in [1i32, 3, 27, 29] {
+        for dy in -6i32..=6 {
+            for dz in -6i32..=6 {
                 let d = ((dy * dy + dz * dz) as f32).sqrt();
-                if d <= 5.0 {
-                    for x in xc..=xc + 1 {
-                        m.set(x as u32, (34 + dy) as u32, (15 + dz) as u32, Some(steel_dk));
-                    }
+                if d <= 6.0 {
+                    m.set(xc as u32, (31 + dy) as u32, (13 + dz) as u32, Some(steel_dk));
                 }
             }
         }
     }
-    // Bench: pad on a leg frame.
-    box_fill(&mut m, 9, 23, 11, 14, 12, 19, red);
-    box_fill(&mut m, 9, 23, 11, 11, 12, 19, red_dk);
-    for x in [11u32, 19] {
-        box_fill(&mut m, x, x + 2, 0, 11, 14, 17, steel_dk);
-        box_fill(&mut m, x - 1, x + 3, 0, 1, 11, 20, steel_dk);
+    // Bench pad along z on a central pedestal: the
+    // wide near end, a narrower raised head section
+    // at the far end by the rack.
+    box_fill(&mut m, 9, 22, 11, 13, 20, 30, red);
+    box_fill(&mut m, 9, 22, 11, 11, 20, 30, red_dk);
+    box_fill(&mut m, 11, 20, 11, 13, 15, 20, red);
+    box_fill(&mut m, 12, 19, 14, 14, 15, 19, red_lt);
+    // The pad's lit left edge (the sprite's stripe).
+    for z in 20..=30u32 {
+        m.set(9, 13, z, Some(red_lt));
     }
+    // Pedestal column and T foot; far support leg.
+    box_fill(&mut m, 14, 17, 2, 11, 22, 25, steel_dk);
+    box_fill(&mut m, 10, 21, 0, 1, 20, 27, steel_dk);
+    box_fill(&mut m, 14, 17, 0, 11, 16, 17, steel_dk);
     m
 }
 
