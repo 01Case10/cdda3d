@@ -119,9 +119,11 @@ pub struct VoxelizerConfig {
     /// Stage F: emit `materials.json` in the v2 form (a
     /// `{"version": 2, "materials": [...], "macros": [...]}` object
     /// plus `macro_<layer>_color.png` / `macro_<layer>_height.png`
-    /// files beside it) instead of the v1 bare array. Default
-    /// false: the v1 output stays byte-identical to the pre-v2
-    /// pipeline.
+    /// files beside it) instead of the v1 bare array. Stage G: the
+    /// v2 object also gains a `models` table (solid prop models
+    /// for segmentable furniture) when any furniture segments.
+    /// Default false: the v1 output stays byte-identical to the
+    /// pre-v2 pipeline.
     pub emit_v2: bool,
 }
 
@@ -192,6 +194,57 @@ pub fn composite_entry(ts: &Tileset, entry: &TileEntry) -> Option<RgbaImage> {
     }
 }
 
+/// Stage G: encode one prop model for the v2 `models` table.
+///
+/// Encoding (the engine loader in crates/engine/src/materials.rs
+/// is the other half of this contract): `palette` holds the
+/// model's distinct RGB colors in first-appearance order over
+/// the voxel scan; `voxels` is a hex string with exactly four
+/// lowercase hex digits per voxel — the voxel's palette index —
+/// in [`PropModel`]'s own layout (index `(y * depth + z) *
+/// width + x`, i.e. y-major, then z, then x). Index `0xFFFF` is
+/// the reserved EMPTY marker (no voxel), so a palette may hold
+/// at most 0xFFFF entries. Alpha is dropped: model voxels are
+/// opaque solids by construction (cutout/transparency stay with
+/// the material's texture layers, which serve unmodeled
+/// materials). Returns `None` if the palette overflows the
+/// index space — not reachable for real sprites (a 32x64 sprite
+/// has at most 2048 pixels), but the encoding must never wrap
+/// an index into the EMPTY marker.
+fn encode_prop_model(material_index: usize, model: &PropModel) -> Option<serde_json::Value> {
+    use std::collections::HashMap;
+    let mut palette: Vec<[u8; 3]> = Vec::new();
+    let mut index_of: HashMap<[u8; 3], u16> = HashMap::new();
+    let mut hex = String::with_capacity(model.voxels.len() * 4);
+    for v in &model.voxels {
+        let idx = match v {
+            None => u16::MAX,
+            Some(px) => {
+                let rgb = [px[0], px[1], px[2]];
+                match index_of.get(&rgb) {
+                    Some(&i) => i,
+                    None => {
+                        if palette.len() >= u16::MAX as usize {
+                            return None;
+                        }
+                        let i = palette.len() as u16;
+                        palette.push(rgb);
+                        index_of.insert(rgb, i);
+                        i
+                    }
+                }
+            }
+        };
+        hex.push_str(&format!("{idx:04x}"));
+    }
+    Some(serde_json::json!({
+        "material_index": material_index,
+        "size": model.size,
+        "palette": palette,
+        "voxels": hex,
+    }))
+}
+
 /// Run the full pipeline into `out_dir`.
 pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunReport, String> {
     std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
@@ -215,6 +268,11 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     // order — (material_index, color, height). Filled during the
     // material loop when `cfg.emit_v2`; written after it.
     let mut macros: Vec<(usize, RgbaImage, image::GrayImage)> = Vec::new();
+    // Stage G (v2 only): solid prop models for furniture materials
+    // whose sprite segments, in material order —
+    // (material_index, model). Filled during the material loop
+    // when `cfg.emit_v2`; written after it.
+    let mut models: Vec<(usize, PropModel)> = Vec::new();
     let mut layers: Vec<RgbaImage> = Vec::new(); // global layer list
     let mut missing_lines: Vec<String> = Vec::new();
 
@@ -377,6 +435,21 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                 }
             }
         }
+
+        // Stage G (v2 only): a furniture material whose sprite
+        // segments (props::segment_for) gets its solid prop model
+        // in the v2 `models` table; the engine loader documents
+        // the encoding (crates/engine/src/materials.rs). Furniture
+        // that doesn't segment keeps the extruded-sprite
+        // sub_model it already carries — models replace the
+        // extrusion only where a segmentation exists.
+        if cfg.emit_v2 && is_furniture {
+            if let Some(img) = &sprite {
+                if let Some(seg) = segment_for(id, img) {
+                    models.push((mat_idx, solid_model_for(id, img, &seg)));
+                }
+            }
+        }
     }
     report.materials = materials.len();
     report.layers = layers.len();
@@ -425,11 +498,24 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                 "span_tiles": color.width() / tile.max(1),
             }));
         }
-        let v2 = serde_json::json!({
+        let mut v2 = serde_json::json!({
             "version": 2,
             "materials": serde_json::to_value(&materials).unwrap(),
             "macros": macro_entries,
         });
+        // Stage G: the `models` table is present only when at
+        // least one furniture material segmented, so a v2 file
+        // with nothing to model stays byte-identical to the
+        // Stage F form.
+        if !models.is_empty() {
+            let entries: Vec<serde_json::Value> = models
+                .iter()
+                .filter_map(|(mat_idx, m)| encode_prop_model(*mat_idx, m))
+                .collect();
+            if !entries.is_empty() {
+                v2["models"] = serde_json::Value::Array(entries);
+            }
+        }
         std::fs::write(
             out_dir.join("materials.json"),
             serde_json::to_string_pretty(&v2).unwrap(),

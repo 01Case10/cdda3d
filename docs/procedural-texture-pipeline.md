@@ -630,3 +630,30 @@ posts/ladder assumed. Gate-design note: the albedo darkness floor
 is taken from RAW palette clusters because de-shading lifts dark
 clusters toward the median by design. Engine stamping of models
 (base + archetypes) rides the v2 models section (next commit).
+
+## 23. Stage G v2 models carrier + the stamping blocker (2026-11-16)
+
+Carrier DONE, parent re-verified (stage_g_stamp_gate round-trip
+3/3, loader units 6/6, golden gate 0 px, engine+voxelizer suites
+green; release-profile full-UltiCa --v2 run emits 119 models).
+Format: v2 "models" table — palette (distinct RGB, first-appearance
+order) + voxels as hex string, 4 digits per voxel = palette index,
+0xFFFF = EMPTY, PropModel's (y*d+z)*w+x layout; key omitted when
+no model exists (v2-without-models byte-identical to Stage F).
+Emitter builds solid_model_for for segmenting f_* materials;
+loader validates (hex length, palette range, dims) with named
+errors. Orientation contract pinned in materials.rs docs (x east,
+y up, z=d-1 front to the tile's south edge).
+
+STAMPING BLOCKED ON AN ARCHITECTURE FACT THE ORIGINAL §12 PLAN
+MISSED: the engine has NO sub-tile world grid. WorldScale (Phase 0)
+is 1 tile = 1 block footprint, 3 blocks per z-level; both renderers
+consume that block grid, and nothing consumes even the voxelizer's
+existing sub_model extrusion data — furniture renders today as
+textured BLOCKS. A 32-wide prop model has nowhere to land without
+either (a) a fine-grid world representation (major rework of the
+mesher/tree/RT core) or (b) a model-instancing render path (props
+drawn as per-instance voxel models at tile positions, parallel to
+the billboard pass; block grid keeps terrain/walls/floors). (b) is
+the recommended route; it is Joey's call. Picking/LOS/collision
+unchanged under either (game tile data governs).

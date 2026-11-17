@@ -2,6 +2,31 @@
 //! + `blocks.json` so the engine can resolve a game id to its block
 //! texture layers, transparency pass and height.
 //!
+//! Stage G: the v2 `models` table. Each entry carries one
+//! furniture material's solid prop model (voxelizer `PropModel`)
+//! as `{material_index, size: [w, h, d], palette: [[r,g,b], ...],
+//! voxels: "<hex>"}`. `voxels` has exactly four lowercase hex
+//! digits per voxel — the voxel's palette index — in the
+//! voxelizer's layout (index `(y * d + z) * w + x`: y-major, then
+//! z, then x); index `0xFFFF` is the reserved EMPTY marker.
+//! Model axes, for the future world stamper: model x is the
+//! sprite's left-to-right (east on the tile), model y is up
+//! (y = 0 is the object's bottom), model z is depth with
+//! z = d - 1 the FRONT — the face the sprite shows — which maps
+//! to the tile's south edge (+y in game tile space, toward the
+//! viewer), matching how the extruded sprite presents its front.
+//!
+//! Stamping status: the loader half is complete (models are
+//! parsed, validated and joined to their materials below), but
+//! no engine code stamps them into a world yet. The engine's
+//! world grid is one block per tile footprint (mesher
+//! `WorldScale`, Phase 0 decision: 1 tile = 1 block, 3 blocks
+//! per z-level) — there is no sub-tile voxel grid in either
+//! renderer for a 32-wide model to land in, so world stamping
+//! waits on a sub-tile world representation decision. Picking,
+//! LOS and collision are unaffected either way: models are
+//! visual only, game tile data governs.
+//!
 //! Scope note: the mesher's `Block`/`Vertex` types (crates/mesher,
 //! read-only for Phase 5) carry flat colors and no UV/texture-layer
 //! field, so textured *rendering* needs a mesher+pipeline change that
@@ -37,6 +62,115 @@ pub struct Material {
     /// `None` in v1 files and for materials without a pooled
     /// family — those keep the per-tile top face.
     pub macro_: Option<MacroEntry>,
+    /// Stage G: this material's solid prop model (materials.json
+    /// v2 `models` table), when the voxelizer's segmentation
+    /// produced one. `None` in v1 files, in v2 files without a
+    /// `models` table, and for furniture whose sprite doesn't
+    /// segment — those keep the extruded-sprite rendering.
+    pub model: Option<PropModelData>,
+}
+
+/// Stage G: one entry of the materials.json v2 `models` table —
+/// a furniture material's solid prop model, decoded into the
+/// engine-side representation: a palette plus one palette index
+/// per voxel (see the module docs for the wire encoding and the
+/// axis convention). Mirrors the voxelizer's `PropModel` layout
+/// so `get(x, y, z)` means the same thing on both sides.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropModelData {
+    /// [width (x), height (y, up), depth (z)] in model voxels.
+    pub size: [u32; 3],
+    /// Distinct RGB colors; voxel indices address this table.
+    pub palette: Vec<[u8; 3]>,
+    /// One palette index per voxel, `(y * depth + z) * width + x`
+    /// order; `EMPTY` where the model has no voxel.
+    pub voxels: Vec<u16>,
+}
+
+impl PropModelData {
+    /// The reserved palette index for "no voxel here".
+    pub const EMPTY: u16 = u16::MAX;
+
+    /// The voxel color at (x, y, z), or `None` for empty /
+    /// out-of-bounds cells.
+    pub fn get(&self, x: u32, y: u32, z: u32) -> Option<[u8; 3]> {
+        let [w, h, d] = self.size;
+        if x >= w || y >= h || z >= d {
+            return None;
+        }
+        let idx = self.voxels[((y * d + z) * w + x) as usize];
+        if idx == Self::EMPTY {
+            None
+        } else {
+            self.palette.get(idx as usize).copied()
+        }
+    }
+
+    /// Number of non-empty voxels.
+    pub fn solid_count(&self) -> usize {
+        self.voxels.iter().filter(|&&v| v != Self::EMPTY).count()
+    }
+
+    /// Decode one `models` table entry, validating the encoding
+    /// (hex length matches the size product, palette indices are
+    /// in range) so a corrupt file fails the load instead of
+    /// panicking or silently misrendering later.
+    fn parse(e: &serde_json::Value) -> Result<Self, String> {
+        let bad = |what: &str| format!("materials.json models entry: {what}");
+        let size_v = e["size"].as_array().ok_or_else(|| bad("size is not an array"))?;
+        if size_v.len() != 3 {
+            return Err(bad("size must have 3 elements"));
+        }
+        let mut size = [0u32; 3];
+        for (i, v) in size_v.iter().enumerate() {
+            size[i] = v.as_u64().ok_or_else(|| bad("size element is not a number"))? as u32;
+        }
+        let count = size.iter().map(|&s| s as usize).product::<usize>();
+        if count == 0 {
+            return Err(bad("size has a zero dimension"));
+        }
+        let pal_v = e["palette"]
+            .as_array()
+            .ok_or_else(|| bad("palette is not an array"))?;
+        if pal_v.len() > u16::MAX as usize {
+            return Err(bad("palette exceeds the index space"));
+        }
+        let mut palette = Vec::with_capacity(pal_v.len());
+        for p in pal_v {
+            let c = p.as_array().ok_or_else(|| bad("palette color is not an array"))?;
+            if c.len() != 3 {
+                return Err(bad("palette color must have 3 elements"));
+            }
+            let mut rgb = [0u8; 3];
+            for (i, v) in c.iter().enumerate() {
+                rgb[i] = v
+                    .as_u64()
+                    .ok_or_else(|| bad("palette channel is not a number"))?
+                    as u8;
+            }
+            palette.push(rgb);
+        }
+        let hex = e["voxels"]
+            .as_str()
+            .ok_or_else(|| bad("voxels is not a string"))?;
+        if hex.len() != count * 4 {
+            return Err(bad("voxels hex length does not match size"));
+        }
+        let mut voxels = Vec::with_capacity(count);
+        for chunk in hex.as_bytes().chunks_exact(4) {
+            let s = std::str::from_utf8(chunk).map_err(|_| bad("voxels is not ASCII hex"))?;
+            let idx = u16::from_str_radix(s, 16).map_err(|_| bad("voxels is not hex"))?;
+            if idx != Self::EMPTY && idx as usize >= palette.len() {
+                return Err(bad("voxel palette index out of range"));
+            }
+            voxels.push(idx);
+        }
+        Ok(PropModelData {
+            size,
+            palette,
+            voxels,
+        })
+    }
 }
 
 /// Stage F: one entry of the materials.json v2 `macros` table — a
@@ -116,6 +250,7 @@ impl MaterialTable {
         // Anything else (notably a newer version) is a hard error —
         // silently misreading a future format would shade wrong.
         let mut macro_by_index: BTreeMap<usize, MacroEntry> = BTreeMap::new();
+        let mut model_by_index: BTreeMap<usize, PropModelData> = BTreeMap::new();
         let mat_array: Vec<serde_json::Value> = if mats.is_array() {
             mats.as_array().cloned().unwrap_or_default()
         } else if mats.is_object() {
@@ -136,6 +271,15 @@ impl MaterialTable {
                             span_tiles: e["span_tiles"].as_u64().unwrap_or(4) as u32,
                         },
                     );
+                }
+            }
+            // Stage G: the `models` table is optional — a v2 file
+            // without one (nothing segmented) loads exactly as
+            // before, every material model-less.
+            if let Some(arr) = mats["models"].as_array() {
+                for e in arr {
+                    let mi = e["material_index"].as_u64().unwrap_or(0) as usize;
+                    model_by_index.insert(mi, PropModelData::parse(e)?);
                 }
             }
             mats["materials"].as_array().cloned().unwrap_or_default()
@@ -172,6 +316,7 @@ impl MaterialTable {
                 multitile: m["multitile"].as_bool().unwrap_or(false),
                 subtile_layers,
                 macro_: macro_by_index.get(&get("material_index")).copied(),
+                model: model_by_index.get(&get("material_index")).cloned(),
             };
             if table.layer_count > 0 {
                 let layers = [mat.top_layer, mat.side_layer, mat.bottom_layer]
@@ -251,6 +396,8 @@ mod tests {
         assert_eq!(wall.side_layer_for_mask(3), 1, "corner absent -> base side");
         // v1: no macro anywhere.
         assert!(wall.macro_.is_none());
+        // v1: no prop model anywhere.
+        assert!(wall.model.is_none());
         assert_eq!(t.macro_size, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -293,6 +440,65 @@ mod tests {
         );
         // Macro size is read from the actual PNG (4px fixture).
         assert_eq!(t.macro_size, 4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loads_v2_with_models() {
+        let dir = std::env::temp_dir().join(format!("engine_mat_mdl_{}", std::process::id()));
+        // size [2,1,2]: (y,z,x) voxel order — z=0 row: palette 0,
+        // EMPTY; z=1 row: palette 1, palette 0.
+        let model = r#"{"material_index":0,"size":[2,1,2],"palette":[[10,20,30],[200,210,220]],"voxels":"0000ffff00010000"}"#;
+        let json = format!(
+            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#
+        );
+        write_fixture(&dir, &json, false);
+        let t = MaterialTable::load(&dir).unwrap();
+        let m = t
+            .get("t_grass")
+            .unwrap()
+            .model
+            .as_ref()
+            .expect("model joined by material_index");
+        assert_eq!(m.size, [2, 1, 2]);
+        assert_eq!(m.get(0, 0, 0), Some([10, 20, 30]));
+        assert_eq!(m.get(1, 0, 0), None, "EMPTY marker decodes to no voxel");
+        assert_eq!(m.get(0, 0, 1), Some([200, 210, 220]));
+        assert_eq!(m.get(1, 0, 1), Some([10, 20, 30]));
+        assert_eq!(m.get(2, 0, 0), None, "out of bounds is empty");
+        assert_eq!(m.solid_count(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v2_without_models_loads_model_less() {
+        let dir = std::env::temp_dir().join(format!("engine_mat_nomdl_{}", std::process::id()));
+        let json = format!(r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[]}}"#);
+        write_fixture(&dir, &json, false);
+        let t = MaterialTable::load(&dir).unwrap();
+        assert!(t.get("t_grass").unwrap().model.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rejects_corrupt_model() {
+        let dir = std::env::temp_dir().join(format!("engine_mat_badmdl_{}", std::process::id()));
+        // Hex length (8 digits = 2 voxels) disagrees with size (4 voxels).
+        let model = r#"{"material_index":0,"size":[2,1,2],"palette":[[10,20,30]],"voxels":"00000000"}"#;
+        let json = format!(
+            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#
+        );
+        write_fixture(&dir, &json, false);
+        let err = MaterialTable::load(&dir).unwrap_err();
+        assert!(err.contains("models entry"), "got: {err}");
+        // Palette index 7 with a 1-color palette is out of range.
+        let model = r#"{"material_index":0,"size":[2,1,2],"palette":[[10,20,30]],"voxels":"0007000000000000"}"#;
+        let json = format!(
+            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#
+        );
+        write_fixture(&dir, &json, false);
+        let err = MaterialTable::load(&dir).unwrap_err();
+        assert!(err.contains("out of range"), "got: {err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
