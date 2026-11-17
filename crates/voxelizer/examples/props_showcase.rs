@@ -24,7 +24,7 @@ fn ultica_dir() -> PathBuf {
     panic!("UltiCa tileset not found; tried {candidates:?}");
 }
 
-const IDS: [&str; 4] = ["f_counter", "f_bookcase", "f_table", "f_fridge"];
+const IDS: [&str; 5] = ["f_counter", "f_bookcase", "f_table", "f_fridge", "f_locker"];
 const CELL_W: u32 = 340;
 const CELL_H: u32 = 300;
 const BACKDROP: Rgba<u8> = Rgba([24, 24, 28, 255]);
@@ -199,7 +199,8 @@ fn main() {
     for (row, id) in IDS.iter().enumerate() {
         let entry = ts.entries.get(*id).unwrap_or_else(|| panic!("tileset has {id}"));
         let sprite = composite_entry(&ts, entry).unwrap_or_else(|| panic!("{id} composites"));
-        let seg = segment(&sprite).unwrap_or_else(|| panic!("{id} must segment for the showcase"));
+        let seg = segment_for(id, &sprite)
+            .unwrap_or_else(|| panic!("{id} must segment for the showcase"));
         println!(
             "{id}: boundary {}, top {:?}, front {:?}, side {:?}, confidence {:.2}",
             seg.boundary(),

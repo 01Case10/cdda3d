@@ -445,3 +445,35 @@ repeats exactly every 4 tiles. NOT in this part (by design): border
 height-blending between materials, generated end-caps/decals,
 decoration scatter (§10.2) — Stage F part 2. This v2 carrier is
 also what Stage G engine stamping will ride on.
+
+## 16. Stage G weak-case fixes (2026-11-16, Joey's sign-off condition)
+
+Joey's verdict on the §13 showcase: right direction, fix the weak
+cases first. All four fixed, parent re-verified in the main tree
+(`props_gate` 3/3, lib 32/32, all voxelizer suites green):
+(1) Open-base rule in the box path — a front column is "grounded"
+iff its bottom pixel is solid paint (alpha >= 254; the under-table
+shadow in UltiCa is painted at exactly alpha 128); open fraction
+>= 0.25 with a solid header band switches the box to slab-and-legs
+(header + top slab, each grounded column run extruded through the
+depth, under-space empty). Measured separation: table 0.81 open vs
+counter 0.10 / fridge 0.16 / bookcase+locker 0.00, which stay solid.
+(2) Column models are closed shells now: back panel at z=0
+(silhouette mirrored, colors x0.7), side closure strips at each
+row's opaque extremes, bottom strip — interior still hollow, front
+projection still exactly the sprite silhouette (gate-asserted for
+all five props). (3) f_locker: per-id boundary override
+(`BOUNDARY_OVERRIDES` + `segment_for(id, sprite)`); boundary 28
+chosen from the row profile (2-row cap: dark rim row 26, brightest
+row 27, body widens at 28). The gate proves the override is the
+fix — bare `segment` still picks the wrong seam at 38. The override
+bypasses the confidence floor (honest score 0.33: the cap seam is
+genuinely weak) but keeps silhouette gating and side detection.
+(4) Confidence recalibrated: the margin-over-runner-up term
+penalized exactly the tall furniture the first-strong-edge rule
+exists for (door seams stronger than the top seam); replaced with a
+seam-support term (fraction of seam columns with a real per-column
+break; fridge measures 1.00) + edge rescale. Fridge 0.55 -> 0.75;
+counter 0.85, bookcase 0.84, table 0.92; negatives (f_chair,
+t_grass) still None. Updated showcase (locker added as fifth row)
+re-presented to Joey 2026-11-16 for the §12 sign-off.

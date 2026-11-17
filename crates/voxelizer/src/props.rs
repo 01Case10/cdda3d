@@ -11,9 +11,13 @@
 //! * [`box_model`] (G.1): one cuboid whose depth comes from the top
 //!   region's height and whose height comes from the front region's
 //!   height, each face textured by un-projecting its sprite region.
-//! * [`column_model`] (G.2): a shell — a front wall of per-pixel
-//!   columns whose front projection reproduces the sprite's front
-//!   region exactly, capped by the top region extending backward.
+//!   Fronts whose base is open (legs + painted shadow, e.g. tables)
+//!   get a slab-and-legs variant instead — see "Base structure".
+//! * [`column_model`] (G.2): a closed shell — a front wall of
+//!   per-pixel columns whose front projection reproduces the
+//!   sprite's front region exactly, a top cap extending backward, a
+//!   mirrored back panel, and side/bottom closure strips, so the
+//!   model reads as a closed object from any outside angle.
 //!
 //! Both consume a [`Segmentation`] produced by [`segment`]. The
 //! engine-side stamping of these models is a later round; everything
@@ -56,10 +60,62 @@
 //!    is a flat uniform field — isotropic, no orientation to flip —
 //!    while the edge + L step are present in every clean case we
 //!    measured, so orientation cannot be the primary signal.
-//! 5. **Confidence.** A fixed weighted sum of edge strength, L step,
-//!    silhouette coverage, margin over the runner-up edge, and the
-//!    orientation term. Below 0.45 the sprite is reported
-//!    unsegmentable (`None`).
+//! 5. **Confidence.** A fixed weighted sum of edge strength, local
+//!    L step, seam *support* (the fraction of seam columns whose own
+//!    OKLab break clears a per-column floor — a true top/front edge
+//!    is a near-full-width break), silhouette coverage, a small
+//!    region-L term (top region mean L vs the front's first rows),
+//!    and the orientation term. Below 0.45 the sprite is reported
+//!    unsegmentable (`None`). An earlier formula also rewarded
+//!    *margin over the runner-up edge*; that term was removed
+//!    because it contradicts the first-strong-edge premise — tall
+//!    furniture (fridge, bookcase, locker) legitimately has internal
+//!    seams stronger than its top seam, so the margin term taxed
+//!    exactly the sprites the rule exists for (it held the correctly
+//!    segmented f_fridge at 0.55).
+//!
+//! ## Per-id boundary overrides
+//!
+//! Stacked-seam furniture defeats the scored rule: f_locker's mid
+//! door-seam (edge 0.382 at row 38) beats its true cap seam (edge
+//! 0.076 at row 28 — the cap is a 2-row rim whose lower row is the
+//! body's own gray, so neither the edge nor the L-step floor can see
+//! it). Rather than complicate the global rule, [`segment_for`]
+//! consults [`BOUNDARY_OVERRIDES`]: a static id -> boundary-row
+//! table. The forced boundary still goes through silhouette gating
+//! and side detection, and its confidence is computed from the
+//! forced seam's own (weak) signals for honesty, but the confidence
+//! floor is bypassed — a human verified the boundary. The table
+//! lives here, not in `overrides.toml`, because `segment` is a pure
+//! sprite function with no id-carrying caller yet, and the TOML
+//! mechanism is consumed at material-build time for mode/height;
+//! when engine stamping lands, the table can move there.
+//! f_locker's 28 was verified against the sprite's row profile:
+//! rows 26..27 are the cap (row 26 darker rim, L 0.375; row 27 the
+//! sprite's brightest row, L 0.588), the body widens from x-extent
+//! 0..30 to 0..31 at row 28, and L settles to the door field's flat
+//! ~0.49 from row 28 down.
+//!
+//! ## Base structure (box model)
+//!
+//! A solid cuboid lies for legged furniture: f_table's front is a
+//! 1-row apron over legs at x 1..=3 and 28..=30, with the under-
+//! space painted as translucent shadow (RGBA alpha 128, pure
+//! black). The box therefore classifies each front-extent column by
+//! its bottom-row pixel: *grounded* when that pixel is fully opaque
+//! (alpha >= 254 — solid paint; the shadow sits at exactly 128),
+//! *open* otherwise. If the open fraction reaches
+//! [`OPEN_BASE_FRACTION`] and the front opens with a solid header
+//! band (>= [`HEADER_SOLID_FRACTION`] fully-opaque columns for at
+//! least one row), the model is slab-and-legs: the header band plus
+//! the top face form the slab, each maximal grounded run becomes a
+//! leg extruded through the full model depth (front plane verbatim,
+//! interior side-shaded, back plane darkened), and the under-space
+//! stays empty. Measured separation on the gate set: f_table open
+//! fraction 0.81 / header 1 row; the solid fronts are f_counter
+//! 0.10, f_bookcase 0.00, f_fridge 0.16, f_locker 0.00. If no column
+//! is grounded (a wall-mounted shelf would qualify), the solid box
+//! is kept — a floating slab is worse than a solid block.
 //!
 //! ## Failure modes (all return `None`, caller keeps the extrusion)
 //!
@@ -71,9 +127,10 @@
 //!   no valid candidate.
 //! * Stacked-seam furniture (a locker is two doors with a dark mid
 //!   seam): the *first-strong-edge* rule can pick the mid seam,
-//!   reading the upper door as a very deep "top". Confidence stays
-//!   moderate; per-id overrides (Stage G.3 territory) are the fix,
-//!   not a cleverer global rule.
+//!   reading the upper door as a very deep "top". `segment` still
+//!   does this for f_locker; the fix is the per-id override in
+//!   [`BOUNDARY_OVERRIDES`] (via [`segment_for`]), not a cleverer
+//!   global rule.
 //! * Sprites taller than the tile (32x64 lockers/fridges): handled —
 //!   the model grid follows the sprite, height is not clamped to 32.
 
@@ -106,6 +163,27 @@ const LSTEP_FLOOR: f32 = 0.03;
 const FIRST_EDGE_BAND: f32 = 0.6;
 /// Segmentation is only reported at or above this confidence.
 const CONFIDENCE_FLOOR: f32 = 0.45;
+/// Per-column seam break that counts toward seam support.
+const SUPPORT_FLOOR: f32 = 0.08;
+/// Alpha at or above this is *solid paint* (structure). Painted
+/// contact shadow in UltiCa furniture sprites sits at alpha 128;
+/// the object itself is painted fully opaque.
+const SOLID_ALPHA: u8 = 254;
+/// Open-base box variant fires at or above this fraction of
+/// front-extent columns not grounded at the base.
+const OPEN_BASE_FRACTION: f32 = 0.25;
+/// A front row belongs to the solid header band when at least this
+/// fraction of its extent columns are solid paint.
+const HEADER_SOLID_FRACTION: f32 = 0.90;
+
+/// Per-id top/front boundary overrides (sprite row of the first
+/// front row), consulted by [`segment_for`] before the scored
+/// choice. See the module docs ("Per-id boundary overrides") for
+/// why this is a static table and how each entry was verified.
+///
+/// * `f_locker` -> 28: cap is rows 26..27 (dark rim + brightest
+///   row); the scored rule picks the mid door-seam at 38 instead.
+pub const BOUNDARY_OVERRIDES: &[(&str, u32)] = &[("f_locker", 28)];
 /// Sub-cells of depth per sprite row of top region. UltiCa's 3/4
 /// view foreshortens the top surface roughly 2:1 vertically, so one
 /// drawn top row corresponds to ~2 sub-cells of real depth.
@@ -212,6 +290,22 @@ fn shade(px: Rgba<u8>, f: f32) -> Rgba<u8> {
 /// Returns `None` when the sprite has no confident box-like reading
 /// — the caller then keeps the flat extrusion (see module docs).
 pub fn segment(sprite: &RgbaImage) -> Option<Segmentation> {
+    segment_inner(sprite, None)
+}
+
+/// [`segment`] with per-id boundary overrides: when `id` is in
+/// [`BOUNDARY_OVERRIDES`], the segmentation is built at the forced
+/// boundary (silhouette gating and side detection still apply; the
+/// confidence floor is bypassed, see module docs).
+pub fn segment_for(id: &str, sprite: &RgbaImage) -> Option<Segmentation> {
+    let forced = BOUNDARY_OVERRIDES
+        .iter()
+        .find(|(k, _)| *k == id)
+        .map(|(_, b)| *b);
+    segment_inner(sprite, forced)
+}
+
+fn segment_inner(sprite: &RgbaImage, forced: Option<u32>) -> Option<Segmentation> {
     let (w, h) = (sprite.width(), sprite.height());
     if w < 8 || h < 8 {
         return None;
@@ -255,23 +349,30 @@ pub fn segment(sprite: &RgbaImage) -> Option<Segmentation> {
     if mean_cov < MIN_MEAN_COVERAGE {
         return None;
     }
-    // Horizontal edge strength at each row boundary b (between b-1
-    // and b): mean OKLab distance over columns opaque on both sides.
-    let edge_at = |b: u32| -> f32 {
+    // Horizontal seam stats at each row boundary b (between b-1 and
+    // b): mean OKLab distance over columns opaque on both sides,
+    // plus *support* — the fraction of those columns whose own
+    // break clears SUPPORT_FLOOR.
+    let seam_at = |b: u32| -> (f32, f32) {
         let mut sum = 0.0f32;
         let mut n = 0u32;
+        let mut strong = 0u32;
         for x in 0..w {
             let a = *sprite.get_pixel(x, b - 1);
             let c = *sprite.get_pixel(x, b);
             if opaque(a) && opaque(c) {
-                sum += lab_of(a).distance(lab_of(c));
+                let d = lab_of(a).distance(lab_of(c));
+                sum += d;
                 n += 1;
+                if d >= SUPPORT_FLOOR {
+                    strong += 1;
+                }
             }
         }
         if n as f32 >= 0.25 * w as f32 {
-            sum / n as f32
+            (sum / n as f32, strong as f32 / n as f32)
         } else {
-            0.0
+            (0.0, 0.0)
         }
     };
     // Local L step at b: 4-row windows either side of the seam.
@@ -290,43 +391,66 @@ pub fn segment(sprite: &RgbaImage) -> Option<Segmentation> {
         (mb - ma).abs()
     };
     let min_front = MIN_FRONT_ROWS.max((MIN_FRONT_FRACTION * band_h as f32).ceil() as u32);
-    let mut candidates: Vec<(u32, f32, f32)> = Vec::new(); // (b, edge, lstep)
-    for b in (first + MIN_TOP_ROWS)..=(last + 1 - min_front) {
-        let e = edge_at(b);
-        let s = lstep_at(b);
-        if e >= EDGE_FLOOR && s >= LSTEP_FLOOR {
-            candidates.push((b, e, s));
+    // Region L step: top region mean L vs the front's first rows.
+    // A secondary surface-difference signal for seams whose local
+    // step is diluted by a bright trim row at the boundary.
+    let region_step = |b: u32| -> f32 {
+        let mean_rows = |r: std::ops::Range<u32>| -> f32 {
+            let v: Vec<f32> = r.map(|y| row_mean_l[y as usize]).collect();
+            if v.is_empty() {
+                0.0
+            } else {
+                v.iter().sum::<f32>() / v.len() as f32
+            }
+        };
+        let top = mean_rows(first..b);
+        let front = mean_rows(b..(b + 8).min(last + 1));
+        (front - top).abs()
+    };
+    // Confidence assembly (module docs, step 5).
+    let confidence_of = |b: u32, edge: f32, lstep: f32, support: f32| -> f32 {
+        let orient_term = orientation_term(sprite, first, b, last);
+        (0.35 * (edge / 0.25).min(1.0)
+            + 0.20 * (lstep / 0.15).min(1.0)
+            + 0.15 * support
+            + 0.15 * mean_cov
+            + 0.05 * (region_step(b) / 0.15).min(1.0)
+            + orient_term)
+            .clamp(0.0, 1.0)
+    };
+    let b = if let Some(fb) = forced {
+        // Per-id override: the boundary is human-verified, so the
+        // edge/L-step floors and the confidence floor do not apply;
+        // the range sanity checks still do.
+        if fb < first + MIN_TOP_ROWS || fb > last + 1 - min_front {
+            return None;
         }
-    }
-    if candidates.is_empty() {
-        return None;
-    }
-    let best_edge = candidates
-        .iter()
-        .map(|c| c.1)
-        .fold(0.0f32, f32::max);
-    let &(b, edge, lstep) = candidates
-        .iter()
-        .find(|c| c.1 >= FIRST_EDGE_BAND * best_edge)
-        .unwrap();
-    // Runner-up edge at a distance (for the margin term).
-    let second = candidates
-        .iter()
-        .filter(|c| c.0.abs_diff(b) >= 3)
-        .map(|c| c.1)
-        .fold(0.0f32, f32::max);
-    let margin = (edge - second).max(0.0);
-    // Orientation corroboration on the two crops.
-    let orient_term = orientation_term(sprite, first, b, last);
-    let confidence = (0.40 * (edge / 0.30).min(1.0)
-        + 0.25 * (lstep / 0.15).min(1.0)
-        + 0.15 * mean_cov
-        + 0.10 * (margin / 0.10).min(1.0)
-        + orient_term)
-        .clamp(0.0, 1.0);
-    if confidence < CONFIDENCE_FLOOR {
-        return None;
-    }
+        fb
+    } else {
+        let mut candidates: Vec<(u32, f32, f32)> = Vec::new(); // (b, edge, lstep)
+        for b in (first + MIN_TOP_ROWS)..=(last + 1 - min_front) {
+            let (e, _) = seam_at(b);
+            let s = lstep_at(b);
+            if e >= EDGE_FLOOR && s >= LSTEP_FLOOR {
+                candidates.push((b, e, s));
+            }
+        }
+        if candidates.is_empty() {
+            return None;
+        }
+        let best_edge = candidates.iter().map(|c| c.1).fold(0.0f32, f32::max);
+        let &(b, edge, lstep) = candidates
+            .iter()
+            .find(|c| c.1 >= FIRST_EDGE_BAND * best_edge)
+            .unwrap();
+        let (_, support) = seam_at(b);
+        if confidence_of(b, edge, lstep, support) < CONFIDENCE_FLOOR {
+            return None;
+        }
+        b
+    };
+    let (edge, support) = seam_at(b);
+    let confidence = confidence_of(b, edge, lstep_at(b), support);
     let side = detect_side(sprite, b, last);
     Some(Segmentation {
         silhouette_rows: first..last + 1,
@@ -496,12 +620,64 @@ fn top_row_for_z(seg: &Segmentation, d: u32, z: u32) -> u32 {
     seg.top_rows.end - 1 - row_back
 }
 
+/// Solid paint: fully opaque (see [`SOLID_ALPHA`]).
+fn solid(px: Rgba<u8>) -> bool {
+    px[3] >= SOLID_ALPHA
+}
+
+/// Base structure of a front region (module docs, "Base
+/// structure"): whether the box is solid or slab-and-legs, the
+/// header band height, and each extent column's groundedness.
+struct BasePlan {
+    open: bool,
+    header_rows: u32,
+    /// Per extent column (x0..=x1): bottom-row pixel is solid paint.
+    grounded: Vec<bool>,
+}
+
+fn base_plan(sprite: &RgbaImage, seg: &Segmentation, x0: u32, x1: u32) -> BasePlan {
+    let front = &seg.front_rows;
+    let bot = front.end - 1;
+    let ext = (x1 - x0 + 1) as f32;
+    let grounded: Vec<bool> = (x0..=x1)
+        .map(|x| solid(*sprite.get_pixel(x, bot)))
+        .collect();
+    let open_frac = grounded.iter().filter(|g| !**g).count() as f32 / ext;
+    // Header band: consecutive front rows, from the boundary down,
+    // that are solid paint across (nearly) the whole extent.
+    let mut header_rows = 0u32;
+    for r in front.clone() {
+        let s = (x0..=x1)
+            .filter(|&x| solid(*sprite.get_pixel(x, r)))
+            .count();
+        if s as f32 >= HEADER_SOLID_FRACTION * ext {
+            header_rows += 1;
+        } else {
+            break;
+        }
+    }
+    let fh = front.end - front.start;
+    let any_grounded = grounded.iter().any(|g| *g);
+    let open = open_frac >= OPEN_BASE_FRACTION
+        && header_rows >= 1
+        && header_rows < fh
+        && any_grounded;
+    BasePlan {
+        open,
+        header_rows,
+        grounded,
+    }
+}
+
 /// G.1: the box model. A cuboid spanning the front region's opaque
 /// x-extent, height = front region height, depth from the top
 /// region. Faces are textured by un-projecting their sprite region;
 /// the interior is filled with the front region's mean color (it is
 /// never visible in a surface render, but a solid model keeps later
-/// engine stamping trivially correct).
+/// engine stamping trivially correct). When the front's base is
+/// open (see [`base_plan`]), the model is slab-and-legs instead:
+/// the header band + top face form a slab and the under-space
+/// between the legs stays empty.
 pub fn box_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
@@ -516,6 +692,10 @@ pub fn box_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 x1 = x1.max(x);
             }
         }
+    }
+    let plan = base_plan(sprite, seg, x0, x1);
+    if plan.open {
+        return box_model_open(sprite, seg, x0, x1, &plan);
     }
     let interior = region_mean(sprite, front);
     let mut m = PropModel::new([w, fh, d]);
@@ -572,6 +752,100 @@ pub fn box_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     m
 }
 
+/// The slab-and-legs box variant for open-base fronts (see
+/// [`base_plan`]). The slab is the header band across the full
+/// extent and depth, capped by the un-projected top face; each
+/// maximal grounded column run becomes a leg extruded through the
+/// full depth below the slab; everything else under the slab is
+/// empty.
+fn box_model_open(
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    x0: u32,
+    x1: u32,
+    plan: &BasePlan,
+) -> PropModel {
+    let w = sprite.width();
+    let front = &seg.front_rows;
+    let fh = front.end - front.start;
+    let d = seg.depth_cells();
+    let bot = front.end - 1;
+    let slab_bottom = fh - plan.header_rows; // lowest slab row (model y)
+    let interior = region_mean(sprite, front);
+    let mut m = PropModel::new([w, fh, d]);
+    // Slab body + front/back faces per slab row.
+    for y in slab_bottom..fh {
+        let r = bot - y;
+        for z in 0..d {
+            for x in x0..=x1 {
+                m.set(x, y, z, Some(interior));
+            }
+        }
+        for x in x0..=x1 {
+            if let Some(px) = row_pixel(sprite, x, r, x0, x1) {
+                m.set(x, y, d - 1, Some(px));
+                m.set(x, y, 0, Some(shade(px, 0.55)));
+            }
+        }
+    }
+    // Slab underside: the lowest slab row's interior cells take the
+    // header row's color darkened like the solid box's bottom face
+    // (they are what a from-below view sees between the legs).
+    let r_under = bot - slab_bottom;
+    for x in x0..=x1 {
+        if let Some(px) = row_pixel(sprite, x, r_under, x0, x1) {
+            for z in 1..d - 1 {
+                m.set(x, slab_bottom, z, Some(shade(px, 0.5)));
+            }
+        }
+    }
+    // Top face: same un-projection as the solid box.
+    for x in x0..=x1 {
+        for z in 0..d - 1 {
+            let sr = top_row_for_z(seg, d, z);
+            if let Some(px) = row_pixel(sprite, x, sr, x0, x1) {
+                m.set(x, fh - 1, z, Some(px));
+            }
+        }
+    }
+    // Slab side faces at the extent edges.
+    for (sx, on_right) in [(x0, false), (x1, true)] {
+        for y in slab_bottom..fh - 1 {
+            let r = bot - y;
+            for z in 1..d - 1 {
+                if let Some(px) = side_color(sprite, seg, sx, r, z, d, on_right) {
+                    m.set(sx, y, z, Some(px));
+                }
+            }
+        }
+    }
+    // Legs: maximal grounded runs extruded through the full depth.
+    let mut x = x0;
+    while x <= x1 {
+        if !plan.grounded[(x - x0) as usize] {
+            x += 1;
+            continue;
+        }
+        let run_start = x;
+        while x <= x1 && plan.grounded[(x - x0) as usize] {
+            x += 1;
+        }
+        for lx in run_start..x {
+            for y in 0..slab_bottom {
+                let r = bot - y;
+                if let Some(px) = row_pixel(sprite, lx, r, x0, x1) {
+                    m.set(lx, y, d - 1, Some(px));
+                    m.set(lx, y, 0, Some(shade(px, 0.55)));
+                    for z in 1..d - 1 {
+                        m.set(lx, y, z, Some(shade(px, 0.7)));
+                    }
+                }
+            }
+        }
+    }
+    m
+}
+
 /// Color for a box side-face cell: the detected sliver un-projected
 /// when this side has one, else the front's edge column darkened
 /// (the faces.rs convention for synthesized sides).
@@ -610,7 +884,7 @@ fn side_color(
     }
 }
 
-/// G.2: the column model. A shell of two surfaces:
+/// G.2: the column model. A closed shell of surfaces:
 ///
 /// * the **front wall** at z = depth-1: for every opaque front-region
 ///   pixel (x, r), one voxel at height `bot - r` with that pixel's
@@ -618,11 +892,19 @@ fn side_color(
 ///   region, exactly;
 /// * the **top cap** at y = front_height-1: the top region
 ///   un-projected across the depth (same mapping as the box),
-///   extending backward from the front wall's top.
+///   extending backward from the front wall's top;
+/// * the **back panel** at z = 0: the front silhouette mirrored in
+///   depth, per-pixel colors darkened by the side factor (0.7);
+/// * **side closure strips**: at each front row's opaque x-extremes,
+///   a run of cells across the full depth, side-shaded — they join
+///   the front wall to the back panel along both flanks;
+/// * a **bottom strip** at y = 0 joining front wall to back panel
+///   under every column that reaches the base.
 ///
-/// The back and interior are open; from behind, the wall's voxels
-/// show their own colors (a voxel has one color per cell in this
-/// representation).
+/// The interior stays hollow (invisible); from any outside angle
+/// the model reads as a closed object. Closure never writes the
+/// front plane (z = depth-1), so the exact front projection is
+/// preserved.
 pub fn column_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
@@ -642,11 +924,52 @@ pub fn column_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             }
         }
     }
+    // Front wall.
     for x in 0..w {
         for r in front.clone() {
             let px = *sprite.get_pixel(x, r);
             if opaque(px) {
                 m.set(x, bot - r, d - 1, Some(px));
+            }
+        }
+    }
+    // Bottom closure strip (z between the walls; the back panel
+    // below owns z = 0).
+    for x in 0..w {
+        let px = *sprite.get_pixel(x, bot);
+        if opaque(px) {
+            for z in 1..d - 1 {
+                m.set(x, 0, z, Some(shade(px, 0.5)));
+            }
+        }
+    }
+    // Back panel: the front silhouette mirrored in depth, darkened
+    // by the side factor.
+    for x in 0..w {
+        for r in front.clone() {
+            let px = *sprite.get_pixel(x, r);
+            if opaque(px) {
+                m.set(x, bot - r, 0, Some(shade(px, 0.7)));
+            }
+        }
+    }
+    // Side closure strips at each front row's opaque extremes.
+    for r in front.clone() {
+        let y = bot - r;
+        let (mut rx0, mut rx1) = (w, 0u32);
+        for x in 0..w {
+            if opaque(*sprite.get_pixel(x, r)) {
+                rx0 = rx0.min(x);
+                rx1 = rx1.max(x);
+            }
+        }
+        if rx0 > rx1 {
+            continue; // empty row
+        }
+        for sx in [rx0, rx1] {
+            let px = *sprite.get_pixel(sx, r);
+            for z in 1..d - 1 {
+                m.set(sx, y, z, Some(shade(px, 0.7)));
             }
         }
     }
@@ -693,6 +1016,89 @@ mod tests {
         assert!(sl.on_right);
         assert_eq!(sl.cols, 26..32);
         assert!(seg.confidence >= 0.45, "confidence {}", seg.confidence);
+    }
+
+    /// Open-base synthetic: bright top band, a 2-row solid apron,
+    /// then legs (fully opaque) at x 2..=4 and 27..=29 with the
+    /// under-space painted as alpha-128 black shadow — the f_table
+    /// structure. The Segmentation is built by hand so the test
+    /// targets the base rule, not the seam choice.
+    fn synthetic_open_base() -> (RgbaImage, Segmentation) {
+        let mut img = RgbaImage::new(32, 32);
+        for y in 2..8 {
+            for x in 0..32 {
+                img.put_pixel(x, y, Rgba([200, 180, 140, 255]));
+            }
+        }
+        for y in 8..29 {
+            for x in 0..32 {
+                let px = if y < 10 || (2..=4).contains(&x) || (27..=29).contains(&x) {
+                    Rgba([120, 90, 60, 255]) // apron + legs: solid paint
+                } else {
+                    Rgba([0, 0, 0, 128]) // painted shadow, not structure
+                };
+                img.put_pixel(x, y, px);
+            }
+        }
+        let seg = Segmentation {
+            silhouette_rows: 2..29,
+            top_rows: 2..8,
+            front_rows: 8..29,
+            side: None,
+            confidence: 1.0,
+        };
+        (img, seg)
+    }
+
+    #[test]
+    fn open_base_box_is_slab_and_legs() {
+        let (img, seg) = synthetic_open_base();
+        let plan = base_plan(&img, &seg, 0, 31);
+        assert!(plan.open, "shadow base must read as open");
+        assert_eq!(plan.header_rows, 2, "apron is the header band");
+        let bm = box_model(&img, &seg);
+        let (fh, d) = (bm.size[1], bm.size[2]);
+        // Under-space between the legs is empty at every depth.
+        for y in 0..fh - plan.header_rows {
+            for z in 0..d {
+                assert_eq!(bm.get(16, y, z), None, "under-space at (16,{y},{z})");
+            }
+        }
+        // Legs are filled through the depth at their columns.
+        assert!(bm.get(3, 0, d - 1).is_some(), "front leg cell");
+        assert!(bm.get(28, 0, 0).is_some(), "back leg cell");
+        // The slab's front face is the apron, verbatim.
+        assert_eq!(
+            bm.get(16, fh - 1, d - 1),
+            Some(Rgba([120, 90, 60, 255])),
+            "slab front face"
+        );
+        assert_eq!(bm, box_model(&img, &seg), "deterministic");
+    }
+
+    #[test]
+    fn column_model_is_a_closed_shell() {
+        let img = synthetic();
+        let seg = segment(&img).unwrap();
+        let cm = column_model(&img, &seg);
+        let (fh, d) = (cm.size[1], cm.size[2]);
+        let bot = seg.front_rows.end - 1;
+        // Back panel mirrors the front silhouette, side-shaded.
+        for x in 0..32 {
+            for y in 0..fh {
+                let px = *img.get_pixel(x, bot - y);
+                assert_eq!(
+                    cm.get(x, y, 0),
+                    Some(shade(px, 0.7)),
+                    "back panel at ({x},{y})"
+                );
+            }
+        }
+        // Interior stays hollow.
+        assert_eq!(cm.get(16, fh / 2, d / 2), None, "hollow interior");
+        // Side strips close the flanks at the row extremes.
+        assert!(cm.get(0, fh / 2, d / 2).is_some(), "left strip");
+        assert!(cm.get(31, fh / 2, d / 2).is_some(), "right strip");
     }
 
     #[test]
