@@ -23,10 +23,38 @@
 //! neighborhood frame. Its signed distance field — positive
 //! inside water, in pixels — is computed exactly (two-pass
 //! chamfer distance transform to the nearest opposite-class
-//! pixel; outside the frame counts as land) and then box-blurred
-//! (radius 4), which rounds convex corners into arcs; a small
-//! periodic fBm wobble (+-2.5 px, sampled in the neighborhood
-//! frame) bows the line organically. The field maps to a terrain
+//! pixel; outside the frame counts as land). Stage H tuning
+//! (2026-11-17) then morphologically OPENS the *waterline
+//! region* `{field >= WATERLINE}` with a disk: that region is
+//! replaced by the union of radius-`A` disks that fit inside
+//! it, and the field is re-derived as the opened region's
+//! signed distance, shifted back by `WATERLINE`. Opening the
+//! waterline region (not the tile region) is the point: the
+//! drawn waterline on a convex corner becomes an arc of
+//! radius `A` around the inset corner, while a straight
+//! shoreline is a fixed point of the opening — it stays
+//! exactly straight, with no per-tile scalloping. `A` adapts
+//! to the neighborhood: `(deepest field in frame - WATERLINE)`
+//! capped at [`OPEN_A_MAX`], so a corner of a real pond gets
+//! a large arc while a lone water tile (deepest field 16)
+//! keeps `A = 4` and its water survives. Deliberate
+//! consequence: a pond corner tile's own center can classify
+//! as bank — that is precisely what turns the 3x3 mosaic's
+//! inset square into a near-disk (measured on the 3x3
+//! mosaic by `examples/pond_metrics.rs`: best-disk IoU
+//! 0.837 -> 0.951, radial std 4.14 -> 1.25 px, corner-tile
+//! water coverage 38.6% -> 21.3%). There is no
+//! center-stays-water fallback: the masks whose centers must
+//! stay water (a land-point tile, a straight shore) keep
+//! them under the opening itself, which the gates assert.
+//! (The
+//! v1 field box-blurred the SDF at radius 4, which capped the
+//! corner arc near one tile and read as a rounded square; a
+//! plain region opening at radius 16 measured no better —
+//! the arc it draws has radius `opening - WATERLINE`, so the
+//! band offset has to be opened, not the region.)
+//! A small periodic fBm wobble (+-2.5 px, sampled in the
+//! neighborhood frame) bows the line organically. The field maps to a terrain
 //! height through the fixed material heights — water 0.0, dirt
 //! 0.45, grass 1.0: height 0 well inside water, rising through
 //! the dirt shelf across the bank band to full grass height
@@ -64,9 +92,17 @@ pub const GRASS_HEIGHT: f32 = 1.0;
 
 /// Neighborhood frame size (3x3 tiles at 32 px).
 const FRAME: usize = 96;
-/// Box-blur radius (px) applied to the distance field: how round
-/// the shoreline corners get.
-const BLUR_RADIUS: i32 = 4;
+/// Field level of the drawn waterline: water wins the height
+/// blend once the shore field passes roughly this value (the
+/// tent crossover in `heights_for`; a straight shore's first
+/// water texel sits ~12 px inside the tile). The Stage H
+/// opening acts on the region above this level.
+const WATERLINE: f32 = 12.0;
+/// Cap (px) on the waterline opening's disk radius: how round
+/// a pond corner can get. The adaptive radius (deepest field
+/// in the frame minus [`WATERLINE`]) reaches this cap on the
+/// corner/edge neighborhoods of any pond at least 2x2 tiles.
+const OPEN_A_MAX: f32 = 28.0;
 /// Wobble amplitude (px) on the distance field.
 const WOBBLE_AMP: f32 = 2.5;
 /// Water pixels closer than this to the shoreline get the
@@ -162,29 +198,125 @@ fn distance_to(occ: &[bool], target: bool) -> Vec<f32> {
     d
 }
 
-/// Separable box blur (clamped edges) over the frame field.
-fn box_blur(src: &[f32], radius: i32) -> Vec<f32> {
-    let mut tmp = vec![0.0f32; FRAME * FRAME];
-    let mut out = vec![0.0f32; FRAME * FRAME];
-    let norm = (2 * radius + 1) as f32;
-    for y in 0..FRAME as i32 {
-        for x in 0..FRAME as i32 {
-            let mut sum = 0.0;
-            for k in -radius..=radius {
-                let cx = (x + k).clamp(0, FRAME as i32 - 1) as usize;
-                sum += src[y as usize * FRAME + cx];
+/// Signed distance field (positive inside) of the region
+/// `{raw >= level}`, shifted so the region boundary sits at
+/// `level` again: `signed_distance + level`, clamped to
+/// [`FIELD_MAX`]. For a true distance field this is the
+/// identity; recomputing it from a thresholded region is what
+/// lets the opening below substitute a different region.
+fn field_of_region(region: &[bool]) -> Vec<f32> {
+    let to_outside = distance_to(region, false);
+    let to_region = distance_to(region, true);
+    region
+        .iter()
+        .enumerate()
+        .map(|(i, &o)| {
+            let d = if o {
+                to_outside[i]
+            } else {
+                -to_region[i]
+            };
+            (d + WATERLINE).clamp(-FIELD_MAX, FIELD_MAX)
+        })
+        .collect()
+}
+
+/// Stage H waterline opening (see module docs): open the
+/// waterline region `{raw >= WATERLINE}` by a disk of radius
+/// `A` (erosion keeps points at least `WATERLINE + A` deep;
+/// dilation regrows radius `A` around the survivors), then
+/// re-derive the field from the opened region. `A` adapts to
+/// the frame's deepest water, capped at [`OPEN_A_MAX`]: thin
+/// water (a lone tile, a 1-wide channel; deepest field ~16)
+/// gets `A ~ 4` and survives, deep water gets the full arc.
+///
+/// The opened field is blended in ONLY around *pond corners*
+/// of the water region — tile-grid points where exactly one
+/// of the four incident tiles is water (outside the frame
+/// counts as land) AND the shoreline runs at least 2 tile
+/// edges through the point in both directions. The run test
+/// is what separates a pond corner (shore continues past the
+/// corner tile both ways; the arc may cut through the corner
+/// tile's center) from the inner corner of a land point
+/// (mask 0xF8: one run ends a tile away where the land strip
+/// turns) — a global opening erodes that tile's center, which
+/// must stay water, so its corners are left on the raw field.
+/// The blend weight falls to zero `A + 10` px (Chebyshev)
+/// from the corner point, past where the opening differs
+/// from the raw field on the adjoining straight edges.
+fn opened_field(raw: &[f32], tiles: &[bool; 9]) -> Vec<f32> {
+    let tile_water = |bx: i32, by: i32| -> bool {
+        (0..3).contains(&bx) && (0..3).contains(&by) && tiles[(by * 3 + bx) as usize]
+    };
+    // Shore run through grid point (i, j) along the horizontal
+    // grid line (tile edges with water on exactly one side),
+    // counted in both directions from the point.
+    let run_h = |i: i32, j: i32| -> i32 {
+        let mut n = 0;
+        let mut c = i;
+        while c < 3 && tile_water(c, j - 1) != tile_water(c, j) {
+            n += 1;
+            c += 1;
+        }
+        let mut c = i - 1;
+        while c >= 0 && tile_water(c, j - 1) != tile_water(c, j) {
+            n += 1;
+            c -= 1;
+        }
+        n
+    };
+    let run_v = |i: i32, j: i32| -> i32 {
+        let mut n = 0;
+        let mut r = j;
+        while r < 3 && tile_water(i - 1, r) != tile_water(i, r) {
+            n += 1;
+            r += 1;
+        }
+        let mut r = j - 1;
+        while r >= 0 && tile_water(i - 1, r) != tile_water(i, r) {
+            n += 1;
+            r -= 1;
+        }
+        n
+    };
+    // Pond-corner points of the water region, in frame pixel
+    // coordinates (grid points between tiles).
+    let mut corners: Vec<(f32, f32)> = Vec::new();
+    for j in 0..=3i32 {
+        for i in 0..=3i32 {
+            let mut water = 0;
+            for (qx, qy) in [(i - 1, j - 1), (i, j - 1), (i - 1, j), (i, j)] {
+                if tile_water(qx, qy) {
+                    water += 1;
+                }
             }
-            tmp[y as usize * FRAME + x as usize] = sum / norm;
+            if water == 1 && run_h(i, j) >= 2 && run_v(i, j) >= 2 {
+                corners.push(((i * 32) as f32, (j * 32) as f32));
+            }
         }
     }
-    for y in 0..FRAME as i32 {
-        for x in 0..FRAME as i32 {
-            let mut sum = 0.0;
-            for k in -radius..=radius {
-                let cy = (y + k).clamp(0, FRAME as i32 - 1) as usize;
-                sum += tmp[cy * FRAME + x as usize];
+    if corners.is_empty() {
+        return raw.to_vec();
+    }
+    let deepest = raw.iter().cloned().fold(0.0f32, f32::max);
+    let a = (deepest - WATERLINE).clamp(0.0, OPEN_A_MAX);
+    let eroded: Vec<bool> = raw.iter().map(|&f| f >= WATERLINE + a).collect();
+    let to_eroded = distance_to(&eroded, true);
+    let opened: Vec<bool> = to_eroded.iter().map(|&d| d <= a).collect();
+    let opened = field_of_region(&opened);
+    let mut out = raw.to_vec();
+    for fy in 0..FRAME {
+        for fx in 0..FRAME {
+            let (px, py) = (fx as f32 + 0.5, fy as f32 + 0.5);
+            let d = corners
+                .iter()
+                .map(|&(cx, cy)| (px - cx).abs().max((py - cy).abs()))
+                .fold(f32::MAX, f32::min);
+            let w = ((a + 10.0 - d) / 12.0).clamp(0.0, 1.0);
+            if w > 0.0 {
+                let i = fy * FRAME + fx;
+                out[i] = raw[i] * (1.0 - w) + opened[i] * w;
             }
-            out[y as usize * FRAME + x as usize] = sum / norm;
         }
     }
     out
@@ -192,7 +324,8 @@ fn box_blur(src: &[f32], radius: i32) -> Vec<f32> {
 
 /// Build the full 96x96 shore distance field for a neighborhood:
 /// signed distance to the water region (positive inside water),
-/// corner-rounded by blur, plus the organic wobble.
+/// corner-rounded by the waterline opening, plus the organic
+/// wobble.
 fn build_field(mask: u8, center_water: bool) -> Vec<f32> {
     let mut occ = vec![false; FRAME * FRAME];
     for fy in 0..FRAME {
@@ -204,7 +337,7 @@ fn build_field(mask: u8, center_water: bool) -> Vec<f32> {
     }
     let to_land = distance_to(&occ, false);
     let to_water = distance_to(&occ, true);
-    let mut field: Vec<f32> = occ
+    let raw: Vec<f32> = occ
         .iter()
         .enumerate()
         .map(|(i, &o)| {
@@ -215,7 +348,13 @@ fn build_field(mask: u8, center_water: bool) -> Vec<f32> {
             }
         })
         .collect();
-    field = box_blur(&field, BLUR_RADIUS);
+    let mut tiles = [false; 9];
+    for by in 0..3i32 {
+        for bx in 0..3i32 {
+            tiles[(by * 3 + bx) as usize] = tile_is_water(mask, center_water, bx - 1, by - 1);
+        }
+    }
+    let mut field = opened_field(&raw, &tiles);
     let wobble = Fbm::new(seed_from_str("shore-wobble") ^ mask as u64, 96).octaves(2);
     for fy in 0..FRAME {
         for fx in 0..FRAME {
