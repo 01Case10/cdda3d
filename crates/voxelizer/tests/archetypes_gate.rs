@@ -388,18 +388,29 @@ fn hollow_cylinder_has_a_real_cavity() {
     );
     let (fh, d) = (m.size[1], m.size[2]);
     assert_eq!(d, 16, "diameter = silhouette width");
+    // The drawn ellipse band is NOT wall: the fit must measure
+    // it (10 of the sprite's 30 band rows on the barrel family)
+    // and the model height is the wall height only.
+    let seg = seamless_segment(&sprite).expect("seamless seg");
+    let fit = voxelizer::archetypes::cylinder_fit(&sprite, &seg).expect("fit");
+    assert_eq!(fit.opening_rows, 10, "measured opening band");
+    assert_eq!(fh, 28 - 10, "model height = wall height (band is 28 rows)");
     // Extent 8..=23 (measured), axis at x=15/16, z=7/8.
     // Cavity: the axis just under the rim is EMPTY (the first
     // treatment filled it with a stepped cap of rim paint).
-    assert!(m.get(15, fh - 2, 7).is_none(), "cavity under the rim");
-    assert!(m.get(16, fh - 2, 8).is_none(), "cavity under the rim");
-    // Contents surface: interior_depth = round(16 * 0.55) = 9,
-    // so the surface is at y = fh - 9 and reads dark (the empty
+    assert!(m.get(15, fh - 1, 7).is_none(), "cavity under the rim");
+    assert!(m.get(16, fh - 1, 8).is_none(), "cavity under the rim");
+    // Contents surface: the axis's topmost solid voxel, drop =
+    // opening/4 = 2 below the rim, reading dark (the empty
     // barrel's drawn interior).
-    let s = m.get(15, fh - 9, 7).expect("contents surface");
+    let surf_y = (0..fh)
+        .rev()
+        .find(|&y| m.get(15, y, 7).is_some())
+        .expect("contents surface exists");
+    assert_eq!(surf_y, fh - 2, "surface drop = opening/4, min 2");
+    let s = m.get(15, surf_y, 7).expect("contents surface");
     assert!(lab(s).l < 0.35, "dark interior surface: {:?}", s.0);
-    // Shell front is the sprite verbatim at body rows.
-    let seg = seamless_segment(&sprite).expect("seamless seg");
+    // Shell front is the sprite verbatim at wall rows.
     let bot = seg.front_rows.end - 1;
     for y in [4u32, 10, 15] {
         let px = *sprite.get_pixel(15, bot - y);
@@ -412,7 +423,11 @@ fn hollow_cylinder_has_a_real_cavity() {
     // The burning variant's surface is fire paint, not dark.
     let fire = load_raw("f_30gal_firebarrel_fd_fire");
     let fm = model_for("f_30gal_firebarrel_fd_fire", &fire).expect("fire barrel models");
-    let fs = fm.get(15, fm.size[1] - 9, 7).expect("fire surface");
+    let fsurf_y = (0..fm.size[1])
+        .rev()
+        .find(|&y| fm.get(15, y, 7).is_some())
+        .expect("fire surface exists");
+    let fs = fm.get(15, fsurf_y, 7).expect("fire surface");
     assert!(
         fs[0] > 100 && fs[0] > fs[1] * 2,
         "contents surface is fire paint: {:?}",

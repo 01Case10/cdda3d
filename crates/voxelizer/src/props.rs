@@ -2500,12 +2500,10 @@ pub const CYLINDER_PINS: &[&str] = &[
     "f_water_heater",
     "f_logstool",
     "f_punching_bag",
-    "f_boulder_large",
-    "f_boulder_medium",
-    "f_boulder_small",
-    "f_glow_boulder",
     "f_sand_castle",
-    "f_fungal_clump",
+    // (Boulders and the fungal clump moved to LATHE_PINS: their
+    // profiles vary per row, which a constant-diameter cylinder
+    // cannot follow.)
 ];
 
 /// A round-plan body from its elevation sprite: every sprite
@@ -2558,6 +2556,226 @@ fn cylinder_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
     Some(m)
 }
 
+/// Irregular round shapes: bodies of revolution whose radius
+/// VARIES with height — a twisted alien gasper, a resin pod, egg
+/// sacks, beehive kilns, boulders, a fungal mass. The seamless
+/// solid gave them a flat fitted back and flat striped sides
+/// (Joey's review, 2026-11-17, on f_alien_gasper: "the front
+/// should match the back; the back should not be flat and the
+/// sides should not be flat either"). Each pin was verified
+/// against its sprite: the depicted object is round in plan at
+/// every height, with a per-height radius.
+pub const LATHE_PINS: &[&str] = &[
+    "f_alien_gasper",
+    "f_alien_pod_resin",
+    "f_egg_sacke",
+    "f_egg_sackws",
+    "f_clay_kiln",
+    "f_kiln_empty",
+    "f_kiln_full",
+    "f_boulder_large",
+    "f_boulder_medium",
+    "f_boulder_small",
+    "f_glow_boulder",
+    "f_fungal_clump",
+];
+
+/// A body of revolution fitted to the sprite's profile: at
+/// every height, the row's structure extent is that height's
+/// diameter, and the cross-section is the disc of that diameter
+/// centered on the row's own center (so a leaning or twisting
+/// profile is followed, not straightened). Every voxel carries
+/// its column's sprite paint at that height — the front-most
+/// AND back-most voxel of each column are both the sprite pixel,
+/// so the back matches the front, and the side silhouette is
+/// the depth profile (the same profile as the front), never a
+/// flat panel. Model depth = the widest row's width (<= 32).
+fn lathe_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
+    let w = sprite.width();
+    let front = &seg.front_rows;
+    let fh = front.end - front.start;
+    let bot = front.end - 1;
+    let mut rows: Vec<Option<(u32, u32)>> = Vec::with_capacity(fh as usize);
+    let mut d_max = 0u32;
+    for y in 0..fh {
+        let r = bot - y;
+        let mut ext: Option<(u32, u32)> = None;
+        for x in 0..w {
+            if structure(*sprite.get_pixel(x, r)) {
+                ext = Some(match ext {
+                    None => (x, x),
+                    Some((a, b)) => (a.min(x), b.max(x)),
+                });
+            }
+        }
+        if let Some((a, b)) = ext {
+            d_max = d_max.max(b - a + 1);
+        }
+        rows.push(ext);
+    }
+    if d_max < 4 {
+        return None;
+    }
+    let d = d_max.min(32);
+    let cz = (d - 1) as f32 / 2.0;
+    // Hollow top (the gasper's mouth): if the sprite's top rows
+    // are wide (a flare, not a shrinking dome) and their inner
+    // pixels are majority dark-classified, those rows are an
+    // OPENING — they become rings over a dark interior surface
+    // instead of a solid disc whose top face was the far rim's
+    // pale paint (a flat slab artifact in review).
+    let split = {
+        let mut ls: Vec<f32> = Vec::new();
+        for y in 0..fh {
+            let r = bot - y;
+            if let Some((a, b)) = rows[y as usize] {
+                for x in a + 2..b.saturating_sub(1) {
+                    let p = *sprite.get_pixel(x, r);
+                    if structure(p) {
+                        ls.push(lab_of(p).l);
+                    }
+                }
+            }
+        }
+        two_means_split(&ls)
+    };
+    let inner_dark_majority = |y: u32| -> bool {
+        let r = bot - y;
+        let Some((a, b)) = rows[y as usize] else {
+            return false;
+        };
+        let inner: Vec<Rgba<u8>> = (a + 2..b.saturating_sub(1))
+            .filter(|&x| structure(*sprite.get_pixel(x, r)))
+            .map(|x| *sprite.get_pixel(x, r))
+            .collect();
+        !inner.is_empty()
+            && inner.iter().filter(|p| lab_of(**p).l < split).count() * 2 > inner.len()
+    };
+    let mut mouth_rows = 0u32;
+    for y in (0..fh).rev() {
+        let wide = rows[y as usize].map(|(a, b)| (b - a + 1) as f32 >= 0.6 * d_max as f32);
+        if wide == Some(true) && inner_dark_majority(y) {
+            mouth_rows += 1;
+        } else {
+            break;
+        }
+    }
+    let mouth = if mouth_rows >= 2 {
+        let dark: Vec<Rgba<u8>> = ((fh - mouth_rows)..fh)
+            .flat_map(|y| {
+                let r = bot - y;
+                let (a, b) = rows[y as usize].unwrap();
+                (a + 2..b.saturating_sub(1))
+                    .filter(move |&x| structure(*sprite.get_pixel(x, r)))
+                    .map(move |x| *sprite.get_pixel(x, r))
+            })
+            .filter(|p| lab_of(*p).l < split)
+            .collect();
+        modal_color(dark.into_iter()).map(|c| (mouth_rows, c))
+    } else {
+        None
+    };
+    let mut m = PropModel::new([w, fh, d]);
+    for y in 0..fh {
+        let Some((rx0, rx1)) = rows[y as usize] else {
+            continue;
+        };
+        let r = bot - y;
+        let wr = rx1 - rx0 + 1;
+        let cxr = (rx0 + rx1) as f32 / 2.0;
+        let (rxr, rzr) = (wr as f32 / 2.0, wr.min(d) as f32 / 2.0);
+        let inner_rn = 1.0 - 4.0 / wr as f32;
+        let in_mouth = mouth.map(|(mr, _)| y >= fh - mr).unwrap_or(false);
+        let mouth_floor = mouth.map(|(mr, _)| y + 1 == fh - mr).unwrap_or(false);
+        for x in rx0..=rx1 {
+            let px = row_paint(sprite, r, x, rx0, rx1);
+            let dx = (x as f32 - cxr) / rxr;
+            for z in 0..d {
+                let dz = (z as f32 - cz) / rzr;
+                let rn2 = dx * dx + dz * dz;
+                if rn2 > 1.0 {
+                    continue;
+                }
+                if in_mouth && rn2.sqrt() <= inner_rn {
+                    continue; // the opening: genuinely hollow
+                }
+                let c = if mouth_floor && rn2.sqrt() <= inner_rn {
+                    mouth.unwrap().1
+                } else {
+                    px
+                };
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
+/// Two-means lightness split of a sample set (the dark-cluster
+/// boundary), midpoint of the two cluster means after 16
+/// assignment iterations. 1.0 (nothing is dark) for an empty or
+/// single-valued sample.
+fn two_means_split(ls: &[f32]) -> f32 {
+    if ls.is_empty() {
+        return 1.0;
+    }
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for l in ls {
+        lo = lo.min(*l);
+        hi = hi.max(*l);
+    }
+    if (hi - lo).abs() < f32::EPSILON {
+        return 1.0;
+    }
+    for _ in 0..16 {
+        let (mut sl, mut sh, mut nl, mut nh) = (0f32, 0f32, 0u32, 0u32);
+        for l in ls {
+            if (l - lo).abs() <= (l - hi).abs() {
+                sl += l;
+                nl += 1;
+            } else {
+                sh += l;
+                nh += 1;
+            }
+        }
+        if nl > 0 {
+            lo = sl / nl as f32;
+        }
+        if nh > 0 {
+            hi = sh / nh as f32;
+        }
+    }
+    (lo + hi) / 2.0
+}
+
+/// The paint for column `x` of sprite row `r`: the pixel itself
+/// when it is structure, else the nearest structure pixel of
+/// the same row (an interior gap in the silhouette keeps the
+/// row's own paint family instead of dropping the voxel).
+fn row_paint(sprite: &RgbaImage, r: u32, x: u32, rx0: u32, rx1: u32) -> Rgba<u8> {
+    let px = *sprite.get_pixel(x, r);
+    if structure(px) {
+        return px;
+    }
+    for dist in 1..=(rx1 - rx0) {
+        for cand in [x.checked_sub(dist), x.checked_add(dist)]
+            .into_iter()
+            .flatten()
+        {
+            if (rx0..=rx1).contains(&cand) {
+                let c = *sprite.get_pixel(cand, r);
+                if structure(c) {
+                    return c;
+                }
+            }
+        }
+    }
+    px
+}
+
 /// The coverage-drive fallback (see the section header):
 /// reached only when [`segment_for`] declines and the id is not
 /// view-pinned. Pin lists first (plan, then panel), then the
@@ -2578,6 +2796,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     let seg = seamless_segment(sprite)?;
     if CYLINDER_PINS.contains(&id) {
         if let Some(m) = cylinder_model(sprite, &seg) {
+            return Some(m);
+        }
+    }
+    if LATHE_PINS.contains(&id) {
+        if let Some(m) = lathe_model(sprite, &seg) {
             return Some(m);
         }
     }

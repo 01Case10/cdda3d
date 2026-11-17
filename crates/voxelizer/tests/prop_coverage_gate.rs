@@ -414,6 +414,67 @@ fn cylinder_footprint_is_round() {
 }
 
 #[test]
+fn lathe_front_matches_back_and_sides_follow_profile() {
+    // Joey's review (2026-11-17) on f_alien_gasper: an irregular
+    // round shape must not get a flat fitted back or flat
+    // striped sides. The lathe's front-most AND back-most voxel
+    // of every column are both the sprite pixel, and the depth
+    // profile follows the sprite's width profile.
+    let sprite = load_sprite("f_alien_gasper");
+    let seg = seamless_segment(&sprite).expect("seamless fires");
+    let m = model_for("f_alien_gasper", &sprite).expect("models");
+    assert_same_model(&m, &model_for("f_alien_gasper", &sprite).expect("rebuild"));
+    let (fh, d) = (m.size[1], m.size[2]);
+    let bot = seg.front_rows.end - 1;
+    let mut widest = (0u32, 0u32, 0u32);
+    let mut narrowest = (u32::MAX, 0u32, 0u32);
+    for y in 0..fh {
+        let r = bot - y;
+        let xs: Vec<u32> = (0..32)
+            .filter(|&x| structure(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            continue;
+        }
+        let (a, b) = (xs[0], xs[xs.len() - 1]);
+        // The widest BODY row (the flared mouth rows at the top
+        // are rings, not discs — depth there is the wall, by
+        // design of the hollow top).
+        if y < 3 * fh / 4 && b - a + 1 > widest.0 {
+            widest = (b - a + 1, y, (a + b) / 2);
+        }
+        if y > fh / 4 && y < 3 * fh / 4 && b - a + 1 < narrowest.0 {
+            narrowest = (b - a + 1, y, (a + b) / 2);
+        }
+        for &x in &xs {
+            let px = *sprite.get_pixel(x, r);
+            let front = (0..d)
+                .rev()
+                .find(|&z| m.get(x, y, z).is_some())
+                .map(|z| m.get(x, y, z).expect("found"));
+            let back = (0..d)
+                .find(|&z| m.get(x, y, z).is_some())
+                .map(|z| m.get(x, y, z).expect("found"));
+            assert_eq!(front, Some(px), "front is sprite paint {x},{y}");
+            assert_eq!(back, Some(px), "back matches front {x},{y}");
+        }
+    }
+    let depth_at = |y: u32, x: u32| (0..d).filter(|&z| m.get(x, y, z).is_some()).count() as u32;
+    assert!(
+        depth_at(widest.1, widest.2) >= widest.0 - 2,
+        "widest row is as deep as it is wide: {} vs {}",
+        depth_at(widest.1, widest.2),
+        widest.0
+    );
+    assert!(
+        narrowest.0 < widest.0 && depth_at(narrowest.1, narrowest.2) < depth_at(widest.1, widest.2),
+        "side profile follows the sprite (not flat): narrow {} vs wide {}",
+        depth_at(narrowest.1, narrowest.2),
+        depth_at(widest.1, widest.2)
+    );
+}
+
+#[test]
 fn plan_slab_is_low_and_top_is_the_sprite() {
     let sprite = load_sprite("f_groundsheet");
     let m = model_for("f_groundsheet", &sprite).expect("groundsheet models");

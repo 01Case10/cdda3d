@@ -1267,45 +1267,220 @@ const CYLINDER_INTERIOR_RATIO: f32 = 0.55;
 pub struct CylinderFit {
     /// Model depth = disc diameter (extent width, capped 32).
     pub d: u32,
-    /// Model height (silhouette band height).
+    /// Model height = the WALL height: the sprite's band minus
+    /// its top ellipse band. The drawn ellipse band is a
+    /// HORIZONTAL surface in perspective (rim + interior, or a
+    /// lid) — extruding it as vertical wall was the artifact of
+    /// Joey's 2026-11-17 second cylinder review (the fire
+    /// barrel's fire plug stood proud of the rim; compare the
+    /// sprite, where the fire is a flat disc inside the rim).
     pub fh: u32,
-    /// Rows the drawn opening/lid band occupies; the contents
-    /// surface sits this far below the rim (HollowCylinder).
-    pub interior_depth: u32,
-    /// Modal paint of the top band's inner columns: the contents
-    /// surface color (hollow) / lid color (closed).
+    /// Sprite rows of the top ellipse band (opening or lid),
+    /// measured by [`measure_opening_rows`].
+    pub opening_rows: u32,
+    /// How far below the rim the contents surface sits
+    /// (HollowCylinder): a quarter of the opening band, at
+    /// least 2 — the drawn surface sits essentially at the rim
+    /// (the fire ellipse IS the barrel's top face in the
+    /// sprite); a deeper drop hid it to a slit in review.
+    pub drop: u32,
+    /// Dominant paint family of the opening band's inner
+    /// columns: the lid color (ClosedCylinder).
     pub surface_color: Rgba<u8>,
+    /// Dominant family among the band's INTERIOR-classified
+    /// inner pixels (dark-cluster or fire-hued, the scan's
+    /// classification): the contents surface color
+    /// (HollowCylinder). Falls back to `surface_color` when the
+    /// band has no interior-classified pixels.
+    pub interior_color: Rgba<u8>,
+}
+
+/// Measure the sprite's top ellipse band: the maximal prefix of
+/// band rows that are drawn as the top surface rather than the
+/// wall. A row belongs to the band when its structure extent is
+/// still widening toward the full width (the ellipse curve), or
+/// when the majority of its inner pixels are interior paint —
+/// dark-cluster (the sprite's own two-means L split over all
+/// inner pixels) or fire-hued. Measured values on the served
+/// sprites: barrels 10 of 30 rows, keg 8 of 24, vats 10 of 44,
+/// trash can 5 of 18. If the scan finds less than 2 rows it
+/// falls back to the drawn-ellipse ratio
+/// ([`CYLINDER_INTERIOR_RATIO`] of the diameter).
+/// The result of the opening-band scan: the band's row count
+/// and the lightness split the scan classified interiors with
+/// (reused for the contents color).
+struct OpeningScan {
+    rows: u32,
+    split: f32,
+}
+
+fn measure_opening_rows(sprite: &RgbaImage, seg: &Segmentation, width: u32) -> OpeningScan {
+    let (w, _) = (sprite.width(), sprite.height());
+    let band = seg.front_rows.clone();
+    // Per-row stats over DRAWN pixels (fully opaque, non-black):
+    // the ellipse is an opaque-paint phenomenon — the project's
+    // structure() also admits semi-transparent antialiasing
+    // fringe (alpha >= 128), which widens the top rows' extents
+    // to full width and defeats the widening test.
+    let drawn = |x: u32, r: u32| {
+        let p = *sprite.get_pixel(x, r);
+        p[3] >= 254 && !(p[0] == 0 && p[1] == 0 && p[2] == 0)
+    };
+    let mut rows: Vec<(u32, Vec<Rgba<u8>>)> = Vec::new();
+    let mut all_l: Vec<f32> = Vec::new();
+    for r in band.clone() {
+        let xs: Vec<u32> = (0..w).filter(|&x| drawn(x, r)).collect();
+        if xs.is_empty() {
+            rows.push((0, Vec::new()));
+            continue;
+        }
+        let (a, b) = (xs[0], xs[xs.len() - 1]);
+        let inner: Vec<Rgba<u8>> = (a + 2..b.saturating_sub(1))
+            .filter(|&x| drawn(x, r))
+            .map(|x| *sprite.get_pixel(x, r))
+            .collect();
+        all_l.extend(inner.iter().map(|p| lab_of(*p).l));
+        rows.push((b - a + 1, inner));
+    }
+    // Two-means split of the inner pixels' lightness.
+    let split = if all_l.is_empty() {
+        1.0
+    } else {
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for l in &all_l {
+            lo = lo.min(*l);
+            hi = hi.max(*l);
+        }
+        for _ in 0..16 {
+            let (mut sl, mut sh, mut nl, mut nh) = (0f32, 0f32, 0u32, 0u32);
+            for l in &all_l {
+                if (l - lo).abs() <= (l - hi).abs() {
+                    sl += l;
+                    nl += 1;
+                } else {
+                    sh += l;
+                    nh += 1;
+                }
+            }
+            if nl > 0 {
+                lo = sl / nl as f32;
+            }
+            if nh > 0 {
+                hi = sh / nh as f32;
+            }
+        }
+        (lo + hi) / 2.0
+    };
+    let fire = |p: Rgba<u8>| (p[0] as u32) > 100 && (p[0] as u32) > 2 * (p[1] as u32);
+    let mut opening = 0u32;
+    for (ext_w, inner) in &rows {
+        let interior_majority = !inner.is_empty()
+            && inner
+                .iter()
+                .filter(|p| lab_of(**p).l < split || fire(**p))
+                .count()
+                * 2
+                > inner.len();
+        if *ext_w < width || interior_majority {
+            opening += 1;
+        } else {
+            break;
+        }
+    }
+    let full = band.end - band.start;
+    if opening < 2 {
+        opening = ((width as f32 * CYLINDER_INTERIOR_RATIO).round() as u32).max(2);
+    }
+    OpeningScan {
+        rows: opening.min(full / 2),
+        split,
+    }
 }
 
 /// Fit a cylinder archetype to a sprite + (seamless)
 /// segmentation: footprint from the front region's structure
-/// extent, surface color from the top band's inner columns.
+/// extent, opening band from [`measure_opening_rows`], surface
+/// color from the band's inner columns.
 pub fn cylinder_fit(sprite: &RgbaImage, seg: &Segmentation) -> Option<CylinderFit> {
     let (w, _) = (sprite.width(), sprite.height());
-    let fh = seg.front_rows.end - seg.front_rows.start;
+    let full = seg.front_rows.end - seg.front_rows.start;
     let (x0, x1) = front_structure_extent(sprite, seg);
     let width = x1 - x0 + 1;
-    if width < 6 || fh < 8 {
+    if width < 6 || full < 8 {
         return None;
     }
-    let interior_depth = ((width as f32 * CYLINDER_INTERIOR_RATIO).round() as u32)
-        .clamp(2, fh.saturating_sub(4).max(2));
+    let scan = measure_opening_rows(sprite, seg, width);
+    let opening_rows = scan.rows;
     let cx = (x0 + x1) as f32 / 2.0;
     let half_inner = width as f32 / 4.0;
-    let surface_color = modal_color(
-        (seg.front_rows.start..seg.front_rows.start + interior_depth)
-            .flat_map(|r| (0..w).map(move |x| (x, r)))
-            .filter(|&(x, r)| {
-                structure(*sprite.get_pixel(x, r)) && (x as f32 - cx).abs() <= half_inner
-            })
-            .map(|(x, r)| *sprite.get_pixel(x, r)),
-    )?;
+    // Paint families of the band's inner columns, as the mean
+    // of the largest 16-step bucket. An exact modal fails here:
+    // the fire interior is a gradient of distinct oranges, each
+    // rarer than the repeating wall greys, so the modal picked
+    // a wall grey for the burning barrel's surface.
+    let family_mean = |pxs: &[Rgba<u8>]| -> Option<Rgba<u8>> {
+        let mut buckets: Vec<((u8, u8, u8), Vec<Rgba<u8>>)> = Vec::new();
+        for &p in pxs {
+            let key = (p[0] >> 4, p[1] >> 4, p[2] >> 4);
+            match buckets.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, v)) => v.push(p),
+                None => buckets.push((key, vec![p])),
+            }
+        }
+        let (_, dominant) = buckets.into_iter().max_by_key(|(_, v)| v.len())?;
+        let n = dominant.len() as u32;
+        let mean = |i: usize| (dominant.iter().map(|p| p[i] as u32).sum::<u32>() / n) as u8;
+        Some(Rgba([mean(0), mean(1), mean(2), 255]))
+    };
+    let band_px: Vec<Rgba<u8>> = (seg.front_rows.start..seg.front_rows.start + opening_rows)
+        .flat_map(|r| (0..w).map(move |x| (x, r)))
+        .filter(|&(x, r)| {
+            structure(*sprite.get_pixel(x, r)) && (x as f32 - cx).abs() <= half_inner
+        })
+        .map(|(x, r)| *sprite.get_pixel(x, r))
+        .collect();
+    let surface_color = family_mean(&band_px)?;
+    let fire = |p: Rgba<u8>| (p[0] as u32) > 100 && (p[0] as u32) > 2 * (p[1] as u32);
+    // Contents color: if the band contains fire paint, the
+    // contents ARE the fire (the fd_fire variants) — the fire
+    // family wins over the dark rim/wall pixels that also fall
+    // under the lightness split. Otherwise the contents are
+    // the dark interior family.
+    let fire_px: Vec<Rgba<u8>> = band_px.iter().copied().filter(|p| fire(*p)).collect();
+    let interior_color = if !fire_px.is_empty() {
+        family_mean(&fire_px).unwrap_or(surface_color)
+    } else {
+        let dark_px: Vec<Rgba<u8>> = band_px
+            .iter()
+            .copied()
+            .filter(|p| lab_of(*p).l < scan.split)
+            .collect();
+        family_mean(&dark_px).unwrap_or(surface_color)
+    };
     Some(CylinderFit {
         d: width.min(32),
-        fh,
-        interior_depth,
+        fh: full - opening_rows,
+        opening_rows,
+        drop: (opening_rows / 4).max(2),
         surface_color,
+        interior_color,
     })
+}
+
+/// The wall-only view of a (seamless) segmentation: the front
+/// region's bottom `wall_h` rows — the rows below the opening
+/// band, i.e. the actual elevation of the container's wall.
+fn wall_seg(seg: &Segmentation, wall_h: u32) -> Segmentation {
+    Segmentation {
+        silhouette_rows: seg.silhouette_rows.clone(),
+        top_rows: seg.top_rows.clone(),
+        front_rows: (seg.front_rows.end - wall_h)..seg.front_rows.end,
+        side: seg.side.as_ref().map(|s| crate::props::SideSliver {
+            cols: s.cols.clone(),
+            on_right: s.on_right,
+        }),
+        confidence: seg.confidence,
+    }
 }
 
 /// Per-column sprite paint with vertical clamping: at model
@@ -1377,10 +1552,11 @@ impl Disc {
 fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let fit = cylinder_fit(sprite, seg).expect("cylinder fit");
     let disc = Disc::new(sprite, seg, fit.d);
-    let surface_y = fit.fh - fit.interior_depth;
+    let wseg = wall_seg(seg, fit.fh);
+    let surface_y = fit.fh.saturating_sub(fit.drop).max(fit.fh / 2);
     let mut m = PropModel::new([sprite.width(), fit.fh, fit.d]);
     for x in disc.x0..=disc.x1 {
-        let paint = column_paint(sprite, seg, x);
+        let paint = column_paint(sprite, &wseg, x);
         for z in 0..fit.d {
             let rn = disc.rn(x, z);
             if rn > 1.0 {
@@ -1396,7 +1572,7 @@ fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             } else {
                 // Contents: solid up to the surface, cavity above.
                 for y in 0..=surface_y {
-                    m.set(x, y, z, Some(fit.surface_color));
+                    m.set(x, y, z, Some(fit.interior_color));
                 }
             }
         }
@@ -1407,9 +1583,10 @@ fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
 fn build_closed_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let fit = cylinder_fit(sprite, seg).expect("cylinder fit");
     let disc = Disc::new(sprite, seg, fit.d);
+    let wseg = wall_seg(seg, fit.fh);
     let mut m = PropModel::new([sprite.width(), fit.fh, fit.d]);
     for x in disc.x0..=disc.x1 {
-        let paint = column_paint(sprite, seg, x);
+        let paint = column_paint(sprite, &wseg, x);
         for z in 0..fit.d {
             let rn = disc.rn(x, z);
             if rn > 1.0 {
