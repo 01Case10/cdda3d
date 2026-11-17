@@ -56,3 +56,85 @@ no protocol, no game truth, and no v1 gate. Until it lands,
 captures that show a prop are understood to carry this
 limit — in particular the slice-2 lab capture
 (`captures/phase9_lab.png`) and any RT lab capture from 9.5.
+
+## 2. The two-tree RT design (9.5)
+
+The RT renderer keeps the coarse tree exactly as before and
+adds a second, independent tree built only from stamped fine
+cells (`treebuild::world::VoxelWorld::from_fine_layer`, fine
+coordinates: 1 unit = 1 fine cell = 1/32 block). Both trees
+are traced per ray and composited by hit distance
+(`cpu::cast_ray_two` on the CPU, `trace_two` in WGSL — the
+ray is scaled into fine space, the fine hit's distance is
+divided back by 32, the nearer hit wins, the fine hit wins
+an exact tie). Nothing stamped → no fine tree
+(`fine_present = 0`) → the render is the coarse-only render,
+unchanged; this is the trace-level form of 9.10's
+byte-identical contract, and it is gated at CPU, GPU-query
+and full-capture level.
+
+Per-face LOD for fine leaves adjusts the ray-cone Δ by
+−log2(32) = **−5**, applied *before* the clamp
+(`lod::ray_cone_lod_fine` / WGSL `cone_lod_adj` with
+`fu.fine_lod_adjust`): a fine face maps its texture over
+1/32 of a block per axis, so its texel density per unit
+distance is 32× the coarse face's. The prop colours are
+synthetic solids — every mip of a solid layer is the same
+colour — so for props themselves the adjustment is
+unobservable; it exists so a fine cell carrying a *coarse*
+material's texture (the adapter's general case) samples at
+the right level.
+
+Shading notes: a fine hit shades from the fine tree's own
+node/side entries; shadow rays use the two-tree trace (props
+occlude the sun); the occupancy-AO probe stays coarse-only
+in v1 (it samples block-scale neighbours; a prop's own cells
+do not AO each other — same family as the 9.6 limit, and
+bounded the same way). Lit: a fine cell's `lit` is rewritten
+per containing tile after the adapter build, the 9.6 rule.
+
+## 3. Perf + memory numbers (9.9)
+
+Measured by `crates/engine/tests/phase9_numbers_gate.rs`
+(main-tree re-run, 2026-11-17; this VM: 1.5 shared CPUs,
+lavapipe — build times varied ~±40% between runs under load,
+so ranges are given where two runs exist). Sample scene,
+cutaway 0, 640×360 frames.
+
+World + trees:
+
+| scene | cells | tree nodes / leaves | build (median of 3) |
+|---|---|---|---|
+| coarse world (pre-Phase-9) | 686 | 727 / 686 | ~2.3 ms |
+| fixture props, fine tree (5 placements, 5 tiles) | 19,576 | 19,998 / 19,576 | ~130–200 ms |
+| stress, fine tree (200 placements, 100 tiles) | 420,528 | 429,363 / 420,528 | ~3.1–5.0 s |
+
+Fine-layer memory (`FineLayer::memory_bytes`): fixture
+668,856 B (~131 KB per prop tile); stress 15,014,976 B
+(~147 KB per prop tile). The fine tree is ~1 leaf per solid
+cell (the 64-tree does not merge same-material neighbours
+into larger leaves at build time), so node count tracks
+cell count almost 1:1 — a prop-dense scene is ~21k fine
+cells per placement. On the sample scene the fixture tiles
+carry no coarse furniture blocks, so stamping suppresses
+nothing there (suppression is gate-proven in
+`phase9_stamp_gate` where a furniture block exists).
+
+Frame times (lavapipe, median of 3 after warmup):
+
+| renderer | coarse-only | fixture props | stress (200 props) |
+|---|---|---|---|
+| raster | 105 ms | 401 ms | 3,406 ms |
+| RT | 328 ms | 504 ms | 8,747 ms |
+
+**Reading these numbers.** Lavapipe is a CPU renderer on a
+throttled shared VM; none of these are predictions for real
+hardware. They establish the *shape*: the fine tree build
+dominates world-build cost (~60–90× the coarse build for
+the fixture scene), frame cost grows with stamped-cell
+count in both renderers, and RT pays more per fine cell
+than raster. The RX 9070 XT frame-time verdict (gate 2c.9)
+stays the standing deferred measurement — raster remains
+the default renderer until it exists, and `--fine-props`
+stays default-OFF pending Joey's sign-off on the lab
+capture (9.10).
