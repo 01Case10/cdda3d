@@ -3323,13 +3323,9 @@ pub const REST_SOLID_DEPTH_PINS: &[(&str, u32)] = &[("f_anvil", 7)];
 /// Depths: 2 for chains/ropes/cables, 3 default, 4 for
 /// chunky machines.
 pub const REST_FRAME_PINS: &[(&str, u32)] = &[
-    ("f_IV_pole", 3),
-    ("f_dancing_pole", 3),
     ("f_flagpole", 3),
     ("f_wooden_flagpole", 3),
     ("f_utility_pole", 4),
-    ("f_street_light", 3),
-    ("f_floor_lamp", 3),
     ("f_exodii_lamp", 3),
     ("f_nl_exodii_lamp", 3),
     ("f_machinery_light", 4),
@@ -3349,6 +3345,22 @@ pub const REST_FRAME_PINS: &[(&str, u32)] = &[
     ("f_electrical_conduit", 2),
     ("f_LIXA_electrical_conduit", 4),
     ("f_lane", 3),
+];
+
+/// Stand pins (class D1 fix round): uprights whose
+/// sprite carries ROUND parts -- a caster-star base, a
+/// lamp shade, a dome head. A flat extrusion keeps the
+/// front but the sides collapse to a line (Joey on the
+/// IV stand, 2026-11-17: front and back look good, it
+/// should not be flat). The value is the head treatment:
+/// Cross = the top bar also runs in z (the IV stand's
+/// hooks), Discs = the wide top rows are lathe discs
+/// (shade / lamp head), None = pole top.
+pub const STAND_PINS: &[(&str, u8)] = &[
+    ("f_IV_pole", 1),
+    ("f_street_light", 2),
+    ("f_floor_lamp", 2),
+    ("f_dancing_pole", 0),
 ];
 
 /// Uniform-material pins: the whole model repaints in
@@ -3834,6 +3846,120 @@ fn dish_model(sprite: &RgbaImage) -> Option<PropModel> {
     Some(m)
 }
 
+/// A stand (IV pole, lamps, dancing pole): the pole
+/// extrudes as a post, but the flared base rows (bottom
+/// rows at least 5 wide, up to 6) become per-row discs
+/// -- a caster star or round base reads from every
+/// angle -- and the head follows the pin: a cross for
+/// the IV stand's hook bar, discs for shades and dome
+/// heads (top rows at least 6 wide, up to 7).
+fn stand_model(sprite: &RgbaImage, head_mode: u8) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let width = |y: u32| -> u32 {
+        let r = band.end - 1 - y;
+        let xs: Vec<u32> = (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            0
+        } else {
+            xs[xs.len() - 1] - xs[0] + 1
+        }
+    };
+    let mut base_rows = 0u32;
+    while base_rows < 6 && base_rows < fh && width(base_rows) >= 5 {
+        base_rows += 1;
+    }
+    let mut head_rows = 0u32;
+    if head_mode > 0 {
+        while head_rows < 7 && head_rows + base_rows < fh {
+            let y = fh - 1 - head_rows;
+            if width(y) >= 6 {
+                head_rows += 1;
+            } else {
+                break;
+            }
+        }
+    }
+    let zc = 16i32;
+    let mut m = PropModel::new([w, fh, 32]);
+    // Disc rows (base, and head when mode 2): per-row
+    // discs with the row's paint wrapped by quadrant.
+    let disc = |m: &mut PropModel, y: u32| {
+        let r = band.end - 1 - y;
+        let xs: Vec<u32> = (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            return;
+        }
+        let (a, b) = (xs[0], xs[xs.len() - 1]);
+        let cx = (a + b) as f32 / 2.0;
+        let rad = (b - a) as f32 / 2.0 + 0.5;
+        for x in 0..w {
+            for z in 0..32u32 {
+                let (dx, dz) = (x as f32 - cx, z as f32 - zc as f32);
+                if dx * dx + dz * dz > rad * rad {
+                    continue;
+                }
+                let sx = if dz.abs() >= dx.abs() {
+                    x.clamp(a, b)
+                } else {
+                    (cx + dz.signum() * dz.abs()).round().clamp(a as f32, b as f32) as u32
+                };
+                m.set(x, y, z, Some(*sprite.get_pixel(sx, r)));
+            }
+        }
+    };
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        if y < base_rows || (head_mode == 2 && y >= fh - head_rows) {
+            disc(&mut m, y);
+            continue;
+        }
+        // Post rows: structure extrusion 3 deep.
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if !opaque(px) {
+                continue;
+            }
+            if structure(px) {
+                for z in (zc - 1)..=(zc + 1) {
+                    m.set(x, y, z as u32, Some(px));
+                }
+            } else {
+                m.set(x, y, (zc - 1) as u32, Some(px));
+                m.set(x, y, (zc + 1) as u32, Some(px));
+            }
+        }
+        // IV stand head: the hook bar also runs in z
+        // (cross slab over the head rows).
+        if head_mode == 1 && y >= fh - head_rows {
+            let xs: Vec<u32> = (0..w)
+                .filter(|&x| opaque(*sprite.get_pixel(x, r)))
+                .collect();
+            if !xs.is_empty() {
+                let med = xs[xs.len() / 2] as i32;
+                for &x in &xs {
+                    let px = *sprite.get_pixel(x, r);
+                    for dx in [med - 1, med, med + 1] {
+                        if dx >= 0 && (dx as u32) < w {
+                            m.set(dx as u32, y, x, Some(px));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -3930,6 +4056,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
     if id == "f_orrery" {
         if let Some(m) = orrery_model(sprite) {
+            return Some(m);
+        }
+    }
+    if let Some(mode) = STAND_PINS.iter().find(|(k, _)| *k == id).map(|(_, m)| *m) {
+        if let Some(m) = stand_model(sprite, mode) {
             return Some(m);
         }
     }
