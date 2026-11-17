@@ -3496,7 +3496,21 @@ fn orrery_model(sprite: &RgbaImage) -> Option<PropModel> {
     let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
     let band = rows.next()?..rows.last()? + 1;
     let fh = band.end - band.start;
-    let head_rows = fh / 2; // top half of the band is arms + rods
+    // Rod rows: the top contiguous run of sparse rows
+    // (opaque count <= 9 — thin rods and the arm bar),
+    // counted down from the band's top. Everything
+    // below the first dense row is body: housing, gear
+    // body, column, base.
+    let mut rod_rows = 0u32;
+    for y in (0..fh).rev() {
+        let r = band.end - 1 - y;
+        let n = (0..w).filter(|&x| opaque(*sprite.get_pixel(x, r))).count();
+        if n > 9 {
+            break;
+        }
+        rod_rows += 1;
+    }
+    let rod_rows = rod_rows.clamp(4, fh.saturating_sub(8).max(4));
     let mut m = PropModel::new([w, fh, w]);
     let zc = (w / 2) as i32;
     for y in 0..fh {
@@ -3507,9 +3521,10 @@ fn orrery_model(sprite: &RgbaImage) -> Option<PropModel> {
         if xs.is_empty() {
             continue;
         }
-        if y >= fh - head_rows {
-            // Head: side slab (silhouette mapped to z at
-            // the row's median x), then front slab.
+        if y >= fh - rod_rows {
+            // Rods: cross slabs (front + side), as built
+            // before — the rod profile reads from both
+            // axes and the finial tips keep their colors.
             let med = xs[xs.len() / 2] as i32;
             for &x in &xs {
                 let px = *sprite.get_pixel(x, r);
@@ -3526,11 +3541,54 @@ fn orrery_model(sprite: &RgbaImage) -> Option<PropModel> {
                 }
             }
         } else {
-            // Lower: narrow structure extrusion, 4 deep.
-            for &x in &xs {
+            // Body: a disc per row (the row's extent is
+            // the diameter, the row's own center is the
+            // axis — the body leans as the sprite leans).
+            // Paint wraps the row around the disc: front
+            // and back quadrants sample the row by x, the
+            // side quadrants by z from the center.
+            let (a, b) = (xs[0], xs[xs.len() - 1]);
+            let cx = (a + b) as f32 / 2.0;
+            let rad = (b - a) as f32 / 2.0 + 0.5;
+            // The housing is shallower than it is wide:
+            // elliptical discs (z radius 0.7x), or the
+            // body reads as a drum. And the sprite's
+            // near-black gap pixels (the artist's
+            // background showing through the open frame)
+            // are not surface paint: de-void them to the
+            // row's modal solid tone, or they smear
+            // around the disc as black patches.
+            let zrad = rad * 0.7;
+            let row_modal = modal_color(xs.iter().filter_map(|&x| {
                 let px = *sprite.get_pixel(x, r);
-                for dz in (zc - 2)..=(zc + 1) {
-                    m.set(x, y, dz as u32, Some(px));
+                let [pr, pg, pb, _] = px.0;
+                if pr < 40 && pg < 40 && pb < 40 {
+                    None
+                } else {
+                    Some(px)
+                }
+            }));
+            for x in 0..w {
+                for z in 0..w {
+                    let (dx, dz) = (x as f32 - cx, z as f32 - zc as f32);
+                    if dx * dx / (rad * rad) + dz * dz / (zrad * zrad) > 1.0 {
+                        continue;
+                    }
+                    let sx = if dz.abs() / zrad >= dx.abs() / rad {
+                        x.clamp(a, b)
+                    } else {
+                        (cx + dz.signum() * (dz.abs() / 0.7))
+                            .round()
+                            .clamp(a as f32, b as f32) as u32
+                    };
+                    let mut px = *sprite.get_pixel(sx, r);
+                    let [pr, pg, pb, _] = px.0;
+                    if pr < 40 && pg < 40 && pb < 40 {
+                        if let Some(c) = row_modal {
+                            px = c;
+                        }
+                    }
+                    m.set(x, y, z, Some(px));
                 }
             }
         }
