@@ -4049,6 +4049,321 @@ fn frame_model(sprite: &RgbaImage, depth: u32) -> Option<PropModel> {
     Some(m)
 }
 
+// ----------------------------------------------------------------
+// Hand-built models (Joey, 2026-11-17: "Edit the models
+// manually"). Each is composed from primitives on the
+// 32x32 plan, designed from the sprite and the real
+// object; colors are the sprites' measured modal tones
+// (named per builder). These override every procedural
+// route for their ids.
+// ----------------------------------------------------------------
+
+fn rgb(r: u8, g: u8, b: u8) -> Rgba<u8> {
+    Rgba([r, g, b, 255])
+}
+
+fn box_fill(
+    m: &mut PropModel,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+    z0: u32,
+    z1: u32,
+    c: Rgba<u8>,
+) {
+    for x in x0..=x1 {
+        for y in y0..=y1 {
+            for z in z0..=z1 {
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+}
+
+/// Vertical cylinder (disc stack) of radius r at (cx, cz).
+fn cyl_y(m: &mut PropModel, cx: i32, cz: i32, r: f32, y0: u32, y1: u32, c: Rgba<u8>) {
+    let ri = r.ceil() as i32;
+    for x in (cx - ri)..=(cx + ri) {
+        for z in (cz - ri)..=(cz + ri) {
+            let (dx, dz) = (x - cx, z - cz);
+            if (dx * dx + dz * dz) as f32 <= r * r {
+                for y in y0..=y1 {
+                    if x >= 0 && z >= 0 && (x as u32) < 32 && (z as u32) < 32 {
+                        m.set(x as u32, y, z as u32, Some(c));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Horizontal tube along x at (y, cz), radius r.
+fn tube_x(m: &mut PropModel, x0: u32, x1: u32, cy: i32, cz: i32, r: f32, c: Rgba<u8>) {
+    let ri = r.ceil() as i32;
+    for y in (cy - ri)..=(cy + ri) {
+        for z in (cz - ri)..=(cz + ri) {
+            let (dy, dz) = (y - cy, z - cz);
+            if (dy * dy + dz * dz) as f32 <= r * r {
+                for x in x0..=x1 {
+                    if y >= 0 && z >= 0 {
+                        m.set(x, y as u32, z as u32, Some(c));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Horizontal tube along z at (cx, y), radius r.
+fn tube_z(m: &mut PropModel, z0: u32, z1: u32, cx: i32, cy: i32, r: f32, c: Rgba<u8>) {
+    let ri = r.ceil() as i32;
+    for x in (cx - ri)..=(cx + ri) {
+        for y in (cy - ri)..=(cy + ri) {
+            let (dx, dy) = (x - cx, y - cy);
+            if (dx * dx + dy * dy) as f32 <= r * r {
+                for z in z0..=z1 {
+                    if x >= 0 && y >= 0 {
+                        m.set(x as u32, y as u32, z, Some(c));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn manual_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match id {
+        "f_floor_lamp" => Some(manual_floor_lamp()),
+        "f_wind_vane" => Some(manual_wind_vane(sprite)),
+        "f_TV_antenna" => Some(manual_tv_antenna()),
+        "f_cellphone_booster" => Some(manual_cellphone_booster()),
+        "f_ventilator" => Some(manual_ventilator()),
+        "f_machinery_light" => Some(manual_machinery_light()),
+        "f_ground_cable" => Some(manual_ground_cable()),
+        _ => None,
+    }
+}
+
+/// Floor lamp: round base, slim pole, a cylindrical
+/// paper shade with a dark grille cap and the warm bulb
+/// showing at its top (sprite tones: shade (183,183,183),
+/// base (124,129,109), pole brown).
+fn manual_floor_lamp() -> PropModel {
+    let mut m = PropModel::new([32, 44, 32]);
+    let shade = rgb(196, 196, 190);
+    let base = rgb(124, 129, 109);
+    let pole = rgb(96, 74, 52);
+    cyl_y(&mut m, 16, 16, 4.2, 0, 1, base);
+    cyl_y(&mut m, 16, 16, 1.1, 2, 29, pole);
+    // Shade: a shell cylinder (hollow core) y 30..41.
+    for y in 30..=41 {
+        for x in 11..=21 {
+            for z in 11..=21 {
+                let d = ((x as i32 - 16).pow(2) + (z as i32 - 16).pow(2)) as f32;
+                if d <= 20.0 && d >= 9.0 {
+                    m.set(x, y, z, Some(shade));
+                }
+            }
+        }
+    }
+    // Bulb glow disc inside the top, grille cap ring.
+    cyl_y(&mut m, 16, 16, 3.0, 40, 40, rgb(232, 196, 92));
+    for x in 11..=21 {
+        for z in 11..=21 {
+            let d = ((x as i32 - 16).pow(2) + (z as i32 - 16).pow(2)) as f32;
+            if d <= 20.0 && d >= 12.0 {
+                m.set(x, 42, z, Some(rgb(58, 56, 52)));
+            }
+        }
+    }
+    m
+}
+
+/// Wind vane: post, a directional cross (bars on both
+/// axes with end plates), a ball, and an arrow whose
+/// tail carries the sprite's rooster figure as a flat
+/// plate. Greys from the sprite ((148,148,148) modal).
+fn manual_wind_vane(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 20, 32]);
+    let metal = rgb(150, 150, 150);
+    let dark = rgb(100, 100, 100);
+    cyl_y(&mut m, 16, 16, 1.1, 0, 10, dark);
+    // Directional cross at y 8: bars along x and z with
+    // end plates.
+    box_fill(&mut m, 10, 22, 8, 8, 15, 17, metal);
+    box_fill(&mut m, 15, 17, 8, 8, 10, 22, metal);
+    box_fill(&mut m, 9, 10, 7, 9, 15, 17, metal);
+    box_fill(&mut m, 22, 23, 7, 9, 15, 17, metal);
+    box_fill(&mut m, 15, 17, 7, 9, 9, 10, metal);
+    box_fill(&mut m, 15, 17, 7, 9, 22, 23, metal);
+    // Ball at y 11..12.
+    box_fill(&mut m, 15, 17, 11, 12, 15, 17, metal);
+    // Arrow at y 14 along x: shaft, head at +x, tail fin
+    // at -x.
+    box_fill(&mut m, 8, 24, 14, 14, 15, 17, metal);
+    box_fill(&mut m, 25, 27, 13, 15, 15, 17, metal);
+    box_fill(&mut m, 7, 9, 12, 16, 15, 17, dark);
+    // Rooster plate: the sprite's top figure (rows
+    // 4..12, cols 11..17 of the 32x32 sprite), stamped
+    // 2 thick at the tail, standing on the arrow.
+    for r in 4..12u32 {
+        for x in 11..17u32 {
+            let px = *sprite.get_pixel(x, r);
+            if opaque(px) {
+                let y = 15 + (11 - r);
+                m.set(x + 1, y, 15, Some(px));
+                m.set(x + 1, y, 16, Some(px));
+            }
+        }
+    }
+    m
+}
+
+/// TV antenna (Yagi-Uda): a mast, a boom along z, and
+/// seven element rods along x tapering toward the
+/// front. Grey (102,102,102) modal.
+fn manual_tv_antenna() -> PropModel {
+    let mut m = PropModel::new([32, 20, 32]);
+    let metal = rgb(120, 120, 120);
+    let dark = rgb(70, 70, 70);
+    cyl_y(&mut m, 16, 16, 1.1, 0, 11, dark);
+    box_fill(&mut m, 14, 18, 11, 12, 14, 18, dark);
+    tube_z(&mut m, 5, 27, 16, 13, 0.9, metal);
+    // Elements: z from back (long) to front (short).
+    let elems = [
+        (6u32, 21u32),
+        (9, 20),
+        (12, 18),
+        (15, 17),
+        (18, 15),
+        (21, 14),
+        (24, 12),
+    ];
+    for (z, half) in elems {
+        let x0 = 16 - half / 2;
+        tube_x(&mut m, x0, x0 + half, 13, z as i32, 0.7, metal);
+    }
+    m
+}
+
+/// Cellphone booster: two vertical panels (a tall main
+/// panel forward-right, a smaller one back-left, as the
+/// sprite composes them) joined by two bracket arms.
+/// Whites/greys from the sprite ((255,255,255),
+/// (155,155,155)).
+fn manual_cellphone_booster() -> PropModel {
+    let mut m = PropModel::new([32, 28, 32]);
+    let white = rgb(228, 228, 226);
+    let grey = rgb(150, 150, 150);
+    let dark = rgb(80, 80, 80);
+    // Main panel: x 18..27, y 4..25, z 19..20.
+    box_fill(&mut m, 18, 27, 4, 25, 19, 20, white);
+    box_fill(&mut m, 18, 27, 4, 25, 18, 18, grey);
+    // Second panel: x 5..11, y 7..22, z 10..11.
+    box_fill(&mut m, 5, 11, 7, 22, 10, 11, white);
+    box_fill(&mut m, 5, 11, 7, 22, 12, 12, grey);
+    // Bracket arms joining them at y 10 and y 19.
+    box_fill(&mut m, 11, 18, 10, 11, 13, 15, dark);
+    box_fill(&mut m, 11, 18, 19, 20, 13, 15, dark);
+    box_fill(&mut m, 14, 16, 11, 19, 13, 15, dark);
+    m
+}
+
+/// Ventilator (medical): caster base, column, bellows
+/// box, and the main cabinet with its cyan screen on
+/// the front face and a side arm. Tones: cabinet
+/// (203..227 greys), teal base, screen cyan.
+fn manual_ventilator() -> PropModel {
+    let mut m = PropModel::new([32, 32, 32]);
+    let cab = rgb(208, 208, 208);
+    let cab_top = rgb(168, 168, 168);
+    let teal = rgb(133, 178, 172);
+    let dark = rgb(52, 54, 58);
+    // Casters.
+    for (x, z) in [(10u32, 12u32), (20, 12), (10, 19), (20, 19)] {
+        box_fill(&mut m, x, x + 1, 0, 1, z, z + 1, dark);
+    }
+    // Base slab + column + bellows.
+    box_fill(&mut m, 9, 23, 2, 4, 11, 21, teal);
+    box_fill(&mut m, 14, 18, 5, 10, 14, 18, cab);
+    box_fill(&mut m, 11, 21, 11, 15, 12, 20, rgb(118, 156, 150));
+    box_fill(&mut m, 11, 21, 11, 12, 20, 20, dark);
+    // Main cabinet y 16..29, top cap.
+    box_fill(&mut m, 10, 23, 16, 28, 11, 20, cab);
+    box_fill(&mut m, 10, 23, 29, 29, 11, 20, cab_top);
+    // Screen on the front face (z = 20): cyan panel with
+    // a dark surround, plus two button dots.
+    box_fill(&mut m, 12, 19, 22, 26, 20, 20, rgb(24, 30, 48));
+    box_fill(&mut m, 13, 18, 23, 25, 20, 20, rgb(16, 178, 198));
+    box_fill(&mut m, 20, 21, 23, 24, 20, 20, rgb(240, 240, 240));
+    box_fill(&mut m, 20, 21, 26, 26, 20, 20, rgb(240, 240, 240));
+    // Side arm on the left with a knob.
+    tube_x(&mut m, 5, 10, 24, 15, 0.8, dark);
+    box_fill(&mut m, 4, 5, 23, 25, 14, 16, cab_top);
+    m
+}
+
+/// Machinery light: an olive industrial machine -- base
+/// cabinet on feet, a table slab, a motor block, two
+/// posts, and the lamp head with two pale lamps. Greens
+/// from the sprite ((157,169,73), (123,132,61),
+/// (79,86,38)).
+fn manual_machinery_light() -> PropModel {
+    let mut m = PropModel::new([32, 32, 32]);
+    let dark = rgb(86, 94, 42);
+    let mid = rgb(126, 135, 62);
+    let light = rgb(158, 170, 74);
+    let steel = rgb(168, 168, 160);
+    for (x, z) in [(9u32, 12u32), (21, 12), (9, 19), (21, 19)] {
+        box_fill(&mut m, x, x + 1, 0, 0, z, z + 1, rgb(40, 40, 38));
+    }
+    box_fill(&mut m, 8, 24, 1, 7, 11, 21, dark);
+    box_fill(&mut m, 7, 25, 8, 10, 10, 22, mid);
+    // Motor block on the right of the table.
+    box_fill(&mut m, 17, 24, 11, 19, 13, 20, light);
+    box_fill(&mut m, 17, 24, 20, 20, 13, 20, mid);
+    // Two posts rising at the left-center.
+    box_fill(&mut m, 10, 11, 11, 24, 14, 15, steel);
+    box_fill(&mut m, 14, 15, 11, 24, 14, 15, steel);
+    // Lamp head across the posts' tops.
+    box_fill(&mut m, 8, 21, 25, 30, 12, 19, light);
+    box_fill(&mut m, 8, 21, 30, 30, 12, 19, mid);
+    // Two pale lamps on the head's front face.
+    box_fill(&mut m, 10, 12, 27, 28, 19, 19, rgb(236, 232, 184));
+    box_fill(&mut m, 16, 18, 27, 28, 19, 19, rgb(236, 232, 184));
+    m
+}
+
+/// Ground cable (unconnected): two loose coils lying
+/// flat -- a red ring and a green ring -- with two
+/// white/yellow plugs at the red coil's edge. Reds
+/// (122,15,15), green (26,85,0) from the sprite.
+fn manual_ground_cable() -> PropModel {
+    let mut m = PropModel::new([32, 4, 32]);
+    let ring = |m: &mut PropModel, cx: i32, cz: i32, rad: f32, c: Rgba<u8>| {
+        for x in 0..32 {
+            for z in 0..32 {
+                let d = (((x - cx).pow(2) + (z - cz).pow(2)) as f32).sqrt();
+                if (d - rad).abs() <= 1.2 {
+                    m.set(x as u32, 0, z as u32, Some(c));
+                    m.set(x as u32, 1, z as u32, Some(c));
+                }
+            }
+        }
+    };
+    ring(&mut m, 11, 12, 6.0, rgb(140, 26, 22));
+    ring(&mut m, 23, 14, 4.6, rgb(32, 92, 8));
+    // A red run joining the coils along the ground.
+    box_fill(&mut m, 16, 19, 0, 1, 12, 13, rgb(140, 26, 22));
+    // Two plugs at the red coil's lower edge.
+    box_fill(&mut m, 5, 7, 0, 1, 19, 20, rgb(216, 216, 208));
+    box_fill(&mut m, 6, 6, 0, 1, 21, 21, rgb(232, 192, 64));
+    box_fill(&mut m, 12, 14, 0, 1, 20, 21, rgb(216, 216, 208));
+    box_fill(&mut m, 13, 13, 0, 1, 22, 22, rgb(232, 192, 64));
+    m
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -4072,6 +4387,12 @@ pub fn raw_segment(sprite: &RgbaImage) -> Option<Segmentation> {
 }
 
 pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    // Hand-built models first (Joey's instruction,
+    // 2026-11-17: the procedural builds for these still
+    // looked wrong; edit the models manually).
+    if let Some(m) = manual_model(id, sprite) {
+        return Some(m);
+    }
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {
         return plan_slab(sprite, *t);
     }
