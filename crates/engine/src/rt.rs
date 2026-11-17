@@ -103,6 +103,36 @@ pub fn prepare_fake_shore_variants(
     }))
 }
 
+/// Stage F part 2 (border height-blending), world half: rewrite
+/// the world's macro-border voxels to virtual material ids for
+/// their `(base, neighbor, dir)` blend triples. Which numeric
+/// ids carry a macro (and its span) comes from the voxelizer
+/// table in `dir` through the same fake id map the spec builder
+/// uses. Must run *after* [`prepare_fake_shore_variants`] (blend
+/// virtual ids allocate above the shore ones) and *before*
+/// `build_tree`. Returns the assignments the spec builder must
+/// emit blend entries for.
+pub fn prepare_fake_blend_variants(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+) -> Result<Vec<crate::blend::BlendAssignment>, CaptureError> {
+    let table = crate::materials::MaterialTable::load(dir)
+        .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+    let id_map = fake_material_ids();
+    let macro_spans: std::collections::HashMap<u32, u32> = id_map
+        .iter()
+        .filter_map(|(num, game_id)| {
+            table
+                .get(game_id)
+                .and_then(|m| m.macro_)
+                .map(|mc| (*num, mc.span_tiles))
+        })
+        .collect();
+    Ok(crate::blend::assign_blend_variants(world, &|id| {
+        macro_spans.get(&id).copied()
+    }))
+}
+
 /// Attach voxelizer textures from `dir` to `scene`, resolving the
 /// fake house's material ids. `assignments` are the Phase 2d
 /// variants [`prepare_fake_variants`] rewrote the world with and
@@ -117,6 +147,7 @@ pub fn attach_fake_textures(
     dir: &std::path::Path,
     assignments: &[treebuild::connect::VariantAssignment],
     shore_assignments: &[crate::shore::ShoreAssignment],
+    blend_assignments: &[crate::blend::BlendAssignment],
 ) -> Result<crate::textures::TextureStats, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
@@ -126,6 +157,7 @@ pub fn attach_fake_textures(
         &fake_material_ids(),
         assignments,
         shore_assignments,
+        blend_assignments,
     )
     .map_err(CaptureError::Device)?;
     scene
@@ -354,6 +386,13 @@ pub fn render_rt_frame(
         Some(dir) => prepare_fake_shore_variants(&mut voxel_world, dir)?,
         None => Vec::new(),
     };
+    // Stage F part 2 (blend): after the shore preparation (its
+    // virtual ids allocate above theirs); with no textures the
+    // world is untouched, byte-for-byte the pre-blend render.
+    let blend_assignments = match &args.textures {
+        Some(dir) => prepare_fake_blend_variants(&mut voxel_world, dir)?,
+        None => Vec::new(),
+    };
     let built = build_tree(&voxel_world, BuildConfig::default())
         .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -366,6 +405,7 @@ pub fn render_rt_frame(
             dir,
             &assignments,
             &shore_assignments,
+            &blend_assignments,
         )?),
         None => None,
     };
@@ -541,6 +581,10 @@ fn render_rt_frame_props(
         Some(dir) => prepare_fake_shore_variants(&mut coarse_world, dir)?,
         None => Vec::new(),
     };
+    let blend_assignments = match &args.textures {
+        Some(dir) => prepare_fake_blend_variants(&mut coarse_world, dir)?,
+        None => Vec::new(),
+    };
     let mut texture_stats = None;
     let attach_spec: Option<treebuild::render::TextureSpec> = match &args.textures {
         Some(dir) => {
@@ -552,6 +596,7 @@ fn render_rt_frame_props(
                 &fake_material_ids(),
                 &assignments,
                 &shore_assignments,
+                &blend_assignments,
             )
             .map_err(CaptureError::Device)?;
             texture_stats = Some(stats);

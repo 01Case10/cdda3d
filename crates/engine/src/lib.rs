@@ -6,6 +6,7 @@
 //! The bin is a thin winit/wgpu shell over this lib, and the headless
 //! capture path shares `render::Renderer` with the windowed path.
 
+pub mod blend;
 pub mod camera;
 pub mod capture;
 pub mod cutaway;

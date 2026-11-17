@@ -227,7 +227,7 @@ fn f2_shore_round_trip_through_loader_and_spec() {
         virtual_id: 40,
     }];
     let (spec, stats) =
-        build_texture_spec_variants(&table, &v2, &id_map, &[], &assignments).unwrap();
+        build_texture_spec_variants(&table, &v2, &id_map, &[], &assignments, &[]).unwrap();
     assert_eq!(stats.shore_variants, 1);
     let entry = spec.material_layers[40];
     assert_eq!(entry[3], 1, "variant entry present");
@@ -260,7 +260,7 @@ fn f2_spec_without_shore_assignments_equals_base_spec() {
     let id_map = engine::rt::fake_material_ids();
     let (base_spec, _) = build_texture_spec(&table, &v2, &id_map).unwrap();
     let (variant_spec, stats) =
-        build_texture_spec_variants(&table, &v2, &id_map, &[], &[]).unwrap();
+        build_texture_spec_variants(&table, &v2, &id_map, &[], &[], &[]).unwrap();
     assert_eq!(stats.shore_variants, 0);
     assert_eq!(variant_spec.material_layers, base_spec.material_layers);
     assert_eq!(variant_spec.layers, base_spec.layers);

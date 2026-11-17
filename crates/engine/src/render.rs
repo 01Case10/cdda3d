@@ -80,6 +80,13 @@ struct Uniforms {
 }
 
 const SHADER: &str = r#"
+// Stage F part 2 (border height-blending): half-width of the
+// blend band in tiles — the Stage D weight is 0.5 at the border
+// and 0 this far into the tile. Mirror of
+// engine::blend::BLEND_HALF_BAND_TILES (and of the RT shader's
+// BLEND_HALF); keep the three in sync.
+const BLEND_HALF: f32 = 0.5;
+
 struct Uniforms { view_proj: mat4x4<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var tex_array: texture_2d_array<f32>;
@@ -132,7 +139,15 @@ fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
     // height debug view. Sampled unconditionally like the tile
     // array, selected after.
     let is_macro = !flat && (input.layer & 2147483648u) != 0u;
-    let macro_idx = i32(input.layer & 16777215u);
+    // Stage F part 2: blend words (bit 30, see
+    // mesher::mesh::MACRO_BLEND_BIT) pack the own color layer in
+    // the low 11 bits instead of the plain 24-bit field.
+    let is_blend = is_macro && (input.layer & 1073741824u) != 0u;
+    let macro_idx = select(
+        i32(input.layer & 16777215u),
+        i32(input.layer & 2047u),
+        is_blend,
+    );
     let macro_layer = select(
         macro_idx,
         macro_idx + i32(macro_params.color_count),
@@ -144,7 +159,59 @@ fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
         input.uv,
         select(macro_layer, 0, !is_macro),
     );
-    let texel = select(texel_tile, texel_macro, is_macro);
+    var texel = select(texel_tile, texel_macro, is_macro);
+    // Stage F part 2 (border height-blending): for a blend
+    // vertex, run the Stage D height decision (mirror of
+    // engine::blend::neighbor_wins / blend_weight) against the
+    // neighbor material: sample the neighbor's color and both
+    // stored heights at the same world UV (both macros are
+    // world-anchored, same span), compute the weight from the
+    // fragment's distance to the border edge of its tile along
+    // the packed direction, and let the higher effective height
+    // supply the albedo. All samples are unconditional (indices
+    // fall back to layer 0 / the own layer off the blend path)
+    // so implicit derivatives stay in uniform control flow; the
+    // result is selected only for blend vertices, and never in
+    // the height debug view (which shows the own height).
+    let nbr_idx = select(macro_idx, i32((input.layer >> 11u) & 2047u), is_blend);
+    let texel_nbr = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(nbr_idx, 0, !is_macro),
+    );
+    let own_h = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(macro_idx + i32(macro_params.color_count), 0, !is_macro),
+    ).r;
+    let nbr_h = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(nbr_idx + i32(macro_params.color_count), 0, !is_macro),
+    ).r;
+    let bspan = f32((input.layer >> 24u) & 63u);
+    let wp = input.uv * max(bspan, 1.0);
+    let bdir = (input.layer >> 22u) & 3u;
+    var bdist = 0.0;
+    if bdir == 0u {
+        bdist = floor(wp.x) + 1.0 - wp.x;
+    } else if bdir == 1u {
+        bdist = wp.x - floor(wp.x);
+    } else if bdir == 2u {
+        bdist = floor(wp.y) + 1.0 - wp.y;
+    } else {
+        bdist = wp.y - floor(wp.y);
+    }
+    let bwgt = clamp(0.5 - bdist / (2.0 * BLEND_HALF), 0.0, 1.0);
+    let nbr_wins = nbr_h + bwgt * 2.0 > own_h + (1.0 - bwgt) * 2.0;
+    texel = select(
+        texel,
+        texel_nbr,
+        is_blend && macro_params.debug_height == 0u && nbr_wins,
+    );
     if flat {
         // Exactly the pre-2f flat shading math (gate 2f.4).
         return vec4<f32>(input.color.rgb * shade, input.color.a);

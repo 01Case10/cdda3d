@@ -61,16 +61,27 @@ fn stamp_tex_layers(map: &mut mesher::chunk::ChunkMap, spec: &TextureSpec) {
     }
 }
 
-/// Stage F part 2: the textured scene's spec + shore
+/// Stage F part 2: the textured scene's spec + shore + blend
 /// assignments, built from the (already cutaway-filtered) map
 /// both renderers derive from. Water ids are the fake ids whose
 /// voxelizer material carries a shore set; with no shore set in
 /// the table the assignment list is empty and the spec is
-/// exactly the base spec (the pre-F2 build).
+/// exactly the base spec (the pre-F2 build). Blend assignments
+/// cover the map's macro-material borders (`crate::blend`); in
+/// the fake scenes no two macro materials are ever adjacent (the
+/// yard is one grass material), so the list is empty there and
+/// the spec is again the pre-blend one.
 fn textured_spec(
     dir: &Path,
     map: &mesher::chunk::ChunkMap,
-) -> Result<(TextureSpec, Vec<crate::shore::ShoreAssignment>), String> {
+) -> Result<
+    (
+        TextureSpec,
+        Vec<crate::shore::ShoreAssignment>,
+        Vec<crate::blend::BlendAssignment>,
+    ),
+    String,
+> {
     let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
     let id_map = crate::rt::fake_material_ids();
     let water_ids: std::collections::HashSet<u32> = id_map
@@ -83,9 +94,26 @@ fn textured_spec(
         .map(|(num, _)| *num)
         .collect();
     let assignments = crate::shore::shore_assignments_for_map(map, &|id| water_ids.contains(&id));
-    let (spec, _stats) =
-        textures::build_texture_spec_variants(&table, dir, &id_map, &[], &assignments)?;
-    Ok((spec, assignments))
+    let macro_spans: std::collections::HashMap<u32, u32> = id_map
+        .iter()
+        .filter_map(|(num, game_id)| {
+            table
+                .get(game_id)
+                .and_then(|m| m.macro_)
+                .map(|mc| (*num, mc.span_tiles))
+        })
+        .collect();
+    let blend_assignments =
+        crate::blend::blend_assignments_for_map(map, &|id| macro_spans.get(&id).copied());
+    let (spec, _stats) = textures::build_texture_spec_variants(
+        &table,
+        dir,
+        &id_map,
+        &[],
+        &assignments,
+        &blend_assignments,
+    )?;
+    Ok((spec, assignments, blend_assignments))
 }
 
 /// Stage F part 2: stamp shore variant tops onto a filtered
@@ -123,6 +151,87 @@ fn stamp_shore_tops(
         }
         let mut stamped = b;
         stamped.tex_layers = Some([entry[0], entry[1], entry[2]]);
+        map.set_global_block(pos[0], pos[1], pos[2], stamped);
+    }
+}
+
+/// Stage F part 2 (border height-blending): stamp blend words
+/// onto a filtered map's macro-border blocks. Each block whose
+/// chosen border (`crate::blend::blend_neighbor_at`, the same
+/// choice the assignments were allocated from) faces a different
+/// same-span macro material takes the blend-encoded layer word
+/// as its top: own + neighbor compact macro color layers,
+/// direction, span — everything the raster shader needs for the
+/// Stage D height decision. Side/bottom layers are untouched
+/// (the blend is a top-face phenomenon). Blocks whose compact
+/// macro indices exceed the blend word's 11-bit fields keep the
+/// plain macro word (documented fallback in
+/// `mesher::mesh::MACRO_BLEND_BIT`).
+fn stamp_blend_tops(
+    map: &mut mesher::chunk::ChunkMap,
+    spec: &TextureSpec,
+    assignments: &[crate::blend::BlendAssignment],
+) {
+    if assignments.is_empty() {
+        return;
+    }
+    let macro_span = |id: u32| -> Option<u32> {
+        spec.material_macros
+            .get(id as usize)
+            .filter(|mm| mm[3] == 1)
+            .map(|mm| mm[2])
+    };
+    // Collect first (the neighbor choice reads the whole map),
+    // then apply — the two phases must not alias.
+    let get = |x: i32, y: i32, z: i32| map.block_at(x, y, z).id;
+    let mut stamps: Vec<([i32; 3], u32)> = Vec::new();
+    for chunk in map.chunks.values() {
+        let origin = chunk.origin();
+        let size = chunk.grid.size;
+        for z in 0..size[2] as i32 {
+            for y in 0..size[1] as i32 {
+                for x in 0..size[0] as i32 {
+                    let b = chunk.grid.get(x, y, z);
+                    if b.tex_layers.is_none() {
+                        continue;
+                    }
+                    let Some(&mm) = spec.material_macros.get(b.id as usize) else {
+                        continue;
+                    };
+                    if mm[3] != 1 {
+                        continue;
+                    }
+                    let pos = [origin[0] + x, origin[1] + y, origin[2] + z];
+                    let Some((nbr, dir)) = crate::blend::blend_neighbor_at(&get, pos, &macro_span)
+                    else {
+                        continue;
+                    };
+                    let nbr_mm = spec.material_macros[nbr as usize];
+                    if mm[0] > mesher::mesh::MACRO_BLEND_INDEX_MASK
+                        || nbr_mm[0] > mesher::mesh::MACRO_BLEND_INDEX_MASK
+                    {
+                        continue; // documented fallback: plain macro word
+                    }
+                    stamps.push((
+                        pos,
+                        mesher::mesh::encode_macro_blend_layer(
+                            mm[0],
+                            nbr_mm[0],
+                            dir as u32,
+                            mm[2],
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    for (pos, word) in stamps {
+        let b = map.block_at(pos[0], pos[1], pos[2]);
+        let Some(layers) = b.tex_layers else {
+            continue;
+        };
+        let mut stamped = b;
+        stamped.tex_layers = Some([word, layers[1], layers[2]]);
         map.set_global_block(pos[0], pos[1], pos[2], stamped);
     }
 }
@@ -415,9 +524,10 @@ fn prepare_raster_v(
         Some(dir) => {
             let map = build_map(mesher::scale::WorldScale::default());
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
-            let (spec, shore_assignments) = textured_spec(dir, &filtered)?;
+            let (spec, shore_assignments, blend_assignments) = textured_spec(dir, &filtered)?;
             stamp_tex_layers(&mut filtered, &spec);
             stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
+            stamp_blend_tops(&mut filtered, &spec, &blend_assignments);
             if let Some(v) = vehicles {
                 stamp_vehicles(&mut filtered, v);
             }
@@ -623,9 +733,10 @@ fn prepare_raster_lit_v(
         Some(dir) => {
             let map = build_map(scale);
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
-            let (spec, shore_assignments) = textured_spec(dir, &filtered)?;
+            let (spec, shore_assignments, blend_assignments) = textured_spec(dir, &filtered)?;
             stamp_tex_layers(&mut filtered, &spec);
             stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
+            stamp_blend_tops(&mut filtered, &spec, &blend_assignments);
             (Some(spec), filtered)
         }
         None => {

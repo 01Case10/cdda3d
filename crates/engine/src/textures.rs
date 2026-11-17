@@ -50,6 +50,9 @@ pub struct TextureStats {
     /// Stage F part 2: shore variant entries emitted (v2
     /// voxelizer output with a `shores` table only).
     pub shore_variants: usize,
+    /// Stage F part 2 (border height-blending): blend variant
+    /// entries emitted (macro-material borders only).
+    pub blend_variants: usize,
 }
 
 /// Scene-local layer loading + compaction, shared by the base and
@@ -266,6 +269,7 @@ impl<'a> SpecBuilder<'a> {
         self,
         material_layers: Vec<[u32; 4]>,
         mut material_macros: Vec<[u32; 4]>,
+        mut material_blends: Vec<[u32; 4]>,
         stats: &mut TextureStats,
     ) -> TextureSpec {
         let mut layers = self.layers;
@@ -281,8 +285,17 @@ impl<'a> SpecBuilder<'a> {
         // macro halves: colors first, heights offset by the color
         // count.
         material_macros.resize(material_layers.len(), [0, 0, 0, 0]);
+        // Stage F part 2 (blend): blend entries are indexed the
+        // same way; their height field starts as the in-half
+        // index and takes the same color-count offset.
+        material_blends.resize(material_layers.len(), [0, 0, 0, 0]);
         let color_count = self.macro_colors.len() as u32;
         for entry in material_macros.iter_mut() {
+            if entry[3] != 0 {
+                entry[1] += color_count;
+            }
+        }
+        for entry in material_blends.iter_mut() {
             if entry[3] != 0 {
                 entry[1] += color_count;
             }
@@ -300,6 +313,7 @@ impl<'a> SpecBuilder<'a> {
             },
             macro_layers,
             material_macros,
+            material_blends,
         }
     }
 }
@@ -317,7 +331,10 @@ pub fn build_texture_spec(
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
     let (material_layers, material_macros) = builder.build_base(table, id_map, &mut stats);
-    Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
+    Ok((
+        builder.finish(material_layers, material_macros, Vec::new(), &mut stats),
+        stats,
+    ))
 }
 
 /// Phase 2d: the base spec plus one variant entry per assignment.
@@ -334,7 +351,7 @@ pub fn build_texture_spec_multitile(
     id_map: &HashMap<u32, String>,
     assignments: &[VariantAssignment],
 ) -> Result<(TextureSpec, TextureStats), String> {
-    build_texture_spec_variants(table, dir, id_map, assignments, &[])
+    build_texture_spec_variants(table, dir, id_map, assignments, &[], &[])
 }
 
 /// Stage F part 2: the combined variant builder — base entries,
@@ -353,20 +370,33 @@ pub fn build_texture_spec_shore(
     id_map: &HashMap<u32, String>,
     shore_assignments: &[crate::shore::ShoreAssignment],
 ) -> Result<(TextureSpec, TextureStats), String> {
-    build_texture_spec_variants(table, dir, id_map, &[], shore_assignments)
+    build_texture_spec_variants(table, dir, id_map, &[], shore_assignments, &[])
 }
 
 /// The shared body of the variant builders above.
+///
+/// Stage F part 2 (border height-blending): a blend assignment's
+/// virtual id copies its base material's layer entry AND macro
+/// entry, and gains a blend entry (`TextureSpec::
+/// material_blends`): the *neighbor* material's macro color and
+/// height layers plus the border direction, which is everything
+/// the RT shader needs to run the Stage D height decision. (The
+/// raster path carries the same fields in its vertex layer word
+/// instead — see `crate::blend`.) Assignments whose base or
+/// neighbor material doesn't resolve, carries no macro, or
+/// carries a macro of a different span are skipped (the voxel
+/// keeps the base entry, i.e. the plain macro top).
 pub fn build_texture_spec_variants(
     table: &MaterialTable,
     dir: &Path,
     id_map: &HashMap<u32, String>,
     assignments: &[VariantAssignment],
     shore_assignments: &[crate::shore::ShoreAssignment],
+    blend_assignments: &[crate::blend::BlendAssignment],
 ) -> Result<(TextureSpec, TextureStats), String> {
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
-    let (mut material_layers, material_macros) = builder.build_base(table, id_map, &mut stats);
+    let (mut material_layers, mut material_macros) = builder.build_base(table, id_map, &mut stats);
     let mut sorted: Vec<&VariantAssignment> = assignments.iter().collect();
     sorted.sort_by_key(|a| a.virtual_id);
     for a in sorted {
@@ -423,8 +453,47 @@ pub fn build_texture_spec_variants(
             }
         }
     }
+    // Stage F part 2 (blend): no layers are loaded here — a blend
+    // variant re-addresses macro layers the base pass already
+    // compacted (both materials are in `id_map`, so both macros
+    // were loaded by `build_base`). The height fields stay
+    // in-half indices until `finish` applies the color-count
+    // offset, exactly like the base macro entries.
+    let mut material_blends: Vec<[u32; 4]> = Vec::new();
+    let mut blend_sorted: Vec<&crate::blend::BlendAssignment> =
+        blend_assignments.iter().collect();
+    blend_sorted.sort_by_key(|a| a.virtual_id);
+    for a in blend_sorted {
+        let (Some(&base_mm), Some(&nbr_mm)) = (
+            material_macros.get(a.base_id as usize),
+            material_macros.get(a.neighbor_id as usize),
+        ) else {
+            continue;
+        };
+        if base_mm[3] == 0 || nbr_mm[3] == 0 || base_mm[2] != nbr_mm[2] {
+            continue; // no macro, or span mismatch: plain macro top
+        }
+        let base_layers = material_layers[a.base_id as usize];
+        if base_layers[3] == 0 {
+            continue; // base material stayed flat: nothing to blend from
+        }
+        let idx = a.virtual_id as usize;
+        if idx >= material_layers.len() {
+            material_layers.resize(idx + 1, [0, 0, 0, 0]);
+        }
+        if idx >= material_macros.len() {
+            material_macros.resize(idx + 1, [0, 0, 0, 0]);
+        }
+        if idx >= material_blends.len() {
+            material_blends.resize(idx + 1, [0, 0, 0, 0]);
+        }
+        material_layers[idx] = base_layers;
+        material_macros[idx] = base_mm;
+        material_blends[idx] = [nbr_mm[0], nbr_mm[1], a.dir as u32, 1];
+        stats.blend_variants += 1;
+    }
     Ok((
-        builder.finish(material_layers, material_macros, &mut stats),
+        builder.finish(material_layers, material_macros, material_blends, &mut stats),
         stats,
     ))
 }
@@ -596,6 +665,7 @@ pub fn prop_only_spec(colors: &PropColorSet, base_id: u32) -> TextureSpec {
         macro_size: 0,
         macro_layers: Vec::new(),
         material_macros,
+        material_blends: Vec::new(),
     }
 }
 
@@ -655,7 +725,10 @@ pub fn build_texture_spec_state_variants(
             }
         }
     }
-    Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
+    Ok((
+        builder.finish(material_layers, material_macros, Vec::new(), &mut stats),
+        stats,
+    ))
 }
 
 #[cfg(test)]

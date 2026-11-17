@@ -509,6 +509,14 @@ const RENDER_WGSL: &str = r#"
 @group(1) @binding(6) var<storage, read> mat_layers: array<vec4<u32>>;
 @group(1) @binding(7) var macro_array: texture_2d_array<f32>;
 @group(1) @binding(8) var<storage, read> mat_macros: array<vec4<u32>>;
+@group(1) @binding(11) var<storage, read> mat_blends: array<vec4<u32>>;
+
+// Stage F part 2 (border height-blending): half-width of the
+// blend band in tiles — the Stage D weight is 0.5 at the border
+// and 0 this far into the tile. Mirror of
+// engine::blend::BLEND_HALF_BAND_TILES (and of the raster
+// shader's BLEND_HALF); keep the three in sync.
+const BLEND_HALF: f32 = 0.5;
 
 // Ray-cone LOD (Phase 2e, docs/phase2e-mipmaps.md §2 — mirror of
 // crate::lod::ray_cone_lod): the compute shader has no implicit
@@ -597,10 +605,45 @@ fn tex_albedo(e: SideEntry, n: vec3<f32>, hitp: vec3<f32>, voxel_min: vec3<f32>,
                     return textureSampleLevel(macro_array, tex_samp, muv, i32(mm.y), mlod).rgb;
                 }
                 let mt = textureSampleLevel(macro_array, tex_samp, muv, i32(mm.x), mlod);
-                if (e.flags & 2u) != 0u && mt.a < 0.5 {
+                var top = mt;
+                // Stage F part 2 (border height-blending): a
+                // blend entry names the neighbor material's macro
+                // layers + the border direction. The Stage D
+                // height decision (mirror of
+                // engine::blend::neighbor_wins / blend_weight):
+                // each side's effective height is its stored
+                // height plus a weight bias, the weight falling
+                // from 0.5 at the border to 0 at BLEND_HALF into
+                // the tile (distance from the hit point to the
+                // border edge of its own voxel, along the blend
+                // direction). The higher effective height supplies
+                // the albedo; ties keep the tile's own material.
+                if e.material_id < arrayLength(&mat_blends) {
+                    let mb = mat_blends[e.material_id];
+                    if mb.w != 0u {
+                        let nmt = textureSampleLevel(macro_array, tex_samp, muv, i32(mb.x), mlod);
+                        let own_h = textureSampleLevel(macro_array, tex_samp, muv, i32(mm.y), mlod).r;
+                        let nbr_h = textureSampleLevel(macro_array, tex_samp, muv, i32(mb.y), mlod).r;
+                        var dist = 0.0;
+                        if mb.z == 0u {
+                            dist = (voxel_min.x + 1.0) - hitp.x;
+                        } else if mb.z == 1u {
+                            dist = hitp.x - voxel_min.x;
+                        } else if mb.z == 2u {
+                            dist = (voxel_min.y + 1.0) - hitp.y;
+                        } else {
+                            dist = hitp.y - voxel_min.y;
+                        }
+                        let wgt = clamp(0.5 - dist / (2.0 * BLEND_HALF), 0.0, 1.0);
+                        if nbr_h + wgt * 2.0 > own_h + (1.0 - wgt) * 2.0 {
+                            top = nmt;
+                        }
+                    }
+                }
+                if (e.flags & 2u) != 0u && top.a < 0.5 {
                     return flat;
                 }
-                return mt.rgb;
+                return top.rgb;
             }
         }
     } else if abs(n.x) > 0.5 {
@@ -826,6 +869,17 @@ pub struct TextureSpec {
     /// span_tiles, present)` into `macro_layers`. Materials with
     /// `present == 0` (or no entry) keep the per-tile top face.
     pub material_macros: Vec<[u32; 4]>,
+    /// Stage F part 2 (border height-blending): per material id,
+    /// `(neighbor_color_layer, neighbor_height_layer, dir,
+    /// present)` into `macro_layers` — for a blend *virtual* id,
+    /// the neighbor macro material its top face height-blends
+    /// against (the virtual id's own macro entry in
+    /// `material_macros` is its base material's). `dir` is a
+    /// cardinal index (0 +X, 1 −X, 2 +Y, 3 −Y): the neighbor lies
+    /// across that edge of the tile. Empty (or all-zero) = no
+    /// blends; only the RT path consumes this — the raster path
+    /// packs the same fields into its vertex layer words.
+    pub material_blends: Vec<[u32; 4]>,
 }
 
 /// GPU texture set bound to the render pipeline: texture array +
@@ -850,6 +904,11 @@ pub struct TextureSet {
     macro_view: wgpu::TextureView,
     macro_buffer: wgpu::Buffer,
     pub macro_layer_count: usize,
+    /// Stage F part 2: the per-material blend lookup buffer
+    /// (`TextureSpec::material_blends`). Always present (a single
+    /// all-zero entry when the spec carries no blends) so the
+    /// pipeline layout never changes.
+    blends_buffer: wgpu::Buffer,
 }
 
 impl TextureSet {
@@ -868,6 +927,7 @@ impl TextureSet {
                 macro_size: 0,
                 macro_layers: Vec::new(),
                 material_macros: Vec::new(),
+                material_blends: Vec::new(),
             },
         )
         .expect("dummy texture spec is valid")
@@ -1081,6 +1141,28 @@ impl TextureSet {
             contents: bytemuck::cast_slice(&material_macros),
             usage: wgpu::BufferUsages::STORAGE,
         });
+        // Stage F part 2: the blend lookup buffer, validated
+        // against the macro layer stack like the macro entries.
+        let material_blends: Vec<[u32; 4]> = if spec.material_blends.is_empty() {
+            vec![[0, 0, 0, 0]]
+        } else {
+            spec.material_blends.clone()
+        };
+        for (id, mb) in material_blends.iter().enumerate() {
+            if mb[3] != 0
+                && (mb[0] as usize >= macro_layers.len() || mb[1] as usize >= macro_layers.len())
+            {
+                return Err(format!(
+                    "material {id} references blend macro layer out of range ({} layers)",
+                    macro_layers.len()
+                ));
+            }
+        }
+        let blends_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-material-blends"),
+            contents: bytemuck::cast_slice(&material_blends),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
         Ok(Self {
             _texture: texture,
             view,
@@ -1093,6 +1175,7 @@ impl TextureSet {
             macro_view,
             macro_buffer,
             macro_layer_count: macro_layers.len(),
+            blends_buffer,
         })
     }
 }
@@ -1242,6 +1325,8 @@ impl RtRenderer {
                 // Phase 9 fine tree: side table + uniforms.
                 side_layout_entry(9),
                 uniform_layout_entry(10),
+                // Stage F part 2: per-material blend entries.
+                side_layout_entry(11),
             ],
         });
         let query_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1568,6 +1653,10 @@ impl RtRenderer {
                 wgpu::BindGroupEntry {
                     binding: 10,
                     resource: scene.fine_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: scene.textures.blends_buffer.as_entire_binding(),
                 },
             ],
         });

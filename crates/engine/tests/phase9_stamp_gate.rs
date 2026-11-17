@@ -177,6 +177,7 @@ fn fixture() -> Fixture {
         macro_size: 0,
         macro_layers: Vec::new(),
         material_macros: Vec::new(),
+        material_blends: Vec::new(),
     };
     let first_layer = spec.layers.len() as u32;
     let appended = extend_texture_spec_with_props(&mut spec, &colors, BASE_ID);

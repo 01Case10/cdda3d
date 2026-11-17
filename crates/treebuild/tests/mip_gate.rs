@@ -392,6 +392,7 @@ fn wall_scene(gpu: &Gpu, layer: Vec<u8>, tile: u32) -> (treebuild::render::RtRen
                 macro_size: 0,
                 macro_layers: Vec::new(),
                 material_macros: Vec::new(),
+                material_blends: Vec::new(),
             },
         )
         .unwrap();
