@@ -179,6 +179,8 @@ pub enum Archetype {
     ConsoleDesk,
     LaundryAppliance,
     VendingMachine,
+    HollowCylinder,
+    ClosedCylinder,
 }
 
 /// The archetype id table: furniture id -> archetype. The
@@ -209,6 +211,20 @@ pub const ARCHETYPE_IDS: &[(&str, Archetype)] = &[
     ("f_vending_o", Archetype::VendingMachine),          // own sprite (broken machine)
     ("f_vending_c_off", Archetype::VendingMachine),      // looks_like f_vending_c, no own sprite
     ("f_vending_reinforced_off", Archetype::VendingMachine), // looks_like f_vending_reinforced
+    // Coverage fix round (2026-11-17): hollow cylinders — open
+    // barrels and a trash can; the interior (dark, or burning
+    // for the fd_fire variants) is drawn in the sprite's top
+    // band and becomes a real cavity with a contents surface.
+    ("f_30gal_firebarrel", Archetype::HollowCylinder),
+    ("f_30gal_firebarrel_fd_fire", Archetype::HollowCylinder),
+    ("f_55gal_firebarrel", Archetype::HollowCylinder),
+    ("f_55gal_firebarrel_fd_fire", Archetype::HollowCylinder),
+    ("f_trashcan", Archetype::HollowCylinder),
+    // Closed cylinders — a lidded keg and the fermenting vats;
+    // the sprite's top ellipse band becomes a flat lid disc.
+    ("f_wood_keg", Archetype::ClosedCylinder),
+    ("f_fvat_empty", Archetype::ClosedCylinder),
+    ("f_fvat_full", Archetype::ClosedCylinder),
 ];
 
 /// The archetype serving a furniture id, if one has been
@@ -231,6 +247,8 @@ pub fn build(archetype: Archetype, sprite: &RgbaImage, seg: &Segmentation) -> Pr
         Archetype::ConsoleDesk => build_console(sprite, seg),
         Archetype::LaundryAppliance => build_laundry(sprite, seg),
         Archetype::VendingMachine => build_vending(sprite, seg),
+        Archetype::HollowCylinder => build_hollow_cylinder(sprite, seg),
+        Archetype::ClosedCylinder => build_closed_cylinder(sprite, seg),
     }
 }
 
@@ -1196,6 +1214,217 @@ fn build_vending(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 m.set(x, y, z, None);
             }
             m.set(x, y, wall_z, Some(fit.bay_wall));
+        }
+    }
+    m
+}
+
+// ---------------------------------------------------------------------
+// HollowCylinder / ClosedCylinder (coverage fix round, 2026-11-17;
+// pipeline §32)
+//
+// Joey's review of the coverage drive's cylinder treatment: the
+// per-column tops followed the sprite's drawn rim ellipse, so
+// open barrels carried a jagged solid cap of rim/interior paint
+// where the real object has an opening. These two archetypes
+// build the actual container:
+//
+// * HollowCylinder — a wall shell (thickness WALL_T) around a
+//   genuine cavity. The cavity's floor is the CONTENTS surface:
+//   what the sprite draws inside its top ellipse (dark interior
+//   for an empty barrel, burning fuel for the fd_fire variants),
+//   sampled as the modal paint of the top band's inner columns.
+//   The surface sits INTERIOR_RATIO of the diameter below the
+//   rim — the drawn ellipse's vertical diameter measured on the
+//   barrel family (9 rows over a 16-wide barrel = 0.56).
+// * ClosedCylinder — the same shell and disc, filled to the
+//   top, with the interior disc's top face set to the LID color
+//   (modal paint of the top ellipse band): a keg's lid, a vat's
+//   closed top. Column paint is clamped at each column's own
+//   top, so the perspective ellipse flattens into a level lid
+//   instead of a stepped dome.
+//
+// Both: every shell voxel carries its sprite column's paint (the
+// front is verbatim; the sides show the sprite's edge columns,
+// the cylinder convention), the footprint is the disc inscribed
+// in the front region's structure extent, depth = extent width
+// capped at 32. The segmentation these ids arrive with is the
+// coverage path's synthesized seamless one (front = the whole
+// silhouette band) — the archetype routing in
+// `props::model_for` falls back to it for archetype ids that do
+// not segment.
+// ---------------------------------------------------------------------
+
+/// Wall thickness of the cylinder shell, in cells (the barrel
+/// family's drawn rim measures ~2 cells at these diameters).
+const CYLINDER_WALL_T: u32 = 2;
+/// The drawn top ellipse's vertical diameter as a fraction of
+/// the object's width (fitted on the barrel family: 9/16).
+const CYLINDER_INTERIOR_RATIO: f32 = 0.55;
+
+/// Fitted parameters of a cylinder archetype (also the
+/// showcase's report line).
+pub struct CylinderFit {
+    /// Model depth = disc diameter (extent width, capped 32).
+    pub d: u32,
+    /// Model height (silhouette band height).
+    pub fh: u32,
+    /// Rows the drawn opening/lid band occupies; the contents
+    /// surface sits this far below the rim (HollowCylinder).
+    pub interior_depth: u32,
+    /// Modal paint of the top band's inner columns: the contents
+    /// surface color (hollow) / lid color (closed).
+    pub surface_color: Rgba<u8>,
+}
+
+/// Fit a cylinder archetype to a sprite + (seamless)
+/// segmentation: footprint from the front region's structure
+/// extent, surface color from the top band's inner columns.
+pub fn cylinder_fit(sprite: &RgbaImage, seg: &Segmentation) -> Option<CylinderFit> {
+    let (w, _) = (sprite.width(), sprite.height());
+    let fh = seg.front_rows.end - seg.front_rows.start;
+    let (x0, x1) = front_structure_extent(sprite, seg);
+    let width = x1 - x0 + 1;
+    if width < 6 || fh < 8 {
+        return None;
+    }
+    let interior_depth = ((width as f32 * CYLINDER_INTERIOR_RATIO).round() as u32)
+        .clamp(2, fh.saturating_sub(4).max(2));
+    let cx = (x0 + x1) as f32 / 2.0;
+    let half_inner = width as f32 / 4.0;
+    let surface_color = modal_color(
+        (seg.front_rows.start..seg.front_rows.start + interior_depth)
+            .flat_map(|r| (0..w).map(move |x| (x, r)))
+            .filter(|&(x, r)| {
+                structure(*sprite.get_pixel(x, r)) && (x as f32 - cx).abs() <= half_inner
+            })
+            .map(|(x, r)| *sprite.get_pixel(x, r)),
+    )?;
+    Some(CylinderFit {
+        d: width.min(32),
+        fh,
+        interior_depth,
+        surface_color,
+    })
+}
+
+/// Per-column sprite paint with vertical clamping: at model
+/// heights where the column has no structure pixel (the drawn
+/// ellipse curves away), the column's nearest structure pixel
+/// answers — the un-projection that flattens the drawn ellipse
+/// into the model's level top.
+fn column_paint(sprite: &RgbaImage, seg: &Segmentation, x: u32) -> Vec<Option<Rgba<u8>>> {
+    let fh = seg.front_rows.end - seg.front_rows.start;
+    let bot = seg.front_rows.end - 1;
+    let raw: Vec<Option<Rgba<u8>>> = (0..fh)
+        .map(|y| {
+            let px = *sprite.get_pixel(x, bot - y);
+            structure(px).then_some(px)
+        })
+        .collect();
+    (0..fh)
+        .map(|y| {
+            raw[y as usize].or_else(|| {
+                (1..fh)
+                    .filter_map(|dist| {
+                        [y.checked_add(dist), y.checked_sub(dist)]
+                            .into_iter()
+                            .flatten()
+                            .filter(|&yy| yy < fh)
+                            .find_map(|yy| raw[yy as usize])
+                    })
+                    .next()
+            })
+        })
+        .collect()
+}
+
+/// The disc geometry shared by both cylinder archetypes:
+/// (x0, cx, cz, rx, rz) over the model's z range.
+struct Disc {
+    x0: u32,
+    x1: u32,
+    cx: f32,
+    cz: f32,
+    rx: f32,
+    rz: f32,
+}
+
+impl Disc {
+    fn new(sprite: &RgbaImage, seg: &Segmentation, d: u32) -> Disc {
+        let (x0, x1) = front_structure_extent(sprite, seg);
+        Disc {
+            x0,
+            x1,
+            cx: (x0 + x1) as f32 / 2.0,
+            cz: (d - 1) as f32 / 2.0,
+            rx: (x1 - x0 + 1) as f32 / 2.0,
+            rz: d as f32 / 2.0,
+        }
+    }
+    /// Normalized radius of a cell (0 at the axis, 1 at the rim).
+    fn rn(&self, x: u32, z: u32) -> f32 {
+        let dx = (x as f32 - self.cx) / self.rx;
+        let dz = (z as f32 - self.cz) / self.rz;
+        (dx * dx + dz * dz).sqrt()
+    }
+    /// The shell band's inner normalized radius.
+    fn inner_rn(&self) -> f32 {
+        1.0 - CYLINDER_WALL_T as f32 / self.rx
+    }
+}
+
+fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let fit = cylinder_fit(sprite, seg).expect("cylinder fit");
+    let disc = Disc::new(sprite, seg, fit.d);
+    let surface_y = fit.fh - fit.interior_depth;
+    let mut m = PropModel::new([sprite.width(), fit.fh, fit.d]);
+    for x in disc.x0..=disc.x1 {
+        let paint = column_paint(sprite, seg, x);
+        for z in 0..fit.d {
+            let rn = disc.rn(x, z);
+            if rn > 1.0 {
+                continue;
+            }
+            if rn > disc.inner_rn() {
+                // Shell: full height, the column's own paint.
+                for y in 0..fit.fh {
+                    if let Some(c) = paint[y as usize] {
+                        m.set(x, y, z, Some(c));
+                    }
+                }
+            } else {
+                // Contents: solid up to the surface, cavity above.
+                for y in 0..=surface_y {
+                    m.set(x, y, z, Some(fit.surface_color));
+                }
+            }
+        }
+    }
+    m
+}
+
+fn build_closed_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let fit = cylinder_fit(sprite, seg).expect("cylinder fit");
+    let disc = Disc::new(sprite, seg, fit.d);
+    let mut m = PropModel::new([sprite.width(), fit.fh, fit.d]);
+    for x in disc.x0..=disc.x1 {
+        let paint = column_paint(sprite, seg, x);
+        for z in 0..fit.d {
+            let rn = disc.rn(x, z);
+            if rn > 1.0 {
+                continue;
+            }
+            for y in 0..fit.fh {
+                if let Some(c) = paint[y as usize] {
+                    m.set(x, y, z, Some(c));
+                }
+            }
+            // The lid: the interior disc's top face is the one
+            // fitted lid material; the rim ring keeps its paint.
+            if rn <= disc.inner_rn() {
+                m.set(x, fit.fh - 1, z, Some(fit.surface_color));
+            }
         }
     }
     m

@@ -359,3 +359,91 @@ fn console_front_verbatim_recessed_terminal_open_base() {
     }
     assert_albedo(&sprite, &seg, &m, &[]);
 }
+
+// ---------------------------------------------------------------------
+// HollowCylinder / ClosedCylinder (coverage fix round, pipeline
+// §32): open barrels get a real cavity with a contents surface;
+// the keg gets a flat fitted lid.
+// ---------------------------------------------------------------------
+
+/// The cylinder ids' sprites do not segment, so `load` (which
+/// requires a segmentation) cannot serve them; load raw and use
+/// the seamless segmentation where a seg is needed.
+fn load_raw(sprite_id: &str) -> RgbaImage {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    let entry = ts
+        .entries
+        .get(sprite_id)
+        .unwrap_or_else(|| panic!("tileset has {sprite_id}"));
+    composite_entry(&ts, entry).expect("sprite composites")
+}
+
+#[test]
+fn hollow_cylinder_has_a_real_cavity() {
+    let sprite = load_raw("f_30gal_firebarrel");
+    let m = model_for("f_30gal_firebarrel", &sprite).expect("barrel models");
+    assert_same_model(
+        &m,
+        &model_for("f_30gal_firebarrel", &sprite).expect("rebuild"),
+    );
+    let (fh, d) = (m.size[1], m.size[2]);
+    assert_eq!(d, 16, "diameter = silhouette width");
+    // Extent 8..=23 (measured), axis at x=15/16, z=7/8.
+    // Cavity: the axis just under the rim is EMPTY (the first
+    // treatment filled it with a stepped cap of rim paint).
+    assert!(m.get(15, fh - 2, 7).is_none(), "cavity under the rim");
+    assert!(m.get(16, fh - 2, 8).is_none(), "cavity under the rim");
+    // Contents surface: interior_depth = round(16 * 0.55) = 9,
+    // so the surface is at y = fh - 9 and reads dark (the empty
+    // barrel's drawn interior).
+    let s = m.get(15, fh - 9, 7).expect("contents surface");
+    assert!(lab(s).l < 0.35, "dark interior surface: {:?}", s.0);
+    // Shell front is the sprite verbatim at body rows.
+    let seg = seamless_segment(&sprite).expect("seamless seg");
+    let bot = seg.front_rows.end - 1;
+    for y in [4u32, 10, 15] {
+        let px = *sprite.get_pixel(15, bot - y);
+        let front = (0..d)
+            .rev()
+            .find(|&z| m.get(15, y, z).is_some())
+            .map(|z| m.get(15, y, z).expect("found"));
+        assert_eq!(front, Some(px), "front verbatim at y={y}");
+    }
+    // The burning variant's surface is fire paint, not dark.
+    let fire = load_raw("f_30gal_firebarrel_fd_fire");
+    let fm = model_for("f_30gal_firebarrel_fd_fire", &fire).expect("fire barrel models");
+    let fs = fm.get(15, fm.size[1] - 9, 7).expect("fire surface");
+    assert!(
+        fs[0] > 100 && fs[0] > fs[1] * 2,
+        "contents surface is fire paint: {:?}",
+        fs.0
+    );
+}
+
+#[test]
+fn closed_cylinder_has_a_flat_fitted_lid() {
+    let sprite = load_raw("f_wood_keg");
+    let m = model_for("f_wood_keg", &sprite).expect("keg models");
+    assert_same_model(&m, &model_for("f_wood_keg", &sprite).expect("rebuild"));
+    let (w, fh, d) = (m.size[0], m.size[1], m.size[2]);
+    // The whole top face is level: every disc column reaches fh.
+    let mut lid_colors = std::collections::HashSet::new();
+    let (cx, cz) = (15u32, d / 2);
+    assert!(m.get(cx, fh - 1, cz).is_some(), "lid at the axis");
+    for x in 0..w {
+        for z in 0..d {
+            if let Some(c) = m.get(x, fh - 1, z) {
+                let dx = (x as f32 - 15.0) / 9.5;
+                let dz = (z as f32 - (d - 1) as f32 / 2.0) / (d as f32 / 2.0);
+                if dx * dx + dz * dz <= 0.36 {
+                    lid_colors.insert(c.0);
+                }
+            }
+        }
+    }
+    assert_eq!(
+        lid_colors.len(),
+        1,
+        "interior lid is one fitted material: {lid_colors:?}"
+    );
+}

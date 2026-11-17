@@ -235,6 +235,15 @@ fn main() {
                     f.height, f.depth, f.base_h, f.bay
                 )
             }
+            Archetype::HollowCylinder | Archetype::ClosedCylinder => {
+                match cylinder_fit(&sprite, &seg) {
+                    Some(f) => format!(
+                        "d {} fh {} interior_depth {} surface {:?}",
+                        f.d, f.fh, f.interior_depth, f.surface_color.0
+                    ),
+                    None => "no cylinder fit".to_string(),
+                }
+            }
         };
         println!("{served_id} <- {sprite_id}: {arch:?}; {fit_note}");
         let oy = row as u32 * CELL_H;

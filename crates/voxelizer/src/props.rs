@@ -2151,7 +2151,13 @@ pub fn model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         SpriteView::EndOn if pinned => endon_model(id, sprite),
         _ => {
             if let Some(arch) = crate::archetypes::archetype_for(id) {
-                let seg = segment_for(id, sprite)?;
+                // The cylinder archetypes serve ids whose sprites
+                // do not segment (open barrels, vats): they fit on
+                // the coverage path's synthesized seamless
+                // segmentation instead. Every other archetype id
+                // segments, so the fallback changes nothing for
+                // them (and an id that fits neither still declines).
+                let seg = segment_for(id, sprite).or_else(|| seamless_segment(sprite))?;
                 Some(crate::archetypes::build(arch, sprite, &seg))
             } else if let Some(seg) = segment_for(id, sprite) {
                 Some(solid_model_for(id, sprite, &seg))
@@ -2487,15 +2493,11 @@ fn seamless_top_color(sprite: &RgbaImage, seg: &Segmentation) -> Option<Rgba<u8>
 /// (Joey's review, 2026-11-17). Each pin was verified against
 /// its sprite: the depicted object is round in plan.
 pub const CYLINDER_PINS: &[&str] = &[
-    "f_30gal_firebarrel",
-    "f_30gal_firebarrel_fd_fire",
-    "f_55gal_firebarrel",
-    "f_55gal_firebarrel_fd_fire",
-    "f_fvat_empty",
-    "f_fvat_full",
+    // (The barrels, trash can, keg and vats left this list for
+    // the HollowCylinder / ClosedCylinder archetypes — an open
+    // or lidded container needs a real cavity/lid, not a capped
+    // column extrusion; see archetypes.rs.)
     "f_water_heater",
-    "f_wood_keg",
-    "f_trashcan",
     "f_logstool",
     "f_punching_bag",
     "f_boulder_large",
