@@ -886,8 +886,10 @@ albedo, determinism), archetypes_gate 3/3, props_gate 9/9,
 views_gate 4/4, approved_models_gate 2/2 (hashes unchanged),
 lib 36/36. Showcase: examples/g4_showcase.rs ->
 target/stage-g/g4.png (washer, dryer, vending_c,
-vending_reinforced, vending_o), presented to Joey 2026-11-16
-for sign-off.
+vending_reinforced, vending_o), presented to Joey 2026-11-16.
+**JOEY SIGN-OFF: GRANTED 2026-11-17** — the G.4 set is accepted
+as built; the archetype set is now ShelfUnit, ConsoleDesk,
+LaundryAppliance, VendingMachine (18 served ids across G.3+G.4).
 
 ## 29. Stage F part 2 — end-caps outcome (2026-11-16)
 
