@@ -782,3 +782,18 @@ base [171,157,132] beige); base band fitted by color (first beige
 row up, base_h 11, dark plinth rows belong to the band). Side now
 reads: beige cabinet below, dark terminal above, desk ledge in
 front of the recessed screen.
+
+## 27. Process rule: procedural generation is pass 1, agent review is pass 2 (Joey, 2026-11-16)
+
+For prop objects, the procedural generator (view builders,
+archetypes, fittings) is only the FIRST PASS. After it runs, an
+agent must review the rendered output (the 4-angle showcase)
+against the sprite and the approved mockup, and make MANUAL
+TWEAKS — per-id pins, overrides, fitted-parameter corrections —
+until the model actually looks correct. A green structural gate
+is not acceptance: the G.3 history is the evidence (archetypes
+passed their gates while four of five models looked wrong;
+the bed passed its gates with a missing side wall and no
+footboard). The review loop is: generate -> render 4 angles ->
+compare against the depicted object -> tweak -> re-render.
+Joey's sign-off remains the final acceptance for showcase sets.
