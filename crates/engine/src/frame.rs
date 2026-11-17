@@ -168,6 +168,18 @@ pub struct BillboardScene {
     pub entities: Vec<billboard::instance::FakeEntity>,
     pub items: Option<billboard::instance::FakeItemTiles>,
     pub time_s: f32,
+    /// Stage F part 2 (§10.2): decoration scatter placements for
+    /// this scene, derived client-side by `billboard::decor::scatter`
+    /// (see [`sample_scene_decorations`] for the sample scene's).
+    /// Drawn in the billboard pass from `decor_atlas` (or the scene
+    /// atlas when it already carries the decoration sprites);
+    /// never registered for picking — [`pick_billboard_entity`]
+    /// iterates `entities` only, by construction.
+    pub decorations: Vec<billboard::decor::Decoration>,
+    /// The voxelizer's decoration atlas (Stage F part 2), when the
+    /// caller built one. `None` = decorations address the scene
+    /// atlas directly.
+    pub decor_atlas: Option<billboard::atlas::SpriteAtlas>,
 }
 
 impl BillboardScene {
@@ -192,6 +204,8 @@ impl BillboardScene {
             ],
             items: Some(billboard::scene::crowd_items()),
             time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
         }
     }
 
@@ -221,6 +235,8 @@ impl BillboardScene {
             ],
             items: None,
             time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
         })
     }
 
@@ -251,8 +267,69 @@ impl BillboardScene {
             ],
             items: None,
             time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
         })
     }
+}
+
+/// Stage F part 2 (§10.2): the sample scene's ground tiles in the
+/// scatter's terms, derived from `world::build_sample_scene`'s
+/// chunk map at data level (the same map both renderers mesh).
+/// Kind comes from the tile's level-0 base block; `under_roof` is
+/// a roof-slab block in the level above. `macro_height` is `None`
+/// for every tile here — the sample scene's macro height lives in
+/// the GPU texture array, not in CPU data this builder can sample
+/// — so the scatter's documented fallback density
+/// (`billboard::decor::FALLBACK_HEIGHT`) applies. Callers with a
+/// CPU height layer (the Stage F2 gate does this with the
+/// voxelizer's macro PNG) supply `Some` samples through
+/// `billboard::decor::GroundTile` directly.
+pub fn sample_scene_ground_tiles() -> Vec<billboard::decor::GroundTile> {
+    use billboard::decor::{GroundKind, GroundTile};
+    use mesher::block::{TILE_FLOOR_WOOD, TILE_GROUND, TILE_ROOF, TILE_WATER};
+    let scale = mesher::scale::WorldScale::default();
+    let map = crate::world::build_sample_scene(scale);
+    let per_u = scale.blocks_per_z_level;
+    let roof_z = (per_u + (per_u - scale.roof_slab_blocks.min(per_u))) as i32;
+    let mut out = Vec::new();
+    let mut coords: Vec<[i32; 2]> = map.chunks.keys().copied().collect();
+    coords.sort();
+    for coord in coords {
+        let chunk = &map.chunks[&coord];
+        for ly in 0..mesher::chunk::CHUNK_H as i32 {
+            for lx in 0..mesher::chunk::CHUNK_W as i32 {
+                let base = chunk.grid.get(lx, ly, 0);
+                let kind = match base.id {
+                    TILE_GROUND => GroundKind::Grass,
+                    TILE_FLOOR_WOOD => GroundKind::Floor,
+                    TILE_WATER => GroundKind::Water,
+                    _ => GroundKind::Other,
+                };
+                let under_roof = chunk.grid.get(lx, ly, roof_z).id == TILE_ROOF;
+                out.push(
+                    GroundTile::new(
+                        [
+                            coord[0] * mesher::chunk::CHUNK_W as i32 + lx,
+                            coord[1] * mesher::chunk::CHUNK_H as i32 + ly,
+                            0,
+                        ],
+                        kind,
+                    )
+                    .under_roof(under_roof),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// Stage F part 2 (§10.2): the sample scene's decoration scatter —
+/// the perf-record population (instance count) for the built-in
+/// sample scene, and the set a caller seats into
+/// [`BillboardScene::decorations`] to draw it.
+pub fn sample_scene_decorations() -> Vec<billboard::decor::Decoration> {
+    billboard::decor::scatter(&sample_scene_ground_tiles())
 }
 
 /// Vehicle input for one frame (Phase 8 wiring): the vehicle
@@ -709,7 +786,8 @@ pub struct FrameStats {
     /// Passes actually executed, in execution order — a subsequence
     /// of [`FRAME_ORDER`] (equal to it when every layer is on).
     pub passes: Vec<FramePass>,
-    /// Billboard instances drawn (creatures + item piles).
+    /// Billboard instances drawn (creatures + item piles +
+    /// Stage F part 2 decorations).
     pub billboards: usize,
     /// Time inside the UI stage (upload + composite + GPU wait) —
     /// gate 4.12's in-loop measurement point (Phase 2h.4).
@@ -1434,6 +1512,33 @@ fn draw_billboards(
                 eye,
                 scene.time_s,
                 &scene.atlas.image,
+                &inst,
+                &[],
+            );
+            draw_billboard_pass(device, queue, &pass, color_view, depth_view);
+            count += inst.len();
+        }
+    }
+
+    // Stage F part 2 (§10.2): decorations — same pass, same depth
+    // test, same floor-surface lift; a third prepare/draw over the
+    // decoration atlas (or the scene atlas when it carries the
+    // decoration sprites). Drawing only: these instances are
+    // never fed to the picker.
+    if !scene.decorations.is_empty() {
+        let datlas = scene.decor_atlas.as_ref().unwrap_or(&scene.atlas);
+        let mut inst = billboard::decor::decoration_instances(&scene.decorations, datlas, eye);
+        for i in &mut inst {
+            i.anchor.y += lift;
+        }
+        if !inst.is_empty() {
+            pass.prepare_with_view_proj(
+                device,
+                queue,
+                view_proj,
+                eye,
+                scene.time_s,
+                &datlas.image,
                 &inst,
                 &[],
             );
