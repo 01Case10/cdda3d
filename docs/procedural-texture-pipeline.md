@@ -1380,3 +1380,56 @@ same approximation applied to all texture decisions at LOD
 nodes); raster blend words cap at 2048 compact macro colors
 (today's set is 2), beyond which tiles fall back to plain macro
 words.
+
+## 34. Stage H — pond circularity tuning (2026-11-17, worktree `pond-tuning`, AWAITING JOEY SIGN-OFF, not merged)
+
+The Stage E verdict (rounded-square, §14) is addressed in
+`voxelizer::shore`: the box blur is gone. The field is now the
+raw chamfer SDF, with a **windowed morphological opening of
+the waterline region** `{field >= 12}` blended in only around
+*pond corners*.
+
+Design, after two measured dead ends:
+- Opening the tile region (radius 16) barely moves the
+  waterline: the arc it draws has radius `opening - 12`
+  (the band offset), so the inset square survives.
+- A global opening of the waterline region (A = 28) gives a
+  near-disk 3x3 (IoU 0.957) but erodes the center of a water
+  tile wrapping a land point (mask 0xF8, gate-protected):
+  that tile's center is an isthmus, not a corner.
+- Final: opening radius `A = clamp(deepest field in frame -
+  12, 0, 28)` (thin water — lone tile, 1-wide channel — gets
+  A ~ 4 and survives), blended with weight falling to zero
+  A+10 px (Chebyshev) around grid points where exactly one
+  incident tile is water AND the shoreline runs >= 2 tile
+  edges through the point in both directions. The run test
+  is the discriminator: a pond corner's shore continues both
+  ways; a land point's inner corner has a run that ends one
+  tile away. No center-stays-water fallback — the masks
+  whose centers must stay water keep them under this rule,
+  and the stage_e gate asserts it.
+
+Measured (`examples/pond_metrics.rs`, material mosaic):
+3x3 best-disk IoU 0.837 -> 0.951, radial std 4.14 -> 1.25 px,
+corner-tile water coverage 38.6% -> 21.3%; 5x5 IoU 0.838 ->
+0.870, 7x7 0.838 -> 0.852 (larger ponds keep a rounded-
+square character with a 28 px corner arc — they are not
+forced to disks; the 3x3 reads circular because its four
+arcs meet). Straight-edge profile unchanged (first water
+y = 11-13 across the tile, as baseline).
+
+Gates (worktree, lavapipe): stage_e_gate 3/3, shore unit
+tests 3/3 (all-water identity, depth_shade ordering incl.
+the lone tile), full voxelizer suite green except the known
+gate_5_1 worktree ATTRIBUTION-path artifact (reproduced on
+pristine HEAD), engine stage_f2_pond_gate 4/4 (both
+renderers), engine golden_gate 3/3 (sample-scene goldens
+unmoved).
+
+Known cosmetic note: the showcase mosaic composes
+`bank_texture` on land tiles, whose water-facing edge rows
+now sit exposed against the corner tiles' grass triangles
+as a faint square speckle line. The engine does not emit
+bank textures (§31: land tiles keep plain tops; the dirt
+ring lives in the shore texture), so the line does not
+appear in engine captures.
