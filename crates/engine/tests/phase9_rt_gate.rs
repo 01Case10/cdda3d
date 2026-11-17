@@ -253,3 +253,69 @@ fn phase9_rt_lit_props_masked_by_blank_tiles() {
     assert_eq!(b_mean, 0.0);
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3i (9.8): frame composition regression against a
+// fine-layer world — the Phase 8 vehicle wiring (vehicles stamped
+// in the world pass) composed WITH fine props, both renderers.
+// The combined frame must differ from each single-input frame:
+// neither pass may drop or overwrite the other.
+// ---------------------------------------------------------------------
+
+use engine::frame::VehicleScene;
+
+#[test]
+fn phase9_regression_vehicles_and_props_compose() {
+    let _guard = gpu_lock();
+    let scratch = scratch_dir("compose");
+    for renderer in [RendererKind::Raster, RendererKind::Rt] {
+        let mk = |name: &str, fine: bool, car: bool| {
+            let mut a = rt_args(&scratch.join(name), "stub-house", fine, None);
+            a.renderer = renderer;
+            a.camera_target = (5.5, 5.0);
+            a.distance = 14.0;
+            if car {
+                a.vehicles = Some(VehicleScene::fixture_car([4, 5, 0], 23.0));
+            }
+            a
+        };
+        let plain = match capture_rt(&mk("plain.png", false, false)) {
+            Ok(img) => img,
+            Err(CaptureError::NoAdapter) => {
+                loud_skip("no wgpu adapter available (capture returned NoAdapter)");
+                return;
+            }
+            Err(e) => panic!("9.8 plain capture failed ({renderer:?}): {e}"),
+        };
+        let props_only = capture_rt(&mk("props.png", true, false))
+            .unwrap_or_else(|e| panic!("9.8 props capture failed ({renderer:?}): {e}"));
+        let car_only = capture_rt(&mk("car.png", false, true))
+            .unwrap_or_else(|e| panic!("9.8 car capture failed ({renderer:?}): {e}"));
+        let both = capture_rt(&mk("both.png", true, true))
+            .unwrap_or_else(|e| panic!("9.8 combined capture failed ({renderer:?}): {e}"));
+
+        let total = (plain.width() * plain.height()) as f64;
+        let frac = |a: &image::RgbaImage, b: &image::RgbaImage| diff_stats(a, b).0 as f64 / total;
+        let (d_props, d_car, d_both_props, d_both_car) = (
+            frac(&plain, &props_only),
+            frac(&plain, &car_only),
+            frac(&props_only, &both),
+            frac(&car_only, &both),
+        );
+        println!(
+            "9.8 {renderer:?}: props {d_props:.4}, car {d_car:.4}, \
+             both-vs-props {d_both_props:.4}, both-vs-car {d_both_car:.4} (frame fraction)"
+        );
+        assert!(d_props > 0.0005, "{renderer:?}: props alone must show");
+        assert!(d_car > 0.0005, "{renderer:?}: car alone must show");
+        assert!(
+            d_both_props > 0.0005,
+            "{renderer:?}: adding the car to the prop frame must change it (vehicle pass lost?)"
+        );
+        assert!(
+            d_both_car > 0.0005,
+            "{renderer:?}: adding props to the car frame must change it (fine pass lost?)"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+}
