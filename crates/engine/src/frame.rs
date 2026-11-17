@@ -986,14 +986,10 @@ fn render_frame_inner(
     let mut stats = FrameStats::default();
 
     if args.renderer == RendererKind::Rt {
-        // Phase 9 slice 2: fine props are raster-only until
-        // slice 3 (9.5) wires the RT fine adapter — fail loud,
-        // never silently drop the props.
-        if args.fine_props || args.props.is_some() {
-            return Err(CaptureError::Device(
-                "fine props are not wired for the RT renderer yet (Phase 9 slice 3)".into(),
-            ));
-        }
+        // Phase 9 slice 3 (9.5): fine props are wired for RT —
+        // `render_rt_frame` resolves the effective prop scene
+        // (explicit `props`, else the fixture scene under
+        // `--fine-props`) and builds the two-tree scene.
         // World (RT): trace the frame, copy its color into an
         // engine-format target, and — when a downstream pass needs
         // depth (fields depth-fade, billboard depth test, post

@@ -13,6 +13,7 @@
 use std::time::Instant;
 
 use glam::Vec3;
+use mesher::grid::VoxelSampler as _;
 use treebuild::build::{build_tree, BuildConfig, BuiltTree};
 use treebuild::render::{RtCamera, RtRenderer};
 use treebuild::world::VoxelWorld;
@@ -295,6 +296,10 @@ pub struct RtFrameOut {
     pub size: (u32, u32),
     pub leaves: usize,
     pub nodes: usize,
+    /// Phase 9 (9.5): fine-tree leaf/node counts when the frame
+    /// carried props (0 on the coarse-only path).
+    pub fine_leaves: usize,
+    pub fine_nodes: usize,
     pub build_ms: f64,
     pub texture_stats: Option<crate::textures::TextureStats>,
 }
@@ -307,6 +312,20 @@ pub fn render_rt_frame(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<RtFrameOut, CaptureError> {
+    // Phase 9 (9.5): the effective prop scene — an explicit
+    // `props` scene wins regardless of the flag; with only
+    // `--fine-props` set, the snapshot's fixture scene is used
+    // (the same rule as the raster dispatch in frame.rs). With
+    // neither, the coarse-only path below runs untouched.
+    let fixture_props: Option<crate::frame::PropScene> =
+        if args.props.is_none() && args.fine_props {
+            crate::frame::PropScene::fixture(&args.snapshot)
+        } else {
+            None
+        };
+    if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
+        return render_rt_frame_props(device, queue, args, props);
+    }
     let t0 = Instant::now();
     // Phase 2h.3: with a lighting scene, the world is built
     // through the Phase 7 visibility contract (BLANK voxels never
@@ -367,6 +386,233 @@ pub fn render_rt_frame(
         size: (width, height),
         leaves: built.leaf_count(),
         nodes: built.node_count(),
+        fine_leaves: 0,
+        fine_nodes: 0,
+        build_ms,
+        texture_stats,
+    })
+}
+
+/// The Phase 7 visibility contract as a post-pass over an
+/// already-built world (the body of [`world_for_levels_lit_sv`],
+/// reusable over the fine world): `Hidden` tiles' cells are
+/// dropped, `Memorized` cells take the pinned presentation,
+/// `Visible` cells take their tile's `LitLevel`. With `fine`,
+/// the world is in fine coordinates (`mesher::fine::FINE` cells
+/// per block): a fine cell takes its CONTAINING tile's light —
+/// the 9.6 v1 rule (docs/phase9-fine.md §1).
+fn lit_rewrite(world: &VoxelWorld, lit: &crate::frame::LightingScene, fine: bool) -> VoxelWorld {
+    let mask = lighting::VisibilityMask::new(&lit.grid);
+    let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
+    let mut out = VoxelWorld::new();
+    for (pos, cell) in world.iter() {
+        let tile = if fine {
+            [
+                pos[0].div_euclid(mesher::fine::FINE),
+                pos[1].div_euclid(mesher::fine::FINE),
+                lit.min_game_z + pos[2] / (per * mesher::fine::FINE),
+            ]
+        } else {
+            [pos[0], pos[1], lit.min_game_z + pos[2] / per]
+        };
+        let vis = mask.visibility(tile[0], tile[1], tile[2]);
+        if !lighting::include_in_tree(vis) {
+            continue; // BLANK: never enters the tree
+        }
+        let mut cell = *cell;
+        let tile_light = lit.grid.get(tile[0], tile[1], tile[2]);
+        match vis {
+            lighting::Visibility::Memorized => {
+                cell.color = lighting::present_color(cell.color, tile_light);
+                cell.lit = treebuild::world::LIT_MEMORIZED;
+                cell.flags &= !treebuild::world::FLAG_MEMORIZED;
+            }
+            lighting::Visibility::Visible => {
+                cell.lit = tile_light.lit.0;
+            }
+            lighting::Visibility::Hidden => unreachable!("filtered above"),
+        }
+        out.set(*pos, cell);
+    }
+    out
+}
+
+/// Shift every fine-world cell's material id by
+/// `to_base - from_base` (both are the synthetic base ids the
+/// colour set was / will be addressed at: stamped ids are
+/// `from_base + 1 + i`, the attached spec's entries are
+/// `to_base + 1 + i`).
+fn shift_fine_ids(world: &mut VoxelWorld, from_base: u32, to_base: u32) {
+    if from_base == to_base {
+        return;
+    }
+    let delta = to_base as i32 - from_base as i32;
+    let cells: Vec<([i32; 3], treebuild::world::VoxelCell)> =
+        world.iter().map(|(p, c)| (*p, *c)).collect();
+    for (pos, mut cell) in cells {
+        cell.material_id = (cell.material_id as i32 + delta) as u32;
+        world.set(pos, cell);
+    }
+}
+
+/// Phase 9 (9.5): the prop-carrying form of [`render_rt_frame`].
+/// Mirrors the raster fine preparation
+/// (`scene_prep::prepare_raster_fine_v` /
+/// `prepare_raster_lit_fine_v`) into two trees: props are
+/// stamped into a `FineLayer` over the cutaway-filtered map
+/// (suppressing the coarse furniture blocks), the coarse tree
+/// is built from the stamped map, and the fine tree from
+/// `VoxelWorld::from_fine_layer` — composited by the shader's
+/// two-tree trace. With a lighting scene the visibility mask
+/// is applied before stamping and placements on `Hidden`
+/// tiles are skipped, exactly as on the raster lit path; the
+/// fine world then takes the same per-tile lit rewrite as the
+/// coarse world (9.6 v1 rule).
+///
+/// Texture-spec order: stamping fixes synthetic ids against
+/// the base spec (or base 1000 untextured); the ATTACHED spec
+/// is the variant spec the coarse-only path builds, extended
+/// with the prop colours at its own end, and the fine ids are
+/// shifted onto it — variant virtual ids allocate above the
+/// coarse world's max id and the shift lands the synthetic
+/// ids above the whole attached spec, so the namespaces
+/// cannot collide.
+fn render_rt_frame_props(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    props: &crate::frame::PropScene,
+) -> Result<RtFrameOut, CaptureError> {
+    let t0 = Instant::now();
+    let levels = capture_visible_levels(args.cutaway_z);
+    let sample = args.snapshot == "sample-scene";
+    let scale = mesher::scale::WorldScale::default();
+    let map = if sample {
+        world::build_sample_scene(scale)
+    } else {
+        world::build_fake_house(scale)
+    };
+    let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, &levels);
+    if let Some(v) = &args.vehicles {
+        crate::scene_prep::stamp_vehicles(&mut filtered, v);
+    }
+    let kept: Vec<crate::snapshot_world::FurniturePlacement>;
+    let placements: &[crate::snapshot_world::FurniturePlacement] = match &args.lighting {
+        Some(lit) => {
+            crate::scene_prep::apply_visibility_mask(&mut filtered, lit);
+            kept = props
+                .placements
+                .iter()
+                .copied()
+                .filter(|p| {
+                    let slab_z = scale.level_base_block(p.level) as i32;
+                    !filtered.block_at(p.x, p.y, slab_z).is_air()
+                })
+                .collect();
+            &kept
+        }
+        None => &props.placements,
+    };
+    let mut spec_opt = match &args.textures {
+        Some(dir) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (spec, _stats) =
+                crate::textures::build_texture_spec(&table, dir, &fake_material_ids())
+                    .map_err(CaptureError::Device)?;
+            Some(spec)
+        }
+        None => None,
+    };
+    let prep = crate::scene_prep::prep_prop_spec(props, &mut spec_opt);
+    let layer = crate::scene_prep::stamp_props_into(&mut filtered, placements, props, &prep, scale)
+        .map_err(CaptureError::Device)?;
+    let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
+    let mut fine_world = VoxelWorld::from_fine_layer(&layer);
+    if let Some(lit) = &args.lighting {
+        coarse_world = lit_rewrite(&coarse_world, lit, false);
+        fine_world = lit_rewrite(&fine_world, lit, true);
+    }
+    let assignments = match &args.textures {
+        Some(dir) => prepare_fake_variants(&mut coarse_world, dir)?,
+        None => Vec::new(),
+    };
+    let shore_assignments = match &args.textures {
+        Some(dir) => prepare_fake_shore_variants(&mut coarse_world, dir)?,
+        None => Vec::new(),
+    };
+    let mut texture_stats = None;
+    let attach_spec: Option<treebuild::render::TextureSpec> = match &args.textures {
+        Some(dir) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (mut spec, stats) = crate::textures::build_texture_spec_variants(
+                &table,
+                dir,
+                &fake_material_ids(),
+                &assignments,
+                &shore_assignments,
+            )
+            .map_err(CaptureError::Device)?;
+            texture_stats = Some(stats);
+            if !prep.colors.is_empty() {
+                let final_base = spec.material_layers.len() as u32;
+                crate::textures::extend_texture_spec_with_props(
+                    &mut spec,
+                    &prep.colors,
+                    final_base,
+                );
+                shift_fine_ids(&mut fine_world, prep.base_id, final_base);
+            }
+            Some(spec)
+        }
+        None => {
+            // `prep_prop_spec` already built the prop-only spec
+            // at the stamp-time base id — no shift needed.
+            if prep.colors.is_empty() {
+                None
+            } else {
+                spec_opt
+            }
+        }
+    };
+    let built = build_tree(&coarse_world, BuildConfig::default())
+        .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
+    let fine_built = if fine_world.is_empty() {
+        None
+    } else {
+        Some(
+            build_tree(&fine_world, BuildConfig::default())
+                .map_err(|e| CaptureError::Device(format!("treebuild fine: {e}")))?,
+        )
+    };
+    let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let (renderer, mut scene) =
+        RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
+    if let Some(spec) = &attach_spec {
+        scene
+            .attach_textures(device, queue, spec)
+            .map_err(CaptureError::Device)?;
+    }
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let aspect = width as f32 / height as f32;
+    let camera = capture_camera(args, aspect);
+    let frame = if args.macro_debug_height {
+        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
+    } else {
+        renderer.render(device, queue, &scene, &camera, (width, height), true)
+    };
+    device.poll(wgpu::Maintain::Wait);
+    Ok(RtFrameOut {
+        color: frame.color,
+        depth: frame.depth,
+        max_dist: frame.max_dist,
+        camera,
+        size: (width, height),
+        leaves: built.leaf_count(),
+        nodes: built.node_count(),
+        fine_leaves: fine_built.as_ref().map(|b| b.leaf_count()).unwrap_or(0),
+        fine_nodes: fine_built.as_ref().map(|b| b.node_count()).unwrap_or(0),
         build_ms,
         texture_stats,
     })

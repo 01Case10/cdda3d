@@ -180,10 +180,10 @@ fn mesh_filtered_fine(map: &mesher::chunk::ChunkMap, layer: &FineLayer) -> (Pass
 /// Holds the scene-wide colour set plus the synthetic base id
 /// and first appended layer the stamped blocks are resolved
 /// against (`snapshot_world::prop_block_for`).
-struct PropPrep {
-    colors: textures::PropColorSet,
-    base_id: u32,
-    first_layer: u32,
+pub(crate) struct PropPrep {
+    pub(crate) colors: textures::PropColorSet,
+    pub(crate) base_id: u32,
+    pub(crate) first_layer: u32,
 }
 
 /// Build the [`PropPrep`] for `props`, mutating `spec_opt` as
@@ -201,7 +201,7 @@ struct PropPrep {
 ///
 /// An empty colour set (an empty prop scene) extends/creates
 /// nothing: `spec_opt` is left exactly as it was.
-fn prep_prop_spec(props: &crate::frame::PropScene, spec_opt: &mut Option<TextureSpec>) -> PropPrep {
+pub(crate) fn prep_prop_spec(props: &crate::frame::PropScene, spec_opt: &mut Option<TextureSpec>) -> PropPrep {
     let colors = textures::PropColorSet::from_models(props.models.iter().map(|(_, m)| m));
     match spec_opt {
         Some(spec) => {
@@ -237,7 +237,7 @@ fn prep_prop_spec(props: &crate::frame::PropScene, spec_opt: &mut Option<Texture
 /// flag from the layer afterwards (the 9.4 dispatch reads the
 /// flags, so they must reflect the final layer, not only the
 /// chunks `stamp_furniture` touched).
-fn stamp_props_into(
+pub(crate) fn stamp_props_into(
     map: &mut mesher::chunk::ChunkMap,
     placements: &[FurniturePlacement],
     props: &crate::frame::PropScene,
