@@ -3325,21 +3325,25 @@ pub const REST_UNIFORM_PINS: &[&str] = &["f_anvil"];
 /// a plant"). Routed to [`plant_model`].
 pub const REST_PLANT_PINS: &[&str] = &["f_alien_tendril", "f_alien_zapper"];
 
-/// A plant: every opaque pixel becomes a short column
-/// in z, centered, whose half-depth grows with the
-/// pixel's distance from its row's center — fronds that
-/// spread sideways in the sprite also spread in depth,
-/// the stalk stays thin. The side view reads as a
-/// tapered plant mass, not a flat cutout. (Own band:
-/// opaque_band's coverage floor collapses thin stalks.)
+/// A plant, built as a cross: the sprite silhouette is
+/// extruded thin in z (the front slab) AND thin in x
+/// along the stalk axis (the side slab, the same
+/// silhouette mapped onto the z axis). From the front
+/// you see the sprite; from the side you see the same
+/// plant profile; in plan the two slabs cross. The
+/// standard voxel-plant construction — an earlier
+/// per-row z-spread read from the side as a stack of
+/// horizontal plates (Joey's zapper review, 2026-11-17:
+/// a plant is not flat, and it is not a ribbon either).
 fn plant_model(sprite: &RgbaImage) -> Option<PropModel> {
     let (w, h) = (sprite.width(), sprite.height());
     let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
     let band = rows.next()?..rows.last()? + 1;
     let fh = band.end - band.start;
-    let depth = 9u32;
-    let zc = (depth / 2) as i32;
-    let mut m = PropModel::new([w, fh, depth]);
+    let zc = (w / 2) as i32;
+    let mut m = PropModel::new([w, fh, w]);
+    // Side slab first (the front slab overwrites the
+    // crossing column).
     for y in 0..fh {
         let r = band.end - 1 - y;
         let xs: Vec<u32> = (0..w)
@@ -3348,22 +3352,25 @@ fn plant_model(sprite: &RgbaImage) -> Option<PropModel> {
         if xs.is_empty() {
             continue;
         }
-        let cx = xs[xs.len() / 2] as i32;
-        // Phyllotaxis: the z-center spirals slowly with
-        // height and the spread jitters per row, so the
-        // side silhouette is an irregular plant outline,
-        // not a straight ribbon with banded edges.
-        let zoff = (1.6 * (y as f32 * 2.4).sin()).round() as i32;
-        let jitter = 0.75 + hash01(r, 0x91A7) * 0.5;
+        let med = xs[xs.len() / 2] as i32;
         for &x in &xs {
             let px = *sprite.get_pixel(x, r);
-            let s = ((1 + ((x as i32 - cx).abs() as f32 * 0.75).round() as i32) as f32
-                * jitter)
-                .round()
-                .clamp(1.0, 4.0) as i32;
-            for z in (zc + zoff - s)..=(zc + zoff + s) {
-                if z >= 0 && (z as u32) < depth {
-                    m.set(x, y, z as u32, Some(px));
+            for dx in [med - 1, med] {
+                if dx >= 0 && (dx as u32) < w {
+                    m.set(dx as u32, y, x, Some(px));
+                }
+            }
+        }
+    }
+    // Front slab: the silhouette extruded 2 deep at the
+    // center plane.
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if opaque(px) {
+                for dz in [zc - 1, zc] {
+                    m.set(x, y, dz as u32, Some(px));
                 }
             }
         }
