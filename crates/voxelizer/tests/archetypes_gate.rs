@@ -15,15 +15,14 @@
 //! verbatim paint (raw, because de-shading lifts dark clusters
 //! toward the median by design — the floor guards against
 //! INVENTED darkness, not against the de-shade itself)
-//! (arm a). Glass and screen accents are palette clusters by
-//! construction, so they pass through arm (b) — there are no
-//! other exceptions.
+//! (arm a).
 //!
-//! Structural assertions are per archetype (compartments open,
-//! liquid below the line, screens in accent, rim above channel,
-//! bunk gap empty). Sprites: f_bookcase, f_standing_tank,
-//! f_console, f_slab (fitted for the spriteless f_surgical_table),
-//! f_bed (the sprite f_bunkbed resolves to).
+//! The G.3 rework (pipeline §24) reduced the archetype set to
+//! ShelfUnit (signed off, unchanged) and ConsoleDesk (reworked:
+//! front plane verbatim, stepped depth, knee-hole open). The
+//! deleted archetypes' ids (tank, bunk, dissection table) route
+//! by sprite VIEW now — views_gate.rs asserts those models.
+//! Sprites: f_bookcase, f_console.
 
 use image::{Rgba, RgbaImage};
 use std::collections::HashSet;
@@ -135,8 +134,7 @@ fn assert_albedo(sprite: &RgbaImage, seg: &Segmentation, m: &PropModel, declared
     // front, top) — raw, per the header: de-shading lifts dark
     // clusters toward the median (gain up to 1.25), so a floor
     // taken from de-shaded clusters would flag the builders' own
-    // panel primaries (f_slab's front primary lands at L 0.521
-    // while its de-shaded darkest cluster sits at 0.588).
+    // panel primaries.
     let raw_dark = |rows: std::ops::Range<u32>, k: usize| -> f32 {
         let crop = image::imageops::crop_imm(
             sprite,
@@ -186,33 +184,21 @@ fn assert_albedo(sprite: &RgbaImage, seg: &Segmentation, m: &PropModel, declared
 fn archetype_mapping_is_explicit() {
     assert_eq!(archetype_for("f_bookcase"), Some(Archetype::ShelfUnit));
     assert_eq!(archetype_for("f_rack"), Some(Archetype::ShelfUnit));
-    assert_eq!(
-        archetype_for("f_standing_tank"),
-        Some(Archetype::ContainmentTank)
-    );
-    assert_eq!(
-        archetype_for("f_storage_tank"),
-        Some(Archetype::ContainmentTank)
-    );
     assert_eq!(archetype_for("f_console"), Some(Archetype::ConsoleDesk));
-    assert_eq!(
-        archetype_for("f_surgical_table"),
-        Some(Archetype::DissectionTable)
-    );
-    assert_eq!(
-        archetype_for("f_bunkbed"),
-        Some(Archetype::Bunk { levels: 2 })
-    );
-    assert_eq!(
-        archetype_for("f_triple_bunkbed"),
-        Some(Archetype::Bunk { levels: 3 })
-    );
+    // Deleted in the G.3 rework: these ids route by sprite view
+    // (props::model_for) — the tank is EndOn, the bed chain and
+    // f_slab are TopDown, f_surgical_table has no sprite at all.
+    assert_eq!(archetype_for("f_standing_tank"), None);
+    assert_eq!(archetype_for("f_storage_tank"), None);
+    assert_eq!(archetype_for("f_surgical_table"), None);
+    assert_eq!(archetype_for("f_slab"), None);
+    assert_eq!(archetype_for("f_bunkbed"), None);
+    assert_eq!(archetype_for("f_bunkbed_down"), None);
+    assert_eq!(archetype_for("f_triple_bunkbed"), None);
     // Not assigned: the general solid model keeps these.
     assert_eq!(archetype_for("f_table"), None);
     assert_eq!(archetype_for("f_chair"), None);
     assert_eq!(archetype_for("f_counter"), None);
-    // Deliberately NOT assigned: the one true containment sprite
-    // does not segment (pod on a stalk — archetypes.rs docs).
     assert_eq!(archetype_for("f_alien_pod"), None);
 }
 
@@ -249,112 +235,57 @@ fn shelf_unit_opens_real_compartments() {
 }
 
 #[test]
-fn containment_tank_glass_and_liquid() {
-    let (sprite, seg) = load("f_standing_tank");
-    let fit = tank_fit(&sprite, &seg);
-    let m = build(Archetype::ContainmentTank, &sprite, &seg);
-    assert_same_model(&m, &build(Archetype::ContainmentTank, &sprite, &seg));
-    let (fh, d) = (m.size[1], m.size[2]);
-    // Glass on the front plane, inside the frame.
-    assert_eq!(m.get(16, fh / 2, d - 1), Some(fit.glass));
-    // Liquid below the fitted line, air above it (interior).
-    assert!(fit.liquid_top >= 2 && fit.liquid_top + 2 < fh);
-    assert_eq!(m.get(16, fit.liquid_top - 1, d / 2), Some(fit.liquid));
-    assert_eq!(m.get(16, fit.liquid_top + 2, d / 2), None);
-    // Corner post is frame material (extent starts at x=1).
-    assert_eq!(m.get(1, fh / 2, d - 1), Some(fit.frame));
-    assert_albedo(&sprite, &seg, &m, &[fit.frame, fit.glass, fit.liquid]);
-}
-
-#[test]
-fn console_desk_screens_and_decal() {
+fn console_front_verbatim_stepped_depth_open_base() {
     let (sprite, seg) = load("f_console");
     let fit = console_fit(&sprite, &seg);
-    assert!(!fit.screens.is_empty());
+    let fh = seg.front_rows.end - seg.front_rows.start;
+    let top_h = seg.top_rows.end - seg.top_rows.start;
+    assert_eq!(fit.desk_h, fh - top_h, "desk height = front minus rise");
     let m = build(Archetype::ConsoleDesk, &sprite, &seg);
     assert_same_model(&m, &build(Archetype::ConsoleDesk, &sprite, &seg));
     let d = m.size[2];
-    let console_depth = (d / 2).clamp(3, d - 2);
-    // Every screen rect is filled with the accent color on the
-    // console's front face.
-    for s in &fit.screens {
-        for y in s[1]..=s[3] {
-            for x in s[0]..=s[2] {
-                assert_eq!(m.get(x, y, console_depth - 1), Some(fit.accent));
+    assert!(fit.base_depth < d, "base steps back from the full depth");
+    // The knee-hole is fitted where the sprite draws it: the
+    // bottom 8 model rows, columns 12..28 (dark recess rows over
+    // a transparent cutout — measured from the sprite).
+    let op = fit.opening.clone().expect("console opening fitted");
+    assert_eq!(op.rows, 0..8, "opening rows");
+    assert_eq!(op.cols, 12..28, "opening cols");
+    // The opening is empty through the whole depth.
+    for y in op.rows.clone() {
+        for x in op.cols.clone() {
+            for z in 0..d {
+                assert_eq!(m.get(x, y, z), None, "opening cell {x},{y},{z}");
             }
         }
     }
-    // Keyboard slab present on the desk in front of the screens.
-    let kx = (fit.screens[0][0] + fit.screens[0][2]) / 2;
-    assert!(m.get(kx, fit.desk_h, console_depth + 2).is_some());
-    // The L profile: air above the desk, in front of the console.
-    assert_eq!(m.get(16, fit.desk_h + 3, d - 2), None);
-    // Desk body front = the sprite decal, exhaustive over the
-    // body's structure pixels.
+    // Front plane == the sprite's front region verbatim,
+    // exhaustive over structure pixels outside the opening.
     let bot = seg.front_rows.end - 1;
-    for y in 0..fit.desk_h {
+    for y in 0..fh {
         for x in 0..sprite.width() {
+            if op.cols.contains(&x) && op.rows.contains(&y) {
+                continue;
+            }
             let px = *sprite.get_pixel(x, bot - y);
             if structure(px) {
-                assert_eq!(m.get(x, y, d - 1), Some(px), "body decal {x},{y}");
+                assert_eq!(m.get(x, y, d - 1), Some(px), "front verbatim {x},{y}");
             }
         }
     }
-    assert_albedo(&sprite, &seg, &m, &[fit.accent]);
-}
-
-#[test]
-fn dissection_table_rim_above_channel() {
-    // f_slab is the fitted sprite for f_surgical_table (no
-    // UltiCa sprite of its own — archetypes.rs docs).
-    let (sprite, seg) = load("f_slab");
-    let fit = table_fit(&sprite, &seg);
-    let m = build(Archetype::DissectionTable, &sprite, &seg);
-    assert_same_model(&m, &build(Archetype::DissectionTable, &sprite, &seg));
-    let d = m.size[2];
-    assert_eq!(fit.rim_y, m.size[1] - 1);
-    assert_eq!(fit.channel_y, fit.rim_y - 1);
-    // Rim stands at the top row (border); the channel center is
-    // open at the rim row and floored one row below.
-    assert!(m.get(16, fit.rim_y, 1).is_some(), "rim cell (back edge)");
-    assert!(m.get(2, fit.rim_y, d / 2).is_some(), "rim cell (left edge)");
-    assert_eq!(m.get(16, fit.rim_y, d / 2), None, "channel open");
-    assert!(m.get(16, fit.channel_y, d / 2).is_some(), "channel floor");
-    // Pedestal under the slab center; corners underneath empty.
-    assert!(m.get(16, 4, d / 2).is_some(), "pedestal");
-    assert_eq!(m.get(2, 4, 2), None, "no leg at the corner");
+    // Stepped depth: some terminal-rise column reaches the back
+    // plane (z = 0); base columns outside the opening stop at
+    // the stepped depth (nothing behind d - base_depth).
+    let rise_reaches_back = (0..sprite.width()).any(|x| {
+        structure(*sprite.get_pixel(x, bot - (fh - 1))) && m.get(x, fh - 1, 0).is_some()
+    });
+    assert!(rise_reaches_back, "console rise keeps the full depth");
+    let base_stops = (0..sprite.width()).any(|x| {
+        !op.cols.contains(&x)
+            && structure(*sprite.get_pixel(x, bot))
+            && m.get(x, 0, 0).is_none()
+            && m.get(x, 0, d - fit.base_depth).is_some()
+    });
+    assert!(base_stops, "base rows stop at the stepped depth");
     assert_albedo(&sprite, &seg, &m, &[]);
-}
-
-#[test]
-fn bunk_slabs_posts_and_ladder() {
-    // f_bed is the sprite f_bunkbed resolves to (looks_like).
-    let (sprite, seg) = load("f_bed");
-    let arch = archetype_for("f_bunkbed").expect("bunkbed assigned");
-    let fit = bunk_fit(&sprite, &seg, 2);
-    assert_eq!(fit.slab_tops.len(), 2);
-    let m = build(arch, &sprite, &seg);
-    assert_same_model(&m, &build(arch, &sprite, &seg));
-    let d = m.size[2];
-    // Mattress tops on both slabs (interior cells).
-    for &top in &fit.slab_tops {
-        assert_eq!(m.get(16, top, d / 2), Some(fit.mattress));
-    }
-    // Between the slabs: open except posts and ladder.
-    let mid = (fit.slab_tops[0] + fit.slab_tops[1]) / 2;
-    assert_eq!(m.get(16, mid, d / 2), None, "bunk gap is open");
-    assert_eq!(m.get(2, mid, 0), Some(fit.frame_color), "corner post");
-    // Ladder on the right end (x = 29, the extent's right edge):
-    // a rail mid-gap and a rung (rows with y % 3 == 1).
-    assert_eq!(m.get(29, mid, 3), Some(fit.frame_color), "ladder rail");
-    let rung_y = (0..m.size[1]).find(|y| y % 3 == 1 && m.get(29, *y, 5).is_some());
-    assert!(rung_y.is_some(), "a ladder rung exists");
-    // Three levels when the id says three.
-    let fit3 = bunk_fit(&sprite, &seg, 3);
-    assert_eq!(fit3.slab_tops.len(), 3);
-    let m3 = build(Archetype::Bunk { levels: 3 }, &sprite, &seg);
-    for &top in &fit3.slab_tops {
-        assert_eq!(m3.get(16, top, d / 2), Some(fit3.mattress));
-    }
-    assert_albedo(&sprite, &seg, &m, &[fit.mattress, fit.frame_color]);
 }

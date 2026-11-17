@@ -9,7 +9,7 @@
 //!   fixture sprite does not segment and gets NO entry — it
 //!   keeps the extruded-sprite path. The engine loader joins the
 //!   model to its material, and every voxel color matches a
-//!   directly built `solid_model_for` exactly.
+//!   directly built `model_for` exactly.
 //! * v2 without models: a run over a grass-only tileset (nothing
 //!   can segment) writes NO `models` key — the file keeps the
 //!   Stage F v2 shape byte-for-byte in structure — and loads
@@ -107,8 +107,7 @@ fn stage_g_model_round_trip_fixture() {
     let ts = tileset::load_decomposed(&fixture_dir()).expect("fixture tileset loads");
     let f_entry = ts.entries.get("f_bookcase").expect("f_bookcase entry");
     let sprite = voxelizer::composite_entry(&ts, f_entry).expect("sprite composites");
-    let seg = voxelizer::segment_for("f_bookcase", &sprite).expect("fixture bookcase segments");
-    let expected = voxelizer::solid_model_for("f_bookcase", &sprite, &seg);
+    let expected = voxelizer::model_for("f_bookcase", &sprite).expect("fixture bookcase models");
     assert_eq!(
         entry["size"].as_array().unwrap().len(),
         3,

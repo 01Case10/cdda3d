@@ -436,17 +436,20 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             }
         }
 
-        // Stage G (v2 only): a furniture material whose sprite
-        // segments (props::segment_for) gets its solid prop model
-        // in the v2 `models` table; the engine loader documents
-        // the encoding (crates/engine/src/materials.rs). Furniture
-        // that doesn't segment keeps the extruded-sprite
-        // sub_model it already carries — models replace the
-        // extrusion only where a segmentation exists.
+        // Stage G (v2 only): a furniture material gets its prop
+        // model in the v2 `models` table via the view-routed
+        // props::model_for (front-view archetype/solid for most
+        // ids; the G.3 rework's view-faithful builders for the
+        // pinned top-down / end-on ids); the engine loader
+        // documents the encoding (crates/engine/src/materials.rs).
+        // Furniture model_for declines (no segmentation, no
+        // readable plan/cap) keeps the extruded-sprite sub_model
+        // it already carries — models replace the extrusion only
+        // where a prop model exists.
         if cfg.emit_v2 && is_furniture {
             if let Some(img) = &sprite {
-                if let Some(seg) = segment_for(id, img) {
-                    models.push((mat_idx, solid_model_for(id, img, &seg)));
+                if let Some(model) = model_for(id, img) {
+                    models.push((mat_idx, model));
                 }
             }
         }

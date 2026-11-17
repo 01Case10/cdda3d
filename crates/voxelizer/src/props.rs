@@ -300,6 +300,58 @@
 //!   global rule.
 //! * Sprites taller than the tile (32x64 lockers/fridges): handled —
 //!   the model grid follows the sprite, height is not clamped to 32.
+//!
+//! ## View classification (Stage G.3 rework)
+//!
+//! The pipeline above assumes every sprite is a FRONT view (top
+//! band / front face / depth). That assumption is false in
+//! general: some UltiCa furniture sprites are TOP-DOWN (the sprite
+//! IS the object's top face — f_bed, f_slab) and some are END-ON
+//! (the sprite is the object's end face — f_standing_tank is the
+//! end cap of a horizontal leg tank). Forcing those through the
+//! front-view reading invents geometry the sprite never depicted
+//! (a bunk bed from a single-bed plan, a pedestal under a flat
+//! slab). The rework therefore classifies the sprite's view
+//! BEFORE segmenting ([`view_for`]): per-id pins in
+//! [`VIEW_OVERRIDES`] are the ground truth; a conservative
+//! heuristic proposes (a sprite that does not segment at all, or
+//! whose "top region" covers >= 85% of its silhouette, reads as
+//! top-down). [`model_for`] is the routed entry point: Front keeps
+//! the signed-off pipeline (archetype if one is assigned, else
+//! the solid model); TopDown and EndOn go to dedicated faithful
+//! builders ([`topdown_model`], [`endon_model`]). Per pipeline
+//! §24.4 the new builders fire initially EXACTLY for the pinned
+//! ids — a heuristic proposal alone does not reroute an unpinned
+//! id away from the Front path in `model_for`.
+//!
+//! * **Terrace** (f_slab): the plan's concentric rings are a
+//!   heightmap — a cell's height is its chamfer distance to the
+//!   silhouette edge (ring index), capped and scaled so the
+//!   maximum height is ~1/4 of the sprite width. The top face is
+//!   the sprite verbatim; step sides are the sprite's edge
+//!   material (the modal boundary-ring color).
+//! * **Framed surface** (the bed chain): the plan's border is a
+//!   wooden frame (walls extruded down from the top face), the
+//!   interior is the mattress (top face verbatim, a few cells
+//!   thick, sitting one cell proud of the frame rails), and the
+//!   head end's border strip rises as a PLAIN SLAB headboard in
+//!   the frame material, extending to the ground — from behind,
+//!   the slab occludes the mattress completely (Joey's ruling on
+//!   the approved bed mockup). The head end is detected (widest /
+//!   darkest end strip) but pinned per id in
+//!   [`HEAD_END_OVERRIDES`]: on f_bed the detector alone picks
+//!   the foot (its band + posts are wider), while the depicted
+//!   headboard is the plain band at the sprite's top rows.
+//! * **EndOn** (the tank): the sprite's round face is the end
+//!   cap; the model is a horizontal cylinder (disc cross-section,
+//!   length = cap diameter unless pinned in
+//!   [`TANK_LENGTH_OVERRIDES`]) whose FRONT plane is the sprite's
+//!   cap region mapped onto the disc verbatim. The fitting
+//!   cluster the sprite draws in the band above the cap (the
+//!   brass/olive hatch fitting) becomes a short neck block on
+//!   top of the barrel at the front end, topped with the fitting
+//!   color; two stands under the barrel (front and back) carry
+//!   the sprite's base material.
 
 use crate::analyze::{analyze_image, content_hash};
 use crate::color::Oklab;
@@ -1982,6 +2034,758 @@ fn solid_model_impl(sprite: &RgbaImage, seg: &Segmentation, construction: Constr
         }
     }
     m
+}
+
+// ---------------------------------------------------------------------
+// View classification + view-faithful builders (Stage G.3 rework;
+// see the module docs, "View classification").
+// ---------------------------------------------------------------------
+
+/// The view a furniture sprite is drawn in (module docs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpriteView {
+    /// The signed-off reading: top band / front face / depth.
+    Front,
+    /// The sprite is the object's top face (a plan view).
+    TopDown,
+    /// The sprite is the object's end face; the object extends
+    /// away from the viewer along the depth axis.
+    EndOn,
+}
+
+/// Per-id view pins: the ground truth for [`view_for`], beside
+/// the other Stage G override tables. An entry exists because
+/// the sprite's view was verified against the depicted object
+/// (pipeline §24): f_standing_tank's sprite is the end cap of a
+/// horizontal plastic leg tank (photo-verified), the f_bed chain
+/// and f_slab are plan views.
+pub const VIEW_OVERRIDES: &[(&str, SpriteView)] = &[
+    ("f_standing_tank", SpriteView::EndOn),
+    ("f_storage_tank", SpriteView::EndOn), // looks_like f_standing_tank
+    ("f_bed", SpriteView::TopDown),
+    ("f_bunkbed", SpriteView::TopDown), // sprite resolves to f_bed
+    ("f_bunkbed_down", SpriteView::TopDown),
+    ("f_triple_bunkbed", SpriteView::TopDown),
+    ("f_slab", SpriteView::TopDown),
+];
+
+/// The view a sprite is drawn in: [`VIEW_OVERRIDES`] pins first
+/// (ground truth), then a conservative heuristic — a sprite that
+/// does not segment at all, or whose top region covers >= 85% of
+/// its silhouette height, is proposed TopDown; everything else is
+/// Front. The heuristic only proposes: on the pinned set it is
+/// wrong for every entry (the tank and the bed both "segment"
+/// with shallow top regions), which is exactly why the pins are
+/// the ground truth.
+pub fn view_for(id: Option<&str>, sprite: &RgbaImage) -> SpriteView {
+    if let Some(id) = id {
+        if let Some((_, v)) = VIEW_OVERRIDES.iter().find(|(k, _)| *k == id) {
+            return *v;
+        }
+    }
+    match segment(sprite) {
+        None => SpriteView::TopDown,
+        Some(seg) => {
+            let silh = seg.silhouette_rows.end - seg.silhouette_rows.start;
+            let top_h = seg.top_rows.end - seg.top_rows.start;
+            if silh > 0 && top_h * 100 >= 85 * silh {
+                SpriteView::TopDown
+            } else {
+                SpriteView::Front
+            }
+        }
+    }
+}
+
+/// The routed prop-model entry point (Stage G.3 rework): build
+/// the model the sprite's VIEW calls for. Front is the signed-off
+/// path — the assigned archetype when [`crate::archetypes`]
+/// has one, else [`solid_model_for`]. TopDown / EndOn go to the
+/// view-faithful builders, but ONLY for ids pinned in
+/// [`VIEW_OVERRIDES`] (pipeline §24.4: the new builders fire
+/// initially exactly for the pinned set); an unpinned id whose
+/// heuristic merely proposes TopDown keeps the Front path.
+pub fn model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    let pinned = VIEW_OVERRIDES.iter().any(|(k, _)| *k == id);
+    match view_for(Some(id), sprite) {
+        SpriteView::TopDown if pinned => topdown_model(id, sprite),
+        SpriteView::EndOn if pinned => endon_model(id, sprite),
+        _ => {
+            if let Some(arch) = crate::archetypes::archetype_for(id) {
+                let seg = segment_for(id, sprite)?;
+                Some(crate::archetypes::build(arch, sprite, &seg))
+            } else {
+                let seg = segment_for(id, sprite)?;
+                Some(solid_model_for(id, sprite, &seg))
+            }
+        }
+    }
+}
+
+/// The sprite's structure mask in plan order (index y * w + x).
+fn structure_mask(sprite: &RgbaImage) -> Vec<bool> {
+    sprite.pixels().map(|p| structure(*p)).collect()
+}
+
+/// Chamfer distance (4-neighborhood BFS steps) from each plan
+/// cell to the nearest non-silhouette cell; non-silhouette cells
+/// are 0, silhouette edge cells are 1. When the silhouette fills
+/// the whole grid, the border counts as outside.
+fn chamfer_distances(sil: &[bool], w: u32, h: u32) -> Vec<u32> {
+    let idx = |x: u32, y: u32| (y * w + x) as usize;
+    let mut dist = vec![0u32; (w * h) as usize];
+    let mut q: std::collections::VecDeque<(u32, u32)> = std::collections::VecDeque::new();
+    for y in 0..h {
+        for x in 0..w {
+            if !sil[idx(x, y)] {
+                q.push_back((x, y));
+            }
+        }
+    }
+    if q.is_empty() {
+        for x in 0..w {
+            for y in [0, h - 1] {
+                if sil[idx(x, y)] && dist[idx(x, y)] == 0 {
+                    dist[idx(x, y)] = 1;
+                    q.push_back((x, y));
+                }
+            }
+        }
+        for y in 0..h {
+            for x in [0, w - 1] {
+                if sil[idx(x, y)] && dist[idx(x, y)] == 0 {
+                    dist[idx(x, y)] = 1;
+                    q.push_back((x, y));
+                }
+            }
+        }
+    }
+    while let Some((x, y)) = q.pop_front() {
+        let d = dist[idx(x, y)];
+        for (nx, ny) in [
+            (x.wrapping_sub(1), y),
+            (x + 1, y),
+            (x, y.wrapping_sub(1)),
+            (x, y + 1),
+        ] {
+            if nx >= w || ny >= h {
+                continue;
+            }
+            let i = idx(nx, ny);
+            if sil[i] && dist[i] == 0 {
+                dist[i] = d + 1;
+                q.push_back((nx, ny));
+            }
+        }
+    }
+    dist
+}
+
+/// The modal (most common) color of a pixel stream, ties toward
+/// the smallest RGBA key (BTreeMap order + strict >), as in
+/// [`row_field`].
+fn modal_color<I: Iterator<Item = Rgba<u8>>>(it: I) -> Option<Rgba<u8>> {
+    let mut counts: std::collections::BTreeMap<[u8; 4], u32> =
+        std::collections::BTreeMap::new();
+    for px in it {
+        *counts.entry(px.0).or_insert(0) += 1;
+    }
+    let mut best: Option<([u8; 4], u32)> = None;
+    for (k, n) in counts {
+        if best.map_or(true, |(_, bn)| n > bn) {
+            best = Some((k, n));
+        }
+    }
+    best.map(|(k, _)| Rgba(k))
+}
+
+// ---------------------------------------------------------------------
+// TopDown builders
+// ---------------------------------------------------------------------
+
+/// Which top-down construction a plan sprite gets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopDownKind {
+    /// Concentric-ring heightmap (a stepped slab).
+    Terrace,
+    /// Border frame + interior surface (a bed).
+    Framed,
+}
+
+/// Per-id top-down construction pins (the case-by-case layer).
+pub const TOPDOWN_KIND_OVERRIDES: &[(&str, TopDownKind)] = &[
+    ("f_slab", TopDownKind::Terrace),
+    ("f_bed", TopDownKind::Framed),
+    ("f_bunkbed", TopDownKind::Framed),
+    ("f_bunkbed_down", TopDownKind::Framed),
+    ("f_triple_bunkbed", TopDownKind::Framed),
+];
+
+/// The top-down construction for an id: pin first, then a
+/// heuristic proposal — a plan whose rim band and interior share
+/// one material reads as a terrace; a plan with a distinct
+/// border material around a different interior reads as framed.
+fn topdown_kind(id: &str, sprite: &RgbaImage) -> TopDownKind {
+    if let Some((_, k)) = TOPDOWN_KIND_OVERRIDES.iter().find(|(k, _)| *k == id) {
+        return *k;
+    }
+    let (w, h) = (sprite.width(), sprite.height());
+    let sil = structure_mask(sprite);
+    let dist = chamfer_distances(&sil, w, h);
+    let at = |x: u32, y: u32| *sprite.get_pixel(x, y);
+    let interior = modal_color(
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| sil[(y * w + x) as usize] && dist[(y * w + x) as usize] > 4)
+            .map(|(x, y)| at(x, y)),
+    );
+    let rim = modal_color(
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let i = (y * w + x) as usize;
+                sil[i] && dist[i] >= 1 && dist[i] <= 4
+            })
+            .map(|(x, y)| at(x, y)),
+    );
+    match (interior, rim) {
+        (Some(a), Some(b)) if lab_of(a).distance(lab_of(b)) >= 0.08 => TopDownKind::Framed,
+        _ => TopDownKind::Terrace,
+    }
+}
+
+/// A top-down prop model (plan sprite: model x = sprite x,
+/// model z = sprite row, sprite top rows at the model's back,
+/// z = 0). Dispatches on [`topdown_kind`].
+pub fn topdown_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match topdown_kind(id, sprite) {
+        TopDownKind::Terrace => terrace_model(sprite),
+        TopDownKind::Framed => framed_model(id, sprite),
+    }
+}
+
+/// Fitted terrace parameters (module docs, "Terrace").
+#[derive(Debug, Clone, PartialEq)]
+pub struct TerraceFit {
+    /// Ring levels used (distinct chamfer distances, capped).
+    pub levels: u32,
+    /// Model cells of height per ring level.
+    pub step: u32,
+    /// The step-side material: modal color of the boundary ring.
+    pub edge: Rgba<u8>,
+}
+
+/// Terrace fit: ring count from the sprite's own chamfer
+/// distances (cap 4 levels), step scaled so the maximum height
+/// is ~1/4 of the sprite width (minimum height 2 for one level).
+pub fn terrace_fit(sprite: &RgbaImage) -> Option<TerraceFit> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let sil = structure_mask(sprite);
+    if !sil.iter().any(|s| *s) {
+        return None;
+    }
+    let dist = chamfer_distances(&sil, w, h);
+    let mut distinct: Vec<u32> = dist
+        .iter()
+        .zip(sil.iter())
+        .filter(|(_, s)| **s)
+        .map(|(d, _)| *d)
+        .collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    let levels = (distinct.len() as u32).min(4).max(1);
+    let step = (((w / 4) as f32 / levels as f32).round() as u32).max(1);
+    let edge = modal_color(
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let i = (y * w + x) as usize;
+                sil[i] && dist[i] == 1
+            })
+            .map(|(x, y)| *sprite.get_pixel(x, y)),
+    )?;
+    Some(TerraceFit { levels, step, edge })
+}
+
+/// The height of a terrace column: its chamfer ring, capped at
+/// the fit's levels, times the fit's step.
+fn terrace_height(fit: &TerraceFit, dist: u32) -> u32 {
+    dist.min(fit.levels) * fit.step
+}
+
+fn terrace_model(sprite: &RgbaImage) -> Option<PropModel> {
+    let fit = terrace_fit(sprite)?;
+    let (w, h) = (sprite.width(), sprite.height());
+    let sil = structure_mask(sprite);
+    let dist = chamfer_distances(&sil, w, h);
+    let max_h = fit.levels * fit.step;
+    let mut m = PropModel::new([w, max_h, h]);
+    for z in 0..h {
+        for x in 0..w {
+            let i = (z * w + x) as usize;
+            if !sil[i] {
+                continue;
+            }
+            let col_h = terrace_height(&fit, dist[i]);
+            let top_px = *sprite.get_pixel(x, z);
+            for y in 0..col_h {
+                let c = if y == col_h - 1 { top_px } else { fit.edge };
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    Some(m)
+}
+
+/// Per-id head-end pins for the framed construction: `true` =
+/// the head end is the sprite's TOP rows (plan z = 0). Detection
+/// alone picks f_bed's foot (its band + posts are wider than the
+/// headboard band), so the bed chain is pinned to the depicted
+/// headboard — the plain band at the sprite's top rows.
+pub const HEAD_END_OVERRIDES: &[(&str, bool)] = &[
+    ("f_bed", true),
+    ("f_bunkbed", true),
+    ("f_bunkbed_down", true),
+    ("f_triple_bunkbed", true),
+];
+
+/// Fitted framed-surface (bed) parameters (module docs,
+/// "Framed surface").
+#[derive(Debug, Clone, PartialEq)]
+pub struct BedFit {
+    /// The frame material: modal color of the border's frame
+    /// cells (the wood).
+    pub frame: Rgba<u8>,
+    /// The interior material: modal color of the interior cells
+    /// (the mattress).
+    pub mattress: Rgba<u8>,
+    /// Model y of the frame rails' top face.
+    pub frame_top: u32,
+    /// Model y of the mattress top face (one cell proud of the
+    /// rails).
+    pub mattress_top: u32,
+    /// Model y of the headboard slab's top.
+    pub headboard_top: u32,
+    /// Plan rows (z) the headboard slab occupies.
+    pub head_rows: Range<u32>,
+    /// Plan x extent (inclusive) the headboard slab spans.
+    pub head_x: (u32, u32),
+}
+
+/// Rim band width (plan cells) within which border material is
+/// read as frame rather than interior surface.
+const FRAME_RIM: u32 = 4;
+/// OKLab distance from the interior's modal color beyond which
+/// a rim cell is border material, not interior.
+const FRAME_COLOR_SPLIT: f32 = 0.10;
+
+/// The framed-surface fit. Returns None when the plan has no
+/// readable interior (no cells deeper than the rim band).
+pub fn bed_fit(id: &str, sprite: &RgbaImage) -> Option<BedFit> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let sil = structure_mask(sprite);
+    if !sil.iter().any(|s| *s) {
+        return None;
+    }
+    let dist = chamfer_distances(&sil, w, h);
+    let at = |x: u32, z: u32| *sprite.get_pixel(x, z);
+    let cell = |x: u32, z: u32| (z * w + x) as usize;
+    // Interior material: the modal color of the deep cells.
+    let mattress = modal_color(
+        (0..h)
+            .flat_map(|z| (0..w).map(move |x| (x, z)))
+            .filter(|&(x, z)| sil[cell(x, z)] && dist[cell(x, z)] > FRAME_RIM)
+            .map(|(x, z)| at(x, z)),
+    )?;
+    // Frame material: the modal color of the rim cells that are
+    // NOT the interior material (the border's own material).
+    let frame = modal_color(
+        (0..h)
+            .flat_map(|z| (0..w).map(move |x| (x, z)))
+            .filter(|&(x, z)| {
+                let i = cell(x, z);
+                sil[i] && dist[i] <= FRAME_RIM
+                    && lab_of(at(x, z)).distance(lab_of(mattress)) > FRAME_COLOR_SPLIT
+            })
+            .map(|(x, z)| at(x, z)),
+    )?;
+    let is_frame = |x: u32, z: u32| -> bool {
+        let i = cell(x, z);
+        sil[i] && dist[i] <= FRAME_RIM
+            && lab_of(at(x, z)).distance(lab_of(frame)) <= FRAME_COLOR_SPLIT
+    };
+    // End strips: consecutive rows from an end whose silhouette
+    // cells are >= 80% frame. Scored by (depth, then darkness of
+    // the strip's frame cells); the pin table decides for the
+    // bed chain (module docs).
+    let strip = |from_top: bool| -> (u32, f32) {
+        let mut depth = 0u32;
+        let mut lsum = 0.0f32;
+        let mut n = 0u32;
+        for k in 0..h {
+            let z = if from_top { k } else { h - 1 - k };
+            let row: Vec<u32> = (0..w).filter(|&x| sil[cell(x, z)]).collect();
+            if row.is_empty() {
+                break;
+            }
+            let total = row.len();
+            let fr: Vec<u32> = row.into_iter().filter(|&x| is_frame(x, z)).collect();
+            if (fr.len() as f32) < 0.8 * total as f32 {
+                break;
+            }
+            for x in fr {
+                lsum += lab_of(at(x, z)).l;
+                n += 1;
+            }
+            depth += 1;
+        }
+        (depth, if n > 0 { lsum / n as f32 } else { 1.0 })
+    };
+    let (top_strip, top_dark) = strip(true);
+    let (bot_strip, bot_dark) = strip(false);
+    let detected_top = top_strip > bot_strip
+        || (top_strip == bot_strip && top_dark <= bot_dark);
+    let head_at_top = HEAD_END_OVERRIDES
+        .iter()
+        .find(|(k, _)| *k == id)
+        .map(|(_, v)| *v)
+        .unwrap_or(detected_top);
+    let head_depth = if head_at_top { top_strip } else { bot_strip }.max(1);
+    let head_rows = if head_at_top {
+        0..head_depth
+    } else {
+        (h - head_depth)..h
+    };
+    // The slab spans the strip's structure x extent.
+    let (mut hx0, mut hx1) = (w - 1, 0u32);
+    for z in head_rows.clone() {
+        for x in 0..w {
+            if sil[cell(x, z)] {
+                hx0 = hx0.min(x);
+                hx1 = hx1.max(x);
+            }
+        }
+    }
+    let mattress_top = (w / 4).max(4);
+    let headboard_top = mattress_top + (w * 5 / 16).max(6);
+    Some(BedFit {
+        frame,
+        mattress,
+        frame_top: mattress_top - 1,
+        mattress_top,
+        headboard_top,
+        head_rows,
+        head_x: (hx0, hx1),
+    })
+}
+
+fn framed_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    let fit = bed_fit(id, sprite)?;
+    let (w, h) = (sprite.width(), sprite.height());
+    let sil = structure_mask(sprite);
+    let dist = chamfer_distances(&sil, w, h);
+    let cell = |x: u32, z: u32| (z * w + x) as usize;
+    let is_frame = |x: u32, z: u32| -> bool {
+        let i = cell(x, z);
+        sil[i] && dist[i] <= FRAME_RIM
+            && lab_of(*sprite.get_pixel(x, z)).distance(lab_of(fit.frame)) <= FRAME_COLOR_SPLIT
+    };
+    let mut m = PropModel::new([w, fit.headboard_top + 1, h]);
+    for z in 0..h {
+        for x in 0..w {
+            if fit.head_rows.contains(&z) && x >= fit.head_x.0 && x <= fit.head_x.1 {
+                // The headboard: a plain slab in the frame
+                // material, ground to above the mattress — its
+                // back face (the plan's head-end plane) is 100%
+                // frame material, occluding the mattress.
+                for y in 0..=fit.headboard_top {
+                    m.set(x, y, z, Some(fit.frame));
+                }
+                continue;
+            }
+            if !sil[cell(x, z)] {
+                continue;
+            }
+            let top_px = *sprite.get_pixel(x, z);
+            if is_frame(x, z) {
+                // Frame wall: extruded down from the top face.
+                for y in 0..=fit.frame_top {
+                    let c = if y == fit.frame_top { top_px } else { fit.frame };
+                    m.set(x, y, z, Some(c));
+                }
+            } else {
+                // Mattress block: ~3 cells thick at the top,
+                // its top face the sprite verbatim.
+                for y in (fit.mattress_top - 2)..=fit.mattress_top {
+                    let c = if y == fit.mattress_top {
+                        top_px
+                    } else {
+                        fit.mattress
+                    };
+                    m.set(x, y, z, Some(c));
+                }
+            }
+        }
+    }
+    Some(m)
+}
+
+// ---------------------------------------------------------------------
+// EndOn builder (the standing tank)
+// ---------------------------------------------------------------------
+
+/// Per-id barrel-length pins for the EndOn tank (the one
+/// dimension the end-on sprite cannot show). Empty: the default
+/// length = cap diameter serves the reviewed case.
+pub const TANK_LENGTH_OVERRIDES: &[(&str, u32)] = &[];
+
+/// How far above the stand height the barrel's underside may
+/// sit at the stands' outer columns (the saddle's rise).
+const STAND_REACH: u32 = 3;
+
+/// Fitted EndOn tank parameters (module docs, "EndOn").
+#[derive(Debug, Clone, PartialEq)]
+pub struct TankEndFit {
+    /// Cap diameter in cells (= the sprite's silhouette width).
+    pub diameter: u32,
+    /// Barrel length in cells (depth).
+    pub length: u32,
+    /// Stand height under the barrel.
+    pub leg_h: u32,
+    /// Cap center x (sprite/model coords).
+    pub center_x: f32,
+    /// Sprite rows of the cap region (the front-face source).
+    pub cap_rows: Range<u32>,
+    /// Neck block extent in model coords: [x0, x1, y0, y1].
+    pub neck: [u32; 4],
+    /// Depth range the neck occupies (the front end).
+    pub neck_z: Range<u32>,
+    /// Depth ranges of the two stands: [back, front].
+    pub stand_z: [Range<u32>; 2],
+    /// Column range the stands span: the columns whose disc
+    /// bottom sits within [`STAND_REACH`] cells of the stand
+    /// height (the saddle the barrel rests in — wider than the
+    /// disc's bottom chord, narrower than the full diameter).
+    pub stand_x: Range<u32>,
+    /// The hatch fitting color (the sprite's fitting cluster).
+    pub fitting: Rgba<u8>,
+    /// X range of the fitting cluster in the sprite.
+    pub fitting_x: Range<u32>,
+    /// Barrel material: the cap region's de-shaded primary.
+    pub barrel: Rgba<u8>,
+    /// Neck material: modal color of the sprite's neck band.
+    pub neck_color: Rgba<u8>,
+    /// Stand material: modal color of the sprite's base rows.
+    pub base: Rgba<u8>,
+}
+
+/// The EndOn tank fit. The cap is the large round face in the
+/// sprite's lower portion: its top row is the first silhouette
+/// row at >= 95% of the silhouette width, its bottom is the
+/// silhouette's last row. The fitting cluster is the non-gray
+/// (chromatic) paint in the band above the cap — the brass/olive
+/// hatch fitting on the neck.
+pub fn endon_tank_fit(id: &str, sprite: &RgbaImage) -> Option<TankEndFit> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let sil = structure_mask(sprite);
+    if !sil.iter().any(|s| *s) {
+        return None;
+    }
+    let cell = |x: u32, y: u32| (y * w + x) as usize;
+    let (mut x0, mut x1) = (w - 1, 0u32);
+    let (mut top, mut bot) = (h - 1, 0u32);
+    for y in 0..h {
+        for x in 0..w {
+            if sil[cell(x, y)] {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                top = top.min(y);
+                bot = bot.max(y);
+            }
+        }
+    }
+    let diameter = x1 - x0 + 1;
+    let center_x = (x0 + x1) as f32 / 2.0;
+    let row_count = |y: u32| (0..w).filter(|&x| sil[cell(x, y)]).count() as u32;
+    let disc_top = (top..=bot).find(|&y| (row_count(y) as f32) >= 0.95 * diameter as f32)?;
+    let cap_rows = disc_top..bot + 1;
+    // Fitting cluster: chromatic (non-gray) structure pixels in
+    // the neck band, reaching a couple of rows into the cap (the
+    // fitting is drawn straddling the cap's top edge).
+    let chromatic = |px: Rgba<u8>| -> bool {
+        let mx = px[0].max(px[1]).max(px[2]);
+        let mn = px[0].min(px[1]).min(px[2]);
+        mx - mn >= 20
+    };
+    let mut fit_px: Vec<(u32, u32, Rgba<u8>)> = Vec::new();
+    for y in top..(disc_top + 2).min(h) {
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, y);
+            if structure(px) && chromatic(px) {
+                fit_px.push((x, y, px));
+            }
+        }
+    }
+    if fit_px.is_empty() {
+        return None;
+    }
+    let (mut fx0, mut fx1) = (w - 1, 0u32);
+    let (mut fy0, mut fy1) = (h - 1, 0u32);
+    for &(x, y, _) in &fit_px {
+        fx0 = fx0.min(x);
+        fx1 = fx1.max(x);
+        fy0 = fy0.min(y);
+        fy1 = fy1.max(y);
+    }
+    let fitting = modal_color(fit_px.iter().map(|&(_, _, px)| px))?;
+    let fitting_h = fy1 - fy0 + 1;
+    // Neck: ~the fitting's width + margin (at least a third of
+    // the cap), centered on the fitting; it protrudes above the
+    // barrel by the fitting's height, embedded 2 cells.
+    let leg_h = ((diameter as f32 / 8.0).round() as u32).max(3);
+    let neck_w = ((fx1 - fx0 + 1) + 4).max(diameter / 3);
+    let fit_cx = (fx0 + fx1) as f32 / 2.0;
+    let nx0 = (fit_cx - neck_w as f32 / 2.0).round().max(0.0) as u32;
+    let nx1 = (nx0 + neck_w - 1).min(w - 1);
+    let barrel_top = leg_h + diameter - 1;
+    let neck = [nx0, nx1, barrel_top - 2, barrel_top - 2 + fitting_h + 1];
+    let length = TANK_LENGTH_OVERRIDES
+        .iter()
+        .find(|(k, _)| *k == id)
+        .map(|(_, l)| *l)
+        .unwrap_or(diameter);
+    let neck_color = modal_color(
+        (top..disc_top)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| sil[cell(x, y)])
+            .map(|(x, y)| *sprite.get_pixel(x, y)),
+    )?;
+    let base = modal_color(
+        ((bot.saturating_sub(3))..=bot)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| sil[cell(x, y)])
+            .map(|(x, y)| *sprite.get_pixel(x, y)),
+    )?;
+    // Stand columns: the disc's bottom row per column, via the
+    // same disc predicate the builder fills with.
+    let cy = leg_h as f32 + (diameter - 1) as f32 / 2.0;
+    let rad = diameter as f32 / 2.0;
+    let disc_bottom = |x: u32| -> Option<u32> {
+        let dx = x as f32 - center_x;
+        (0..leg_h + diameter).find(|&y| {
+            let dy = y as f32 - cy;
+            dx * dx + dy * dy <= rad * rad
+        })
+    };
+    let (mut sx0, mut sx1) = (w, 0u32);
+    for x in 0..w {
+        if let Some(yb) = disc_bottom(x) {
+            if yb <= leg_h + STAND_REACH {
+                sx0 = sx0.min(x);
+                sx1 = sx1.max(x);
+            }
+        }
+    }
+    let stand_x = if sx1 >= sx0 { sx0..sx1 + 1 } else { 0..0 };
+    let (_, barrel_lab) = region_primaries(sprite, &cap_rows);
+    let [r, g, b] = barrel_lab.to_srgb_u8();
+    Some(TankEndFit {
+        diameter,
+        length,
+        leg_h,
+        center_x,
+        cap_rows,
+        neck,
+        neck_z: (length - neck_w.min(length))..length,
+        stand_z: [0..6.min(length), length.saturating_sub(6)..length],
+        stand_x,
+        fitting,
+        fitting_x: fx0..fx1 + 1,
+        barrel: Rgba([r, g, b, 255]),
+        neck_color,
+        base,
+    })
+}
+
+fn endon_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    let fit = endon_tank_fit(id, sprite)?;
+    let (w, _) = (sprite.width(), sprite.height());
+    let d = fit.diameter;
+    let l = fit.length;
+    let cy = fit.leg_h as f32 + (d - 1) as f32 / 2.0;
+    let r = d as f32 / 2.0;
+    let height = fit.neck[3] + 1;
+    let mut m = PropModel::new([w, height, l]);
+    let in_disc = |x: u32, y: u32| -> bool {
+        let dx = x as f32 - fit.center_x;
+        let dy = y as f32 - cy;
+        dx * dx + dy * dy <= r * r
+    };
+    // Stands: under the barrel at both ends — each stand fills
+    // its columns from the ground up to the disc's underside
+    // (a saddle), in the sprite's base material.
+    for zr in &fit.stand_z {
+        for z in zr.clone() {
+            for x in fit.stand_x.clone() {
+                let yb = (0..height).find(|&y| in_disc(x, y)).unwrap_or(0);
+                for y in 0..yb {
+                    m.set(x, y, z, Some(fit.base));
+                }
+            }
+        }
+    }
+    // Barrel: the disc extruded along the length. The FRONT
+    // plane (z = l - 1) is the sprite's cap region mapped onto
+    // the disc (the sprite IS the front view of the end); every
+    // other plane is the cap material.
+    let cap_h = fit.cap_rows.end - fit.cap_rows.start;
+    let cap_bot = fit.cap_rows.end - 1;
+    for z in 0..l {
+        for y in 0..height {
+            for x in 0..w {
+                if !in_disc(x, y) {
+                    continue;
+                }
+                let c = if z == l - 1 {
+                    let sy = cap_bot
+                        - (((y - fit.leg_h) as f32 * (cap_h - 1) as f32
+                            / (d - 1) as f32)
+                            .round() as u32)
+                            .min(cap_h - 1);
+                    let px = *sprite.get_pixel(x, sy);
+                    if structure(px) {
+                        px
+                    } else {
+                        fit.barrel
+                    }
+                } else {
+                    fit.barrel
+                };
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    // Neck + fitting on top of the barrel at the front end.
+    // Where the neck overlaps the disc on the FRONT plane, the
+    // cap mapping already placed the sprite's paint (the sprite
+    // IS the front view of the end) — the neck's own material
+    // shows on its protruding cells and its other faces.
+    for z in fit.neck_z.clone() {
+        for y in fit.neck[2]..=fit.neck[3] {
+            for x in fit.neck[0]..=fit.neck[1] {
+                if z == l - 1 && in_disc(x, y) {
+                    continue;
+                }
+                let c = if y == fit.neck[3] && fit.fitting_x.contains(&x) {
+                    fit.fitting
+                } else {
+                    fit.neck_color
+                };
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    Some(m)
 }
 
 #[cfg(test)]

@@ -6,12 +6,10 @@
 //! +x), each with a slight elevation (~33 degrees). No text
 //! labels (the pipeline has no font renderer) — the row order is
 //! fixed and explained in chat:
-//!   1. ShelfUnit      <- f_bookcase
-//!   2. ContainmentTank <- f_standing_tank
-//!   3. ConsoleDesk    <- f_console
-//!   4. DissectionTable <- f_slab (fitted for f_surgical_table,
-//!      which has no UltiCa sprite)
-//!   5. Bunk { 2 }     <- f_bed (the sprite f_bunkbed resolves to)
+//!   1. ShelfUnit   <- f_bookcase
+//!   2. ConsoleDesk <- f_console (reworked in the G.3 rework)
+//! The deleted archetypes (tank / dissection table / bunk) are
+//! showcased as view-faithful models in examples/views_showcase.rs.
 //! Renderer identical to examples/props_showcase.rs.
 //! Output: target/stage-g/archetypes.png (worktree root).
 
@@ -34,12 +32,9 @@ fn ultica_dir() -> PathBuf {
 }
 
 /// (sprite id, served furniture id) per row.
-const ROWS: [(&str, &str); 5] = [
+const ROWS: [(&str, &str); 2] = [
     ("f_bookcase", "f_bookcase"),
-    ("f_standing_tank", "f_standing_tank"),
     ("f_console", "f_console"),
-    ("f_slab", "f_surgical_table"),
-    ("f_bed", "f_bunkbed"),
 ];
 const CELL_W: u32 = 340;
 const CELL_H: u32 = 300;
@@ -218,29 +213,11 @@ fn main() {
             .unwrap_or_else(|| panic!("{served_id} has an archetype"));
         let fit_note = match arch {
             Archetype::ShelfUnit => format!("boards {:?}", shelf_fit(&sprite, &seg).board_rows),
-            Archetype::ContainmentTank => {
-                let f = tank_fit(&sprite, &seg);
-                format!(
-                    "liquid_top {} glass {:?} liquid {:?} frame {:?}",
-                    f.liquid_top, f.glass.0, f.liquid.0, f.frame.0
-                )
-            }
             Archetype::ConsoleDesk => {
                 let f = console_fit(&sprite, &seg);
                 format!(
-                    "desk_h {} screens {:?} accent {:?}",
-                    f.desk_h, f.screens, f.accent.0
-                )
-            }
-            Archetype::DissectionTable => {
-                let f = table_fit(&sprite, &seg);
-                format!("rim_y {} channel_y {}", f.rim_y, f.channel_y)
-            }
-            Archetype::Bunk { levels } => {
-                let f = bunk_fit(&sprite, &seg, levels);
-                format!(
-                    "slab_tops {:?} mattress {:?} frame {:?}",
-                    f.slab_tops, f.mattress.0, f.frame_color.0
+                    "desk_h {} base_depth {} opening {:?}",
+                    f.desk_h, f.base_depth, f.opening
                 )
             }
         };

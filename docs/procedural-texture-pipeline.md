@@ -719,3 +719,41 @@ THE FIX (Joey approved the approach 2026-11-16):
    invariant under 90-degree rotation, heights monotonic inward;
    console front plane == sprite front exhaustively) + the
    4-angle showcase beside the mockup sheets for Joey's sign-off.
+
+## 25. Stage G.3 rework — implemented (2026-11-16)
+
+DONE per SS24, subagent-built in a worktree, parent-merged and
+re-verified in the main tree (voxelizer + engine suites green,
+incl. the updated stamp gate). props.rs gains view_for (Front |
+TopDown | EndOn; VIEW_OVERRIDES pins are the only trigger for the
+new builders — an unpinned heuristic proposal keeps the Front
+path), model_for routing, topdown_model (terrace + framed-surface
+constructions; TOPDOWN_KIND_OVERRIDES / HEAD_END_OVERRIDES pins),
+and endon_model. archetypes.rs: ContainmentTank / DissectionTable
+/ Bunk DELETED; ConsoleDesk rebuilt (front plane verbatim, stepped
+depth 24 -> 13, knee-hole cols 12..28 rows 0..8 carved open);
+ShelfUnit byte-preserved. lib.rs v2 emit calls model_for —
+consequence: f_bookcase now emits the ShelfUnit archetype instead
+of the solid model (both Joey-approved; the engine stamp gate's
+expectation was updated from solid_model_for to model_for by the
+parent). Tank as built: cap diameter 30 (pipeline structure test),
+length = diameter, leg_h 4, front plane = sprite cap mapped onto
+the disc (vertical rescale for the sprite's ~1.32x disc stretch),
+neck x 11..20 topped with the fitted olive fitting color, two
+saddle stands in base gray. Bed as built: frame [101,55,22],
+mattress top verbatim sitting 1 proud, headboard plain slab
+(plan rows 0..5) rising to y=18 vs mattress top y=8, ground-to-top
+— back plane 100% frame, gate-asserted. Slab: 4 chamfer levels x
+step 2 = height 8 (1/4 width), top verbatim; the f_slab sprite is
+NOT 90-degree symmetric, so the gate asserts heights are a pure
+function of chamfer distance (independent BFS recomputation).
+APPROVED-MODEL GATE (tests/approved_models_gate.rs) pins FNV-1a
+hashes computed on the pre-rework tree — f_counter 0x5f8ae4c1c989e335,
+f_bookcase solid 0x38f2cab4a45c56ed, f_bookcase ShelfUnit
+0x4d61655ef4cc5e59, f_fridge 0x610f325837044965, f_locker
+0x13b0bb8433473346, f_table 0x1258d2b757eb88cb — all unchanged by
+the rework. Known visual caveat (parent, rework.png): the tank's
+barrel sides show horizontal ribbing inherited from the cap
+sprite's row banding; the mockup's barrel is smooth with strap
+bands — a Stage H texture decision, not hidden. Showcase:
+examples/views_showcase.rs -> target/stage-g/rework.png.
