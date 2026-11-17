@@ -3611,7 +3611,7 @@ fn orrery_model(sprite: &RgbaImage) -> Option<PropModel> {
 /// across its width (a trough section, +3 at the
 /// edges). The sprite's 48-row length scales onto the
 /// tile's 32 in z; the ropes run to the tile edges.
-fn hammock_model(sprite: &RgbaImage) -> Option<PropModel> {
+fn hammock_model(sprite: &RgbaImage, net: bool) -> Option<PropModel> {
     let (w, h) = (sprite.width(), sprite.height());
     let extent = |r: u32| -> Option<(u32, u32)> {
         let xs: Vec<u32> = (0..w)
@@ -3629,26 +3629,88 @@ fn hammock_model(sprite: &RgbaImage) -> Option<PropModel> {
         .filter(|&r| extent(r).map_or(false, |(a, b)| b - a + 1 >= 4))
         .collect();
     let (f0, f1) = (fabric.first()?, fabric.last()?);
-    let mut m = PropModel::new([w, 16, 32]);
+    // Cloth paint is smoothed over the source 3x3 (the
+    // sprite's per-pixel weave noise read as lumps on a
+    // 1-cell sheet -- Joey: "these look really bad",
+    // 2026-11-17). The net keeps its raw checkerboard:
+    // the checker IS the pattern.
+    let paint = |x: u32, r: u32| -> Rgba<u8> {
+        let px = *sprite.get_pixel(x, r);
+        if net {
+            return px;
+        }
+        let (mut sr, mut sg, mut sb, mut n) = (0u32, 0u32, 0u32, 0u32);
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                let (nx, ny) = (x as i32 + dx, r as i32 + dy);
+                if nx >= 0 && ny >= 0 && (nx as u32) < w && (ny as u32) < h {
+                    let q = *sprite.get_pixel(nx as u32, ny as u32);
+                    if opaque(q) {
+                        sr += q.0[0] as u32;
+                        sg += q.0[1] as u32;
+                        sb += q.0[2] as u32;
+                        n += 1;
+                    }
+                }
+            }
+        }
+        if n == 0 {
+            px
+        } else {
+            Rgba([(sr / n) as u8, (sg / n) as u8, (sb / n) as u8, 255])
+        }
+    };
+    // Heightfield first, then a skirt fill: the deep
+    // canoe slopes step by up to 2 between neighbours,
+    // and a 1-cell sheet with steps > 1 has see-through
+    // gaps at angle views. Each column fills down to its
+    // lowest neighbour's surface, so the sheet is
+    // continuous from every angle.
+    let mut top: std::collections::HashMap<(u32, u32), (u32, Rgba<u8>)> =
+        std::collections::HashMap::new();
     for z in 0..32u32 {
         let r = (z * (h - 1)) / 31;
         let (a, b) = extent(r)?;
         if fabric.contains(&r) {
             let t = (r - f0) as f32 / (f1 - f0) as f32;
-            let cy = 12.0 - 5.0 * (std::f32::consts::PI * t).sin();
+            // Deep shapes, second pass: the first build's
+            // +3 curl and 5 sag read as a flat lumpy
+            // plank. A hammock bed is a canoe: center
+            // sags 9 below the ends, edges curl 5 up
+            // (flattening toward the gathered ends).
+            let cy = 14.0 - 9.0 * (std::f32::consts::PI * t).sin();
             let cx = (a + b) as f32 / 2.0;
             let hw = ((b - a) as f32 / 2.0).max(1.0);
+            let curl_scale = (((b - a + 1) as f32) / 10.0).min(1.0);
             for x in a..=b {
-                let curl = 3.0 * ((x as f32 - cx) / hw).powi(2);
+                let u = ((x as f32 - cx) / hw).abs();
+                let curl = 5.0 * u.powf(2.5) * curl_scale;
                 let y = (cy + curl).round() as u32;
-                m.set(x, y, z, Some(*sprite.get_pixel(x, r)));
+                top.insert((x, z), (y, paint(x, r)));
             }
         } else {
             // Suspension rope: the row's own pixels at
-            // rope height.
+            // rope height (meets the fabric ends at 14).
             for x in a..=b {
-                m.set(x, 12, z, Some(*sprite.get_pixel(x, r)));
+                top.insert((x, z), (14, *sprite.get_pixel(x, r)));
             }
+        }
+    }
+    let mut m = PropModel::new([w, 16, 32]);
+    let keys: Vec<(u32, u32)> = top.keys().copied().collect();
+    for (x, z) in keys {
+        let (y, c) = top[&(x, z)];
+        let mut lo = y;
+        for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+            let n = (x as i32 + dx, z as i32 + dz);
+            if n.0 >= 0 && n.1 >= 0 {
+                if let Some((ny, _)) = top.get(&(n.0 as u32, n.1 as u32)) {
+                    lo = lo.min(*ny);
+                }
+            }
+        }
+        for yy in lo..=y {
+            m.set(x, yy, z, Some(c));
         }
     }
     if m.solid_count() == 0 {
@@ -3752,7 +3814,7 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         }
     }
     if id == "f_hammock" || id == "f_hammock_net" {
-        if let Some(m) = hammock_model(sprite) {
+        if let Some(m) = hammock_model(sprite, id == "f_hammock_net") {
             return Some(m);
         }
     }
