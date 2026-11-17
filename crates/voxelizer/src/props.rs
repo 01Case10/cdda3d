@@ -4139,7 +4139,7 @@ fn manual_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         "f_TV_antenna" => Some(manual_tv_antenna()),
         "f_cellphone_booster" => Some(manual_cellphone_booster()),
         "f_ventilator" => Some(manual_ventilator()),
-        "f_machinery_light" => Some(section_solid(sprite, 0.45, 9)),
+        "f_machinery_light" => Some(section_solid(sprite)),
         "f_ground_cable" => Some(manual_ground_cable()),
         _ => None,
     }
@@ -4313,7 +4313,7 @@ fn manual_cellphone_booster() -> PropModel {
 /// every section has real depth. Clusters that are
 /// entirely near-black are the sprite's ground shadow
 /// and are dropped.
-fn section_solid(sprite: &RgbaImage, factor: f32, max_d: u32) -> PropModel {
+fn section_solid(sprite: &RgbaImage) -> PropModel {
     let (w, h) = (sprite.width(), sprite.height());
     let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
     let band = rows.next().unwrap_or(0)..rows.last().map(|r| r + 1).unwrap_or(0);
@@ -4340,25 +4340,51 @@ fn section_solid(sprite: &RgbaImage, factor: f32, max_d: u32) -> PropModel {
             if !solid_px {
                 continue;
             }
+            // Depth placement by section, from the
+            // sprite's layout (Joey: front/back fine,
+            // side wrong -- every section was centered,
+            // so the side collapsed to a uniform column.
+            // The machine's mass is placed where the
+            // object puts it: head over the back posts,
+            // the drive housing as the deep mass, the
+            // table jutting forward, a front leg below
+            // it with the cabinet behind):
             let wdt = b - a + 1;
-            // Odd depths only, so every section centers
-            // on the same z and adjoining sections meet
-            // flush instead of stepping by one cell.
-            let mut d = ((wdt as f32 * factor).round() as u32).clamp(3, max_d);
-            if d % 2 == 0 {
-                d += 1;
-            }
-            let z0 = 16 - (d - 1) / 2;
-            let z1 = z0 + d - 1;
+            let (z0, z1) = if y >= 51 {
+                (10, 21) // head housing
+            } else if (40..=50).contains(&y) {
+                if wdt <= 3 {
+                    (11, 14) // the twin rods, at the back
+                } else {
+                    (10, 17) // left column block
+                }
+            } else if (35..=39).contains(&y) {
+                if a >= 16 {
+                    (9, 22) // drive housing: the deep mass
+                } else if wdt <= 3 {
+                    (11, 14)
+                } else {
+                    (10, 17)
+                }
+            } else if (32..=34).contains(&y) {
+                (9, 23) // table, jutting forward
+            } else if (18..=31).contains(&y) {
+                if a >= 27 {
+                    (19, 23) // front leg
+                } else {
+                    (9, 16) // cabinet behind the leg line
+                }
+            } else if (10..=17).contains(&y) {
+                (9, 20) // lower cabinet
+            } else {
+                (9, 23) // plinth / feet
+            };
             // De-void the two SIDE-EDGE columns only:
             // near-black paint is the sprite's outline/
             // shadow, and on a side face it smears into
             // a black slab (the orrery lesson) -- but
             // the front keeps the sprite's pixels
-            // verbatim, dark shading included. (v3
-            // washed every dark pixel in the fill to
-            // modal and flattened the front; Joey
-            // flagged it as worse than the start.)
+            // verbatim, dark shading included.
             let modal = modal_color((a..=b).filter_map(|px| {
                 let c = *sprite.get_pixel(px, r);
                 let v = c.0;
