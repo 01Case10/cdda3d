@@ -1,0 +1,415 @@
+//! Stage G coverage-drive gate: base prop models for the
+//! sprites segment() declines (props::coverage_model).
+//!
+//! Three claims, in order:
+//! 1. NO REGRESSION: the 119 furniture ids that already emitted
+//!    a v2 model before the drive still emit one with exactly
+//!    the same solid-cell count (the parent's audit TSV,
+//!    embedded as REGRESSION below). The drive's code paths
+//!    fire only where segment_for() returns None.
+//! 2. COVERAGE: the full furniture universe now yields exactly
+//!    COVERAGE_TOTAL models (119 before the drive; measured by
+//!    the parent's audit example after it).
+//! 3. PER-CLASS STRUCTURE: the seamless solid keeps the signed-
+//!    off standard (front verbatim, back closed, albedo rule);
+//!    plan slabs are low with the sprite as the top face; panel
+//!    slabs are thin with front verbatim; named vegetation /
+//!    skeleton / exclusion ids still decline.
+
+use image::{Rgba, RgbaImage};
+use std::collections::HashSet;
+use std::path::PathBuf;
+use voxelizer::color::Oklab;
+use voxelizer::*;
+
+fn ultica_dir() -> PathBuf {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let candidates = [
+        manifest.join("../../../cdda-voxel/fork-src/tilesets/gfx/UltimateCataclysm"),
+        manifest.join("../../fork-src/tilesets/gfx/UltimateCataclysm"),
+    ];
+    for c in &candidates {
+        if c.join("tile_info.json").exists() {
+            return c.clone();
+        }
+    }
+    panic!("UltiCa tileset not found; tried {candidates:?}");
+}
+
+fn load_sprite(id: &str) -> RgbaImage {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    let entry = ts.entries.get(id).unwrap_or_else(|| panic!("tileset has {id}"));
+    composite_entry(&ts, entry).unwrap_or_else(|| panic!("{id} composites"))
+}
+
+fn structure(px: Rgba<u8>) -> bool {
+    px[3] >= 254 && !(px[0] == 0 && px[1] == 0 && px[2] == 0 && px[3] < 254)
+}
+
+fn lab(px: Rgba<u8>) -> Oklab {
+    Oklab::from_srgb_u8([px[0], px[1], px[2]])
+}
+
+fn assert_same_model(a: &PropModel, b: &PropModel) {
+    assert_eq!(a.size, b.size);
+    assert_eq!(a.voxels, b.voxels);
+}
+
+/// The 119 pre-drive models: (id, solid-cell count) from the
+/// parent's coverage audit (target/prop_coverage.tsv, before).
+const REGRESSION: &[(&str, usize)] = &[
+    ("f_CTscan", 10464),
+    ("f_LIXA_machinery_electronic", 22848),
+    ("f_MRI", 44022),
+    ("f_active_backup_generator", 9828),
+    ("f_air_conditioner", 16260),
+    ("f_alien_table", 14528),
+    ("f_arcade_machine", 11648),
+    ("f_archery_target_bale", 6380),
+    ("f_autoclave", 4624),
+    ("f_autodoc_couch", 15488),
+    ("f_bandsaw", 6360),
+    ("f_bathtub", 5040),
+    ("f_bed", 6031),
+    ("f_bookcase", 7392),
+    ("f_bullettrailer_bed_foot", 1920),
+    ("f_bullettrailer_cabinet", 10816),
+    ("f_bullettrailer_desk", 9408),
+    ("f_bullettrailer_minisofa", 4608),
+    ("f_bullettrailer_sign_danabakery", 3712),
+    ("f_bullettrailer_sink", 12480),
+    ("f_bullettrailer_toilet", 14336),
+    ("f_capacitor", 32896),
+    ("f_cardboard_box", 9800),
+    ("f_compact_ASRG_containment", 14756),
+    ("f_console", 17784),
+    ("f_console_broken", 12148),
+    ("f_counter", 11392),
+    ("f_crate_c", 19456),
+    ("f_crate_o", 15488),
+    ("f_cupboard", 11392),
+    ("f_curtain", 9350),
+    ("f_curtain_open", 5511),
+    ("f_desk", 5148),
+    ("f_dishwasher", 13500),
+    ("f_displaycase", 4368),
+    ("f_displaycase_b", 4888),
+    ("f_displaycase_o", 4368),
+    ("f_dresser", 19456),
+    ("f_dryer", 12320),
+    ("f_dumpster", 14208),
+    ("f_earthbag_half", 16128),
+    ("f_entertainment_center", 14448),
+    ("f_exodii_charger", 21100),
+    ("f_exodii_charger_cheap", 19900),
+    ("f_exodii_generator_3", 32758),
+    ("f_exodii_printer_large", 2992),
+    ("f_exodii_printer_small", 2640),
+    ("f_exodii_pump", 8514),
+    ("f_fake_bench_hands", 2048),
+    ("f_fireman_cabinet", 6292),
+    ("f_fireman_cabinet_b", 6567),
+    ("f_fireplace", 13376),
+    ("f_foot_locker", 5184),
+    ("f_freezer", 12960),
+    ("f_fridge", 18656),
+    ("f_generator_broken", 10944),
+    ("f_glass_cabinet", 25344),
+    ("f_glass_fridge", 25948),
+    ("f_gunsafe_o", 31746),
+    ("f_hay", 6380),
+    ("f_hd_compressor_unit", 7799),
+    ("f_home_furnace", 22496),
+    ("f_intermodal_crate_open", 9240),
+    ("f_jointer", 5082),
+    ("f_locker", 12672),
+    ("f_machinery_electronic", 11040),
+    ("f_machinery_heavy", 8184),
+    ("f_machinery_old", 14080),
+    ("f_magic_bench", 20480),
+    ("f_magiclysm_translocator_gate", 51678),
+    ("f_makeshift_bed", 7392),
+    ("f_metal_crate_c", 7590),
+    ("f_metal_crate_o", 7590),
+    ("f_metal_crate_r", 7766),
+    ("f_mitresaw", 2160),
+    ("f_oven", 12320),
+    ("f_pallet_belted", 13312),
+    ("f_pallet_belted_open", 6144),
+    ("f_pallet_cement", 14912),
+    ("f_piano", 6216),
+    ("f_pillow_fort", 7264),
+    ("f_planter", 8910),
+    ("f_planter_harvest", 11520),
+    ("f_planter_mature", 11520),
+    ("f_planter_seedling", 8910),
+    ("f_pool_table", 7936),
+    ("f_rack", 5760),
+    ("f_rack_wood", 14448),
+    ("f_rubble", 2896),
+    ("f_rubble_landfill", 16320),
+    ("f_rubble_rock", 2896),
+    ("f_safe_o", 2244),
+    ("f_sandbag_half", 8932),
+    ("f_sandbag_wall", 4675),
+    ("f_screenmirror", 7326),
+    ("f_sealed_intermodal_crate", 9570),
+    ("f_shower", 20064),
+    ("f_sink", 12416),
+    ("f_slab", 5472),
+    ("f_sofa", 5874),
+    ("f_spinwheel", 28512),
+    ("f_spinwheel_cordage", 28512),
+    ("f_spinwheel_leather", 28512),
+    ("f_standing_tank", 23224),
+    ("f_straw_bed", 7392),
+    ("f_table", 2944),
+    ("f_tablesaw", 9688),
+    ("f_tourist_table", 2144),
+    ("f_treadmill", 13446),
+    ("f_vending_c", 27872),
+    ("f_vending_o", 27872),
+    ("f_vending_reinforced", 27872),
+    ("f_vent_pipe", 3712),
+    ("f_wardrobe", 27648),
+    ("f_washer", 12320),
+    ("f_water_mill", 7650),
+    ("f_water_purifier", 5060),
+    ("f_woodchips", 2896),
+    ("f_wreckage", 4100)
+];
+
+/// Models over the full furniture universe after the drive
+/// (audit example, parent-measured).
+const COVERAGE_TOTAL: usize = 222;
+
+#[test]
+fn pre_drive_models_unchanged() {
+    assert_eq!(REGRESSION.len(), 119);
+    for &(id, cells) in REGRESSION {
+        let sprite = load_sprite(id);
+        let m = model_for(id, &sprite)
+            .unwrap_or_else(|| panic!("{id} modeled before the drive, declines now"));
+        assert_eq!(m.solid_count(), cells, "{id} cell count changed");
+    }
+}
+
+#[test]
+fn coverage_total_is_exact() {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    let mut ids: Vec<&String> = ts.entries.keys().filter(|k| k.starts_with("f_")).collect();
+    ids.sort();
+    assert_eq!(ids.len(), 351);
+    let mut n = 0usize;
+    for id in ids {
+        let entry = ts.entries.get(id).unwrap();
+        if let Some(sprite) = composite_entry(&ts, entry) {
+            if model_for(id, &sprite).is_some() {
+                n += 1;
+            }
+        }
+    }
+    assert_eq!(n, COVERAGE_TOTAL, "coverage total drifted");
+}
+
+// --- albedo rule (copied from archetypes_gate.rs) --------------
+fn deshaded_clusters(sprite: &RgbaImage, rows: std::ops::Range<u32>, k: usize) -> Vec<Oklab> {
+    let crop =
+        image::imageops::crop_imm(sprite, 0, rows.start, sprite.width(), rows.end - rows.start)
+            .to_image();
+    let a = analyze_image(&crop, k);
+    let mut pairs: Vec<(f32, f32)> = a
+        .palette
+        .iter()
+        .filter(|p| p.lab.l >= 0.15)
+        .map(|p| (p.lab.l, p.weight))
+        .collect();
+    if pairs.is_empty() {
+        return a.palette.iter().map(|p| p.lab).collect();
+    }
+    pairs.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total: f32 = pairs.iter().map(|p| p.1).sum();
+    let mut acc = 0.0f32;
+    let mut median = pairs[pairs.len() - 1].0;
+    for (l, w) in &pairs {
+        acc += w;
+        if acc >= total / 2.0 {
+            median = *l;
+            break;
+        }
+    }
+    a.palette
+        .iter()
+        .map(|p| {
+            if p.lab.l > 0.0 {
+                let g = (median / p.lab.l).clamp(0.80, 1.25);
+                Oklab { l: p.lab.l * g, a: p.lab.a, b: p.lab.b }
+            } else {
+                p.lab
+            }
+        })
+        .collect()
+}
+
+fn assert_albedo(sprite: &RgbaImage, seg: &Segmentation, m: &PropModel) {
+    let pixels: HashSet<[u8; 4]> = sprite.pixels().map(|p| p.0).collect();
+    let mut materials: Vec<Oklab> = Vec::new();
+    materials.extend(deshaded_clusters(sprite, seg.silhouette_rows.clone(), 8));
+    materials.extend(deshaded_clusters(sprite, seg.front_rows.clone(), 6));
+    materials.extend(deshaded_clusters(sprite, seg.top_rows.clone(), 6));
+    let raw_dark = |rows: std::ops::Range<u32>, k: usize| -> f32 {
+        let crop = image::imageops::crop_imm(
+            sprite,
+            0,
+            rows.start,
+            sprite.width(),
+            rows.end - rows.start,
+        )
+        .to_image();
+        analyze_image(&crop, k)
+            .palette
+            .iter()
+            .filter(|p| p.lab.l >= 0.15)
+            .map(|p| p.lab.l)
+            .fold(f32::MAX, f32::min)
+    };
+    let darkest_ns = raw_dark(seg.silhouette_rows.clone(), 8)
+        .min(raw_dark(seg.front_rows.clone(), 6))
+        .min(raw_dark(seg.top_rows.clone(), 6));
+    let [w, h, d] = m.size;
+    for y in 0..h {
+        for z in 0..d {
+            for x in 0..w {
+                let Some(c) = m.get(x, y, z) else { continue };
+                if pixels.contains(&c.0) {
+                    continue;
+                }
+                let cl = lab(c);
+                let nearest = materials
+                    .iter()
+                    .map(|mt| cl.distance(*mt))
+                    .fold(f32::MAX, f32::min);
+                assert!(
+                    nearest <= 0.13,
+                    "cell {x},{y},{z} color {c:?} is {nearest:.3} from every declared material"
+                );
+                assert!(
+                    cl.l >= darkest_ns - 0.06,
+                    "cell {x},{y},{z} color {c:?} darker than the darkest material"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn seamless_solid_front_verbatim_back_closed() {
+    // f_toilet: the G.4 archetype drop stands (no tank/bowl
+    // split is fitted); the drive treats it as a base silhouette
+    // solid. Premise: segment() declines it, seamless fires.
+    let sprite = load_sprite("f_toilet");
+    assert!(segment(&sprite).is_none(), "premise: segment declines");
+    let seg = seamless_segment(&sprite).expect("seamless segment fires");
+    let m = model_for("f_toilet", &sprite).expect("toilet models");
+    assert_same_model(&m, &model_for("f_toilet", &sprite).expect("rebuild"));
+    assert_eq!(m.size, [32, 28, 11], "toilet size (w, band, depth floor)");
+    let d = m.size[2];
+    let fh = seg.front_rows.end - seg.front_rows.start;
+    assert_eq!(m.size[1], fh);
+    let bot = seg.front_rows.end - 1;
+    for y in 0..fh {
+        for x in 0..32 {
+            let px = *sprite.get_pixel(x, bot - y);
+            if structure(px) {
+                assert_eq!(m.get(x, y, d - 1), Some(px), "front verbatim {x},{y}");
+                assert!(m.get(x, y, 0).is_some(), "back closed {x},{y}");
+            } else {
+                assert_eq!(m.get(x, y, d - 1), None, "front hole {x},{y}");
+            }
+        }
+    }
+    assert_albedo(&sprite, &seg, &m);
+}
+
+#[test]
+fn plan_slab_is_low_and_top_is_the_sprite() {
+    let sprite = load_sprite("f_groundsheet");
+    let m = model_for("f_groundsheet", &sprite).expect("groundsheet models");
+    assert_eq!(m.size, [32, 2, 32], "groundsheet slab size");
+    assert_same_model(&m, &model_for("f_groundsheet", &sprite).expect("rebuild"));
+    let pixels: HashSet<[u8; 4]> = sprite.pixels().map(|p| p.0).collect();
+    for z in 0..32 {
+        for x in 0..32 {
+            let px = *sprite.get_pixel(x, z);
+            if structure(px) {
+                assert_eq!(m.get(x, 1, z), Some(px), "top verbatim {x},{z}");
+                assert!(m.get(x, 0, z).is_some(), "slab body {x},{z}");
+            } else {
+                assert_eq!(m.get(x, 1, z), None, "no invented mass {x},{z}");
+            }
+        }
+    }
+    for c in m.voxels.iter().flatten() {
+        assert!(pixels.contains(&c.0), "plan colors are sprite paint: {c:?}");
+    }
+    // Mattress pin: thicker, still a low pad.
+    let mat = model_for("f_down_mattress", &load_sprite("f_down_mattress"))
+        .expect("mattress models");
+    assert_eq!(mat.size[1], 6, "mattress thickness");
+    // The firering keeps its hole: some interior cell of the
+    // sprite's bounding box is not structure and stays empty.
+    let ring_sprite = load_sprite("f_firering");
+    let ring = model_for("f_firering", &ring_sprite).expect("firering models");
+    let mut hole_seen = false;
+    for z in 0..32 {
+        for x in 0..32 {
+            if !structure(*ring_sprite.get_pixel(x, z)) && ring.get(x, 2, z).is_none() {
+                hole_seen = true;
+            }
+        }
+    }
+    assert!(hole_seen, "firering has empty cells (its hole)");
+}
+
+#[test]
+fn panel_slab_is_thin_and_front_verbatim() {
+    let sprite = load_sprite("f_canvas_door");
+    let m = model_for("f_canvas_door", &sprite).expect("canvas door models");
+    assert_eq!(m.size, [32, 32, 3], "door panel size");
+    assert_same_model(&m, &model_for("f_canvas_door", &sprite).expect("rebuild"));
+    let pixels: HashSet<[u8; 4]> = sprite.pixels().map(|p| p.0).collect();
+    for c in m.voxels.iter().flatten() {
+        assert!(pixels.contains(&c.0), "panel colors are sprite paint: {c:?}");
+    }
+    // Front plane verbatim over the silhouette band's structure.
+    let grave = load_sprite("f_grave_stone");
+    let g = model_for("f_grave_stone", &grave).expect("grave stone models");
+    assert_eq!(g.size[2], 3, "grave stone thickness");
+    let grave_pixels: HashSet<[u8; 4]> = grave.pixels().map(|p| p.0).collect();
+    let mut any = false;
+    for y in 0..g.size[1] {
+        for x in 0..32 {
+            if let Some(c) = g.get(x, y, 2) {
+                any = true;
+                assert!(grave_pixels.contains(&c.0), "grave front is sprite paint");
+                assert!(g.get(x, y, 0).is_some(), "grave back closed {x},{y}");
+            }
+        }
+    }
+    assert!(any, "grave stone has a front");
+}
+
+#[test]
+fn exclusions_and_skeletons_still_decline() {
+    for id in [
+        "f_dandelion_season_spring", // vegetation
+        "f_hoist_chain",              // skeleton
+        "f_IV_pole",                  // skeleton pole
+        "f_traffic_light",            // exclusion pin (pole)
+        "f_bed_frame",                // exclusion pin (slatted frame)
+        "f_alien_pod",                // organism, below criteria
+    ] {
+        let sprite = load_sprite(id);
+        assert!(model_for(id, &sprite).is_none(), "{id} must stay unmodeled");
+    }
+}
