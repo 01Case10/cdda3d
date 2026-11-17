@@ -1195,6 +1195,64 @@ FIX ROUND 3 (Joey's two further reviews, 2026-11-17; committed
   Remaining CYLINDER_PINS: water heater, log stool, punching
   bag, sand castle (constant-profile closed forms).
 
+HORIZONTAL BARREL (Joey's identification, 2026-11-17,
+committed `e5f1328`): f_fvat_empty/full are NOT vertical
+vats — Joey supplied a photo of the real object: an alcohol
+barrel lying on its side on a stand, head + tap toward the
+viewer. `Archetype::HorizontalBarrel` fits the shared 32x64
+sprite into far-end curve / stave-and-hoop body / dark head
+(5/20/18 rows, diameter 24) and builds it lying down: body
+rows map along the depth axis (hoops become rings), the head
+region stretches over the front disc, and the tap is a 2x2
+protrusion fitted from the blue-grey pixel cluster in the
+head's lower half. The keg stays ClosedCylinder.
+
+FIX ROUND 4 (Joey's per-model reviews of the round-3 set,
+2026-11-17; suite 105/105, total still 222, pre-drive 119
+unchanged):
+
+- **Barrels un-squished.** Round 3's wall-height model read
+  as squished (the 55-gal measured 15 wall rows of a 28-row
+  band under the majority scan — its dark wall classifies as
+  interior). The opening measure is now center-column based
+  (widening OR the extent's center pixel interior-classified;
+  the 55-gal's true ellipse is 8 rows). The model is FULL
+  band height: the band's rows are a rim section — shell
+  painted with the wall's clamped paint (the rim roll) around
+  a well, contents surface `drop` below the rim top. The
+  anti-plug property is kept: the top-front voxel is wall
+  paint, never contents.
+- **Base artifacts.** The sprites' base rows carry literal
+  [0,0,0] outline paint; wrapped around the shell it read as
+  black patches at the base (worst in side views).
+  `column_paint` (and the blob) de-void: a pure-black entry
+  takes the column's nearest non-black paint.
+- **Pattern wrap.** Side-most voxels (never a column's
+  front/back extremes) are repainted with the row's front
+  pattern mapped by depth z (`wrap_side_faces` +
+  `wrap_row_pattern`), so texture runs continuously
+  front -> side -> back: the kiln's cobbles show on all
+  sides (Joey), the barrels' front pattern extends to the
+  back (Joey), the gasper's sides lose the center stripe.
+  Pure black never wraps (it is a front-face feature — the
+  kiln's firebox).
+- **Gasper mouth.** The ring took per-column paint, so the
+  sprite's dark mouth-center pixels striped the lip (the
+  "dashed pale crown" artifact). Ring voxels now take one
+  rim color: the modal of the row's non-interior pixels.
+- **Boulders are not revolutions.** f_boulder_* x3 +
+  f_glow_boulder, f_fungal_clump, f_egg_sack* x2 left the
+  lathe for `blob_model` (BLOB_PINS): front = sprite
+  verbatim, per-column depth = silhouette diameter x
+  floored horizontal taper x grounded dome taper (full
+  depth at the base, tapering only toward the column top)
+  x low-frequency fBm (0.75–1.25), per-column paint through
+  the depth, sides pattern-wrapped. Gate
+  `blob_is_irregular_not_a_revolution` (front verbatim,
+  depth range >= 6, some row asymmetric about its center —
+  a revolution's never is). The lathe keeps gasper, resin
+  pod, and the three kilns.
+
 ## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
 
 DONE, merged to main @ 0ace695 (not pushed), parent re-verified.
