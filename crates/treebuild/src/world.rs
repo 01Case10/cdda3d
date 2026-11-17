@@ -153,4 +153,56 @@ impl VoxelWorld {
         }
         out
     }
+
+    /// Phase 9 (9.5, two-tree design): the FINE tree's world —
+    /// only the stamped cells of `layer`, in FINE coordinates
+    /// `(fx, fy, fz)` (1 unit = 1 fine cell = 1/32 block; see
+    /// `mesher::fine`). The coarse tree is built from
+    /// [`VoxelWorld::from_chunk_map`] exactly as before and the
+    /// two trees are composited by hit distance, so a scene
+    /// with nothing stamped yields an empty fine world and no
+    /// fine tree at all. Material id, colour and flags come
+    /// from the stamped block (its id is the prop's synthetic
+    /// material id on the engine path); `lit` defaults to
+    /// `LIT_LIT` exactly as in `from_chunk_map` — a lit caller
+    /// rewrites it per containing tile afterwards, the same
+    /// post-pass `engine::rt::world_for_levels_lit` applies to
+    /// the coarse world (the 9.6 v1 rule, docs/phase9-fine.md).
+    pub fn from_fine_layer(layer: &mesher::fine::FineLayer) -> VoxelWorld {
+        use mesher::fine::FINE;
+        let mut out = VoxelWorld::new();
+        for tile in layer.tiles() {
+            for vol in layer.volumes_for_tile(tile) {
+                for fz in vol.z0..vol.z0 + vol.depth_z {
+                    for ly in 0..FINE {
+                        for lx in 0..FINE {
+                            let Some(b) = vol.get(lx, ly, fz) else {
+                                continue;
+                            };
+                            if b.is_air() {
+                                continue;
+                            }
+                            let mut flags = 0;
+                            match b.pass {
+                                Pass::Transparent => flags |= FLAG_TRANSPARENT,
+                                Pass::Cutout => flags |= FLAG_CUTOUT,
+                                Pass::Opaque => {}
+                            }
+                            out.set(
+                                [tile.0 * FINE + lx, tile.1 * FINE + ly, fz],
+                                VoxelCell {
+                                    color: [b.color[0], b.color[1], b.color[2]],
+                                    alpha: b.color[3],
+                                    material_id: b.id,
+                                    lit: LIT_LIT,
+                                    flags,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
 }

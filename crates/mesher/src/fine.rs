@@ -444,6 +444,12 @@ impl FineLayer {
         self.volumes.len()
     }
 
+    /// Every tile holding at least one volume, in ascending
+    /// tile order (the map is a `BTreeMap`).
+    pub fn tiles(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
+        self.volumes.keys().copied()
+    }
+
     /// Whether the layer holds no volumes at all.
     pub fn is_empty(&self) -> bool {
         self.volumes.is_empty()
