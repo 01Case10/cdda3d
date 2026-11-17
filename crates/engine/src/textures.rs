@@ -435,6 +435,49 @@ pub fn extend_texture_spec_with_props(
     colors.len()
 }
 
+/// Phase 9 slice 2: a prop-only `TextureSpec` for a scene with
+/// NO voxelizer textures dir — the spec carries exactly the
+/// synthetic solid layers of `colors` (one solid
+/// `tile_size`×`tile_size` layer per colour, `tile_size` 32),
+/// so a fine-props scene rendered without atlas textures still
+/// samples its stamped cells' real palette colours through
+/// the raster texture array. `material_layers` is sized to
+/// the max synthetic id (`base_id + colors.len()`; entry
+/// `base_id + 1 + i` is `[i, i, i, 1]`, layer `i` being colour
+/// `i`'s solid layer — so `PropColorSet::layer_of(0, rgb)`
+/// matches what `snapshot_world::prop_block_for` stamps when
+/// the caller passes `first_layer = 0`). Macro fields are
+/// empty/0. An empty colour set yields a single dummy white
+/// layer (a `TextureSpec` must carry at least one layer) and
+/// no synthetic entries.
+pub fn prop_only_spec(colors: &PropColorSet, base_id: u32) -> TextureSpec {
+    let tile_size = 32u32;
+    let layer_bytes = (tile_size as usize) * (tile_size as usize) * 4;
+    let mut layers: Vec<Vec<u8>> = Vec::new();
+    let max_id = base_id as usize + colors.len();
+    let mut material_layers = vec![[0u32; 4]; max_id + 1];
+    for (i, &rgb) in colors.colors().iter().enumerate() {
+        let mut bytes = vec![0u8; layer_bytes];
+        for px in bytes.chunks_exact_mut(4) {
+            px.copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+        }
+        layers.push(bytes);
+        material_layers[base_id as usize + 1 + i] = [i as u32, i as u32, i as u32, 1];
+    }
+    if layers.is_empty() {
+        layers.push(vec![255u8; layer_bytes]);
+    }
+    let material_macros = vec![[0u32; 4]; material_layers.len()];
+    TextureSpec {
+        tile_size,
+        layers,
+        material_layers,
+        macro_size: 0,
+        macro_layers: Vec::new(),
+        material_macros,
+    }
+}
+
 /// One state-variant allocation (Phase 2d follow-up): voxels
 /// carrying state (`open` / `broken`) for base material
 /// `base_id` are rewritten to `virtual_id` — the state analogue

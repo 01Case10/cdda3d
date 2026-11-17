@@ -21,7 +21,7 @@ pub const FACE_DIRS: [[i32; 3]; 6] = [
     [0, 0, -1],
 ];
 
-const FACE_CORNERS: [[[f32; 3]; 4]; 6] = [
+pub(crate) const FACE_CORNERS: [[[f32; 3]; 4]; 6] = [
     // +X
     [[1., 0., 0.], [1., 1., 0.], [1., 1., 1.], [1., 0., 1.]],
     // -X
@@ -58,7 +58,7 @@ pub fn face_visible(src: Block, neighbor: Block) -> bool {
 /// +Z samples the top layer, -Z the bottom layer, every side face the
 /// side layer — the same selection the RT shader's `tex_albedo` makes.
 /// `None` when the block is untextured (flat shading).
-fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
+pub(crate) fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
     let layers = block.tex_layers?;
     Some(match di {
         4 => layers[0], // +Z (up): top
@@ -104,7 +104,7 @@ fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], _quad_ext: [f32; 3]) -> [
 /// two world points exactly `span` tiles apart share a macro phase
 /// (the macro array's Repeat sampler wraps the rest). Every other
 /// face keeps the Stage A tile-unit mapping ([`face_uv`]).
-fn quad_uvs(
+pub(crate) fn quad_uvs(
     di: usize,
     grid_corners: &[[f32; 3]; 4],
     quad_min: [f32; 3],
@@ -123,7 +123,7 @@ fn quad_uvs(
 /// Grid-space point -> Y-up world point. This is a rotation about X
 /// (grid `(x, y_south, z_up)` -> world `(x, z_up, -y_south)`), NOT a plain
 /// axis swap: a swap is a reflection and would flip triangle winding.
-fn to_world(p: [f32; 3], scale: WorldScale) -> [f32; 3] {
+pub(crate) fn to_world(p: [f32; 3], scale: WorldScale) -> [f32; 3] {
     [
         p[0] * scale.block_size,
         p[2] * scale.block_size,
@@ -132,7 +132,7 @@ fn to_world(p: [f32; 3], scale: WorldScale) -> [f32; 3] {
 }
 
 /// Grid-space direction -> Y-up world direction (same rotation).
-fn normal_to_world(d: [i32; 3]) -> [f32; 3] {
+pub(crate) fn normal_to_world(d: [i32; 3]) -> [f32; 3] {
     [d[0] as f32, d[2] as f32, -d[1] as f32]
 }
 

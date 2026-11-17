@@ -284,6 +284,217 @@ impl VehicleScene {
     }
 }
 
+/// Prop input for one frame (Phase 9 slice 2, 9.10): the
+/// furniture prop models to stamp into the raster world pass
+/// as fine geometry, and where to stamp them. `models` maps a
+/// furniture def id to its voxel model; `placements` say which
+/// game tile (x, y, 0-based level from
+/// `world::HOUSE_MIN_GAME_Z`) carries which furniture id —
+/// the same placement shape `snapshot_world::stamp_furniture`
+/// consumes.
+#[derive(Debug, Clone)]
+pub struct PropScene {
+    /// `(furn_id, model)` pairs, in deterministic order.
+    pub models: Vec<(u32, crate::materials::PropModelData)>,
+    /// Where each modelled furniture item stands.
+    pub placements: Vec<crate::snapshot_world::FurniturePlacement>,
+}
+
+/// Fixture furniture ids for [`PropScene::fixture`] (above
+/// every fake-data tile id in these scenes).
+pub const FURN_FIXTURE_BOOKCASE: u32 = 200;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_COUNTER: u32 = 201;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_FRIDGE: u32 = 202;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_TABLE: u32 = 203;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_TANK: u32 = 204;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_BED: u32 = 205;
+
+/// Build one fixture [`crate::materials::PropModelData`] from
+/// a per-voxel palette-index function (`u16::MAX` = empty),
+/// in the model's `(y * d + z) * w + x` voxel order.
+fn fixture_prop_model(
+    size: [u32; 3],
+    palette: Vec<[u8; 3]>,
+    f: impl Fn(u32, u32, u32) -> u16,
+) -> crate::materials::PropModelData {
+    let [w, h, d] = size;
+    let mut voxels = Vec::with_capacity((w * h * d) as usize);
+    for y in 0..h {
+        for z in 0..d {
+            for x in 0..w {
+                voxels.push(f(x, y, z));
+            }
+        }
+    }
+    crate::materials::PropModelData {
+        size,
+        palette,
+        voxels,
+    }
+}
+
+impl PropScene {
+    /// Hand-built deterministic fixture prop scene for a
+    /// snapshot name (Phase 9 slice 2): solid boxes / shelves /
+    /// a leg tank built from palette literals, in the
+    /// `phase9_stamp_gate` style. Every model carries 2–4
+    /// distinct palette colours; the counter body colour and
+    /// the steel colour are each shared between two models
+    /// (counter/tank and fridge/tank), so scene-wide dedupe is
+    /// exercised. Placements (tiles are `(x, y, level)`, level
+    /// 0-based from `HOUSE_MIN_GAME_Z`):
+    /// - `"sample-scene"`: bookcase (5,4,0), counter (7,4,0),
+    ///   fridge (9,4,0), table (6,6,0), tank (15,5,0);
+    /// - `"stub-house"`: bookcase (2,1,0), counter (5,1,0),
+    ///   fridge (9,1,0), table (5,5,0).
+    ///
+    /// The bed model is part of the set (it is the sixth
+    /// fixture model) but is placed in neither scene above.
+    /// Returns `None` for any other snapshot.
+    pub fn fixture(snapshot: &str) -> Option<PropScene> {
+        // Shared palette literals (exact duplicates across
+        // models are the point: they dedupe scene-wide).
+        const BODY: [u8; 3] = [200, 180, 160];
+        const STEEL: [u8; 3] = [140, 150, 160];
+        const WOOD: [u8; 3] = [120, 72, 32];
+        const EMPTY: u16 = crate::materials::PropModelData::EMPTY;
+
+        // Bookcase: solid frame + shelves; books in red/blue
+        // runs between shelf boards.
+        let bookcase = fixture_prop_model(
+            [28, 22, 8],
+            vec![WOOD, [180, 140, 90], [200, 40, 40], [40, 80, 200]],
+            |x, y, z| {
+                let _ = z;
+                if y == 0 || y == 21 || x == 0 || x == 27 || y % 6 == 5 {
+                    if y % 6 == 5 && x > 0 && x < 27 && y != 21 {
+                        1 // shelf board
+                    } else {
+                        0 // frame
+                    }
+                } else if (x / 3) % 2 == 0 {
+                    2 // red books
+                } else {
+                    3 // blue books
+                }
+            },
+        );
+        // Counter: solid body, contrasting top slab, dark kick.
+        let counter = fixture_prop_model(
+            [28, 14, 10],
+            vec![BODY, [90, 60, 40], [60, 60, 60]],
+            |_x, y, _z| {
+                if y == 13 {
+                    1
+                } else if y < 2 {
+                    2
+                } else {
+                    0
+                }
+            },
+        );
+        // Fridge: solid white box, steel top, dark handle
+        // column on the front face.
+        let fridge = fixture_prop_model(
+            [20, 26, 12],
+            vec![[220, 220, 225], STEEL, [80, 80, 90]],
+            |x, y, z| {
+                if y >= 24 {
+                    1
+                } else if x >= 18 && z == 11 {
+                    2
+                } else {
+                    0
+                }
+            },
+        );
+        // Table: top slab on four corner legs.
+        let table = fixture_prop_model(
+            [26, 10, 18],
+            vec![[150, 100, 50], [100, 65, 30]],
+            |x, y, z| {
+                if y >= 8 {
+                    0
+                } else if (x < 3 || x >= 23) && (z < 3 || z >= 15) {
+                    1
+                } else {
+                    EMPTY
+                }
+            },
+        );
+        // Tank: steel barrel on short feet (feet reuse the
+        // counter's BODY colour; barrel reuses the fridge's
+        // STEEL colour).
+        let tank = fixture_prop_model([32, 12, 12], vec![STEEL, BODY], |x, y, _z| {
+            if y < 2 {
+                if x < 3 || x >= 29 {
+                    1
+                } else {
+                    EMPTY
+                }
+            } else if (3..29).contains(&x) {
+                0
+            } else {
+                EMPTY
+            }
+        });
+        // Bed: wood frame, mattress, blanket over the front
+        // (south) half, pillow at the back.
+        let bed = fixture_prop_model(
+            [20, 10, 28],
+            vec![WOOD, [240, 240, 235], [200, 40, 40]],
+            |_x, y, z| {
+                if y < 3 {
+                    0
+                } else if y < 6 {
+                    1
+                } else if z < 4 {
+                    1 // pillow (back / north end)
+                } else {
+                    2 // blanket
+                }
+            },
+        );
+
+        let models = vec![
+            (FURN_FIXTURE_BOOKCASE, bookcase),
+            (FURN_FIXTURE_COUNTER, counter),
+            (FURN_FIXTURE_FRIDGE, fridge),
+            (FURN_FIXTURE_TABLE, table),
+            (FURN_FIXTURE_TANK, tank),
+            (FURN_FIXTURE_BED, bed),
+        ];
+        let place = |x: i32, y: i32, furn_id: u32| crate::snapshot_world::FurniturePlacement {
+            x,
+            y,
+            level: 0,
+            furn_id,
+        };
+        let placements = match snapshot {
+            "sample-scene" => vec![
+                place(5, 4, FURN_FIXTURE_BOOKCASE),
+                place(7, 4, FURN_FIXTURE_COUNTER),
+                place(9, 4, FURN_FIXTURE_FRIDGE),
+                place(6, 6, FURN_FIXTURE_TABLE),
+                place(15, 5, FURN_FIXTURE_TANK),
+            ],
+            "stub-house" => vec![
+                place(2, 1, FURN_FIXTURE_BOOKCASE),
+                place(5, 1, FURN_FIXTURE_COUNTER),
+                place(9, 1, FURN_FIXTURE_FRIDGE),
+                place(5, 5, FURN_FIXTURE_TABLE),
+            ],
+            _ => return None,
+        };
+        Some(PropScene { models, placements })
+    }
+}
+
 /// Transient-emitter input for one frame (Phase 8 wiring,
 /// gate 8.5's presentation half): the emitters alive at
 /// `now_ms` in a `transient::TransientSystem` fed from
@@ -696,6 +907,14 @@ fn render_frame_inner(
     let mut stats = FrameStats::default();
 
     if args.renderer == RendererKind::Rt {
+        // Phase 9 slice 2: fine props are raster-only until
+        // slice 3 (9.5) wires the RT fine adapter — fail loud,
+        // never silently drop the props.
+        if args.fine_props || args.props.is_some() {
+            return Err(CaptureError::Device(
+                "fine props are not wired for the RT renderer yet (Phase 9 slice 3)".into(),
+            ));
+        }
         // World (RT): trace the frame, copy its color into an
         // engine-format target, and — when a downstream pass needs
         // depth (fields depth-fade, billboard depth test, post
@@ -799,28 +1018,69 @@ fn render_frame_inner(
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
     let mut renderer = Renderer::new(device, CAPTURE_FORMAT);
     let sample = args.snapshot == "sample-scene";
-    let (meshes, mstats, spec) = match (&args.lighting, sample) {
-        (Some(lit), false) => crate::scene_prep::prepare_raster_house_lit_v(
+    // Phase 9 slice 2 (9.10): the effective prop scene — an
+    // explicit `props` scene wins regardless of the flag; with
+    // only `--fine-props` set, the snapshot's fixture scene is
+    // used. With neither, `effective_props` is `None` and the
+    // dispatch below is exactly the pre-Phase-9 one.
+    let fixture_props: Option<PropScene> = if args.props.is_none() && args.fine_props {
+        PropScene::fixture(&args.snapshot)
+    } else {
+        None
+    };
+    let effective_props: Option<&PropScene> = args.props.as_ref().or(fixture_props.as_ref());
+    let (meshes, mstats, spec) = match (&args.lighting, sample, effective_props) {
+        (Some(lit), false, Some(p)) => crate::scene_prep::prepare_raster_house_lit_vp(
+            &visible,
+            args.textures.as_deref(),
+            lit,
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (Some(lit), true, Some(p)) => crate::scene_prep::prepare_raster_sample_lit_vp(
+            &visible,
+            args.textures.as_deref(),
+            lit,
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, false, Some(p)) => crate::scene_prep::prepare_raster_house_vp(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, true, Some(p)) => crate::scene_prep::prepare_raster_sample_vp(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (Some(lit), false, None) => crate::scene_prep::prepare_raster_house_lit_v(
             &visible,
             args.textures.as_deref(),
             lit,
             args.vehicles.as_ref(),
         )
         .map_err(CaptureError::Device)?,
-        (Some(lit), true) => crate::scene_prep::prepare_raster_sample_lit_v(
+        (Some(lit), true, None) => crate::scene_prep::prepare_raster_sample_lit_v(
             &visible,
             args.textures.as_deref(),
             lit,
             args.vehicles.as_ref(),
         )
         .map_err(CaptureError::Device)?,
-        (None, false) => crate::scene_prep::prepare_raster_house_v(
+        (None, false, None) => crate::scene_prep::prepare_raster_house_v(
             &visible,
             args.textures.as_deref(),
             args.vehicles.as_ref(),
         )
         .map_err(CaptureError::Device)?,
-        (None, true) => crate::scene_prep::prepare_raster_sample_v(
+        (None, true, None) => crate::scene_prep::prepare_raster_sample_v(
             &visible,
             args.textures.as_deref(),
             args.vehicles.as_ref(),

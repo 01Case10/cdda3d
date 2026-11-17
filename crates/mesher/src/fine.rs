@@ -32,13 +32,46 @@
 //! through the [`ModelCells`] trait, which mirrors the layout
 //! of the engine's `PropModelData` (model voxel index
 //! `(y * d + z) * w + x`; model `z = d - 1` is the FRONT).
+//!
+//! Slice 2 (9.4 + 9.10) adds [`mesh_chunk_fine`], the raster
+//! fine mesher. Its boundary rule and dispatch contract:
+//!
+//! - **Dispatch contract**: the caller (the engine's raster
+//!   scene preparation) meshes a chunk with
+//!   [`mesh_chunk_fine`] iff that chunk's
+//!   [`crate::chunk::Chunk::has_fine`] flag is set (refreshed
+//!   from the layer after stamping), and with the ordinary
+//!   coarse `ChunkMap::mesh_chunk` otherwise. A chunk with no
+//!   fine volumes is therefore meshed exactly as before
+//!   Phase 9, and a scene in which nothing was stamped has no
+//!   flagged chunks at all — its meshes are literally the
+//!   pre-Phase-9 meshes.
+//! - **Boundary rule (coarse side)**: a coarse block's face
+//!   whose neighbour cell is AIR but lies in a tile holding a
+//!   fine volume whose z-range covers the neighbour block's
+//!   whole fine-z span is culled iff ALL 32×32 stamped fine
+//!   cells of that volume on the face plane (the fine cells
+//!   immediately across the plane from the block) are opaque;
+//!   otherwise the coarse face is drawn (the prop does not
+//!   fully cover it, so culling it would leave a hole).
+//! - **Boundary rule (fine side)**: a stamped fine cell's
+//!   faces are decided by [`FineSampler`], so a face against
+//!   a coarse block resolves to that block expanded — a prop
+//!   face against a wall or a floor slab is culled exactly
+//!   when [`crate::mesher::face_visible`] says the coarse
+//!   block hides it.
 
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::block::Block;
+use crate::block::{Block, Pass};
 use crate::chunk::{ChunkMap, CHUNK_H, CHUNK_W};
 use crate::grid::VoxelSampler;
+use crate::mesh::PassMeshes;
+use crate::mesher::{
+    face_visible, layer_for_dir, normal_to_world, quad_uvs, to_world, FACE_CORNERS, FACE_DIRS,
+};
+use crate::scale::WorldScale;
 
 /// Fine cells per block (tile) edge — the Phase 9 resolution
 /// lock (plan §11b, 9.0). A z-level is
@@ -539,4 +572,203 @@ impl ChunkMap {
             chunk.has_fine = layer.chunk_has_fine(*coord);
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 2 (9.4): the raster fine mesher
+// ---------------------------------------------------------------------
+
+/// Whether the coarse face from a block toward its neighbour
+/// cell `n` (grid/block coordinates) is culled by the fine
+/// boundary rule (see the module docs). Returns:
+/// - `Some(true)` — the rule applies and every one of the
+///   32×32 stamped fine cells on the face plane is opaque:
+///   cull the coarse face;
+/// - `Some(false)` — the rule applies but the plane is not
+///   fully covered by opaque stamped cells: draw the face;
+/// - `None` — the rule does not apply (the neighbour cell is
+///   not air, its tile holds no fine volume, or no volume's
+///   z-range covers the neighbour block's whole fine-z span):
+///   the caller falls back to `face_visible`.
+fn coarse_face_cull_by_fine(
+    coarse: &ChunkMap,
+    layer: &FineLayer,
+    n: [i32; 3],
+    dir: [i32; 3],
+) -> Option<bool> {
+    if !coarse.block_at(n[0], n[1], n[2]).is_air() {
+        return None;
+    }
+    let tile = (n[0], n[1]);
+    let z_lo = n[2] * FINE;
+    let z_hi = z_lo + FINE;
+    let vol = layer
+        .volumes_for_tile(tile)
+        .iter()
+        .find(|v| v.z0 <= z_lo && z_hi <= v.z0 + v.depth_z)?;
+    // The face plane's fixed fine coordinate (the fine cells
+    // immediately across the plane from the source block, i.e.
+    // the first fine layer inside the neighbour block along
+    // `dir`), and the two varying axes spanning the block face.
+    let axis = (0..3).find(|&a| dir[a] != 0).unwrap();
+    let others: Vec<usize> = (0..3).filter(|&a| a != axis).collect();
+    let mut fixed = [0i32; 3];
+    for a in 0..3 {
+        fixed[a] = n[a] * FINE;
+    }
+    if dir[axis] < 0 {
+        fixed[axis] = n[axis] * FINE + (FINE - 1);
+    }
+    // For +Z this is the volume's bottom fine layer when the
+    // neighbour block is the volume's first block (the floor
+    // slab under a prop in the same tile) — `fixed[2]` is
+    // exactly `n[2] * FINE`, the neighbour block's bottom.
+    for u in 0..FINE {
+        for v in 0..FINE {
+            let mut f = fixed;
+            f[others[0]] = n[others[0]] * FINE + u;
+            f[others[1]] = n[others[1]] * FINE + v;
+            let lx = f[0] - tile.0 * FINE;
+            let ly = f[1] - tile.1 * FINE;
+            match vol.get(lx, ly, f[2]) {
+                Some(b) if !b.is_air() && b.pass == Pass::Opaque => {}
+                _ => return Some(false),
+            }
+        }
+    }
+    Some(true)
+}
+
+/// Mesh one chunk column at fine resolution (Phase 9, 9.4):
+/// the chunk's coarse cells naively (one quad per visible
+/// face, exactly as `mesh_naive` emits them, with the fine
+/// boundary rule of the module docs applied to faces against
+/// fine tiles) plus every stamped fine cell of every volume
+/// whose tile lies in this chunk (one quad per face the
+/// [`FineSampler`] leaves visible, at fine scale — cell edge
+/// `scale.block_size / FINE`).
+///
+/// The two passes append into one [`PassMeshes`], coarse
+/// first, then fine volumes in ascending tile order (and
+/// ascending `z0` within a tile), so the output order is
+/// deterministic. Fine quads are textured from the stamped
+/// cell's `tex_layers` with per-cell `[0, 1]` UVs (the
+/// `mesh_naive` `quad_uvs` / `layer_for_dir` behaviour at
+/// fine-cell scale).
+///
+/// Returns `None` iff the chunk is absent from `coarse`.
+/// This function does NOT check `Chunk::has_fine`: the
+/// dispatch contract (module docs) is the caller's — flagged
+/// chunks take this path, unflagged chunks take
+/// `ChunkMap::mesh_chunk`.
+pub fn mesh_chunk_fine(
+    coarse: &ChunkMap,
+    layer: &FineLayer,
+    coord: [i32; 2],
+    scale: WorldScale,
+) -> Option<PassMeshes> {
+    let chunk = coarse.chunks.get(&coord)?;
+    let origin = chunk.origin();
+    let size = chunk.grid.size;
+    let mut out = PassMeshes::default();
+
+    // -- Coarse pass (naive, per-cell) ---------------------------
+    for z in 0..size[2] as i32 {
+        for y in 0..size[1] as i32 {
+            for x in 0..size[0] as i32 {
+                let (gx, gy, gz) = (origin[0] + x, origin[1] + y, origin[2] + z);
+                let block = coarse.block_at(gx, gy, gz);
+                if block.is_air() {
+                    continue;
+                }
+                let mesh = &mut out.meshes[block.pass.index()];
+                for (di, dir) in FACE_DIRS.iter().enumerate() {
+                    let n = [gx + dir[0], gy + dir[1], gz + dir[2]];
+                    let visible = match coarse_face_cull_by_fine(coarse, layer, n, *dir) {
+                        Some(culled) => !culled,
+                        None => face_visible(block, coarse.block_at(n[0], n[1], n[2])),
+                    };
+                    if !visible {
+                        continue;
+                    }
+                    let grid_corners = FACE_CORNERS[di]
+                        .map(|c| [gx as f32 + c[0], gy as f32 + c[1], gz as f32 + c[2]]);
+                    let corners = grid_corners.map(|g| to_world(g, scale));
+                    let normal = normal_to_world(*dir);
+                    match layer_for_dir(block, di) {
+                        Some(tex_layer) => {
+                            let quad_min = [gx as f32, gy as f32, gz as f32];
+                            let uvs =
+                                quad_uvs(di, &grid_corners, quad_min, [1.0, 1.0, 1.0], tex_layer);
+                            mesh.push_quad_textured(corners, normal, block.color, uvs, tex_layer);
+                        }
+                        None => mesh.push_quad(corners, normal, block.color),
+                    }
+                }
+            }
+        }
+    }
+
+    // -- Fine pass ------------------------------------------------
+    let sampler = FineSampler::new(coarse, layer);
+    let inv = 1.0 / FINE as f32;
+    for tile in layer.tiles_in_chunk(coord) {
+        let mut volumes: Vec<&FineVolume> = layer.volumes_for_tile(tile).iter().collect();
+        volumes.sort_by_key(|v| v.z0);
+        for vol in volumes {
+            for fz in vol.z0..vol.z0 + vol.depth_z {
+                for ly in 0..FINE {
+                    for lx in 0..FINE {
+                        let Some(cell) = vol.get(lx, ly, fz) else {
+                            continue;
+                        };
+                        if cell.is_air() {
+                            continue;
+                        }
+                        let (fx, fy) = (tile.0 * FINE + lx, tile.1 * FINE + ly);
+                        let mesh = &mut out.meshes[cell.pass.index()];
+                        for (di, dir) in FACE_DIRS.iter().enumerate() {
+                            let neighbor =
+                                sampler.block_at_fine(fx + dir[0], fy + dir[1], fz + dir[2]);
+                            if !face_visible(cell, neighbor) {
+                                continue;
+                            }
+                            // Grid corners in BLOCK units (fine
+                            // coordinate / FINE), so `to_world`
+                            // at the coarse scale and the
+                            // per-cell [0,1] UVs both fall out of
+                            // the naive mesher's own helpers.
+                            let grid_corners = FACE_CORNERS[di].map(|c| {
+                                [
+                                    (fx as f32 + c[0]) * inv,
+                                    (fy as f32 + c[1]) * inv,
+                                    (fz as f32 + c[2]) * inv,
+                                ]
+                            });
+                            let corners = grid_corners.map(|g| to_world(g, scale));
+                            let normal = normal_to_world(*dir);
+                            match layer_for_dir(cell, di) {
+                                Some(tex_layer) => {
+                                    let quad_min =
+                                        [fx as f32 * inv, fy as f32 * inv, fz as f32 * inv];
+                                    let uvs = quad_uvs(
+                                        di,
+                                        &grid_corners,
+                                        quad_min,
+                                        [inv, inv, inv],
+                                        tex_layer,
+                                    );
+                                    mesh.push_quad_textured(
+                                        corners, normal, cell.color, uvs, tex_layer,
+                                    );
+                                }
+                                None => mesh.push_quad(corners, normal, cell.color),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(out)
 }

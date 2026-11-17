@@ -101,6 +101,19 @@ pub struct CaptureArgs {
     /// projectiles from `Effects` messages) drawn in the fields
     /// pass through the fx shader classes. `None` = no emitters.
     pub transients: Option<crate::frame::TransientScene>,
+    /// Phase 9 slice 2 rollout (9.10): enable fine prop
+    /// stamping (`--fine-props`, default OFF). When true and
+    /// `props` is `None`, the frame uses
+    /// `frame::PropScene::fixture` for the snapshot. When
+    /// `props` is `Some`, that scene is used regardless of
+    /// this flag. OFF + no props = the pre-Phase-9 render,
+    /// byte-for-byte.
+    pub fine_props: bool,
+    /// Phase 9 slice 2: an explicit prop scene (models +
+    /// placements) to stamp into the raster world pass.
+    /// `None` = no props unless `fine_props` selects the
+    /// snapshot's fixture scene.
+    pub props: Option<crate::frame::PropScene>,
 }
 
 impl Default for CaptureArgs {
@@ -128,6 +141,8 @@ impl Default for CaptureArgs {
             ui: None,
             vehicles: None,
             transients: None,
+            fine_props: false,
+            props: None,
         }
     }
 }

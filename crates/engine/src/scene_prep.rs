@@ -13,10 +13,13 @@
 
 use std::path::Path;
 
+use mesher::fine::{FineLayer, ModelCells, FINE};
+use mesher::grid::VoxelSampler;
 use mesher::mesh::PassMeshes;
 use treebuild::render::TextureSpec;
 
 use crate::overlay::MeshStats;
+use crate::snapshot_world::FurniturePlacement;
 use crate::{materials, textures, world};
 
 /// Phase 2f: stamp each non-air block of the (already
@@ -76,6 +79,134 @@ fn mesh_filtered(map: &mesher::chunk::ChunkMap) -> (PassMeshes, MeshStats) {
     (combined, stats)
 }
 
+/// Phase 9 slice 2 (9.4 dispatch contract): mesh an
+/// already-filtered (and already prop-stamped) map chunk by
+/// chunk — chunks flagged `has_fine` take
+/// `mesher::fine::mesh_chunk_fine`, every other chunk takes
+/// the existing greedy `mesh_chunk`. Chunk order is sorted
+/// for determinism. With no chunk flagged (nothing stamped),
+/// this produces exactly the meshes [`mesh_filtered`] would.
+fn mesh_filtered_fine(map: &mesher::chunk::ChunkMap, layer: &FineLayer) -> (PassMeshes, MeshStats) {
+    let mut combined = PassMeshes::default();
+    let mut n_chunks = 0;
+    let mut coords: Vec<[i32; 2]> = map.chunks.keys().copied().collect();
+    coords.sort_unstable();
+    for coord in coords {
+        let chunk = &map.chunks[&coord];
+        let pm = if chunk.has_fine {
+            mesher::fine::mesh_chunk_fine(map, layer, coord, map.scale)
+        } else {
+            map.mesh_chunk(coord, true)
+        };
+        if let Some(pm) = pm {
+            for (dst, src) in combined.meshes.iter_mut().zip(pm.meshes.iter()) {
+                dst.append(src);
+            }
+            n_chunks += 1;
+        }
+    }
+    let stats = MeshStats::from_pass_meshes(n_chunks, &combined);
+    (combined, stats)
+}
+
+/// Phase 9 slice 2: the synthetic-material preparation for a
+/// prop scene against the scene's (optional) texture spec.
+/// Holds the scene-wide colour set plus the synthetic base id
+/// and first appended layer the stamped blocks are resolved
+/// against (`snapshot_world::prop_block_for`).
+struct PropPrep {
+    colors: textures::PropColorSet,
+    base_id: u32,
+    first_layer: u32,
+}
+
+/// Build the [`PropPrep`] for `props`, mutating `spec_opt` as
+/// the task's spec order requires:
+/// - a textures-dir spec exists: the synthetic base id is
+///   `spec.material_layers.len()` and the spec is extended via
+///   `textures::extend_texture_spec_with_props` NOW — before
+///   any `stamp_tex_layers` run — with
+///   `first_layer = spec.layers.len()` captured before the
+///   extension, so the layers `prop_block_for` computes for
+///   stamped cells match the appended layers;
+/// - no textures dir: the base id is 1000 and a prop-only spec
+///   (`textures::prop_only_spec`, whose first layer is 0) is
+///   built and returned through `spec_opt` for `set_textures`.
+///
+/// An empty colour set (an empty prop scene) extends/creates
+/// nothing: `spec_opt` is left exactly as it was.
+fn prep_prop_spec(props: &crate::frame::PropScene, spec_opt: &mut Option<TextureSpec>) -> PropPrep {
+    let colors = textures::PropColorSet::from_models(props.models.iter().map(|(_, m)| m));
+    match spec_opt {
+        Some(spec) => {
+            let base_id = spec.material_layers.len() as u32;
+            let first_layer = spec.layers.len() as u32;
+            if !colors.is_empty() {
+                textures::extend_texture_spec_with_props(spec, &colors, base_id);
+            }
+            PropPrep {
+                colors,
+                base_id,
+                first_layer,
+            }
+        }
+        None => {
+            let base_id = 1000;
+            if !colors.is_empty() {
+                *spec_opt = Some(textures::prop_only_spec(&colors, base_id));
+            }
+            PropPrep {
+                colors,
+                base_id,
+                first_layer: 0,
+            }
+        }
+    }
+}
+
+/// Stamp `placements` of `props` into a fresh [`FineLayer`]
+/// over `map` (which the caller has already filtered — and,
+/// on the lit path, already visibility-masked), resolving
+/// colours through `prep`. Refreshes every chunk's `has_fine`
+/// flag from the layer afterwards (the 9.4 dispatch reads the
+/// flags, so they must reflect the final layer, not only the
+/// chunks `stamp_furniture` touched).
+fn stamp_props_into(
+    map: &mut mesher::chunk::ChunkMap,
+    placements: &[FurniturePlacement],
+    props: &crate::frame::PropScene,
+    prep: &PropPrep,
+    scale: mesher::scale::WorldScale,
+) -> Result<FineLayer, String> {
+    let mut layer = FineLayer::new(scale.blocks_per_z_level as i32 * FINE);
+    if placements.is_empty() || props.models.is_empty() {
+        map.refresh_fine_flags(&layer);
+        return Ok(layer);
+    }
+    let block_fn =
+        crate::snapshot_world::prop_block_for(&prep.colors, prep.base_id, prep.first_layer);
+    let adapters: Vec<(u32, crate::snapshot_world::PropModelCells<'_>)> = props
+        .models
+        .iter()
+        .map(|(id, model)| {
+            (
+                *id,
+                crate::snapshot_world::PropModelCells::new(model, &block_fn),
+            )
+        })
+        .collect();
+    let resolve = |id: u32| -> Option<&dyn ModelCells> {
+        adapters
+            .iter()
+            .find(|(fid, _)| *fid == id)
+            .map(|(_, a)| a as &dyn ModelCells)
+    };
+    crate::snapshot_world::stamp_furniture(map, &mut layer, placements, scale, &resolve)
+        .map_err(|e| e.to_string())?;
+    map.refresh_fine_flags(&layer);
+    Ok(layer)
+}
+
 /// Phase 8 wiring: stamp a vehicle scene's models into a
 /// filtered map (their exported absolute part positions,
 /// verbatim — `vehicles::stamp_vehicle`). Returns how many
@@ -123,6 +254,82 @@ pub fn prepare_raster_sample_v(
     vehicles: Option<&crate::frame::VehicleScene>,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
     prepare_raster_v(visible_levels, textures_dir, vehicles, true)
+}
+
+/// [`prepare_raster_house_v`] with a Phase 9 prop scene
+/// (slice 2): props are stamped into a fine layer over the
+/// filtered map and flagged chunks mesh at fine resolution.
+/// `None` props = the pre-Phase-9 path, exactly.
+pub fn prepare_raster_house_vp(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    props: Option<&crate::frame::PropScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    match props {
+        Some(p) => prepare_raster_fine_v(visible_levels, textures_dir, vehicles, p, false),
+        None => prepare_raster_v(visible_levels, textures_dir, vehicles, false),
+    }
+}
+
+/// The sample scene's form of [`prepare_raster_house_vp`].
+pub fn prepare_raster_sample_vp(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    props: Option<&crate::frame::PropScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    match props {
+        Some(p) => prepare_raster_fine_v(visible_levels, textures_dir, vehicles, p, true),
+        None => prepare_raster_v(visible_levels, textures_dir, vehicles, true),
+    }
+}
+
+/// The prop-stamping form of the unlit raster preparation
+/// (Phase 9 slice 2). Order: build the texture spec (extending
+/// it with the synthetic prop materials before any coarse
+/// tex-layer stamping), filter the map, stamp coarse texture
+/// layers, stamp vehicles, then stamp the props into the fine
+/// layer and mesh with the fine dispatch.
+fn prepare_raster_fine_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    props: &crate::frame::PropScene,
+    sample: bool,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    let scale = mesher::scale::WorldScale::default();
+    let build_map = |scale: mesher::scale::WorldScale| {
+        if sample {
+            world::build_sample_scene(scale)
+        } else {
+            world::build_fake_house(scale)
+        }
+    };
+    let mut spec_opt = match textures_dir {
+        Some(dir) => {
+            let table = materials::MaterialTable::load(dir)
+                .map_err(|e| format!("materials: {e}"))?;
+            let (spec, _tex_stats) =
+                textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
+            Some(spec)
+        }
+        None => None,
+    };
+    let prep = prep_prop_spec(props, &mut spec_opt);
+    let map = build_map(scale);
+    let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    if let Some(spec) = &spec_opt {
+        // Coarse blocks only: stamped fine blocks already carry
+        // their layers from `prop_block_for` at stamp time.
+        stamp_tex_layers(&mut filtered, spec);
+    }
+    if let Some(v) = vehicles {
+        stamp_vehicles(&mut filtered, v);
+    }
+    let layer = stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
+    let (meshes, stats) = mesh_filtered_fine(&filtered, &layer);
+    Ok((meshes, stats, spec_opt))
 }
 
 fn prepare_raster_v(
@@ -224,6 +431,113 @@ pub fn prepare_raster_sample_lit_v(
     vehicles: Option<&crate::frame::VehicleScene>,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
     prepare_raster_lit_v(visible_levels, textures_dir, lit, vehicles, true)
+}
+
+/// [`prepare_raster_house_lit_v`] with a Phase 9 prop scene
+/// (slice 2). `None` props = the pre-Phase-9 lit path, exactly.
+pub fn prepare_raster_house_lit_vp(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    props: Option<&crate::frame::PropScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    match props {
+        Some(p) => prepare_raster_lit_fine_v(visible_levels, textures_dir, lit, vehicles, p, false),
+        None => prepare_raster_lit_v(visible_levels, textures_dir, lit, vehicles, false),
+    }
+}
+
+/// The sample scene's form of [`prepare_raster_house_lit_vp`].
+pub fn prepare_raster_sample_lit_vp(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    props: Option<&crate::frame::PropScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    match props {
+        Some(p) => prepare_raster_lit_fine_v(visible_levels, textures_dir, lit, vehicles, p, true),
+        None => prepare_raster_lit_v(visible_levels, textures_dir, lit, vehicles, true),
+    }
+}
+
+/// The prop-stamping form of the lit raster preparation
+/// (Phase 9 slice 2). Differences from the unlit fine path:
+/// - the visibility mask is applied BEFORE stamping, and a
+///   placement whose tile lost its floor-slab block to the
+///   mask is skipped (its prop must not float over a `Hidden`
+///   tile);
+/// - lighting is the 9.6 v1 rule: the per-vertex bake runs
+///   over the combined (coarse + fine) meshes exactly as
+///   today — it is position-based, so a fine quad takes the
+///   light of the tile containing its position. Props do not
+///   occlude the coarse bake; that limit is 9.6's named
+///   caveat, not a silent acceptance;
+/// - slice-2 deviation: with props present, a `PerBlock` bake
+///   mode takes the PerVertex route for that frame instead
+///   (the per-block baker runs on the coarse chunk map and
+///   cannot carry fine cells; the frame is NOT double-baked).
+fn prepare_raster_lit_fine_v(
+    visible_levels: &[i32],
+    textures_dir: Option<&Path>,
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    props: &crate::frame::PropScene,
+    sample: bool,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    let scale = mesher::scale::WorldScale::default();
+    let build_map = |scale: mesher::scale::WorldScale| {
+        if sample {
+            world::build_sample_scene(scale)
+        } else {
+            world::build_fake_house(scale)
+        }
+    };
+    let mut spec_opt = match textures_dir {
+        Some(dir) => {
+            let table =
+                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+            let (spec, _tex_stats) =
+                textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
+            Some(spec)
+        }
+        None => None,
+    };
+    let prep = prep_prop_spec(props, &mut spec_opt);
+    let map = build_map(scale);
+    let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    if let Some(spec) = &spec_opt {
+        stamp_tex_layers(&mut filtered, spec);
+    }
+    if let Some(v) = vehicles {
+        stamp_vehicles(&mut filtered, v);
+    }
+    apply_visibility_mask(&mut filtered, lit);
+    // Skip placements whose tile lost its floor slab to the
+    // mask (or to the cutaway filter): the slab block is the
+    // level's bottom block at the placement tile.
+    let kept: Vec<FurniturePlacement> = props
+        .placements
+        .iter()
+        .copied()
+        .filter(|p| {
+            let slab_z = scale.level_base_block(p.level) as i32;
+            !filtered.block_at(p.x, p.y, slab_z).is_air()
+        })
+        .collect();
+    let layer = stamp_props_into(&mut filtered, &kept, props, &prep, scale)?;
+    let (mut meshes, stats) = mesh_filtered_fine(&filtered, &layer);
+    // PerVertex route for every bake mode with props (see the
+    // deviation note above): bake the combined meshes.
+    lighting::bake_pass_meshes(
+        &mut meshes,
+        &lit.grid,
+        lit.env,
+        scale,
+        world::HOUSE_MIN_GAME_Z,
+    );
+    Ok((meshes, stats, spec_opt))
 }
 
 fn prepare_raster_lit_v(

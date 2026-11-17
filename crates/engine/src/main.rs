@@ -55,10 +55,11 @@ fn main() -> ExitCode {
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
              [--textures voxelizer-output-dir] [--render-scale N] [--effects effects.json] \
              [--fx-fields-off] [--fx-post-off] [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] \
-             [--light-hour H] [--ui-stub] \
+             [--light-hour H] [--ui-stub] [--fine-props] \
              --size WxH --out file.png] [--scene-report] \
              [--renderer raster|rt] [--textures dir] [--effects effects.json] \
-             [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] [--light-hour H] [--ui-stub]"
+             [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] [--light-hour H] [--ui-stub] \
+             [--fine-props]"
         );
         return ExitCode::SUCCESS;
     }
@@ -102,6 +103,7 @@ fn main() -> ExitCode {
             .and_then(|s| s.parse::<u32>().ok())
             .filter(|&v| v >= 1)
             .unwrap_or(1),
+        fine_props: args.iter().any(|a| a == "--fine-props"),
     })
 }
 
@@ -159,6 +161,12 @@ fn apply_scene_flags(
     if let Some(s) = value_after(args, "--transient-fixture") {
         let now_ms: u64 = s.parse().map_err(|_| format!("bad --transient-fixture '{s}'"))?;
         cap.transients = Some(engine::frame::TransientScene::fixture_burst(now_ms));
+    }
+    // Phase 9 slice 2 rollout (9.10): fine prop stamping,
+    // default OFF; parsed here so headless and windowed both
+    // get it.
+    if args.iter().any(|a| a == "--fine-props") {
+        cap.fine_props = true;
     }
     Ok(())
 }
@@ -302,6 +310,7 @@ struct WindowConfig {
     vehicle_fixture: bool,
     transient_fixture_ms: Option<u64>,
     render_scale: u32,
+    fine_props: bool,
 }
 
 struct GpuState {
@@ -346,6 +355,7 @@ impl App {
         let mut frame_args = CaptureArgs {
             renderer: cfg.renderer_kind,
             render_scale: cfg.render_scale,
+            fine_props: cfg.fine_props,
             textures: cfg.textures_dir,
             effects: cfg.effects,
             billboards: cfg.billboards,
