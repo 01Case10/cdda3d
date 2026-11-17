@@ -111,6 +111,19 @@ struct Uniforms {
     _pad_origin: u32,
 }
 
+/// Phase 9 (9.5) fine-tree uniforms: per-scene constants for
+/// the second tree (see the WGSL `FineUniforms`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct FineUniforms {
+    fine_origin: [f32; 3],
+    fine_size: f32,
+    fine_depth: u32,
+    fine_present: u32,
+    fine_lod_adjust: f32,
+    _pad: u32,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct RayIn {
@@ -174,6 +187,26 @@ struct Uniforms {
 @group(1) @binding(0) var<storage, read> side: array<SideEntry>;
 @group(1) @binding(1) var<uniform> u: Uniforms;
 
+// Phase 9 (9.5, two-tree design): the fine tree — a second
+// manager bind group at group 2 (same layout as group 0), its
+// side table and uniforms in group 1. `fine_present == 0` means
+// no props are stamped: trace_two never touches the fine tree
+// and the render is the coarse-only render, unchanged.
+@group(2) @binding(0) var<storage, read> fine_nodes: array<GpuNode>;
+@group(1) @binding(9) var<storage, read> fine_side: array<SideEntry>;
+struct FineUniforms {
+    // The fine tree's origin, in fine (world grid) units.
+    fine_origin: vec3<f32>,
+    fine_size: f32,
+    fine_depth: u32,
+    fine_present: u32,
+    // Per-face LOD adjustment for fine leaves: -log2(32) = -5
+    // (crate::lod::FINE_LOD_ADJUST), applied before the clamp.
+    fine_lod_adjust: f32,
+    _pad: u32,
+}
+@group(1) @binding(10) var<uniform> fu: FineUniforms;
+
 fn mask_bit(n: GpuNode, idx: u32) -> bool {
     if idx < 32u {
         return ((n.mask_lo >> idx) & 1u) == 1u;
@@ -195,12 +228,20 @@ fn mask_rank(n: GpuNode, idx: u32) -> u32 {
     return countOneBits(n.mask_lo) + countOneBits(n.mask_hi & below_hi);
 }
 
+fn node_is_leaf(n: GpuNode) -> bool {
+    return (n.child_ptr_and_leaf & 0x80000000u) != 0u;
+}
+
+fn node_child_ptr(n: GpuNode) -> u32 {
+    return n.child_ptr_and_leaf & 0x7fffffffu;
+}
+
 fn is_leaf(idx: u32) -> bool {
-    return (nodes[idx].child_ptr_and_leaf & 0x80000000u) != 0u;
+    return node_is_leaf(nodes[idx]);
 }
 
 fn child_ptr(idx: u32) -> u32 {
-    return nodes[idx].child_ptr_and_leaf & 0x7fffffffu;
+    return node_child_ptr(nodes[idx]);
 }
 
 struct Desc {
@@ -303,10 +344,16 @@ struct Hit {
     voxel_min: vec3<f32>,
     dist: f32,
     normal: vec3<f32>,
+    // Phase 9 two-tree: a fine-tree hit carries `fine = true`;
+    // `voxel_min`/`dist` are already converted to coarse (block)
+    // units for shading, and `fvoxel_min` keeps the fine
+    // tree-space cell for query output.
+    fine: bool,
+    fvoxel_min: vec3<f32>,
 }
 
 fn trace(ro: vec3<f32>, rd: vec3<f32>, skip_transparent: bool) -> Hit {
-    var result = Hit(false, 0u, vec3<f32>(0.0, 0.0, 0.0), 0.0, vec3<f32>(0.0, 0.0, 0.0));
+    var result = Hit(false, 0u, vec3<f32>(0.0, 0.0, 0.0), 0.0, vec3<f32>(0.0, 0.0, 0.0), false, vec3<f32>(0.0, 0.0, 0.0));
     if arrayLength(&nodes) <= 1u {
         return result;
     }
@@ -336,12 +383,110 @@ fn trace(ro: vec3<f32>, rd: vec3<f32>, skip_transparent: bool) -> Hit {
             if dist > u.max_dist {
                 return result;
             }
-            result = Hit(true, d.node, d.cell_min, dist, entry_normal(ro, rd, d.cell_min, 1.0, hs.x));
+            result = Hit(true, d.node, d.cell_min, dist, entry_normal(ro, rd, d.cell_min, 1.0, hs.x), false, vec3<f32>(0.0, 0.0, 0.0));
             return result;
         }
         t = advance(ro, rd, d.cell_min, d.cell_size, t);
     }
     return result;
+}
+
+// The fine tree's traversal: `descend`/`trace` line-for-line
+// over the fine globals, in fine units (1 unit = 1 fine cell).
+// Kept as a separate copy rather than a parameterized shared
+// function — the same reason the CPU oracle and the WGSL mirror
+// each other by duplication: each tree's trace stays auditable
+// against `crate::cpu::cast_ray` on its own.
+fn fine_descend(p: vec3<f32>) -> Desc {
+    var node_idx = 0u;
+    var cell_min = vec3<f32>(0.0, 0.0, 0.0);
+    var cell_size = fu.fine_size;
+    for (var level = 0u; level < fu.fine_depth; level = level + 1u) {
+        let child_size = cell_size * 0.25;
+        let n = fine_nodes[node_idx];
+        let px = u32(clamp(floor((p.x - cell_min.x) / child_size), 0.0, 3.0));
+        let py = u32(clamp(floor((p.y - cell_min.y) / child_size), 0.0, 3.0));
+        let pz = u32(clamp(floor((p.z - cell_min.z) / child_size), 0.0, 3.0));
+        let cidx = (pz << 4u) | (py << 2u) | px;
+        let child_min = cell_min + vec3<f32>(f32(px), f32(py), f32(pz)) * child_size;
+        if !mask_bit(n, cidx) {
+            return Desc(false, 0u, child_min, child_size);
+        }
+        let child_idx = node_child_ptr(n) + mask_rank(n, cidx);
+        if node_is_leaf(fine_nodes[child_idx]) {
+            return Desc(true, child_idx, child_min, child_size);
+        }
+        node_idx = child_idx;
+        cell_min = child_min;
+        cell_size = child_size;
+    }
+    return Desc(false, 0u, cell_min, cell_size);
+}
+
+fn fine_trace(ro: vec3<f32>, rd: vec3<f32>, skip_transparent: bool, max_dist_f: f32) -> Hit {
+    var result = Hit(false, 0u, vec3<f32>(0.0, 0.0, 0.0), 0.0, vec3<f32>(0.0, 0.0, 0.0), true, vec3<f32>(0.0, 0.0, 0.0));
+    if arrayLength(&fine_nodes) <= 1u {
+        return result;
+    }
+    let root = slab(ro, rd, vec3<f32>(0.0, 0.0, 0.0), fu.fine_size);
+    if root.y < max(root.x, 0.0) || root.y < 0.0 {
+        return result;
+    }
+    let limit = min(root.y, max_dist_f);
+    var t = max(root.x, 0.0);
+    for (var i = 0; i < 8192; i = i + 1) {
+        if t > limit {
+            return result;
+        }
+        let p = ro + rd * (t + 1e-4);
+        if any(p < vec3<f32>(0.0, 0.0, 0.0)) || any(p >= vec3<f32>(fu.fine_size, fu.fine_size, fu.fine_size)) {
+            return result;
+        }
+        let d = fine_descend(p);
+        if d.occupied {
+            let e = fine_side[d.node];
+            if skip_transparent && (e.flags & 1u) != 0u {
+                t = advance(ro, rd, d.cell_min, 1.0, t);
+                continue;
+            }
+            let hs = slab(ro, rd, d.cell_min, 1.0);
+            let dist = max(hs.x, 0.0);
+            if dist > max_dist_f {
+                return result;
+            }
+            result = Hit(true, d.node, d.cell_min, dist, entry_normal(ro, rd, d.cell_min, 1.0, hs.x), true, d.cell_min);
+            return result;
+        }
+        t = advance(ro, rd, d.cell_min, d.cell_size, t);
+    }
+    return result;
+}
+
+// Two-tree trace (Phase 9, 9.5): the coarse trace and the fine
+// trace composited by distance — the GPU mirror of
+// `crate::cpu::cast_ray_two`. The ray (coarse tree space) is
+// scaled into fine space, the fine hit's distance is divided
+// back by 32, and the nearer hit wins; the fine hit wins an
+// exact tie. A fine hit's `voxel_min` is converted back to
+// coarse tree space so shading (hit point, UVs, macro world
+// position) is uniform; `fvoxel_min` keeps the fine cell.
+fn trace_two(ro: vec3<f32>, rd: vec3<f32>, skip_transparent: bool) -> Hit {
+    let coarse = trace(ro, rd, skip_transparent);
+    if fu.fine_present == 0u {
+        return coarse;
+    }
+    let fro = (ro + u.tree_origin) * 32.0 - fu.fine_origin;
+    var fh = fine_trace(fro, rd, skip_transparent, u.max_dist * 32.0);
+    if !fh.hit {
+        return coarse;
+    }
+    fh.dist = fh.dist / 32.0;
+    fh.fvoxel_min = fh.voxel_min;
+    fh.voxel_min = (fh.voxel_min + fu.fine_origin) / 32.0 - u.tree_origin;
+    if coarse.hit && coarse.dist < fh.dist {
+        return coarse;
+    }
+    return fh;
 }
 
 fn point_occluded(p: vec3<f32>) -> bool {
@@ -372,20 +517,27 @@ const RENDER_WGSL: &str = r#"
 // existing camera uniforms; every voxel face maps the full texture
 // over 1x1 world units, so the per-face term is the constant
 // Δ = 0.5·log2(texW·texH) of the array's level-0 dimensions.
-fn cone_lod(t: f32, n_dot_v: f32) -> f32 {
+fn cone_lod_adj(t: f32, n_dot_v: f32, adj: f32) -> f32 {
     let dims = textureDimensions(tex_array, 0u);
     let delta = 0.5 * log2(f32(dims.x * dims.y));
     let spread = atan(2.0 * u.tan_half_fov / f32(u.viewport.y));
     let w_hit = max(spread * t, 1e-4);
     let cosang = max(abs(n_dot_v), 1e-4);
     // Stage A tunables: u.lod_bias and u.ndotv_weight (uniform-fed
-    // mirrors of crate::lod::LOD_BIAS / NDOTV_WEIGHT).
-    var lod = delta + log2(w_hit) - u.ndotv_weight * log2(cosang) + u.lod_bias;
+    // mirrors of crate::lod::LOD_BIAS / NDOTV_WEIGHT). Phase 9:
+    // `adj` is the caller's per-face adjustment (the fine tree's
+    // -5), applied BEFORE the clamp — the mirror of
+    // crate::lod::ray_cone_lod_fine.
+    var lod = delta + log2(w_hit) - u.ndotv_weight * log2(cosang) + u.lod_bias + adj;
     if lod != lod {
         lod = 0.0;
     }
     let max_mip = f32(textureNumLevels(tex_array) - 1u);
     return clamp(lod, 0.0, max_mip);
+}
+
+fn cone_lod(t: f32, n_dot_v: f32) -> f32 {
+    return cone_lod_adj(t, n_dot_v, 0.0);
 }
 
 // Debug LOD view palette: one saturated color per mip level
@@ -476,13 +628,23 @@ fn lit_factor(lit: u32) -> f32 {
 }
 
 fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
-    let node = nodes[h.node];
-    let e = side[h.node];
+    // Phase 9 two-tree: a fine hit shades from the FINE tree's
+    // node/side entries (same node index space, other arrays).
+    var node: GpuNode;
+    var e: SideEntry;
+    if h.fine {
+        node = fine_nodes[h.node];
+        e = fine_side[h.node];
+    } else {
+        node = nodes[h.node];
+        e = side[h.node];
+    }
     let hitp = ro + rd * h.dist;
     // One cone LOD per hit, from this hit's own distance — the
     // transparent overlay hit is the same primary ray continued, so
-    // it re-enters here with its own (farther) distance.
-    let lod = cone_lod(h.dist, dot(h.normal, -rd));
+    // it re-enters here with its own (farther) distance. Fine hits
+    // take the -5 per-face adjustment (fu.fine_lod_adjust).
+    let lod = cone_lod_adj(h.dist, dot(h.normal, -rd), select(0.0, fu.fine_lod_adjust, h.fine));
     if u.debug_lod != 0u {
         return lod_color(lod);
     }
@@ -502,7 +664,12 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     if ndl > 0.0 {
         var shadowed = false;
         if u.shadows != 0u {
-            let sh = trace(hitp + n * 0.01, u.sun_dir, true);
+            // Two-tree: props occlude the sun too. The offset is
+            // in coarse units; a fine surface's own cells sit
+            // within 1/32 of it, so self-shadowing acne on props
+            // is possible at grazing angles — the coarse bias is
+            // the v1 behaviour (docs/phase9-fine.md).
+            let sh = trace_two(hitp + n * 0.01, u.sun_dir, true);
             shadowed = sh.hit;
         }
         if !shadowed {
@@ -554,17 +721,25 @@ fn render_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         + ndc.x * u.tan_half_fov * u.aspect * u.cam_right
         + ndc.y * u.tan_half_fov * u.cam_up);
     let ro = u.cam_pos;
-    let first = trace(ro, rd, false);
-    let opq = trace(ro, rd, true);
+    let first = trace_two(ro, rd, false);
+    let opq = trace_two(ro, rd, true);
     var col = sky(rd);
     var depth = u.max_dist;
     if opq.hit {
         col = shade(ro, rd, opq);
         depth = opq.dist;
     }
-    if first.hit && (side[first.node].flags & 1u) != 0u && (!opq.hit || first.dist < opq.dist) {
+    // The overlay's flags/alpha come from whichever tree the
+    // first hit belongs to.
+    var fe: SideEntry;
+    if first.fine {
+        fe = fine_side[first.node];
+    } else {
+        fe = side[first.node];
+    }
+    if first.hit && (fe.flags & 1u) != 0u && (!opq.hit || first.dist < opq.dist) {
         let gcol = shade(ro, rd, first);
-        let a = f32(side[first.node].alpha) / 255.0;
+        let a = f32(fe.alpha) / 255.0;
         col = mix(col, gcol, a);
         depth = first.dist;
     }
@@ -600,13 +775,17 @@ fn query_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     let r = rays[i];
-    let h = trace(r.ro, r.rd, u.mode != 0u);
+    let h = trace_two(r.ro, r.rd, u.mode != 0u);
     var out = RayOut(0u, 0u, 0.0, 0u, vec3<i32>(0, 0, 0), 0u, vec3<i32>(0, 0, 0), 0u);
     if h.hit {
         out.hit = 1u;
         out.node = h.node;
         out.dist = h.dist;
-        out.voxel = vec3<i32>(h.voxel_min);
+        // A fine hit reports its cell in FINE tree coords,
+        // mirroring the coarse convention (tree coords, not
+        // world) — cpu::cast_ray_two's fine voxel minus the
+        // fine origin.
+        out.voxel = select(vec3<i32>(h.voxel_min), vec3<i32>(h.fvoxel_min), h.fine);
         out.normal = vec3<i32>(h.normal);
     }
     results[i] = out;
@@ -930,6 +1109,18 @@ pub struct RtScene {
     pub depth: usize,
     pub size: u32,
     pub origin: [i32; 3],
+    /// Phase 9 (9.5) fine tree: a second manager (bound at group
+    /// 2) + its side table and uniforms. When no fine tree was
+    /// supplied it mirrors the coarse tree with
+    /// `fine_present = false`, and the shader never traces it.
+    pub fine_manager: Tree64GpuManager,
+    fine_side_buffer: wgpu::Buffer,
+    fine_uniform_buffer: wgpu::Buffer,
+    pub fine_present: bool,
+    pub fine_node_count: usize,
+    pub fine_depth: usize,
+    pub fine_size: u32,
+    pub fine_origin: [i32; 3],
 }
 
 impl RtScene {
@@ -990,7 +1181,11 @@ fn uniform_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 }
 
 impl RtRenderer {
-    pub fn new(device: &wgpu::Device, manager_layout: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        manager_layout: &wgpu::BindGroupLayout,
+        fine_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
         let render_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rt-render-group1"),
             entries: &[
@@ -1044,6 +1239,9 @@ impl RtRenderer {
                     count: None,
                 },
                 side_layout_entry(8),
+                // Phase 9 fine tree: side table + uniforms.
+                side_layout_entry(9),
+                uniform_layout_entry(10),
             ],
         });
         let query_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1062,6 +1260,9 @@ impl RtRenderer {
                     },
                     count: None,
                 },
+                // Phase 9 fine tree: side table + uniforms.
+                side_layout_entry(9),
+                uniform_layout_entry(10),
             ],
         });
         let render_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1074,12 +1275,12 @@ impl RtRenderer {
         });
         let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rt-render-layout"),
-            bind_group_layouts: &[manager_layout, &render_group1_layout],
+            bind_group_layouts: &[manager_layout, &render_group1_layout, fine_layout],
             push_constant_ranges: &[],
         });
         let query_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rt-query-layout"),
-            bind_group_layouts: &[manager_layout, &query_group1_layout],
+            bind_group_layouts: &[manager_layout, &query_group1_layout, fine_layout],
             push_constant_ranges: &[],
         });
         let render_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -1110,8 +1311,53 @@ impl RtRenderer {
     /// needed to build the pipelines, and the manager lives in the
     /// scene — this constructor keeps that ordering in one place).
     pub fn with_scene(device: &wgpu::Device, queue: &wgpu::Queue, built: &BuiltTree) -> (Self, RtScene) {
+        Self::with_scene_fine(device, queue, built, None)
+    }
+
+    /// Phase 9 (9.5): as `with_scene`, plus the fine tree built
+    /// from `VoxelWorld::from_fine_layer`. The fine tree gets its
+    /// own manager (bound at group 2 with ITS layout — each
+    /// manager creates its own layout object, so the pipeline
+    /// layout is built from both), side table and uniforms.
+    /// `fine = None` mirrors the coarse tree into the fine slots
+    /// with `fine_present = false`: the shader's two-tree trace
+    /// early-outs and the render is the coarse-only render.
+    pub fn with_scene_fine(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        built: &BuiltTree,
+        fine: Option<&BuiltTree>,
+    ) -> (Self, RtScene) {
         let manager = Tree64GpuManager::new(device, &built.tree);
-        let renderer = Self::new(device, &manager.contree_bind_group_layout);
+        let fine_built = fine.unwrap_or(built);
+        let fine_manager = Tree64GpuManager::new(device, &fine_built.tree);
+        let renderer = Self::new(
+            device,
+            &manager.contree_bind_group_layout,
+            &fine_manager.contree_bind_group_layout,
+        );
+        let fine_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rt-fine-uniforms"),
+            size: std::mem::size_of::<FineUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(
+            &fine_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&FineUniforms {
+                fine_origin: [
+                    fine_built.origin[0] as f32,
+                    fine_built.origin[1] as f32,
+                    fine_built.origin[2] as f32,
+                ],
+                fine_size: fine_built.size as f32,
+                fine_depth: fine_built.depth as u32,
+                fine_present: fine.is_some() as u32,
+                fine_lod_adjust: crate::lod::FINE_LOD_ADJUST,
+                _pad: 0,
+            }),
+        );
         let scene = RtScene {
             side_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("rt-side-table"),
@@ -1130,6 +1376,18 @@ impl RtRenderer {
             origin: built.origin,
             textures: TextureSet::dummy(device, queue),
             manager,
+            fine_side_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("rt-fine-side-table"),
+                contents: bytemuck::cast_slice(&fine_built.side),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            }),
+            fine_uniform_buffer,
+            fine_present: fine.is_some(),
+            fine_node_count: fine_built.node_count(),
+            fine_depth: fine_built.depth,
+            fine_size: fine_built.size,
+            fine_origin: fine_built.origin,
+            fine_manager,
         };
         (renderer, scene)
     }
@@ -1303,6 +1561,14 @@ impl RtRenderer {
                     binding: 8,
                     resource: scene.textures.macro_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: scene.fine_side_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: scene.fine_uniform_buffer.as_entire_binding(),
+                },
             ],
         });
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1316,6 +1582,7 @@ impl RtRenderer {
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &scene.manager.contree_bind_group, &[]);
             pass.set_bind_group(1, &bind_group, &[]);
+            pass.set_bind_group(2, &scene.fine_manager.contree_bind_group, &[]);
             pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
         }
         queue.submit([encoder.finish()]);
@@ -1389,6 +1656,14 @@ impl RtRenderer {
                     binding: 3,
                     resource: results_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: scene.fine_side_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: scene.fine_uniform_buffer.as_entire_binding(),
+                },
             ],
         });
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1408,6 +1683,7 @@ impl RtRenderer {
             pass.set_pipeline(&self.query_pipeline);
             pass.set_bind_group(0, &scene.manager.contree_bind_group, &[]);
             pass.set_bind_group(1, &bind_group, &[]);
+            pass.set_bind_group(2, &scene.fine_manager.contree_bind_group, &[]);
             pass.dispatch_workgroups((rays.len() as u32).div_ceil(64), 1, 1);
         }
         encoder.copy_buffer_to_buffer(

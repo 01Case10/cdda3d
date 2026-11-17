@@ -203,3 +203,150 @@ fn two_tree_without_fine_is_exactly_cast_ray() {
         }
     }
 }
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3g (9.5 GPU two-tree): trace_rays parity with
+// cast_ray_two, and a render where the prop occludes the wall.
+// Adapter-conditional like the other GPU gates: no adapter ->
+// checks NOT RUN (printed), never a silent pass.
+// ---------------------------------------------------------------------
+
+struct Gpu {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+fn gpu() -> Option<Gpu> {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        ..Default::default()
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(),
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))?;
+    let (device, queue) = pollster::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: Some("phase9-fine-gate-device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: Default::default(),
+        },
+        None,
+    ))
+    .ok()?;
+    Some(Gpu { device, queue })
+}
+
+fn read_f32_buffer(gpu: &Gpu, buffer: &wgpu::Buffer, count: usize) -> Vec<f32> {
+    let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("gate-readback"),
+        size: (count * 4) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_buffer(buffer, 0, &staging, 0, (count * 4) as u64);
+    gpu.queue.submit([encoder.finish()]);
+    gpu.device.poll(wgpu::Maintain::Wait);
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    gpu.device.poll(wgpu::Maintain::Wait);
+    rx.recv().unwrap().unwrap();
+    let data = slice.get_mapped_range();
+    let out: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+    drop(data);
+    staging.unmap();
+    out
+}
+
+#[test]
+fn gpu_two_tree_trace_parity_and_render_occlusion() {
+    let Some(gpu) = gpu() else {
+        eprintln!("9.5 GPU two-tree: no wgpu adapter — GPU checks NOT RUN (CPU halves pass above)");
+        return;
+    };
+    use treebuild::render::{RtCamera, RtRenderer};
+
+    let cfg = || BuildConfig { depth: None, origin: Some([0, 0, 0]) };
+    let coarse = treebuild::build_tree(&coarse_wall_world(), cfg()).unwrap();
+    let fine = treebuild::build_tree(&VoxelWorld::from_fine_layer(&fine_prop_layer()), cfg()).unwrap();
+    let (renderer, scene) =
+        RtRenderer::with_scene_fine(&gpu.device, &gpu.queue, &coarse, Some(&fine));
+    assert!(scene.fine_present);
+    assert_eq!(scene.fine_node_count, fine.node_count());
+
+    // Query parity vs the CPU two-tree oracle, both modes.
+    let rays: Vec<(Vec3, Vec3)> = vec![
+        (Vec3::new(0.0, 0.97, 1.01), Vec3::X),  // through the prop
+        (Vec3::new(0.0, 0.5, 1.5), Vec3::X),    // above it: the wall
+        (Vec3::new(0.0, 0.5, 1.5), Vec3::NEG_X), // miss
+        (Vec3::new(0.0, 0.97, 1.01), Vec3::new(1.0, 0.2, -0.1).normalize()),
+    ];
+    for mode in [TraceMode::FirstHit, TraceMode::OpaqueOnly] {
+        let out = renderer.trace_rays(&gpu.device, &gpu.queue, &scene, &rays, mode, 100.0);
+        for (i, ((ro, rd), g)) in rays.iter().zip(out.iter()).enumerate() {
+            let cpu = cast_ray_two(&coarse, Some(&fine), *ro, *rd, 100.0, mode);
+            match cpu {
+                None => assert_eq!(g.hit, 0, "ray {i} {mode:?}: GPU hit, CPU miss"),
+                Some((h, _is_fine)) => {
+                    assert_eq!(g.hit, 1, "ray {i} {mode:?}: GPU miss, CPU hit {h:?}");
+                    assert!(
+                        (g.dist - h.dist).abs() < 1e-3,
+                        "ray {i} {mode:?}: dist gpu {} cpu {}",
+                        g.dist,
+                        h.dist
+                    );
+                    assert_eq!(g.voxel, h.voxel, "ray {i} {mode:?}: voxel (origins are 0)");
+                    assert_eq!(g.normal, h.normal, "ray {i} {mode:?}: normal");
+                }
+            }
+        }
+    }
+
+    // No-fine scene: the GPU trace is the coarse trace (the prop
+    // ray now travels to the wall).
+    let (renderer1, scene1) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &coarse);
+    assert!(!scene1.fine_present);
+    let out = renderer1.trace_rays(&gpu.device, &gpu.queue, &scene1, &rays, TraceMode::FirstHit, 100.0);
+    assert_eq!(out[0].hit, 1);
+    assert!((out[0].dist - 4.0).abs() < 1e-3, "no-fine prop ray hits the wall: {}", out[0].dist);
+    assert_eq!(out[0].voxel, [4, 0, 1]);
+
+    // Render occlusion: a block-sized prop (32x32x32 fine cells
+    // on tile (1,0) at z0 32 = block (1,0,1)) in front of the
+    // wall. Center depth: ~5 with the prop, ~8 without.
+    let mut big_layer = FineLayer::default();
+    stamp_model(&mut big_layer, (1, 0), 32, &TestModel::filled([32, 32, 32], blk(1001, Pass::Opaque))).unwrap();
+    let big_fine = treebuild::build_tree(&VoxelWorld::from_fine_layer(&big_layer), cfg()).unwrap();
+    let (renderer2, scene2) =
+        RtRenderer::with_scene_fine(&gpu.device, &gpu.queue, &coarse, Some(&big_fine));
+    let cam = RtCamera {
+        eye: Vec3::new(-4.0, 0.5, 1.5),
+        target: Vec3::new(4.0, 0.5, 1.5),
+        fov_y_deg: 60.0,
+        aspect: 1.0,
+    };
+    let size = (64u32, 64u32);
+    let f_fine = renderer2.render(&gpu.device, &gpu.queue, &scene2, &cam, size, false);
+    let f_coarse = renderer2.render(&gpu.device, &gpu.queue, &scene1, &cam, size, false);
+    let d_fine = read_f32_buffer(&gpu, &f_fine.depth, (size.0 * size.1) as usize);
+    let d_coarse = read_f32_buffer(&gpu, &f_coarse.depth, (size.0 * size.1) as usize);
+    let center = (32 * size.0 + 32) as usize;
+    assert!(
+        (d_fine[center] - 5.0).abs() < 0.05,
+        "fine render center depth should be the prop at ~5, got {}",
+        d_fine[center]
+    );
+    assert!(
+        (d_coarse[center] - 8.0).abs() < 0.05,
+        "coarse render center depth should be the wall at ~8, got {}",
+        d_coarse[center]
+    );
+    let differing = d_fine.iter().zip(d_coarse.iter()).filter(|(a, b)| a != b).count();
+    assert!(differing > 100, "the prop should change a visible patch of depth, {differing} px differ");
+}
