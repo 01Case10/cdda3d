@@ -167,7 +167,7 @@ use crate::color::Oklab;
 use crate::noise::Fbm;
 use crate::props::{
     front_structure_extent, grain_amp, lab_of, modal_color, region_primaries, structure,
-    top_row_for_z, PropModel, Segmentation, SHADOW_L,
+    top_row_for_z, wrap_side_faces, PropModel, Segmentation, SHADOW_L,
 };
 use image::{Rgba, RgbaImage};
 use std::ops::Range;
@@ -1281,14 +1281,20 @@ const CYLINDER_INTERIOR_RATIO: f32 = 0.55;
 pub struct CylinderFit {
     /// Model depth = disc diameter (extent width, capped 32).
     pub d: u32,
-    /// Model height = the WALL height: the sprite's band minus
-    /// its top ellipse band. The drawn ellipse band is a
-    /// HORIZONTAL surface in perspective (rim + interior, or a
-    /// lid) — extruding it as vertical wall was the artifact of
-    /// Joey's 2026-11-17 second cylinder review (the fire
-    /// barrel's fire plug stood proud of the rim; compare the
-    /// sprite, where the fire is a flat disc inside the rim).
+    /// The WALL height: the sprite's band minus its top
+    /// ellipse band — the paint source height. The drawn
+    /// ellipse band is a HORIZONTAL surface in perspective
+    /// (rim + interior, or a lid) — extruding it as vertical
+    /// wall was the artifact of Joey's 2026-11-17 second
+    /// cylinder review (the fire plug stood proud of the rim).
     pub fh: u32,
+    /// The model's total height (HollowCylinder): the FULL
+    /// band height. Round 3 built the model at wall height
+    /// only and Joey's verdict was "you squished it down"
+    /// (2026-11-17): the rim section is real height — it is
+    /// the shell continuing up around the opening, with the
+    /// contents surface inside it, below the rim.
+    pub full_h: u32,
     /// Sprite rows of the top ellipse band (opening or lid),
     /// measured by [`measure_opening_rows`].
     pub opening_rows: u32,
@@ -1386,16 +1392,29 @@ fn measure_opening_rows(sprite: &RgbaImage, seg: &Segmentation, width: u32) -> O
         (lo + hi) / 2.0
     };
     let fire = |p: Rgba<u8>| (p[0] as u32) > 100 && (p[0] as u32) > 2 * (p[1] as u32);
+    // A row belongs to the opening when the ellipse is still
+    // widening, or when the row's CENTER pixel is interior
+    // paint. (Round 3 used a row-majority interior test: on
+    // the dark 55gal sprite the upper WALL also classifies
+    // dark, so the scan ate 15 of 30 rows and the model came
+    // out squished — Joey's review, 2026-11-17. The ellipse's
+    // height at the center column is the geometric measure:
+    // 8 rows on the 55gal, where the fire at the axis stops
+    // and the rim row begins.)
     let mut opening = 0u32;
-    for (ext_w, inner) in &rows {
-        let interior_majority = !inner.is_empty()
-            && inner
-                .iter()
-                .filter(|p| lab_of(**p).l < split || fire(**p))
-                .count()
-                * 2
-                > inner.len();
-        if *ext_w < width || interior_majority {
+    for (r, (ext_w, inner)) in rows.iter().enumerate() {
+        let center_interior = {
+            let row = band.start + r as u32;
+            let xs: Vec<u32> = (0..w).filter(|&x| drawn(x, row)).collect();
+            if xs.is_empty() {
+                false
+            } else {
+                let cxp = *sprite.get_pixel((xs[0] + xs[xs.len() - 1]) / 2, row);
+                lab_of(cxp).l < split || fire(cxp)
+            }
+        };
+        let _ = inner;
+        if *ext_w < width || center_interior {
             opening += 1;
         } else {
             break;
@@ -1474,6 +1493,7 @@ pub fn cylinder_fit(sprite: &RgbaImage, seg: &Segmentation) -> Option<CylinderFi
     Some(CylinderFit {
         d: width.min(32),
         fh: full - opening_rows,
+        full_h: full,
         opening_rows,
         drop: (opening_rows / 4).max(2),
         surface_color,
@@ -1511,7 +1531,7 @@ fn column_paint(sprite: &RgbaImage, seg: &Segmentation, x: u32) -> Vec<Option<Rg
             structure(px).then_some(px)
         })
         .collect();
-    (0..fh)
+    let mut paint: Vec<Option<Rgba<u8>>> = (0..fh)
         .map(|y| {
             raw[y as usize].or_else(|| {
                 (1..fh)
@@ -1525,7 +1545,29 @@ fn column_paint(sprite: &RgbaImage, seg: &Segmentation, x: u32) -> Vec<Option<Rg
                     .next()
             })
         })
-        .collect()
+        .collect();
+    // De-void: the sprites draw the base outline in pure
+    // black; wrapped around the shell it reads as holes in
+    // the base (Joey's "artifacts on the bottom", 2026-11-17).
+    // A pure-black entry takes the column's nearest non-black
+    // paint (the base chime is dark metal, not a void).
+    for y in 0..fh as usize {
+        if let Some(c) = paint[y] {
+            if c[0] == 0 && c[1] == 0 && c[2] == 0 {
+                paint[y] = (1..fh)
+                    .filter_map(|dist| {
+                        [y.checked_add(dist as usize), y.checked_sub(dist as usize)]
+                            .into_iter()
+                            .flatten()
+                            .filter(|&yy| yy < fh as usize)
+                            .find_map(|yy| paint[yy])
+                            .filter(|c| !(c[0] == 0 && c[1] == 0 && c[2] == 0))
+                    })
+                    .next();
+            }
+        }
+    }
+    paint
 }
 
 /// The disc geometry shared by both cylinder archetypes:
@@ -1563,12 +1605,79 @@ impl Disc {
     }
 }
 
+/// The wrap paint lookup shared by the cylinder builders:
+/// the sprite pixel at the pattern column the depth `z` maps
+/// to (see [`wrap_side_faces`]), at the wall row for height
+/// `y`, with a nearest-structure fallback along the row.
+fn cylinder_wrap_paint(
+    sprite: &RgbaImage,
+    wseg: &Segmentation,
+    wall_h: u32,
+    disc: &Disc,
+    zext: &[Option<(u32, u32)>],
+    y: u32,
+    z: u32,
+) -> Option<Rgba<u8>> {
+    let (zlo, zhi) = zext[y as usize]?;
+    if zhi == zlo {
+        return None;
+    }
+    let col = disc.x0 + (z - zlo) * (disc.x1 - disc.x0) / (zhi - zlo);
+    let row = wseg.front_rows.end - 1 - y.min(wall_h - 1);
+    // Pure black is outline, not paint (see column_paint's
+    // de-void): never wrap it onto a side.
+    let paintable = |p: Rgba<u8>| {
+        structure(p) && !(p[0] == 0 && p[1] == 0 && p[2] == 0)
+    };
+    let px = *sprite.get_pixel(col, row);
+    if paintable(px) {
+        return Some(px);
+    }
+    for dist in 1..=(disc.x1 - disc.x0) {
+        for cand in [col.checked_sub(dist), col.checked_add(dist)]
+            .into_iter()
+            .flatten()
+        {
+            if (disc.x0..=disc.x1).contains(&cand) {
+                let c = *sprite.get_pixel(cand, row);
+                if paintable(c) {
+                    return Some(c);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Per-height z extents of a model's solids (the wrap's
+/// pattern mapping domain).
+fn model_zext(m: &PropModel) -> Vec<Option<(u32, u32)>> {
+    (0..m.size[1])
+        .map(|y| {
+            let mut r: Option<(u32, u32)> = None;
+            for z in 0..m.size[2] {
+                if (0..m.size[0]).any(|x| m.get(x, y, z).is_some()) {
+                    r = Some(match r {
+                        None => (z, z),
+                        Some((a, b)) => (a.min(z), b.max(z)),
+                    });
+                }
+            }
+            r
+        })
+        .collect()
+}
+
 fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let fit = cylinder_fit(sprite, seg).expect("cylinder fit");
     let disc = Disc::new(sprite, seg, fit.d);
     let wseg = wall_seg(seg, fit.fh);
-    let surface_y = fit.fh.saturating_sub(fit.drop).max(fit.fh / 2);
-    let mut m = PropModel::new([sprite.width(), fit.fh, fit.d]);
+    // Full band height (round 4): the rim section above the
+    // wall's paint rows is shell-only, painted with the wall's
+    // topmost row (the rim roll), around a well whose floor is
+    // the contents surface `drop` rows below the rim.
+    let surface_y = fit.full_h - 1 - fit.drop;
+    let mut m = PropModel::new([sprite.width(), fit.full_h, fit.d]);
     for x in disc.x0..=disc.x1 {
         let paint = column_paint(sprite, &wseg, x);
         for z in 0..fit.d {
@@ -1577,20 +1686,26 @@ fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 continue;
             }
             if rn > disc.inner_rn() {
-                // Shell: full height, the column's own paint.
-                for y in 0..fit.fh {
-                    if let Some(c) = paint[y as usize] {
+                // Shell: full height; above the wall rows the
+                // paint clamps to the wall's topmost row.
+                for y in 0..fit.full_h {
+                    if let Some(c) = paint[(y.min(fit.fh - 1)) as usize] {
                         m.set(x, y, z, Some(c));
                     }
                 }
             } else {
-                // Contents: solid up to the surface, cavity above.
+                // Contents: solid up to the surface, the well
+                // above it genuinely hollow.
                 for y in 0..=surface_y {
                     m.set(x, y, z, Some(fit.interior_color));
                 }
             }
         }
     }
+    let zext = model_zext(&m);
+    wrap_side_faces(&mut m, |y, z| {
+        cylinder_wrap_paint(sprite, &wseg, fit.fh, &disc, &zext, y, z)
+    });
     m
 }
 
@@ -1618,6 +1733,10 @@ fn build_closed_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             }
         }
     }
+    let zext = model_zext(&m);
+    wrap_side_faces(&mut m, |y, z| {
+        cylinder_wrap_paint(sprite, &wseg, fit.fh, &disc, &zext, y, z)
+    });
     m
 }
 

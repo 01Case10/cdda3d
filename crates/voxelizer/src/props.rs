@@ -2568,17 +2568,131 @@ fn cylinder_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
 pub const LATHE_PINS: &[&str] = &[
     "f_alien_gasper",
     "f_alien_pod_resin",
-    "f_egg_sacke",
-    "f_egg_sackws",
     "f_clay_kiln",
     "f_kiln_empty",
     "f_kiln_full",
+];
+
+/// Irregular lump pins: boulders, the fungal clump, egg sacks
+/// (Joey's reviews, 2026-11-17: "Literally a boulder" — the
+/// lathe made them surfaces of revolution, i.e. cylinders with
+/// a profile; these objects are NOT round in plan, they are
+/// irregular masses). Routed to [`blob_model`].
+pub const BLOB_PINS: &[&str] = &[
     "f_boulder_large",
     "f_boulder_medium",
     "f_boulder_small",
     "f_glow_boulder",
     "f_fungal_clump",
+    "f_egg_sacke",
+    "f_egg_sackws",
 ];
+
+/// An irregular lump fitted to the sprite: the front face is
+/// the sprite verbatim (every structure pixel is a column at
+/// the front plane), and each column's DEPTH is fitted from
+/// the silhouette itself — an elliptical falloff over the
+/// pixel's position in its row and its column (edge pixels are
+/// shallow, central pixels deep) modulated by low-frequency
+/// value noise, so the back and side silhouettes are lumpy and
+/// asymmetric, never a disc profile. Every voxel carries its
+/// column's sprite paint (mottled rock/fungal texture wraps
+/// the mass). Depth budget = the widest row (<= 32).
+fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
+    let w = sprite.width();
+    let front = &seg.front_rows;
+    let fh = front.end - front.start;
+    let bot = front.end - 1;
+    // Per-row and per-column structure extents.
+    let mut row_ext: Vec<Option<(u32, u32)>> = vec![None; fh as usize];
+    let mut col_ext: Vec<Option<(u32, u32)>> = vec![None; w as usize];
+    let mut d_max = 0u32;
+    for y in 0..fh {
+        let r = bot - y;
+        for x in 0..w {
+            if structure(*sprite.get_pixel(x, r)) {
+                row_ext[y as usize] = Some(match row_ext[y as usize] {
+                    None => (x, x),
+                    Some((a, b)) => (a.min(x), b.max(x)),
+                });
+                col_ext[x as usize] = Some(match col_ext[x as usize] {
+                    None => (y, y),
+                    Some((a, b)) => (a.min(y), b.max(y)),
+                });
+            }
+        }
+        if let Some((a, b)) = row_ext[y as usize] {
+            d_max = d_max.max(b - a + 1);
+        }
+    }
+    if d_max < 4 {
+        return None;
+    }
+    let d = d_max.min(32);
+    let noise = crate::noise::Fbm::new(0xB10B, 8).octaves(3);
+    let mut m = PropModel::new([w, fh, d]);
+    for y in 0..fh {
+        let Some((rx0, rx1)) = row_ext[y as usize] else {
+            continue;
+        };
+        let r = bot - y;
+        let rcx = (rx0 + rx1) as f32 / 2.0;
+        let rhalf = ((rx1 - rx0 + 1) as f32 / 2.0).max(1.0);
+        for x in rx0..=rx1 {
+            let mut px = *sprite.get_pixel(x, r);
+            if !structure(px) {
+                continue;
+            }
+            // De-void (as column_paint): a pure-black pixel is
+            // outline — the column takes its nearest non-black
+            // paint instead of extruding a black streak.
+            if px[0] == 0 && px[1] == 0 && px[2] == 0 {
+                let (cy0, cy1) = col_ext[x as usize].unwrap_or((y, y));
+                for dist in 1..=(cy1 - cy0) {
+                    let mut found = None;
+                    for yy in [y.checked_add(dist), y.checked_sub(dist)]
+                        .into_iter()
+                        .flatten()
+                    {
+                        if yy >= cy0 && yy <= cy1 {
+                            let c = *sprite.get_pixel(x, bot - yy);
+                            if structure(c) && !(c[0] == 0 && c[1] == 0 && c[2] == 0) {
+                                found = Some(c);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(c) = found {
+                        px = c;
+                        break;
+                    }
+                }
+            }
+            let (cy0, cy1) = col_ext[x as usize].unwrap();
+            // Horizontal falloff, floored: edge columns keep a
+            // third of the depth (a boulder is a mass, not a
+            // lens — the unfloored elliptical taper left a thin
+            // wedge from the side, §27 review of round 4).
+            let tx = 1.0 - ((x as f32 - rcx) / rhalf).abs().min(1.0);
+            let tx = 0.30 + 0.70 * tx;
+            // Vertical: NO taper toward the ground — the base
+            // is the widest part of a grounded mass; the dome
+            // taper applies toward the column's top only.
+            let v = (y - cy0) as f32 / ((cy1 - cy0) as f32).max(1.0);
+            let ty = (1.0 - 0.55 * v * v).sqrt();
+            let n = 0.75 + 0.50 * noise.sample(x as f32 * 0.14, y as f32 * 0.14);
+            let depth = ((d as f32 * tx * ty * n).round() as u32).clamp(3, d);
+            for z in (d - depth)..d {
+                m.set(x, y, z, Some(px));
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    wrap_row_pattern(&mut m, sprite, seg, &row_ext);
+    Some(m)
+}
 
 /// A body of revolution fitted to the sprite's profile: at
 /// every height, the row's structure extent is that height's
@@ -2687,6 +2801,22 @@ fn lathe_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
         let inner_rn = 1.0 - 4.0 / wr as f32;
         let in_mouth = mouth.map(|(mr, _)| y >= fh - mr).unwrap_or(false);
         let mouth_floor = mouth.map(|(mr, _)| y + 1 == fh - mr).unwrap_or(false);
+        // The mouth's rim is one continuous lip: ring voxels of
+        // a mouth row take the row's modal NON-dark paint, not
+        // the per-column pixels — the center columns' dark
+        // interior pixels otherwise stripe the rim (the
+        // "dashed crown" artifact of Joey's gasper review,
+        // 2026-11-17). The interior those dark pixels depict
+        // is the cavity + surface, already modeled.
+        let rim_color = if in_mouth {
+            modal_color(
+                (rx0..=rx1)
+                    .map(|x| *sprite.get_pixel(x, r))
+                    .filter(|p| structure(*p) && lab_of(*p).l >= split),
+            )
+        } else {
+            None
+        };
         for x in rx0..=rx1 {
             let px = row_paint(sprite, r, x, rx0, rx1);
             let dx = (x as f32 - cxr) / rxr;
@@ -2701,6 +2831,8 @@ fn lathe_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
                 }
                 let c = if mouth_floor && rn2.sqrt() <= inner_rn {
                     mouth.unwrap().1
+                } else if in_mouth {
+                    rim_color.unwrap_or(px)
                 } else {
                     px
                 };
@@ -2711,7 +2843,105 @@ fn lathe_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
     if m.solid_count() == 0 {
         return None;
     }
+    wrap_row_pattern(&mut m, sprite, seg, &rows);
     Some(m)
+}
+
+/// Side faces: wrap the front pattern around (the kiln's
+/// cobbles must show on all sides — Joey, 2026-11-17; the
+/// same wrap gives the blob's sides its rock texture instead
+/// of one column pixel smeared through the depth). The
+/// pattern coordinate across a side face is the depth,
+/// mapped onto the sprite row's extent.
+fn wrap_row_pattern(
+    m: &mut PropModel,
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    rows: &[Option<(u32, u32)>],
+) {
+    let (fh, d) = (m.size[1], m.size[2]);
+    let bot = seg.front_rows.end - 1;
+    let zext: Vec<Option<(u32, u32)>> = (0..fh)
+        .map(|y| {
+            let mut r: Option<(u32, u32)> = None;
+            for z in 0..d {
+                if (0..m.size[0]).any(|x| m.get(x, y, z).is_some()) {
+                    r = Some(match r {
+                        None => (z, z),
+                        Some((a, b)) => (a.min(z), b.max(z)),
+                    });
+                }
+            }
+            r
+        })
+        .collect();
+    wrap_side_faces(m, |y, z| {
+        let (rx0, rx1) = rows[y as usize]?;
+        let (zlo, zhi) = zext[y as usize]?;
+        if zhi == zlo {
+            return None;
+        }
+        let r = bot - y;
+        let col = rx0 + (z - zlo) * (rx1 - rx0) / (zhi - zlo);
+        let c = row_paint(sprite, r, col, rx0, rx1);
+        // Pure black is a front-face feature (a firebox
+        // opening) or outline — never wrap it onto a side.
+        if c[0] == 0 && c[1] == 0 && c[2] == 0 {
+            return None;
+        }
+        Some(c)
+    });
+}
+
+/// Repaint a model's side faces with the front pattern
+/// wrapped around (Joey's reviews, 2026-11-17: the kiln's
+/// "cobblestone pattern should show on all sides"; the fire
+/// barrel's "pattern on the front should extend to the back").
+/// For every (y, z) row, the side-most solid voxels (min/max x)
+/// that are NOT the front-most or back-most voxel of their
+/// (x, y) column take `paint(y, z)` — the front/back faces keep
+/// their exact paint, and the pattern runs continuously
+/// front -> side -> back. Builders supply the paint lookup
+/// (the sprite pattern mapped by depth: at the front corner
+/// the lookup returns the pattern's edge, at the back corner
+/// its opposite edge).
+pub fn wrap_side_faces(m: &mut PropModel, paint: impl Fn(u32, u32) -> Option<Rgba<u8>>) {
+    let [sx, sy, sz] = m.size;
+    // Column z-extents (front-most / back-most solid per (x, y)).
+    let mut col_range: Vec<Option<(u32, u32)>> = vec![None; (sx * sy) as usize];
+    for x in 0..sx {
+        for y in 0..sy {
+            let mut r: Option<(u32, u32)> = None;
+            for z in 0..sz {
+                if m.get(x, y, z).is_some() {
+                    r = Some(match r {
+                        None => (z, z),
+                        Some((a, b)) => (a.min(z), b.max(z)),
+                    });
+                }
+            }
+            col_range[(y * sx + x) as usize] = r;
+        }
+    }
+    for y in 0..sy {
+        for z in 0..sz {
+            let xs: Vec<u32> = (0..sx).filter(|&x| m.get(x, y, z).is_some()).collect();
+            if xs.is_empty() {
+                continue;
+            }
+            for &x in [xs[0], xs[xs.len() - 1]].iter() {
+                let Some((zlo, zhi)) = col_range[(y * sx + x) as usize] else {
+                    continue;
+                };
+                if z == zlo || z == zhi {
+                    continue; // front/back face voxel: exact paint stays
+                }
+                if let Some(c) = paint(y, z) {
+                    m.set(x, y, z, Some(c));
+                }
+            }
+        }
+    }
 }
 
 /// Two-means lightness split of a sample set (the dark-cluster
@@ -2801,6 +3031,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
     if LATHE_PINS.contains(&id) {
         if let Some(m) = lathe_model(sprite, &seg) {
+            return Some(m);
+        }
+    }
+    if BLOB_PINS.contains(&id) {
+        if let Some(m) = blob_model(sprite, &seg) {
             return Some(m);
         }
     }

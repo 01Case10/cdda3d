@@ -388,30 +388,42 @@ fn hollow_cylinder_has_a_real_cavity() {
     );
     let (fh, d) = (m.size[1], m.size[2]);
     assert_eq!(d, 16, "diameter = silhouette width");
-    // The drawn ellipse band is NOT wall: the fit must measure
-    // it (10 of the sprite's 30 band rows on the barrel family)
-    // and the model height is the wall height only.
+    // The drawn ellipse band is NOT wall paint: the fit must
+    // measure it (10 of the sprite's 28 band rows on this
+    // barrel). Round 4 geometry: the model is FULL band
+    // height — round 3's wall-height model was "squished"
+    // (Joey) — with the band's rows as a rim section: shell
+    // in wall paint around a well, contents below the rim.
     let seg = seamless_segment(&sprite).expect("seamless seg");
     let fit = voxelizer::archetypes::cylinder_fit(&sprite, &seg).expect("fit");
     assert_eq!(fit.opening_rows, 10, "measured opening band");
-    assert_eq!(fh, 28 - 10, "model height = wall height (band is 28 rows)");
-    // Extent 8..=23 (measured), axis at x=15/16, z=7/8.
-    // Cavity: the axis just under the rim is EMPTY (the first
-    // treatment filled it with a stepped cap of rim paint).
+    assert_eq!(fh, 28, "model height = full band height");
+    assert_eq!(fit.fh, 28 - 10, "wall (paint) height");
+    // The rim section's front is the wall's topmost row (the
+    // rim roll), never the band's interior paint.
+    let bot = seg.front_rows.end - 1;
+    let rim_px = *sprite.get_pixel(15, bot - (fit.fh - 1));
+    let front_top = (0..d)
+        .rev()
+        .find(|&z| m.get(15, fh - 1, z).is_some())
+        .map(|z| m.get(15, fh - 1, z).expect("found"));
+    assert_eq!(front_top, Some(rim_px), "rim front is wall paint");
+    // Cavity: the axis under the rim is EMPTY down to the
+    // contents surface (the first treatment filled it with a
+    // stepped cap of rim paint).
     assert!(m.get(15, fh - 1, 7).is_none(), "cavity under the rim");
     assert!(m.get(16, fh - 1, 8).is_none(), "cavity under the rim");
-    // Contents surface: the axis's topmost solid voxel, drop =
-    // opening/4 = 2 below the rim, reading dark (the empty
+    // Contents surface: the axis's topmost solid voxel,
+    // `drop` rows below the rim top, reading dark (the empty
     // barrel's drawn interior).
     let surf_y = (0..fh)
         .rev()
         .find(|&y| m.get(15, y, 7).is_some())
         .expect("contents surface exists");
-    assert_eq!(surf_y, fh - 2, "surface drop = opening/4, min 2");
+    assert_eq!(surf_y, fh - 1 - fit.drop, "surface sits `drop` below the rim");
     let s = m.get(15, surf_y, 7).expect("contents surface");
     assert!(lab(s).l < 0.35, "dark interior surface: {:?}", s.0);
     // Shell front is the sprite verbatim at wall rows.
-    let bot = seg.front_rows.end - 1;
     for y in [4u32, 10, 15] {
         let px = *sprite.get_pixel(15, bot - y);
         let front = (0..d)

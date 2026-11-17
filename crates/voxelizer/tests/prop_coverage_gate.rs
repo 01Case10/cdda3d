@@ -399,6 +399,11 @@ fn cylinder_footprint_is_round() {
         depth_at(x0),
         depth_at(cx)
     );
+    // Front verbatim at WALL rows. Above them (round 4: the
+    // model is full height) the front is the rim section —
+    // shell painted with the wall's topmost row, the rim roll
+    // — never the ellipse band's interior paint extruded.
+    let fit = voxelizer::archetypes::cylinder_fit(&sprite, &seg).expect("fit");
     for yy in 0..m.size[1] {
         for x in x0..=x1 {
             let px = *sprite.get_pixel(x, bot - yy);
@@ -407,7 +412,29 @@ fn cylinder_footprint_is_round() {
                     .rev()
                     .find(|&z| m.get(x, yy, z).is_some())
                     .map(|z| m.get(x, yy, z).expect("found"));
-                assert_eq!(front, Some(px), "front-most is sprite paint {x},{yy}");
+                if yy < fit.fh && px[0] == 0 && px[1] == 0 && px[2] == 0 {
+                    // De-void (round 4): a pure-black sprite
+                    // pixel is outline, not paint — the front
+                    // takes the column's nearest non-black wall
+                    // paint instead of a void black.
+                    let wall: Vec<image::Rgba<u8>> = (0..fit.fh)
+                        .map(|wy| *sprite.get_pixel(x, bot - wy))
+                        .filter(|p| structure(*p) && !(p[0] == 0 && p[1] == 0 && p[2] == 0))
+                        .collect();
+                    assert!(
+                        front.is_some_and(|c| wall.contains(&c)),
+                        "de-voided front comes from the column's wall paint {x},{yy}: {front:?}"
+                    );
+                } else if yy < fit.fh {
+                    assert_eq!(front, Some(px), "front-most is sprite paint {x},{yy}");
+                } else {
+                    let rim = *sprite.get_pixel(x, bot - (fit.fh - 1));
+                    assert_eq!(
+                        front,
+                        Some(rim),
+                        "rim section is wall paint, not band paint {x},{yy}"
+                    );
+                }
             }
         }
     }
@@ -446,6 +473,12 @@ fn lathe_front_matches_back_and_sides_follow_profile() {
         if y > fh / 4 && y < 3 * fh / 4 && b - a + 1 < narrowest.0 {
             narrowest = (b - a + 1, y, (a + b) / 2);
         }
+        // Mouth rows (rings: the disc center is hollow) are
+        // the exception to verbatim: their ring takes the
+        // row's rim paint — the sprite's dark center pixels
+        // there depict the opening's interior, which the model
+        // renders as the actual cavity. Front still == back.
+        let mouth_row = m.get((a + b) / 2, y, d / 2).is_none();
         for &x in &xs {
             let px = *sprite.get_pixel(x, r);
             let front = (0..d)
@@ -455,8 +488,12 @@ fn lathe_front_matches_back_and_sides_follow_profile() {
             let back = (0..d)
                 .find(|&z| m.get(x, y, z).is_some())
                 .map(|z| m.get(x, y, z).expect("found"));
-            assert_eq!(front, Some(px), "front is sprite paint {x},{y}");
-            assert_eq!(back, Some(px), "back matches front {x},{y}");
+            if mouth_row {
+                assert_eq!(front, back, "mouth rim symmetric {x},{y}");
+            } else {
+                assert_eq!(front, Some(px), "front is sprite paint {x},{y}");
+                assert_eq!(back, Some(px), "back matches front {x},{y}");
+            }
         }
     }
     let depth_at = |y: u32, x: u32| (0..d).filter(|&z| m.get(x, y, z).is_some()).count() as u32;
@@ -472,6 +509,56 @@ fn lathe_front_matches_back_and_sides_follow_profile() {
         depth_at(narrowest.1, narrowest.2),
         depth_at(widest.1, widest.2)
     );
+}
+
+#[test]
+fn blob_is_irregular_not_a_revolution() {
+    // Boulders, the fungal clump, egg sacks (Joey's reviews,
+    // 2026-11-17: "Literally a boulder"; the fungal clump is
+    // "an irregular shape with lumps"). The lathe made them
+    // surfaces of revolution — cylinders with a profile. The
+    // blob's front is the sprite verbatim, its per-column
+    // depth varies irregularly, and some row's depth profile
+    // is asymmetric about the row's center (a revolution's
+    // never is).
+    let sprite = load_sprite("f_boulder_medium");
+    let seg = seamless_segment(&sprite).expect("seamless fires");
+    let m = model_for("f_boulder_medium", &sprite).expect("models");
+    assert_same_model(&m, &model_for("f_boulder_medium", &sprite).expect("rebuild"));
+    let (fh, d) = (m.size[1], m.size[2]);
+    let bot = seg.front_rows.end - 1;
+    let depth_at = |x: u32, y: u32| (0..d).filter(|&z| m.get(x, y, z).is_some()).count() as u32;
+    let mut depths: Vec<u32> = Vec::new();
+    let mut asymmetric = false;
+    for y in 0..fh {
+        let r = bot - y;
+        let xs: Vec<u32> = (0..32)
+            .filter(|&x| structure(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            continue;
+        }
+        let (a, b) = (xs[0], xs[xs.len() - 1]);
+        for &x in &xs {
+            let px = *sprite.get_pixel(x, r);
+            let front = (0..d)
+                .rev()
+                .find(|&z| m.get(x, y, z).is_some())
+                .map(|z| m.get(x, y, z).expect("found"));
+            assert_eq!(front, Some(px), "blob front verbatim {x},{y}");
+            depths.push(depth_at(x, y));
+            let mirror = a + b - x;
+            if mirror != x && xs.contains(&mirror) && depth_at(mirror, y) != depth_at(x, y) {
+                asymmetric = true;
+            }
+        }
+    }
+    let (mn, mx) = (
+        *depths.iter().min().expect("depths"),
+        *depths.iter().max().expect("depths"),
+    );
+    assert!(mx - mn >= 6, "depth varies irregularly: {mn}..{mx}");
+    assert!(asymmetric, "no row is asymmetric — still a revolution?");
 }
 
 #[test]
