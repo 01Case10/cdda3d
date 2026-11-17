@@ -914,3 +914,92 @@ byte-identical. Sides unchanged by design (see plan.md addendum).
 Open: glass-wall tops read as opaque frame (visual-inspection
 item); engine textured house goldens move only after
 assets/ultica_run1 is regenerated with this voxelizer.
+
+(Note: §29 is duplicated in this document — Stage G.4 above also
+carries §29, from a parallel record. The two sections are left
+as-is to preserve existing cross-references; F part 2 continues
+at §30.)
+
+## 30. Stage F part 2 — decoration scatter outcome (2026-11-17)
+
+DONE, merged to main @ 565b786 (not pushed), parent re-verified
+(scatter gate 8/8; frame_gate 5/5 standalone on lavapipe with
+the GPU halves genuinely running — 2h.4 latency median 8.04 ms /
+p99 16.37 ms against the 50/100 budgets; an earlier combined-run
+failure of that gate was parallel-load flakiness, corroborated
+by the pond slice hitting the same failure on an untouched code
+path and passing alone).
+
+As implemented: `voxelizer::decor` generates tuft/shrub/
+flowering 32×32 alpha sprites using ONLY colors from the grass
+family's pooled palette (seeded `family_seed ^
+seed_from_str(name)`), packed as a 96×32 billboard atlas beside
+materials.json; materials.json emission is untouched.
+`billboard::decor::scatter` is pure and order-independent
+(FNV-1a + splitmix64 hashing, cross-check gate against
+voxelizer::noise): 0–2 instances per eligible tile, jitter
+±0.3, per-tile count probabilities driven by the Stage F macro
+height h (p₁ = 0.15 + 0.75h, p₂ = 0.05 + 0.45h), with
+FALLBACK_HEIGHT = 0.5 when no height is available — currently
+always, because macro height exists only GPU-side; wiring a
+CPU-side height source is a follow-up. Density over 3,600 grass
+tiles: h=0.1 → 849, fallback → 2,424, h=0.9 → 4,353 instances;
+sample scene 330 over 491 eligible tiles. The engine draws
+decorations as a third billboard pass on their own instance
+list with sentinel entity id u64::MAX, so they are not pickable
+by construction (picking code unchanged). No IPC or proto
+change; no new dependencies. Frame-time verdict deferred to
+the RX 9070 XT (2h.4), as with all VM-side perf numbers.
+
+## 31. Stage F part 2 — pond/shoreline engine integration (2026-11-17)
+
+DONE, merged to main @ e015786 (not pushed), parent re-verified
+(pond gate 4/4 incl. both-renderer captures; merged-tree suite
+green alongside Phase 9's fine path). This is the §10.1 engine
+half; the voxelizer half landed with Stage E.
+
+Canonical mask: the 8-neighbor shore mask (bit order, erosion,
+SHORE_MASK_ALL_WATER) now lives in `mesher::connect`, the leaf
+crate, and `voxelizer::shore::mask_for` delegates to it — the
+Phase 2d precedent, so generator and engine can never disagree.
+
+Carrier: v2 gains an optional `shores` table
+`[{material_index, mask, layer}]` plus `shore_<layer:04>.png`
+files beside materials.json (macros precedent). ONE shore set
+per run, generated from the Stage C/E generated textures of the
+canonical trio (t_water_dp / t_dirt / t_grass preferred by id,
+first poolable family otherwise) and attached to the primary
+water material. The set is all 255 masks except 0xFF (all-water
+interior keeps the plain water texture; shore_texture(0xFF) is
+the identity anyway). Table absent when any family fails to
+pool → v2-without-shore is byte-identical to pre-slice v2; v1
+untouched. Land tiles get nothing — the dirt ring lives inside
+the shore texture, per §10.1; bank_texture is not emitted.
+Scope limit, deliberate: the other ~40 water ids (season /
+underground / moving variants) keep plain tops in this slice —
+a set per water id would multiply 255 layers ~40×.
+
+Engine: the loader resolves `Material.shore_layers` (mask →
+layer); a shared assignment module computes per-block shore
+variants for both world forms (ChunkMap and VoxelWorld forms
+asserted identical), and a combined spec builder emits base +
+multitile + shore variant entries (with no shore assignments
+the spec is exactly the base builder's). Assignment lives in
+the shared scene-prep/spec path both renderers consume —
+deliberately NOT in `snapshot_world::build_columns`, which
+works on Phase 3 def ids with no material table; this also
+keeps the slice clear of Phase 9's stamping location. No
+treebuild or shader changes.
+
+Capture evidence (lavapipe, sample pond, both renderers):
+dirt-like bank pixels raster 1,079 vs 1 without shores, RT 557
+vs 0; water-like pixels ~21,800 in both shore captures
+(interior stays water). Visual verdict, stated plainly: the
+bank ring is continuous and corners are banked, and the pond
+still reads rounded-square, not circular — the Stage E verdict.
+shore.rs curves were NOT retuned; circularity is a Stage H
+tuning decision.
+
+Stage F part 2 status: end-caps (§29), scatter (§30), pond
+(§31) landed. Border height-blending remains HELD until
+Phase 9 item 9.5 lands.
