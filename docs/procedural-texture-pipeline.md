@@ -811,3 +811,27 @@ snapshot_world::build_columns with the coarse furniture block
 suppressed, delta restamps on furniture id changes, rollout behind
 --fine-props with byte-identical proofs. Picking/LOS/collision
 untouched (game tile data governs).
+
+## 29. Stage F part 2 — end-caps outcome (2026-11-16)
+
+DONE for the end-caps slice, parent re-verified in the main tree
+(@ 342f946, not pushed; full voxelizer suite green incl.
+gate_tests 13/13 and the new stage_f2_caps_gate 2/2). Joey's
+scheduling call: Stage F part 2 runs in parallel with Phase 9,
+split as scatter / end-caps / pond-integration worktree slices;
+border height-blending is HELD until Phase 9 items 9.4/9.5 land.
+
+Rule as implemented (`generate_wall_cap` in generate.rs, wired in
+lib.rs for wall_like non-furniture materials at tile size 32):
+the wall top layer is generated, never sampled — family pooling,
+OKLab palette (k=10) de-shaded by the measured per-family shading
+factor, tileable albedo-only render per class seeded by
+`family_seed ^ "wall_cap" ^ class` (plaster stucco, concrete
+Worley pores, brick plan-view tops, wood top plate; stone/metal/
+glass reuse their Stage C/E renders). Measured on real UltiCa:
+seam 0.123–0.961 (< 1.15), mean ΔE_OK 0.011–0.029 (< 0.04),
+palettes 10, byte-identical re-runs, non-wall fixture layers
+byte-identical. Sides unchanged by design (see plan.md addendum).
+Open: glass-wall tops read as opaque frame (visual-inspection
+item); engine textured house goldens move only after
+assets/ultica_run1 is regenerated with this voxelizer.
