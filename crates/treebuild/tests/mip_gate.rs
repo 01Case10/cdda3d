@@ -598,3 +598,56 @@ fn gate_2e_3_two_pose_variance() {
     assert!(max > 130, "close-up: white texels must survive (max {max})");
     assert!(max - min > 100, "close-up contrast must stay sharp ({min}..{max})");
 }
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3d (9.5 LOD half): fine-leaf ray-cone LOD
+// ---------------------------------------------------------------------
+
+#[test]
+fn gate_9_5_fine_lod_analytic() {
+    use treebuild::lod::{ray_cone_lod_fine, FINE_LOD_ADJUST};
+    // The adjustment is exactly -log2(FINE), FINE = 32.
+    assert_eq!(FINE_LOD_ADJUST, -(32.0f32).log2());
+    assert_eq!(FINE_LOD_ADJUST, -5.0);
+
+    let spread = spread_angle((60.0f32.to_radians() * 0.5).tan(), 512);
+    // A tall chain for the offset checks, so neither value can
+    // clamp (the clamp cases are exercised separately below).
+    let max_mip = 20.0;
+    let coarse = |t: f32, ndv: f32| ray_cone_lod(32, 32, spread, t, ndv, max_mip);
+    let fine = |t: f32, ndv: f32| ray_cone_lod_fine(32, 32, spread, t, ndv, max_mip);
+
+    // Where neither value clamps, fine == coarse - 5 exactly:
+    // at w_hit = 32 the coarse LOD is 5 + 5 + LOD_BIAS = 9.5 and
+    // the fine LOD is 4.5 (a fine face at that footprint covers
+    // the same texel count a coarse face covers at w_hit = 1).
+    let t32 = 32.0 / spread;
+    assert!((coarse(t32, 1.0) - 9.5).abs() <= 0.01, "coarse anchor");
+    assert!((fine(t32, 1.0) - 4.5).abs() <= 0.01, "fine anchor: {}", fine(t32, 1.0));
+    for t in [t32, t32 * 1.5, t32 * 0.75] {
+        let d = fine(t, 1.0) - coarse(t, 1.0);
+        assert!((d - FINE_LOD_ADJUST).abs() <= 0.01, "t={t}: fine-coarse {d}");
+    }
+    // Slanted hits keep the same -5 offset (the slant term is
+    // scale-independent).
+    let cos60 = 60.0f32.to_radians().cos();
+    let d = fine(t32, cos60) - coarse(t32, cos60);
+    assert!((d - FINE_LOD_ADJUST).abs() <= 0.01, "slant: fine-coarse {d}");
+    // Distance doubling still raises the fine LOD by exactly 1.
+    let d = fine(t32 * 2.0, 1.0) - fine(t32, 1.0);
+    assert!((d - 1.0).abs() <= 0.15, "fine doubling delta {d}");
+    // The adjustment is applied before the clamp: a hit whose
+    // coarse LOD clamps to 0 still has a well-defined fine LOD
+    // of 0 (not -5), and far/grazing fine hits clamp to max_mip
+    // only on their own (unclamped) value.
+    assert_eq!(fine(1e-6, 1.0), 0.0, "close-up fine clamps to level 0");
+    assert_eq!(
+        ray_cone_lod_fine(32, 32, spread, 1e9, 1.0, 10.0),
+        10.0,
+        "far fine clamps to max mip"
+    );
+    for bad in [f32::NAN, f32::INFINITY, -1.0] {
+        let v = ray_cone_lod_fine(32, 32, spread, bad, 1.0, 10.0);
+        assert!(v.is_finite() && (0.0..=10.0).contains(&v), "t={bad}: fine lod {v}");
+    }
+}

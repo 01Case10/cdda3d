@@ -53,7 +53,49 @@ pub const NDOTV_WEIGHT: f32 = 0.5;
 /// where the slant term explodes; the `max_mip` clamp keeps them
 /// finite), and a NaN result collapses to 0.
 pub fn ray_cone_lod(tex_w: u32, tex_h: u32, spread: f32, t: f32, n_dot_v: f32, max_mip: f32) -> f32 {
-    let delta = 0.5 * ((tex_w.max(1) * tex_h.max(1)) as f32).log2();
+    ray_cone_lod_adjusted(tex_w, tex_h, spread, t, n_dot_v, max_mip, 0.0)
+}
+
+/// The Δ adjustment for a fine (Phase 9) leaf, in mip levels:
+/// a fine cell is 1/32 of a block per axis (`mesher::fine::FINE`
+/// = 32), so a fine face of a coarse material maps 1/32 of the
+/// block's texture per axis and
+/// `Δ_fine = 0.5·log2((texW/32)·(texH/32)) = Δ − log2(32)`.
+pub const FINE_LOD_ADJUST: f32 = -5.0;
+
+/// Ray-cone LOD for a hit on a FINE cell's face (Phase 9, 9.5):
+/// [`ray_cone_lod`] with Δ adjusted by [`FINE_LOD_ADJUST`].
+/// `t` is still measured in block (world) units, exactly as
+/// for a coarse hit — the scale difference lives entirely in
+/// the Δ term. Synthetic solid materials (1×1 solid layers
+/// padded to the array's tile size) are scale-free: every mip
+/// of a solid layer is the same colour, so this adjustment
+/// cannot change their shading.
+pub fn ray_cone_lod_fine(
+    tex_w: u32,
+    tex_h: u32,
+    spread: f32,
+    t: f32,
+    n_dot_v: f32,
+    max_mip: f32,
+) -> f32 {
+    ray_cone_lod_adjusted(tex_w, tex_h, spread, t, n_dot_v, max_mip, FINE_LOD_ADJUST)
+}
+
+/// [`ray_cone_lod`] with an extra constant added to Δ (the
+/// per-face texture-scale term). The adjustment is applied
+/// BEFORE the clamp, so a fine hit near LOD 0 does not borrow
+/// the coarse hit's clamped value.
+fn ray_cone_lod_adjusted(
+    tex_w: u32,
+    tex_h: u32,
+    spread: f32,
+    t: f32,
+    n_dot_v: f32,
+    max_mip: f32,
+    delta_adjust: f32,
+) -> f32 {
+    let delta = 0.5 * ((tex_w.max(1) * tex_h.max(1)) as f32).log2() + delta_adjust;
     let w_hit = (spread * t).max(1e-4);
     let cos = n_dot_v.abs().max(1e-4);
     let lod = delta + w_hit.log2() - NDOTV_WEIGHT * cos.log2() + LOD_BIAS;
