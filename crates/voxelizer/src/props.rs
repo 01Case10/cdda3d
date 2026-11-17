@@ -4354,6 +4354,123 @@ fn beam(
 
 /// Class D3 (machines and bodies), hand-built from
 /// each sprite's real-world referent.
+
+/// Class C (vegetation): upright flowers and herbs
+/// take the cross construction (two perpendicular
+/// silhouette slabs, the plant_model the alien
+/// zapper established); flat mats and water plants
+/// take a plan slab; the lotus adds its bud; the
+/// indoor plants get a real pot under the cross.
+fn veg_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match id {
+        "f_lilypad" | "f_flower_spurge" => plan_slab(sprite, 2),
+        "f_fungal_mass" | "f_fungal_tangle" => plan_slab(sprite, 3),
+        "f_lotus" => {
+            let mut m = plan_slab(sprite, 2)?;
+            // The bud: the pinkest cluster in the
+            // sprite, raised as a small lathe bud.
+            let (mut bx, mut bz, mut best) = (16u32, 16u32, 0i32);
+            for y in 0..sprite.height() {
+                for x in 0..sprite.width() {
+                    let px = sprite.get_pixel(x, y);
+                    if opaque(*px) {
+                        let score = px[0] as i32 - px[1] as i32;
+                        if score > best {
+                            best = score;
+                            bx = x;
+                            bz = y;
+                        }
+                    }
+                }
+            }
+            let pink = rgb(233, 151, 183);
+            cyl_y(&mut m, bx as i32, bz as i32, 1.9, 2, 3, pink);
+            cyl_y(&mut m, bx as i32, bz as i32, 1.2, 4, 5, pink);
+            Some(m)
+        }
+        "f_indoor_plant"
+        | "f_indoor_plant_y"
+        | "f_indoor_plant_y_season_autumn"
+        | "f_indoor_plant_y_season_winter" => veg_potted(sprite),
+        "f_black_eyed_susan"
+        | "f_bluebell"
+        | "f_burdock"
+        | "f_carrot_wild"
+        | "f_carrot_wild_season_autumn"
+        | "f_carrot_wild_season_summer"
+        | "f_carrot_wild_season_winter"
+        | "f_cattails_season_autumn"
+        | "f_cattails_season_spring"
+        | "f_cattails_season_summer"
+        | "f_cattails_season_winter"
+        | "f_chamomile"
+        | "f_chicory"
+        | "f_dahlia"
+        | "f_dandelion_season_autumn"
+        | "f_dandelion_season_spring"
+        | "f_dandelion_season_summer"
+        | "f_dandelion_season_winter"
+        | "f_datura"
+        | "f_flower_fungal"
+        | "f_flower_tulip"
+        | "f_lily"
+        | "f_mustard_season_autumn"
+        | "f_mustard_season_spring"
+        | "f_mustard_season_summer"
+        | "f_mustard_season_winter"
+        | "f_mutpoppy"
+        | "f_plant_harvest"
+        | "f_plant_mature"
+        | "f_plant_seed"
+        | "f_plant_seedling"
+        | "f_sunflower_season_autumn"
+        | "f_sunflower_season_spring"
+        | "f_sunflower_season_summer"
+        | "f_sunflower_season_winter" => plant_model(sprite),
+        _ => None,
+    }
+}
+
+/// A potted plant: terracotta pot (lathe) with the
+/// sprite's foliage as a cross above it. The pot is
+/// the sprite's bottom 7 band rows.
+fn veg_potted(sprite: &RgbaImage) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let pot_h = 7u32.min(band.end - band.start);
+    let fol_h = band.end - band.start - pot_h;
+    if fol_h == 0 {
+        return None;
+    }
+    // Crop the foliage rows into their own image.
+    let mut fol = RgbaImage::new(w, fol_h);
+    for y in 0..fol_h {
+        for x in 0..w {
+            fol.put_pixel(x, y, *sprite.get_pixel(x, band.start + y));
+        }
+    }
+    let cross = plant_model(&fol)?;
+    let terra = rgb(158, 82, 50);
+    let terra_dk = rgb(122, 60, 36);
+    let mut m = PropModel::new([w, pot_h + cross.size[1], w]);
+    let cx = (w / 2) as i32;
+    cyl_y(&mut m, cx, cx, 3.1, 0, 1, terra_dk);
+    cyl_y(&mut m, cx, cx, 3.9, 2, 4, terra);
+    cyl_y(&mut m, cx, cx, 4.4, 5, 6, terra);
+    cyl_y(&mut m, cx, cx, 3.6, 6, 6, rgb(74, 56, 40));
+    for y in 0..cross.size[1] {
+        for z in 0..cross.size[2] {
+            for x in 0..cross.size[0] {
+                if let Some(c) = cross.get(x, y, z) {
+                    m.set(x, y + pot_h - 1, z, Some(c));
+                }
+            }
+        }
+    }
+    Some(m)
+}
+
 fn d3_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     match id {
         "f_alembic" => Some(d3_alembic()),
@@ -5581,6 +5698,9 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         return Some(m);
     }
     if let Some(m) = d3_model(id, sprite) {
+        return Some(m);
+    }
+    if let Some(m) = veg_model(id, sprite) {
         return Some(m);
     }
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {

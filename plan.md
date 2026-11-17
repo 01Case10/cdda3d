@@ -1679,3 +1679,12 @@ cabinet, art sampled from the sprite, stamped backbox), mailbox
 windmill (lattice tower + fan wheel), exodii portal tower (banded
 legs + cradle), warped lamp string (glow blob on a leaning post),
 eyewash station. Coverage 278 -> 296 of 351.
+
+Vegetation (class C) addendum (2026-11-17): all 44 modeled in props.rs
+(veg_model). Upright flowers/herbs/crops (34) take the cross
+construction (plant_model, the zapper/tendril pattern). Flat mats and
+water plants take plan slabs: lilypad + flower spurge (2 thick),
+fungal mass + fungal tangle (3 thick); the lotus is a plan slab plus
+its bud raised at the sprite's pinkest cluster. The four indoor
+plants get a terracotta lathe pot under a cross of the foliage rows.
+Coverage 296 -> 340 of 351; only the 11 exclusion-pin ids remain.
