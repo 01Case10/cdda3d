@@ -657,3 +657,65 @@ drawn as per-instance voxel models at tile positions, parallel to
 the billboard pass; block grid keeps terrain/walls/floors). (b) is
 the recommended route; it is Joey's call. Picking/LOS/collision
 unchanged under either (game tile data governs).
+
+## 24. Stage G.3 rework spec — view-faithful generation (2026-11-16)
+
+Joey's verdict on the §22 archetypes: only ShelfUnit correct. Root
+cause (his correction, with a photo of the real object): a prop
+model must be a 3D model OF WHAT THE SPRITE DEPICTS — the sprite
+is a 3/4-view illustration of a real object; identify the referent
+first. The generator's hidden assumption was that every sprite is
+a FRONT view (top band / front face / depth). The failures are
+sprites in other views: f_bed and f_slab are TOP-DOWN (the sprite
+is the top face; the bunk and the pedestal table were inventions),
+f_standing_tank is END-ON (the sprite is the end cap of a
+HORIZONTAL plastic leg tank — round cap to the viewer, barrel
+curving over, hatch-neck fitting on top, molded leg stands), and
+f_console is a front view whose archetype wrongly replaced the
+front with palette blocks. Approved mockup reference sheets (the
+acceptance target) live in target/stage-g/mockups/: tank.webp,
+console.webp, slab.webp, bed.png (bed BACK = one plain wood slab
+occluding the mattress completely — Joey's ruling).
+
+THE FIX (Joey approved the approach 2026-11-16):
+1. VIEW CLASSIFICATION before segmentation: view_for(id, sprite)
+   -> Front | TopDown | EndOn. Heuristics propose, per-id pins
+   (VIEW_OVERRIDES, beside the existing override tables) decide;
+   default Front.
+2. ONE FAITHFUL BUILDER PER VIEW:
+   - Front -> the signed-off pipeline, code untouched (solid_model
+     + Construction profiles + ShelfUnit, which survives because
+     the bookcase front depicts open shelves).
+   - TopDown -> the sprite IS the top face, verbatim. Structure
+     from the sprite's border: framed-surface construction (bed:
+     border = frame extruded down, interior = mattress surface,
+     head-end strip rises as a plain-slab headboard that occludes
+     the mattress from behind) vs terrace construction (slab: the
+     concentric rings are a heightmap — ring footprints at
+     increasing height via distance-from-edge; identical from all
+     sides, flat level top).
+   - EndOn -> the sprite is the END face; extrude its cross-section
+     along the depth axis (tank: disc -> horizontal cylinder),
+     fittings placed as depicted (hatch neck + brass fitting on
+     top near the front end, leg stands under the barrel). Barrel
+     length is unobserved by the sprite; default ~= cap diameter,
+     pinnable per id.
+   - Console stays Front but its archetype is rebuilt: full sprite
+     front as the front plane (no palette replacement), depth
+     stepped (terminal block deep, desk/base shallower), the
+     base's depicted open compartment modeled open.
+3. ARCHETYPES DEMOTED: Bunk and DissectionTable DELETED (their
+   sprites depict a single bed and a terraced slab). What remains
+   is a fittings layer keyed by view class + id pins.
+4. APPROVED-MODEL PROTECTION: the Front path is byte-identical
+   code; new builders fire only for TopDown/EndOn-classified ids
+   (initially exactly f_standing_tank/f_storage_tank, the f_bed
+   chain incl. bunkbed ids, f_slab). A regression gate pins a hash
+   of every approved model's voxel data (f_counter, f_bookcase
+   solid + ShelfUnit, f_fridge, f_locker, f_table), computed on
+   the pre-rework tree; the rework must not move a single voxel.
+5. ACCEPTANCE: structural gates per builder (tank cross-section
+   is a disc at every depth step; bed back face 100% wood; slab
+   invariant under 90-degree rotation, heights monotonic inward;
+   console front plane == sprite front exhaustively) + the
+   4-angle showcase beside the mockup sheets for Joey's sign-off.
