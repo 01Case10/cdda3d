@@ -1855,17 +1855,22 @@ pub fn construction_for(
 /// point whenever the caller knows the id.
 pub fn solid_model_for(id: &str, sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let construction = construction_for(Some(id), sprite, seg);
-    solid_model_impl(sprite, seg, construction)
+    solid_model_impl(sprite, seg, construction, false)
 }
 
 /// The solid model with the default construction assignment
 /// ([`construction_for`] with no id — no per-id pins).
 pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let construction = construction_for(None, sprite, seg);
-    solid_model_impl(sprite, seg, construction)
+    solid_model_impl(sprite, seg, construction, false)
 }
 
-fn solid_model_impl(sprite: &RgbaImage, seg: &Segmentation, construction: Construction) -> PropModel {
+fn solid_model_impl(
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    construction: Construction,
+    force_closed: bool,
+) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
@@ -1875,6 +1880,19 @@ fn solid_model_impl(sprite: &RgbaImage, seg: &Segmentation, construction: Constr
     // ranges): fringe pixels never extend it (module docs).
     let (x0, x1) = front_structure_extent(sprite, seg);
     let plan = base_plan(sprite, seg, x0, x1);
+    // Coverage-drive seamless path only: a pedestal/cantilever
+    // body whose open-base reading would drop real silhouette
+    // mass is built closed instead (see coverage_model). The
+    // segmenting callers pass false and are unchanged.
+    let plan = if force_closed {
+        BasePlan {
+            open: false,
+            header_rows: plan.header_rows,
+            grounded: plan.grounded,
+        }
+    } else {
+        plan
+    };
     let slab_bottom = fh - plan.header_rows; // model y; only if plan.open
     // The solidity mask: the whole model is this mask extruded
     // through every depth cell.
@@ -2124,12 +2142,350 @@ pub fn model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
             if let Some(arch) = crate::archetypes::archetype_for(id) {
                 let seg = segment_for(id, sprite)?;
                 Some(crate::archetypes::build(arch, sprite, &seg))
-            } else {
-                let seg = segment_for(id, sprite)?;
+            } else if let Some(seg) = segment_for(id, sprite) {
                 Some(solid_model_for(id, sprite, &seg))
+            } else {
+                coverage_model(id, sprite)
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Coverage drive: base models for the sprites segment() declines.
+// ---------------------------------------------------------------------
+
+/// Plan-view flat objects, pinned per id after visual review
+/// (the faithfulness rule: a groundsheet must not be stood up
+/// as a tall box). The value is the slab thickness in cells —
+/// ASSUMED (a groundsheet/tarp/mat is a few cells thick; a
+/// mattress is a low pad, 6). The builder is [`plan_slab`]:
+/// the sprite IS the top face, verbatim; the sides/bottom are
+/// the silhouette's modal border paint.
+pub const PLAN_SLAB_PINS: &[(&str, u32)] = &[
+    ("f_groundsheet", 2),
+    ("f_center_groundsheet", 2),
+    ("f_fema_groundsheet", 2),
+    ("f_large_groundsheet", 2),
+    ("f_plastic_groundsheet", 2),
+    ("f_skin_groundsheet", 2),
+    ("f_leather_tarp", 2),
+    ("f_tatami", 2),
+    ("f_fiber_mat", 2),
+    ("f_canvas_floor", 2),
+    ("f_down_mattress", 6),
+    ("f_floor_mattress", 6),
+    ("f_ash", 3),
+    ("f_leaves_pile", 3),
+    ("f_firering", 3),
+    ("f_scrap_bridge", 3),
+];
+
+/// Thin panel referents, pinned per id after visual review:
+/// doors, a mirror, a notice board, grave stones, a sign, a
+/// target. The value is the panel thickness in cells (3,
+/// ASSUMED — a door slab / stone tablet at prop scale). The
+/// builder is [`panel_slab`]: front verbatim, back the sprite's
+/// modal structure paint as a plain panel.
+pub const PANEL_SLAB_PINS: &[(&str, u32)] = &[
+    ("f_canvas_door", 3),
+    ("f_canvas_door_o", 3),
+    ("f_large_canvas_door", 3),
+    ("f_large_canvas_door_o", 3),
+    ("f_skin_door", 3),
+    ("f_skin_door_o", 3),
+    ("f_beaded_door", 3),
+    ("f_beaded_door_o", 3),
+    ("f_bigmirror", 3),
+    ("f_bigmirror_b", 3),
+    ("f_bulletin", 3),
+    ("f_grave_stone", 3),
+    ("f_grave_stone_old", 3),
+    ("f_grave_head", 3),
+    ("f_sign", 3),
+    ("f_target", 3),
+];
+
+/// Ids the seamless criteria (below) would otherwise take, held
+/// out after visual review of the actual sprites: each depicts
+/// something a silhouette solid would misrepresent — a pole
+/// (f_traffic_light: the metrics read its narrow extent, the
+/// sprite is a thin pole), a slatted frame whose gaps are
+/// shadow paint (f_bed_frame), folding/sling chairs
+/// (f_deckchair, f_chair — the latter also pictogram-scale at
+/// 11 cells wide), flat trailer-interior sections
+/// (f_bullettrailer_table_*), a dish/antenna skeleton
+/// (f_scrap_antenna, f_small_satelitte_dish), an alien
+/// organism whose mass is tendrils on a rock (f_alien_anemone),
+/// and a wall-hung ring (f_winter_wreath).
+pub const SEAMLESS_EXCLUSIONS: &[&str] = &[
+    "f_traffic_light",
+    "f_bed_frame",
+    "f_deckchair",
+    "f_chair",
+    "f_bullettrailer_table_bottom",
+    "f_bullettrailer_table_middle",
+    "f_bullettrailer_table_top",
+    "f_scrap_antenna",
+    "f_small_satelitte_dish",
+    "f_alien_anemone",
+    "f_winter_wreath",
+];
+
+/// Seamless-solid firing criteria (measured on the coverage
+/// audit, 232 unmodeled ids): the silhouette band must be at
+/// least this many rows tall (a substantial body, not a
+/// countertop pictogram)...
+const SEAMLESS_MIN_BAND_ROWS: u32 = 12;
+/// ...with at most this fraction of band rows under the
+/// silhouette coverage floor (segment()'s own ragged bound is
+/// 0.10 for the seam split; the silhouette mask itself tolerates
+/// more dips — a dip is shape, preserved by the mask)...
+const SEAMLESS_MAX_THIN_FRACTION: f32 = 0.15;
+/// ...a mean band coverage of at least this (the coverage floor
+/// is band-relative, not sprite-relative: the sprite-relative
+/// opaque floor segment() uses punishes 64px sprites whose
+/// object is centered, e.g. the gun safes at 0.305)...
+const SEAMLESS_MIN_BAND_COVERAGE: f32 = 0.42;
+/// ...a structure-mask fill of the silhouette bounding box of
+/// at least this (solid bodies vs lattice/vegetation)...
+const SEAMLESS_MIN_BBOX_FILL: f32 = 0.65;
+/// ...a mean per-row extent coverage of at least this (rows
+/// are filled across their own extent, not just in aggregate)...
+const SEAMLESS_MIN_EXTENT_COVERAGE: f32 = 0.75;
+/// ...and at least this fraction of mask pixels at chamfer
+/// distance >= 3 from the background (real interior mass;
+/// poles, rails, plant strokes and ladders measure < 0.10).
+const SEAMLESS_MIN_DEEP_FRACTION: f32 = 0.20;
+
+/// The silhouette band (first..last+1 sprite rows at or above
+/// [`MIN_ROW_COVERAGE`] opaque coverage), computed exactly as
+/// segment() computes it.
+fn opaque_band(sprite: &RgbaImage) -> Option<Range<u32>> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let cov = |y: u32| -> f32 {
+        (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, y)))
+            .count() as f32
+            / w as f32
+    };
+    let first = (0..h).find(|&y| cov(y) >= MIN_ROW_COVERAGE)?;
+    let last = (0..h).rev().find(|&y| cov(y) >= MIN_ROW_COVERAGE)?;
+    if last <= first {
+        return None;
+    }
+    Some(first..last + 1)
+}
+
+/// A synthesized segmentation for a solid-body sprite that has
+/// no readable top/front seam: the whole silhouette band is the
+/// front, and the top region is the front's top edge row only
+/// (so the solid model's top face is colored from that edge
+/// row — the texture pipeline's edge-row precedent — and the
+/// depth follows [`Segmentation::depth_cells_for`] as usual:
+/// floor-standing silhouettes get at least width/3, short ones
+/// stay thin). Fires only on the measured criteria above
+/// ([`SEAMLESS_MIN_BAND_ROWS`] etc.); `confidence` carries the
+/// band coverage, as there is no seam to be confident about.
+pub fn seamless_segment(sprite: &RgbaImage) -> Option<Segmentation> {
+    let (w, h) = (sprite.width(), sprite.height());
+    if w < 8 || h < 8 {
+        return None;
+    }
+    let band = opaque_band(sprite)?;
+    let band_h = band.end - band.start;
+    if band_h < SEAMLESS_MIN_BAND_ROWS {
+        return None;
+    }
+    let cov = |y: u32| -> f32 {
+        (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, y)))
+            .count() as f32
+            / w as f32
+    };
+    let in_band: Vec<f32> = band.clone().map(cov).collect();
+    let thin = in_band.iter().filter(|&&c| c < MIN_ROW_COVERAGE).count() as f32 / band_h as f32;
+    if thin > SEAMLESS_MAX_THIN_FRACTION {
+        return None;
+    }
+    let wcov = in_band.iter().sum::<f32>() / band_h as f32;
+    if wcov < SEAMLESS_MIN_BAND_COVERAGE {
+        return None;
+    }
+    // Structure-mask metrics over the band.
+    let mask = structure_mask(sprite);
+    let at = |x: u32, y: u32| mask[(y * w + x) as usize];
+    let (mut x0, mut x1, mut n) = (w, 0u32, 0u32);
+    for y in band.clone() {
+        for x in 0..w {
+            if at(x, y) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                n += 1;
+            }
+        }
+    }
+    if n == 0 {
+        return None;
+    }
+    let fill = n as f32 / ((x1 - x0 + 1) * band_h) as f32;
+    if fill < SEAMLESS_MIN_BBOX_FILL {
+        return None;
+    }
+    let mut xcov_sum = 0.0f32;
+    for y in band.clone() {
+        let xs: Vec<u32> = (0..w).filter(|&x| at(x, y)).collect();
+        if xs.is_empty() {
+            continue;
+        }
+        xcov_sum += xs.len() as f32 / (xs[xs.len() - 1] - xs[0] + 1) as f32;
+    }
+    if xcov_sum / band_h as f32 <= SEAMLESS_MIN_EXTENT_COVERAGE {
+        return None;
+    }
+    let dist = chamfer_distances(&mask, w, h);
+    let deep = (band.clone())
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .filter(|&(x, y)| at(x, y) && dist[(y * w + x) as usize] >= 3)
+        .count();
+    if deep as f32 / n as f32 <= SEAMLESS_MIN_DEEP_FRACTION {
+        return None;
+    }
+    Some(Segmentation {
+        silhouette_rows: band.clone(),
+        top_rows: band.start..band.start + 1,
+        front_rows: band,
+        side: None,
+        confidence: wcov,
+    })
+}
+
+/// A plan-view flat object as a low slab: model x = sprite x,
+/// model z = sprite row, the top cell of every silhouette
+/// column is the sprite pixel verbatim (the sprite IS the top
+/// face), and the cells below are the silhouette's modal border
+/// paint, so the slab's edge reads as the object's own edge.
+/// Only silhouette columns are filled — a ring (f_firering)
+/// keeps its hole.
+fn plan_slab(sprite: &RgbaImage, thickness: u32) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mask = structure_mask(sprite);
+    if !mask.iter().any(|m| *m) {
+        return None;
+    }
+    let dist = chamfer_distances(&mask, w, h);
+    let edge = modal_color(
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let i = (y * w + x) as usize;
+                mask[i] && dist[i] == 1
+            })
+            .map(|(x, y)| *sprite.get_pixel(x, y)),
+    )
+    .or_else(|| modal_color(sprite.pixels().copied()))?;
+    let mut m = PropModel::new([w, thickness, h]);
+    for z in 0..h {
+        for x in 0..w {
+            if !mask[(z * w + x) as usize] {
+                continue;
+            }
+            let top = *sprite.get_pixel(x, z);
+            for y in 0..thickness {
+                m.set(x, y, z, Some(if y == thickness - 1 { top } else { edge }));
+            }
+        }
+    }
+    Some(m)
+}
+
+/// A thin panel referent as a slab of the stated thickness:
+/// the front plane is the sprite's silhouette-band pixels
+/// verbatim, the back plane is the sprite's modal structure
+/// paint (a plain panel), interior cells carry the front pixel
+/// (the solid model's convention).
+fn panel_slab(sprite: &RgbaImage, thickness: u32) -> Option<PropModel> {
+    let (w, _) = (sprite.width(), sprite.height());
+    let band = opaque_band(sprite)?;
+    let fh = band.end - band.start;
+    let back = modal_color(
+        band.clone()
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| structure(*sprite.get_pixel(x, y)))
+            .map(|(x, y)| *sprite.get_pixel(x, y)),
+    )?;
+    let mut m = PropModel::new([w, fh, thickness]);
+    let bot = band.end - 1;
+    for y in 0..fh {
+        let r = bot - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if !structure(px) {
+                continue;
+            }
+            for z in 0..thickness {
+                let c = if z == thickness - 1 {
+                    px
+                } else if z == 0 {
+                    back
+                } else {
+                    px
+                };
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    Some(m)
+}
+
+/// The coverage-drive fallback (see the section header):
+/// reached only when [`segment_for`] declines and the id is not
+/// view-pinned. Pin lists first (plan, then panel), then the
+/// seamless solid via [`seamless_segment`] +
+/// [`solid_model_for`], minus [`SEAMLESS_EXCLUSIONS`].
+pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {
+        return plan_slab(sprite, *t);
+    }
+    if let Some((_, t)) = PANEL_SLAB_PINS.iter().find(|(k, _)| *k == id) {
+        return panel_slab(sprite, *t);
+    }
+    if SEAMLESS_EXCLUSIONS.contains(&id) {
+        return None;
+    }
+    let seg = seamless_segment(sprite)?;
+    // The open-base reading (base_plan) is a table reading: it
+    // keeps the header slab + grounded columns and drops the
+    // rest. That is faithful only when nothing real is dropped.
+    // A pedestal / cantilever body (f_toilet's bowl overhanging
+    // its pedestal, a statue's figure) carries STRUCTURE below
+    // the slab in ungrounded columns — dropping it would hollow
+    // the object — so when the dropped structure count is
+    // nonzero the seamless model is built CLOSED (the whole
+    // silhouette, the base standard). Bench sections and other
+    // true open bases drop nothing and keep the open reading.
+    let (x0, x1) = front_structure_extent(sprite, &seg);
+    let plan = base_plan(sprite, &seg, x0, x1);
+    if plan.open {
+        let fh = seg.front_rows.end - seg.front_rows.start;
+        let slab_bottom = fh - plan.header_rows;
+        let bot = seg.front_rows.end - 1;
+        let mut dropped = 0u32;
+        for y in 0..slab_bottom {
+            for x in x0..=x1 {
+                if !plan.grounded[(x - x0) as usize]
+                    && structure(*sprite.get_pixel(x, bot - y))
+                {
+                    dropped += 1;
+                }
+            }
+        }
+        if dropped > 0 {
+            let construction = construction_for(Some(id), sprite, &seg);
+            return Some(solid_model_impl(sprite, &seg, construction, true));
+        }
+    }
+    Some(solid_model_for(id, sprite, &seg))
 }
 
 /// The sprite's structure mask in plan order (index y * w + x).
