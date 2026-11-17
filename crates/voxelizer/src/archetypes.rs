@@ -167,7 +167,7 @@ use crate::color::Oklab;
 use crate::noise::Fbm;
 use crate::props::{
     front_structure_extent, grain_amp, lab_of, modal_color, region_primaries, structure,
-    top_row_for_z, wrap_side_faces, PropModel, Segmentation, SHADOW_L,
+    top_row_for_z, PropModel, Segmentation, SHADOW_L,
 };
 use image::{Rgba, RgbaImage};
 use std::ops::Range;
@@ -1605,69 +1605,6 @@ impl Disc {
     }
 }
 
-/// The wrap paint lookup shared by the cylinder builders:
-/// the sprite pixel at the pattern column the depth `z` maps
-/// to (see [`wrap_side_faces`]), at the wall row for height
-/// `y`, with a nearest-structure fallback along the row.
-fn cylinder_wrap_paint(
-    sprite: &RgbaImage,
-    wseg: &Segmentation,
-    wall_h: u32,
-    disc: &Disc,
-    zext: &[Option<(u32, u32)>],
-    y: u32,
-    z: u32,
-) -> Option<Rgba<u8>> {
-    let (zlo, zhi) = zext[y as usize]?;
-    if zhi == zlo {
-        return None;
-    }
-    let col = disc.x0 + (z - zlo) * (disc.x1 - disc.x0) / (zhi - zlo);
-    let row = wseg.front_rows.end - 1 - y.min(wall_h - 1);
-    // Pure black is outline, not paint (see column_paint's
-    // de-void): never wrap it onto a side.
-    let paintable = |p: Rgba<u8>| {
-        structure(p) && !(p[0] == 0 && p[1] == 0 && p[2] == 0)
-    };
-    let px = *sprite.get_pixel(col, row);
-    if paintable(px) {
-        return Some(px);
-    }
-    for dist in 1..=(disc.x1 - disc.x0) {
-        for cand in [col.checked_sub(dist), col.checked_add(dist)]
-            .into_iter()
-            .flatten()
-        {
-            if (disc.x0..=disc.x1).contains(&cand) {
-                let c = *sprite.get_pixel(cand, row);
-                if paintable(c) {
-                    return Some(c);
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Per-height z extents of a model's solids (the wrap's
-/// pattern mapping domain).
-fn model_zext(m: &PropModel) -> Vec<Option<(u32, u32)>> {
-    (0..m.size[1])
-        .map(|y| {
-            let mut r: Option<(u32, u32)> = None;
-            for z in 0..m.size[2] {
-                if (0..m.size[0]).any(|x| m.get(x, y, z).is_some()) {
-                    r = Some(match r {
-                        None => (z, z),
-                        Some((a, b)) => (a.min(z), b.max(z)),
-                    });
-                }
-            }
-            r
-        })
-        .collect()
-}
-
 fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let fit = cylinder_fit(sprite, seg).expect("cylinder fit");
     let disc = Disc::new(sprite, seg, fit.d);
@@ -1702,10 +1639,14 @@ fn build_hollow_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             }
         }
     }
-    let zext = model_zext(&m);
-    wrap_side_faces(&mut m, |y, z| {
-        cylinder_wrap_paint(sprite, &wseg, fit.fh, &disc, &zext, y, z)
-    });
+    // NOTE: no pattern wrap on the cylinders (round 4 tried
+    // it; Joey: the front's vertical shading bands mapped
+    // across the side read as a striped curtain, "doesn't
+    // read as a metal barrel anymore"). The shell's own
+    // column paint carries the hoops around as rings, which
+    // is how a barrel's sides actually read. The wrap stays
+    // on the lathe (kiln cobbles) and the blob, where the
+    // pattern is a surface texture, not shading.
     m
 }
 
@@ -1733,10 +1674,6 @@ fn build_closed_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             }
         }
     }
-    let zext = model_zext(&m);
-    wrap_side_faces(&mut m, |y, z| {
-        cylinder_wrap_paint(sprite, &wseg, fit.fh, &disc, &zext, y, z)
-    });
     m
 }
 
@@ -1839,19 +1776,57 @@ fn build_horizontal_barrel(sprite: &RgbaImage, seg: &Segmentation) -> PropModel 
     };
     let body_top = band.start + fit.far_rows;
     let head_top = band.end - fit.head_rows;
+    // Head paint with an outline fallback: at the disc's
+    // extreme columns the head rows carry near-black outline
+    // pixels, which read as black notches at the barrel's
+    // ends in side view — scan toward the row's center for
+    // the nearest real wood pixel instead.
+    // `tap_ok`: the tap's blue pixels live in the head region
+    // — they are paint on the FRONT head (under the tap
+    // protrusion) but a phantom tap on the back head, which
+    // has no tap.
+    let head_paint = |x: u32, row: u32, tap_ok: bool| -> Rgba<u8> {
+        let usable = |p: Rgba<u8>| {
+            structure(p)
+                && !(p[0] == 0 && p[1] == 0 && p[2] == 0)
+                && (tap_ok || !(p[2] > p[0] && p[1] > p[0]))
+        };
+        let px = *sprite.get_pixel(x, row);
+        if usable(px) {
+            return px;
+        }
+        for dist in 1..=(x1 - x0) {
+            for cand in [x.checked_sub(dist), x.checked_add(dist)]
+                .into_iter()
+                .flatten()
+            {
+                if (x0..=x1).contains(&cand) {
+                    let c = *sprite.get_pixel(cand, row);
+                    if usable(c) {
+                        return c;
+                    }
+                }
+            }
+        }
+        px
+    };
     let mut m = PropModel::new([w, d, depth]);
     for x in x0..=x1 {
         for y in 0..d {
             if !in_disc(x, y) {
                 continue;
             }
-            // Back head: the far curve's rows, stretched over
-            // the diameter (the drawing squashes the far head
-            // the same way as the near one).
-            let far_row = band.start + (fit.far_rows - 1)
-                - y * (fit.far_rows - 1) / (d - 1).max(1);
+            // The head region stretched over the diameter —
+            // sprite row head_top is the head's top. BOTH
+            // heads use it: a barrel's far head is the same
+            // construction as its near head (round 4's first
+            // version painted the back with the squashed
+            // far-curve rows, which carried the stand's grey
+            // into the disc's center — Joey: "the back is
+            // wrong").
+            let head_row = head_top + (d - 1 - y) * (fit.head_rows - 1) / (d - 1).max(1);
             for z in 0..2 {
-                m.set(x, y, z, Some(*sprite.get_pixel(x, far_row)));
+                m.set(x, y, z, Some(head_paint(x, head_row, false)));
             }
             // Body: the sprite's body rows map along the
             // length (top of the region = far end).
@@ -1859,10 +1834,7 @@ fn build_horizontal_barrel(sprite: &RgbaImage, seg: &Segmentation) -> PropModel 
                 let row = body_top + zb * (fit.body_rows - 1) / (body_len - 1).max(1);
                 m.set(x, y, 2 + zb, Some(*sprite.get_pixel(x, row)));
             }
-            // Head: the dark region, stretched over the
-            // diameter — sprite row head_top is the head's top.
-            let head_row = head_top + (d - 1 - y) * (fit.head_rows - 1) / (d - 1).max(1);
-            m.set(x, y, head_z, Some(*sprite.get_pixel(x, head_row)));
+            m.set(x, y, head_z, Some(head_paint(x, head_row, true)));
         }
     }
     // The tap: the head region's blue-grey pixel cluster,

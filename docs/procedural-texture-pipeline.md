@@ -1253,6 +1253,19 @@ unchanged):
   a revolution's never is). The lathe keeps gasper, resin
   pod, and the three kilns.
 
+FIX ROUND 4b (Joey's strip review of round 4, 2026-11-17):
+the pattern wrap does NOT apply to the cylinder archetypes
+— the barrels' front paint is vertical SHADING bands, and
+mapped across a side they read as a striped curtain ("doesn't
+read as a metal barrel anymore"); the shell's own column
+paint, hoops carried around as rings, is the right side
+treatment there. The wrap stays on the lathe and the blob,
+where the pattern is surface texture (cobbles, rock), not
+shading. The vat's back head also carried a phantom tap
+(the tap's blue pixels live in the head region and were
+painted onto both heads) — back-head paint now excludes
+tap-blue; both heads de-outline via the head_paint scan.
+
 ## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
 
 DONE, merged to main @ 0ace695 (not pushed), parent re-verified.
