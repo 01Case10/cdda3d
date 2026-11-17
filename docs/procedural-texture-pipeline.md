@@ -1307,6 +1307,21 @@ thinning (dfrac^0.8), no ground boost, and per-column fold
 modulation from the column's mean L (dark fold valleys end
 shallower — scalloped back edge).
 
+EGG PILE (Joey, 2026-11-17, on the drape version: fronts
+OK, "the back shouldn't be flat. These are mounds of
+things and eggs"): the drape variant was replaced the
+same day by egg_pile_model (EGG_PINS). Construction: the
+blob mass (blob_base, split out of blob_model; the wrap
+moved into the blob_model wrapper) with packed egg
+spheres (r 2.1-3.2, jittered grid 4 x 3, hash-seeded so
+rebuilds are identical) seated on the mass's back
+surface — their caps form the back and scallop the
+sides, each egg tinted individually with a radial
+falloff. Egg discs may bulge past the silhouette only
+in the back half (z <= d-3, silhouette dilated by 2),
+so the front face and silhouette stay exactly the
+sprite. Mockup redrawn as a pile of individual eggs.
+
 ## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
 
 DONE, merged to main @ 0ace695 (not pushed), parent re-verified.
