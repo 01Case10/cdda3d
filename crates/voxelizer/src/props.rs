@@ -2819,6 +2819,29 @@ fn egg_pile_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
         }
         gy += 3;
     }
+    // Side seats: eggs along both side walls (Joey,
+    // 2026-11-17: in the side views one side was flat —
+    // the back-seated eggs never reached the flanks, so
+    // the front half of each side stayed the base mass's
+    // flat extruded wall).
+    for y in (1..fh.saturating_sub(1)).step_by(3) {
+        let xs: Vec<u32> = (0..w)
+            .filter(|&x| structure(*sprite.get_pixel(x, bot - y)))
+            .collect();
+        if xs.is_empty() {
+            continue;
+        }
+        for xe in [xs[0], xs[xs.len() - 1]] {
+            let Some(bz) = back_z(&m, xe, y) else { continue };
+            let mut zc = bz as i32 + 1;
+            while zc <= d as i32 - 3 {
+                let r = 2.1 + hash01(xe ^ 0x51DE, (zc as u32) ^ y) * 1.1;
+                let tint = 0.86 + hash01((zc as u32) ^ 0x51D3, xe ^ y) * 0.26;
+                eggs.push((xe as i32, y as i32, zc, r, tint));
+                zc += 4;
+            }
+        }
+    }
     // Lay the eggs: sphere voxels, tinted per egg.
     for &(ex, ey, ez, r, tint) in &eggs {
         let ri = r.ceil() as i32;
@@ -2838,7 +2861,7 @@ fn egg_pile_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
                         continue; // the front face stays the sprite
                     }
                     let in_sil = structure(*sprite.get_pixel(x, bot - y));
-                    if !in_sil && !(z <= d.saturating_sub(3) && dilated[(y * w + x) as usize]) {
+                    if !in_sil && !(z <= d.saturating_sub(2) && dilated[(y * w + x) as usize]) {
                         continue;
                     }
                     // Paint: the egg seat's column paint (or
