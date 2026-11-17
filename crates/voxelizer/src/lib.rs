@@ -124,6 +124,10 @@ pub struct VoxelizerConfig {
     /// files beside it) instead of the v1 bare array. Stage G: the
     /// v2 object also gains a `models` table (solid prop models
     /// for segmentable furniture) when any furniture segments.
+    /// Stage F part 2: the v2 object also gains a `shores` table
+    /// (per-mask shoreline top-face variants for the primary
+    /// water material, §10.1) plus `shore_<layer>.png` files
+    /// beside it, when water/dirt/grass families all pool.
     /// Default false: the v1 output stays byte-identical to the
     /// pre-v2 pipeline.
     pub emit_v2: bool,
@@ -275,6 +279,15 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     // (material_index, model). Filled during the material loop
     // when `cfg.emit_v2`; written after it.
     let mut models: Vec<(usize, PropModel)> = Vec::new();
+    // Stage F part 2 (v2 only): the first poolable family per
+    // ground class (grass/dirt/water), for the §10.1 shore set —
+    // the shore textures are generated from the Stage C/E
+    // generated textures of these families, not from sprites.
+    let mut shore_families: BTreeMap<MaterialClass, Vec<RgbaImage>> = BTreeMap::new();
+    // Stage F part 2 (v2 only): terrain materials classifying as
+    // Water, in material order. The shore set attaches to ONE of
+    // them (see the writing code below).
+    let mut shore_water_materials: Vec<usize> = Vec::new();
     let mut layers: Vec<RgbaImage> = Vec::new(); // global layer list
     let mut missing_lines: Vec<String> = Vec::new();
 
@@ -467,6 +480,48 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             }
         }
 
+        // Stage F part 2 (v2 only): pool the first Grass/Dirt/
+        // Water family of the run for the shore set, and remember
+        // the terrain water materials. Classification mirrors the
+        // macro block above (palette from the composited sprite,
+        // kind from the id prefix).
+        if cfg.emit_v2 {
+            if let Some(img) = &sprite {
+                let palette = analyze_image(img, 5).palette;
+                let class = classify(
+                    id,
+                    Some(TileKind::from_id_prefix(id)),
+                    Some(&palette),
+                    &cfg.overrides,
+                )
+                .class;
+                // First poolable family per class wins, except
+                // the canonical source ids (t_grass / t_dirt /
+                // t_water_dp — the trio the Stage E gate composes)
+                // always take over their class, so the shore
+                // set's sources are named, not accidental.
+                let canonical = matches!(
+                    (class, id.as_str()),
+                    (MaterialClass::Grass, "t_grass")
+                        | (MaterialClass::Dirt, "t_dirt")
+                        | (MaterialClass::Water, "t_water_dp")
+                );
+                if matches!(
+                    class,
+                    MaterialClass::Grass | MaterialClass::Dirt | MaterialClass::Water
+                ) && (canonical || !shore_families.contains_key(&class))
+                {
+                    let family = family_sprites(ts, &entry);
+                    if !family.is_empty() {
+                        shore_families.insert(class, family);
+                    }
+                }
+                if class == MaterialClass::Water && id.starts_with("t_") {
+                    shore_water_materials.push(mat_idx);
+                }
+            }
+        }
+
         // Stage G (v2 only): a furniture material gets its prop
         // model in the v2 `models` table via the view-routed
         // props::model_for (front-view archetype/solid for most
@@ -537,6 +592,60 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             "materials": serde_json::to_value(&materials).unwrap(),
             "macros": macro_entries,
         });
+        // Stage F part 2: the `shores` table (§10.1 engine half).
+        // Design, decided for this slice and recorded here:
+        // - ONE shore set per run, generated from the Stage C/E
+        //   generated textures of the run's first poolable
+        //   water/dirt/grass families (the same trio the Stage E
+        //   gate composes), attached to the primary water
+        //   material: `t_water_dp` when the run has it, else the
+        //   first terrain water material in material order. The
+        //   other water ids (season/underground/moving variants)
+        //   keep their plain top faces in this slice — a shore
+        //   set per water id would multiply the layer count by
+        //   the ~40 water ids of a real tileset for variants the
+        //   sample scenes never select.
+        // - Mask set: every mask except 0xFF (all-water = an
+        //   interior tile, which keeps the plain water texture
+        //   byte-for-byte — shore_texture(0xFF) is the identity
+        //   by the Stage E gate, so emitting it would waste a
+        //   layer). 255 variants, one 32x32 PNG each
+        //   (`shore_<layer>.png` beside materials.json, layer
+        //   indices assigned in ascending mask order).
+        // - The table is present only when all three families
+        //   pooled and a terrain water material exists, so a v2
+        //   file with no shore set stays byte-identical to the
+        //   Stage F/G form.
+        if !shore_water_materials.is_empty() {
+            let trio = (
+                shore_families.get(&MaterialClass::Water),
+                shore_families.get(&MaterialClass::Dirt),
+                shore_families.get(&MaterialClass::Grass),
+            );
+            if let (Some(water_fam), Some(dirt_fam), Some(grass_fam)) = trio {
+                let primary = shore_water_materials
+                    .iter()
+                    .copied()
+                    .find(|&i| materials[i].id == "t_water_dp")
+                    .unwrap_or(shore_water_materials[0]);
+                let water = generate(RecipeKind::Water, water_fam).image;
+                let dirt = generate(RecipeKind::Dirt, dirt_fam).image;
+                let grass = generate(RecipeKind::Grass, grass_fam).image;
+                let mut shore_entries = Vec::new();
+                for mask in 0..=254u8 {
+                    let layer = shore_entries.len();
+                    shore_texture(mask, &water, &dirt, &grass)
+                        .save(out_dir.join(format!("shore_{layer:04}.png")))
+                        .map_err(|e| e.to_string())?;
+                    shore_entries.push(serde_json::json!({
+                        "material_index": primary,
+                        "mask": mask,
+                        "layer": layer,
+                    }));
+                }
+                v2["shores"] = serde_json::Value::Array(shore_entries);
+            }
+        }
         // Stage G: the `models` table is present only when at
         // least one furniture material segmented, so a v2 file
         // with nothing to model stays byte-identical to the

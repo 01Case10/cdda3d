@@ -43,6 +43,7 @@ fn material(multitile: bool, subtile_layers: &[(&str, usize)]) -> Material {
             .collect::<BTreeMap<_, _>>(),
         macro_: None,
         model: None,
+        shore_layers: BTreeMap::new(),
     }
 }
 

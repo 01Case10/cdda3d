@@ -16,6 +16,7 @@ pub mod overlay;
 pub mod render;
 pub mod rt;
 pub mod scene_prep;
+pub mod shore;
 pub mod snapshot_world;
 pub mod textures;
 pub mod world;

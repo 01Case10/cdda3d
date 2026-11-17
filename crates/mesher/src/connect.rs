@@ -109,6 +109,43 @@ pub fn state_subtile(is_open: bool, is_broken: bool) -> Option<&'static str> {
     }
 }
 
+/// Neighbor offsets of the 8-neighbor *shore* mask (Stage F part 2,
+/// §10.1 shoreline autotiling), in bit order: bit 0 = N, 1 = NE,
+/// 2 = E, 3 = SE, 4 = S, 5 = SW, 6 = W, 7 = NW. Grid space: north
+/// is -y, south is +y. This is the one canonical copy of the shore
+/// mask's bit order — `voxelizer::shore` (which generates the shore
+/// textures) and the engine (which assigns them at world build)
+/// both resolve through here, exactly as the cardinal table above
+/// is canonical for Phase 2d.
+pub const SHORE_NEIGHBORS: [(i32, i32); 8] = [
+    (0, -1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+];
+
+/// The all-water shore mask: every neighbor is water (an interior
+/// water tile — it keeps its plain water texture, no shore variant
+/// is ever emitted or assigned for it).
+pub const SHORE_MASK_ALL_WATER: u8 = 0xFF;
+
+/// 8-neighbor water-adjacency mask for tile `(tx, ty)` under a
+/// layout predicate in tile coordinates (arbitrary origin): bit
+/// `i` is set when the neighbor at `SHORE_NEIGHBORS[i]` is water.
+pub fn shore_mask_for(is_water: impl Fn(i32, i32) -> bool, tx: i32, ty: i32) -> u8 {
+    let mut mask = 0u8;
+    for (bit, (dx, dy)) in SHORE_NEIGHBORS.iter().enumerate() {
+        if is_water(tx + dx, ty + dy) {
+            mask |= 1 << bit;
+        }
+    }
+    mask
+}
+
 /// All 16 masks -> (subtile, rotation), in mask order. Used by tests
 /// and by engine-side variant selection.
 pub fn all_mask_mappings() -> Vec<(u8, &'static str, u32)> {
@@ -125,10 +162,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn shore_mask_uses_the_voxelizer_bit_order() {
+        // 3x3 pond at (1..=3, 1..=3): the center is all-water, the
+        // NW corner sees water only at E, SE, S (bits 2, 3, 4).
+        let is_water = |x: i32, y: i32| (1..=3).contains(&x) && (1..=3).contains(&y);
+        assert_eq!(shore_mask_for(is_water, 2, 2), SHORE_MASK_ALL_WATER);
+        assert_eq!(shore_mask_for(is_water, 1, 1), 0b0001_1100);
+        // A land tile NW of the pond sees water only at SE (bit 3).
+        assert_eq!(shore_mask_for(is_water, 0, 0), 0b0000_1000);
+        // An isolated water tile has no water neighbors.
+        assert_eq!(shore_mask_for(|x, y| x == 5 && y == 5, 5, 5), 0);
+    }
+
+    #[test]
     fn state_subtile_follows_the_games_ternary_order() {
         // Pinned source (cata_tiles.cpp, both vpart draw paths):
         // is_open ? open : is_broken ? broken : none.
-        assert_eq!(state_subtile(true, true), Some("open"), "open wins over broken");
+        assert_eq!(
+            state_subtile(true, true),
+            Some("open"),
+            "open wins over broken"
+        );
         assert_eq!(state_subtile(true, false), Some("open"));
         assert_eq!(state_subtile(false, true), Some("broken"));
         assert_eq!(state_subtile(false, false), None);

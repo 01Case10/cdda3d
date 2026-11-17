@@ -83,29 +83,18 @@ pub enum ShoreMaterial {
     Grass,
 }
 
-/// Neighbor offsets in bit order (see module docs).
-const NEIGHBORS: [(i32, i32); 8] = [
-    (0, -1),
-    (1, -1),
-    (1, 0),
-    (1, 1),
-    (0, 1),
-    (-1, 1),
-    (-1, 0),
-    (-1, -1),
-];
+/// Neighbor offsets in bit order (see module docs). The bit
+/// order itself is canonical in `mesher::connect` (the leaf
+/// crate, Phase 2d precedent) so the engine's world-build
+/// assignment can never disagree with this generator about what
+/// a mask means.
+const NEIGHBORS: [(i32, i32); 8] = mesher::connect::SHORE_NEIGHBORS;
 
 /// Water-adjacency mask for tile `(tx, ty)` under a layout
 /// predicate in tile coordinates (arbitrary origin): bit `i`
 /// is set when the neighbor at offset `NEIGHBORS[i]` is water.
 pub fn mask_for(is_water: impl Fn(i32, i32) -> bool, tx: i32, ty: i32) -> u8 {
-    let mut mask = 0u8;
-    for (bit, (dx, dy)) in NEIGHBORS.iter().enumerate() {
-        if is_water(tx + dx, ty + dy) {
-            mask |= 1 << bit;
-        }
-    }
-    mask
+    mesher::connect::shore_mask_for(is_water, tx, ty)
 }
 
 /// Is frame tile `(dx, dy)` (center = (0,0)) water under this

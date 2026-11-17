@@ -61,6 +61,72 @@ fn stamp_tex_layers(map: &mut mesher::chunk::ChunkMap, spec: &TextureSpec) {
     }
 }
 
+/// Stage F part 2: the textured scene's spec + shore
+/// assignments, built from the (already cutaway-filtered) map
+/// both renderers derive from. Water ids are the fake ids whose
+/// voxelizer material carries a shore set; with no shore set in
+/// the table the assignment list is empty and the spec is
+/// exactly the base spec (the pre-F2 build).
+fn textured_spec(
+    dir: &Path,
+    map: &mesher::chunk::ChunkMap,
+) -> Result<(TextureSpec, Vec<crate::shore::ShoreAssignment>), String> {
+    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let id_map = crate::rt::fake_material_ids();
+    let water_ids: std::collections::HashSet<u32> = id_map
+        .iter()
+        .filter(|(_, game_id)| {
+            table
+                .get(game_id)
+                .is_some_and(|m| !m.shore_layers.is_empty())
+        })
+        .map(|(num, _)| *num)
+        .collect();
+    let assignments = crate::shore::shore_assignments_for_map(map, &|id| water_ids.contains(&id));
+    let (spec, _stats) =
+        textures::build_texture_spec_variants(&table, dir, &id_map, &[], &assignments)?;
+    Ok((spec, assignments))
+}
+
+/// Stage F part 2: stamp shore variant tops onto a filtered
+/// map's water blocks. Each water block takes the compact
+/// `[top, side, bottom]` of its assignment's virtual entry in
+/// `spec` (top = shore texture, side/bottom = base water) —
+/// the raster form of the RT path's virtual-id rewrite, driven
+/// by the same assignments (`crate::shore`).
+fn stamp_shore_tops(
+    map: &mut mesher::chunk::ChunkMap,
+    spec: &TextureSpec,
+    assignments: &[crate::shore::ShoreAssignment],
+) {
+    if assignments.is_empty() {
+        return;
+    }
+    let masks =
+        crate::shore::shore_masks_for_map(map, &|id| assignments.iter().any(|a| a.base_id == id));
+    for (pos, mask) in &masks {
+        let b = map.block_at(pos[0], pos[1], pos[2]);
+        if b.is_air() {
+            continue;
+        }
+        let Some(a) = assignments
+            .iter()
+            .find(|a| a.base_id == b.id && a.mask == *mask)
+        else {
+            continue; // interior (0xFF) or unassigned: plain top
+        };
+        let Some(entry) = spec.material_layers.get(a.virtual_id as usize) else {
+            continue;
+        };
+        if entry[3] != 1 {
+            continue;
+        }
+        let mut stamped = b;
+        stamped.tex_layers = Some([entry[0], entry[1], entry[2]]);
+        map.set_global_block(pos[0], pos[1], pos[2], stamped);
+    }
+}
+
 /// Mesh an already-filtered map (the combine loop of
 /// `world::mesh_world`, minus its filtering step — the textured
 /// path filters and stamps before meshing).
@@ -347,13 +413,11 @@ fn prepare_raster_v(
     };
     match textures_dir {
         Some(dir) => {
-            let table = materials::MaterialTable::load(dir)
-                .map_err(|e| format!("materials: {e}"))?;
-            let (spec, _tex_stats) =
-                textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             let map = build_map(mesher::scale::WorldScale::default());
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+            let (spec, shore_assignments) = textured_spec(dir, &filtered)?;
             stamp_tex_layers(&mut filtered, &spec);
+            stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
             if let Some(v) = vehicles {
                 stamp_vehicles(&mut filtered, v);
             }
@@ -557,13 +621,11 @@ fn prepare_raster_lit_v(
     };
     let (spec, mut filtered) = match textures_dir {
         Some(dir) => {
-            let table = materials::MaterialTable::load(dir)
-                .map_err(|e| format!("materials: {e}"))?;
-            let (spec, _tex_stats) =
-                textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             let map = build_map(scale);
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+            let (spec, shore_assignments) = textured_spec(dir, &filtered)?;
             stamp_tex_layers(&mut filtered, &spec);
+            stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
             (Some(spec), filtered)
         }
         None => {

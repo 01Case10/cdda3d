@@ -73,10 +73,41 @@ pub fn prepare_fake_variants(
     ))
 }
 
+/// Stage F part 2, world half: rewrite the world's shore water
+/// voxels to virtual material ids for their 8-neighbor water
+/// masks. Which numeric ids are water comes from the voxelizer
+/// table in `dir` (materials carrying a shore set) through the
+/// same fake id map the spec builder uses. Must run *after*
+/// [`prepare_fake_variants`] (shore virtual ids allocate above
+/// the multitile ones) and *before* `build_tree`. Returns the
+/// assignments the spec builder must emit shore entries for.
+pub fn prepare_fake_shore_variants(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+) -> Result<Vec<crate::shore::ShoreAssignment>, CaptureError> {
+    let table = crate::materials::MaterialTable::load(dir)
+        .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+    let id_map = fake_material_ids();
+    let water_ids: std::collections::HashSet<u32> = id_map
+        .iter()
+        .filter(|(_, game_id)| {
+            table
+                .get(game_id)
+                .is_some_and(|m| !m.shore_layers.is_empty())
+        })
+        .map(|(num, _)| *num)
+        .collect();
+    Ok(crate::shore::assign_shore_variants(world, &|id| {
+        water_ids.contains(&id)
+    }))
+}
+
 /// Attach voxelizer textures from `dir` to `scene`, resolving the
 /// fake house's material ids. `assignments` are the Phase 2d
-/// variants [`prepare_fake_variants`] rewrote the world with
-/// (empty for an unprepared world — the spec is then exactly the
+/// variants [`prepare_fake_variants`] rewrote the world with and
+/// `shore_assignments` the Stage F part 2 shore variants
+/// [`prepare_fake_shore_variants`] rewrote it with (both empty
+/// for an unprepared world — the spec is then exactly the
 /// pre-2d base spec). Returns the build stats.
 pub fn attach_fake_textures(
     device: &wgpu::Device,
@@ -84,14 +115,16 @@ pub fn attach_fake_textures(
     scene: &mut treebuild::render::RtScene,
     dir: &std::path::Path,
     assignments: &[treebuild::connect::VariantAssignment],
+    shore_assignments: &[crate::shore::ShoreAssignment],
 ) -> Result<crate::textures::TextureStats, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let (spec, stats) = crate::textures::build_texture_spec_multitile(
+    let (spec, stats) = crate::textures::build_texture_spec_variants(
         &table,
         dir,
         &fake_material_ids(),
         assignments,
+        shore_assignments,
     )
     .map_err(CaptureError::Device)?;
     scene
@@ -294,6 +327,14 @@ pub fn render_rt_frame(
         Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
         None => Vec::new(),
     };
+    // Stage F part 2: shore preparation after the multitile
+    // preparation (its virtual ids allocate above theirs); with
+    // no textures the world is untouched, byte-for-byte the
+    // pre-F2 render.
+    let shore_assignments = match &args.textures {
+        Some(dir) => prepare_fake_shore_variants(&mut voxel_world, dir)?,
+        None => Vec::new(),
+    };
     let built = build_tree(&voxel_world, BuildConfig::default())
         .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -305,6 +346,7 @@ pub fn render_rt_frame(
             &mut scene,
             dir,
             &assignments,
+            &shore_assignments,
         )?),
         None => None,
     };

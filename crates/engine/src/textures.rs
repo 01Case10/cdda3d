@@ -47,6 +47,9 @@ pub struct TextureStats {
     /// [`extend_texture_spec_with_props`]. The extend call
     /// returns the count; builders that call it assign it here.
     pub prop_colors: usize,
+    /// Stage F part 2: shore variant entries emitted (v2
+    /// voxelizer output with a `shores` table only).
+    pub shore_variants: usize,
 }
 
 /// Scene-local layer loading + compaction, shared by the base and
@@ -65,6 +68,11 @@ struct SpecBuilder<'a> {
     macro_compact_of: HashMap<(usize, bool), u32>,
     macro_colors: Vec<Vec<u8>>,
     macro_heights: Vec<Vec<u8>>,
+    /// Stage F part 2: shore layers are 32px like block layers,
+    /// so they compact into the main `layers` array; this map is
+    /// the shore-file index -> compact index remap.
+    shore_size: u32,
+    shore_compact_of: HashMap<usize, u32>,
 }
 
 impl<'a> SpecBuilder<'a> {
@@ -78,7 +86,58 @@ impl<'a> SpecBuilder<'a> {
             macro_compact_of: HashMap::new(),
             macro_colors: Vec::new(),
             macro_heights: Vec::new(),
+            shore_size: table.shore_size,
+            shore_compact_of: HashMap::new(),
         }
+    }
+
+    /// Stage F part 2: load one shore layer PNG
+    /// (`shore_<layer>.png` beside materials.json) into the main
+    /// layer array, compacted like block layers.
+    fn load_shore_layer(&mut self, src: usize) -> Result<u32, String> {
+        if let Some(&c) = self.shore_compact_of.get(&src) {
+            return Ok(c);
+        }
+        let path = self.dir.join(format!("shore_{src:04}.png"));
+        let img = image::open(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .to_rgba8();
+        if img.width() != self.shore_size || img.height() != self.shore_size {
+            return Err(format!(
+                "{}: {}x{} but shore_size is {}",
+                path.display(),
+                img.width(),
+                img.height(),
+                self.shore_size
+            ));
+        }
+        if img.width() != self.tile {
+            return Err(format!(
+                "{}: shore layer is {}px but tile_size is {}",
+                path.display(),
+                img.width(),
+                self.tile
+            ));
+        }
+        let idx = self.layers.len() as u32;
+        self.layers.push(img.into_raw());
+        self.shore_compact_of.insert(src, idx);
+        Ok(idx)
+    }
+
+    /// The `(top, side, bottom, present)` entry for `mat` with
+    /// its top layer taken from a shore variant file (Stage F
+    /// part 2): the shore texture replaces the top face only;
+    /// side/bottom stay the base material's.
+    fn entry_with_shore_top(
+        &mut self,
+        mat: &Material,
+        shore_layer_global: usize,
+    ) -> Result<[u32; 4], String> {
+        let top = self.load_shore_layer(shore_layer_global)?;
+        let side = self.load_layer(mat.side_layer)?;
+        let bottom = self.load_layer(mat.bottom_layer)?;
+        Ok([top, side, bottom, 1])
     }
 
     /// Stage F: load one macro layer PNG (`macro_<layer>_color.png`
@@ -275,6 +334,36 @@ pub fn build_texture_spec_multitile(
     id_map: &HashMap<u32, String>,
     assignments: &[VariantAssignment],
 ) -> Result<(TextureSpec, TextureStats), String> {
+    build_texture_spec_variants(table, dir, id_map, assignments, &[])
+}
+
+/// Stage F part 2: the combined variant builder — base entries,
+/// plus Phase 2d multitile variant entries, plus shore variant
+/// entries. A shore variant keeps its base material's side/bottom
+/// layers and takes the top layer
+/// `Material::shore_top_layer(mask)` selects (the assignment's
+/// mask is the 8-neighbor shore mask; interior tiles never get an
+/// assignment). Assignments whose base material doesn't resolve,
+/// or whose mask the material carries no shore variant for, are
+/// skipped (counted nowhere — the base pass already accounted the
+/// material; the voxel keeps the base entry, i.e. plain water).
+pub fn build_texture_spec_shore(
+    table: &MaterialTable,
+    dir: &Path,
+    id_map: &HashMap<u32, String>,
+    shore_assignments: &[crate::shore::ShoreAssignment],
+) -> Result<(TextureSpec, TextureStats), String> {
+    build_texture_spec_variants(table, dir, id_map, &[], shore_assignments)
+}
+
+/// The shared body of the variant builders above.
+pub fn build_texture_spec_variants(
+    table: &MaterialTable,
+    dir: &Path,
+    id_map: &HashMap<u32, String>,
+    assignments: &[VariantAssignment],
+    shore_assignments: &[crate::shore::ShoreAssignment],
+) -> Result<(TextureSpec, TextureStats), String> {
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
     let (mut material_layers, material_macros) = builder.build_base(table, id_map, &mut stats);
@@ -305,7 +394,39 @@ pub fn build_texture_spec_multitile(
             }
         }
     }
-    Ok((builder.finish(material_layers, material_macros, &mut stats), stats))
+    let mut shore_sorted: Vec<&crate::shore::ShoreAssignment> = shore_assignments.iter().collect();
+    shore_sorted.sort_by_key(|a| a.virtual_id);
+    for a in shore_sorted {
+        let Some(game_id) = id_map.get(&a.base_id) else {
+            continue;
+        };
+        let Some(mat) = table.get(game_id) else {
+            continue;
+        };
+        let Some(shore_layer) = mat.shore_top_layer(a.mask) else {
+            continue;
+        };
+        match builder.entry_with_shore_top(mat, shore_layer) {
+            Ok(entry) => {
+                let idx = a.virtual_id as usize;
+                if idx >= material_layers.len() {
+                    material_layers.resize(idx + 1, [0, 0, 0, 0]);
+                }
+                material_layers[idx] = entry;
+                stats.shore_variants += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    "voxel-engine: shore variant (base {}, mask {}) stays plain: {e}",
+                    a.base_id, a.mask
+                );
+            }
+        }
+    }
+    Ok((
+        builder.finish(material_layers, material_macros, &mut stats),
+        stats,
+    ))
 }
 
 /// Phase 9 (9.3): the scene-wide set of distinct prop-model

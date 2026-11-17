@@ -68,6 +68,16 @@ pub struct Material {
     /// `models` table, and for furniture whose sprite doesn't
     /// segment — those keep the extruded-sprite rendering.
     pub model: Option<PropModelData>,
+    /// Stage F part 2: this material's shoreline variants
+    /// (materials.json v2 `shores` table): 8-neighbor water mask
+    /// (bit order canonical in `mesher::connect`) -> shore layer
+    /// index into the `shore_<layer>.png` file set beside
+    /// materials.json. Only the primary water material of a run
+    /// carries them; empty in v1 files, in v2 files without a
+    /// `shores` table, and for every other material. Mask 0xFF
+    /// (all-water interior) is never present — it keeps the
+    /// plain top layer by rule.
+    pub shore_layers: BTreeMap<u8, usize>,
 }
 
 /// Stage G: one entry of the materials.json v2 `models` table —
@@ -206,6 +216,18 @@ impl Material {
         self.side_layer
     }
 
+    /// Stage F part 2: the shore top layer for a water tile
+    /// whose 8-neighbor water mask is `mask`, or `None` when
+    /// this tile keeps its plain top layer — the all-water
+    /// interior mask (0xFF), and every mask for a material
+    /// carrying no shore set.
+    pub fn shore_top_layer(&self, mask: u8) -> Option<usize> {
+        if mask == mesher::connect::SHORE_MASK_ALL_WATER {
+            return None;
+        }
+        self.shore_layers.get(&mask).copied()
+    }
+
     /// The side layer for a state-carrying tile/part (Phase 2d
     /// follow-up): the `open`/`broken` subtile layer when the
     /// entry carries one for the part's state, else the base
@@ -232,6 +254,11 @@ pub struct MaterialTable {
     /// voxelizer v2 output), read from the first macro PNG.
     /// 0 when the file is v1 or carries no macros.
     pub macro_size: u32,
+    /// Stage F part 2: shore layer edge length in pixels (the
+    /// tile size, 32, for voxelizer v2 output), read from the
+    /// first shore PNG. 0 when the file is v1 or carries no
+    /// shores.
+    pub shore_size: u32,
     by_id: BTreeMap<String, Material>,
 }
 
@@ -251,6 +278,7 @@ impl MaterialTable {
         // silently misreading a future format would shade wrong.
         let mut macro_by_index: BTreeMap<usize, MacroEntry> = BTreeMap::new();
         let mut model_by_index: BTreeMap<usize, PropModelData> = BTreeMap::new();
+        let mut shore_by_index: BTreeMap<usize, BTreeMap<u8, usize>> = BTreeMap::new();
         let mat_array: Vec<serde_json::Value> = if mats.is_array() {
             mats.as_array().cloned().unwrap_or_default()
         } else if mats.is_object() {
@@ -282,6 +310,18 @@ impl MaterialTable {
                     model_by_index.insert(mi, PropModelData::parse(e)?);
                 }
             }
+            // Stage F part 2: the `shores` table is optional —
+            // a v2 file without one loads exactly as before,
+            // every material shore-less.
+            if let Some(arr) = mats["shores"].as_array() {
+                for e in arr {
+                    let get = |k: &str| e[k].as_u64().unwrap_or(0) as usize;
+                    shore_by_index
+                        .entry(get("material_index"))
+                        .or_default()
+                        .insert(e["mask"].as_u64().unwrap_or(0) as u8, get("layer"));
+                }
+            }
             mats["materials"].as_array().cloned().unwrap_or_default()
         } else {
             return Err("materials.json: expected a v1 array or a v2 object".into());
@@ -290,6 +330,7 @@ impl MaterialTable {
             tile_size: blocks["tile_size"].as_u64().unwrap_or(32) as u32,
             layer_count: blocks["layer_count"].as_u64().unwrap_or(0) as usize,
             macro_size: 0,
+            shore_size: 0,
             by_id: BTreeMap::new(),
         };
         for m in mat_array {
@@ -317,6 +358,10 @@ impl MaterialTable {
                 subtile_layers,
                 macro_: macro_by_index.get(&get("material_index")).copied(),
                 model: model_by_index.get(&get("material_index")).cloned(),
+                shore_layers: shore_by_index
+                    .get(&get("material_index"))
+                    .cloned()
+                    .unwrap_or_default(),
             };
             if table.layer_count > 0 {
                 let layers = [mat.top_layer, mat.side_layer, mat.bottom_layer]
@@ -337,6 +382,16 @@ impl MaterialTable {
                 return Err(format!("{}: macro layer is not square", path.display()));
             }
             table.macro_size = img.width();
+        }
+        // Stage F part 2: the shore layer size is whatever the
+        // first shore PNG actually is (32 = the tile size).
+        if let Some(first_layer) = shore_by_index.values().flat_map(|m| m.values()).min() {
+            let path = dir.join(format!("shore_{first_layer:04}.png"));
+            let img = image::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            if img.width() != img.height() {
+                return Err(format!("{}: shore layer is not square", path.display()));
+            }
+            table.shore_size = img.width();
         }
         Ok(table)
     }
@@ -484,21 +539,61 @@ mod tests {
     fn rejects_corrupt_model() {
         let dir = std::env::temp_dir().join(format!("engine_mat_badmdl_{}", std::process::id()));
         // Hex length (8 digits = 2 voxels) disagrees with size (4 voxels).
-        let model = r#"{"material_index":0,"size":[2,1,2],"palette":[[10,20,30]],"voxels":"00000000"}"#;
-        let json = format!(
-            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#
-        );
+        let model =
+            r#"{"material_index":0,"size":[2,1,2],"palette":[[10,20,30]],"voxels":"00000000"}"#;
+        let json =
+            format!(r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#);
         write_fixture(&dir, &json, false);
         let err = MaterialTable::load(&dir).unwrap_err();
         assert!(err.contains("models entry"), "got: {err}");
         // Palette index 7 with a 1-color palette is out of range.
         let model = r#"{"material_index":0,"size":[2,1,2],"palette":[[10,20,30]],"voxels":"0007000000000000"}"#;
-        let json = format!(
-            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#
-        );
+        let json =
+            format!(r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{model}]}}"#);
         write_fixture(&dir, &json, false);
         let err = MaterialTable::load(&dir).unwrap_err();
         assert!(err.contains("out of range"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loads_v2_with_shores() {
+        let dir = std::env::temp_dir().join(format!("engine_mat_shore_{}", std::process::id()));
+        let shores =
+            r#"[{"material_index":0,"mask":0,"layer":0},{"material_index":0,"mask":28,"layer":1}]"#;
+        let json =
+            format!(r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"shores":{shores}}}"#);
+        write_fixture(&dir, &json, false);
+        for layer in 0..2 {
+            let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255]));
+            img.save(dir.join(format!("shore_{layer:04}.png"))).unwrap();
+        }
+        let t = MaterialTable::load(&dir).unwrap();
+        assert_eq!(t.shore_size, 4, "shore size read from the first shore PNG");
+        let grass = t.get("t_grass").unwrap();
+        assert_eq!(grass.shore_top_layer(0), Some(0));
+        assert_eq!(grass.shore_top_layer(28), Some(1));
+        assert_eq!(
+            grass.shore_top_layer(7),
+            None,
+            "unlisted mask keeps plain top"
+        );
+        assert_eq!(
+            grass.shore_top_layer(0xFF),
+            None,
+            "all-water interior keeps plain top by rule"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v2_without_shores_loads_shore_less() {
+        let dir = std::env::temp_dir().join(format!("engine_mat_noshore_{}", std::process::id()));
+        let json = format!(r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[]}}"#);
+        write_fixture(&dir, &json, false);
+        let t = MaterialTable::load(&dir).unwrap();
+        assert_eq!(t.shore_size, 0);
+        assert!(t.get("t_grass").unwrap().shore_layers.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
