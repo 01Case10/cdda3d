@@ -812,6 +812,83 @@ suppressed, delta restamps on furniture id changes, rollout behind
 --fine-props with byte-identical proofs. Picking/LOS/collision
 untouched (game tile data governs).
 
+## 29. Stage G.4 — jail + city archetypes (2026-11-16)
+
+SS12 set the archetype priority: lab first (G.3), then jail, then
+city interiors. G.4 ran that follow-on. The audit came first
+(SS24 faithfulness rule), and its headline is that the three
+primary candidates all FAILED it — dropped with evidence, not
+forced (the G.3 lesson):
+
+- f_toilet: does not segment (ragged pedestal/shadow rows break
+  the silhouette band rule); its drawing mixes a 3/4 front
+  (cistern over bowl) with a plan-read bowl. model_for cannot
+  route an unsegmentable id, and fitting the tank/bowl split
+  would invent it.
+- f_shower: segmentation is spurious (top = 2 rows on a 57-row
+  front) and the view is genuinely ambiguous — a plan tray
+  (speckled floor + central drain, bottom half) with elevation
+  fixtures (head, taps) flattened along the top edge. Either
+  reading invents geometry.
+- f_armchair: depicts a whole object in a clean front view
+  (rotates:true; composite_entry returns faceS), but the
+  archetype's defining geometry has NO measurable signature:
+  no seam clears the segmentation floors, the structure extent
+  widens smoothly, and arm vs cushion share the modal color in
+  every band — arm/seat proportions would be assumed wholesale.
+- Also dropped: f_dresser (scored boundary is a drawer seam;
+  the upper 19 rows read as neither top nor front),
+  f_filing_cabinet (clean front view but unsegmentable —
+  cabinet under the coverage floors), f_entertainment_center
+  (upper half reads as no identifiable component).
+- Excluded as multitile, same grounds as SS24's exclusions:
+  f_cupboard joins f_sofa / f_bathtub / f_sink / f_bench /
+  f_metal_bench / f_desk — the composite is one section of a
+  multi-tile run, not the whole object.
+
+Built instead, from the substitute list — two archetypes,
+eight served ids, both closed-cabinet forms where the solid
+model's failure was undifferentiated flanks and a painted
+recess:
+
+- **LaundryAppliance** <- f_washer, f_dryer, f_autoclave_full
+  (looks_like f_washer; f_autoclave itself NOT served — its own
+  sprite is a different, unreviewed fit). Closed enamel cabinet:
+  front verbatim, back panel grain, top region un-projected.
+  FITTED: control band 4 rows, plinth 2 rows (row-modal runs
+  against the front's dominant modal), remaining seam rows,
+  depth 11 (top-region rule), five bands x two sides of
+  per-side edge-modal flank materials. ASSUMED: nothing
+  structural — a closed box has no recess to proportion.
+- **VendingMachine** <- f_vending_c, f_vending_reinforced,
+  f_vending_o (own sprites), f_vending_c_off,
+  f_vending_reinforced_off (looks_like). Front verbatim outside
+  the dispensing bay; the bay is a genuine recess with a back
+  wall. FITTED: bay rows 7..9, cols 5..23 (void-run detector
+  over the bottom half; the 14-wide shelf-shadow row above it
+  correctly rejected), base band 7, bay back = the slot's modal
+  paint, three bands x two sides of edge-modal flanks (left =
+  white highlight strip, right = dark edge trim). ASSUMED:
+  cabinet depth 16 (the scored top region is a shelf seam
+  inside the display, so its depth reading is meaningless;
+  half-width per the f_fridge tall-cabinet precedent) and bay
+  depth 8 (half the cabinet — a shallow trough).
+
+Routing is the existing one: archetype_for -> model_for -> the
+v2 carrier, no lib.rs or props.rs change (archetypes.rs diff is
+pure additions). SS27 second pass: pass 1's pooled flank
+materials handed both vending flanks the white highlight color;
+pass 2 fitted flanks PER SIDE (band_edge_modals), which is also
+how the laundry flanks picked up the sprite's own white-left /
+gray-right trim. Gates (parent re-run in the main tree):
+g4_gate 3/3 (mapping, fitted bands, bay open + front verbatim +
+albedo, determinism), archetypes_gate 3/3, props_gate 9/9,
+views_gate 4/4, approved_models_gate 2/2 (hashes unchanged),
+lib 36/36. Showcase: examples/g4_showcase.rs ->
+target/stage-g/g4.png (washer, dryer, vending_c,
+vending_reinforced, vending_o), presented to Joey 2026-11-16
+for sign-off.
+
 ## 29. Stage F part 2 — end-caps outcome (2026-11-16)
 
 DONE for the end-caps slice, parent re-verified in the main tree

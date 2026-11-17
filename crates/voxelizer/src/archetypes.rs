@@ -80,6 +80,87 @@
 //! Everything is deterministic: fixed iteration order, palettes
 //! from the deterministic analyzer, grain fBm seeded from the
 //! sprite's content hash.
+//!
+//! ## Stage G.4: the jail + city follow-on set
+//!
+//! The §12 sequence after the lab set: jail + city interiors.
+//! Every candidate was audited against the sprite first
+//! (pipeline §24/§27 — identify the real-world referent, check
+//! the drawn view, check that the archetype's defining geometry
+//! is MEASURABLE in the sprite). Two archetypes were built:
+//!
+//! * **LaundryAppliance** — f_washer / f_dryer (and
+//!   f_autoclave_full, which resolves to f_washer's sprite): a
+//!   front-loading laundry appliance, drawn as a clean front
+//!   view (32x64 sheet, the machine in rows 27..64, segmentation
+//!   confidence 0.94). A closed enamel cabinet: control strip
+//!   across the top of the front, a door field, a horizontal
+//!   seam, a lower body and a plinth. The construction is the
+//!   ConsoleDesk discipline applied to a cabinet with no
+//!   opening: front verbatim, back a plain panel in the primary
+//!   material, flanks in PER-BAND, PER-SIDE materials (the
+//!   modal color of each band's edge column on that side; on
+//!   these sprites the bands largely share the cabinet's edge
+//!   trim — a white highlight strip on the left, gray trim on
+//!   the right — with the control strip and plinth differing).
+//!   FITTED: the control band
+//!   height, the seam rows and the plinth height — all three
+//!   are runs of rows whose modal color differs from the front
+//!   region's dominant (door/body) modal color, counted from
+//!   the top, the middle and the bottom respectively; the depth
+//!   (the pipeline's top-region rule, 11 cells); the five band
+//!   side materials. ASSUMED: nothing structural — the cabinet
+//!   is a closed box, so there is no recess to proportion; the
+//!   interior fill is the front pixel verbatim (unseen), as in
+//!   ConsoleDesk.
+//! * **VendingMachine** — f_vending_c / f_vending_reinforced /
+//!   f_vending_o (each with its own sprite; same cabinet layout)
+//!   plus the `_off` variants, which resolve to those sprites.
+//!   A glass-front vending machine: header panel, product
+//!   display, and — the archetype's reason to exist — the
+//!   DISPENSING BAY at the bottom of the front, drawn as a
+//!   near-black slot (rows 55..56 of the 64-row sheet, an
+//!   18-column void run) above a 7-row base. The bay is modeled
+//!   as a genuine recess: open at the front to a fitted depth,
+//!   with a back wall in the bay's own modal paint. The front
+//!   is verbatim everywhere outside the bay. FITTED: the bay's
+//!   rows and columns (the console opening's void-run detector,
+//!   run over the silhouette's bottom half), the base height
+//!   (the rows below the bay), the bay's back-wall color, the
+//!   three bands' per-side materials (upper cabinet / bay row
+//!   / base, from that side's edge column — the left edge is a
+//!   white highlight strip, the right the dark edge trim of
+//!   the green side panel the sprite draws in its front plane).
+//!   ASSUMED: the cabinet depth (16
+//!   cells = half the sprite width — the tall-cabinet precedent
+//!   of f_fridge's 16; the scored segmentation's "top region"
+//!   for these sprites is a shelf seam inside the display, so
+//!   its depth reading is meaningless and the builder works
+//!   from the silhouette rows instead of the front region) and
+//!   the bay depth (8 cells = half the cabinet depth; a real
+//!   dispensing bay is a shallow trough, not a through-hole).
+//!
+//! Audited and DROPPED (evidence in the G.4 report): f_toilet
+//! (no segmentation — ragged silhouette; the drawing mixes a
+//! plan-view bowl with a front-view cistern, so no single view
+//! reading is faithful), f_shower (view ambiguous — a plan
+//! tray with elevation fixtures; its segmentation is a spurious
+//! 2-row "top" over a 57-row "front"), f_armchair (rotates
+//! composite = the faceS front view, a whole armchair — but the
+//! arm/seat junction, the archetype's defining geometry, has no
+//! measurable signature: the structure extent widens smoothly
+//! and arm and cushion share one modal fabric color, so arm
+//! width / seat width / seat height would be assumed, not
+//! fitted), f_dresser (rotates composite = faceS; the only
+//! scored seam is the drawer seam at row 44, leaving the upper
+//! 19 rows unreadable as either top surface or upper front),
+//! f_filing_cabinet (clean front view but no segmentation —
+//! the cabinet occupies half the tile width, under the
+//! coverage floors), f_cupboard (multitile: the composite is
+//! the `unconnected` section of a counter run, not a whole
+//! object), f_entertainment_center (segments, but the upper
+//! half is a plain panel that reads as neither a drawn top
+//! surface nor an identifiable front component).
 
 use crate::analyze::content_hash;
 use crate::color::Oklab;
@@ -96,6 +177,8 @@ use std::ops::Range;
 pub enum Archetype {
     ShelfUnit,
     ConsoleDesk,
+    LaundryAppliance,
+    VendingMachine,
 }
 
 /// The archetype id table: furniture id -> archetype. The
@@ -116,6 +199,16 @@ pub const ARCHETYPE_IDS: &[(&str, Archetype)] = &[
     ("f_console_broken", Archetype::ConsoleDesk),
     ("f_aut_gas_console", Archetype::ConsoleDesk), // looks_like f_console
     ("f_aut_gas_console_o", Archetype::ConsoleDesk),
+    // Stage G.4: laundry appliances (front-loading cabinet).
+    ("f_washer", Archetype::LaundryAppliance),
+    ("f_dryer", Archetype::LaundryAppliance),
+    ("f_autoclave_full", Archetype::LaundryAppliance), // looks_like f_washer, no own sprite
+    // Stage G.4: vending machines (glass front + dispensing bay).
+    ("f_vending_c", Archetype::VendingMachine),
+    ("f_vending_reinforced", Archetype::VendingMachine), // own sprite, same layout
+    ("f_vending_o", Archetype::VendingMachine),          // own sprite (broken machine)
+    ("f_vending_c_off", Archetype::VendingMachine),      // looks_like f_vending_c, no own sprite
+    ("f_vending_reinforced_off", Archetype::VendingMachine), // looks_like f_vending_reinforced
 ];
 
 /// The archetype serving a furniture id, if one has been
@@ -136,6 +229,8 @@ pub fn build(archetype: Archetype, sprite: &RgbaImage, seg: &Segmentation) -> Pr
     match archetype {
         Archetype::ShelfUnit => build_shelf(sprite, seg),
         Archetype::ConsoleDesk => build_console(sprite, seg),
+        Archetype::LaundryAppliance => build_laundry(sprite, seg),
+        Archetype::VendingMachine => build_vending(sprite, seg),
     }
 }
 
@@ -603,6 +698,504 @@ fn build_console(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                     m.set(x, y, z, None);
                 }
             }
+        }
+    }
+    m
+}
+
+// ---------------------------------------------------------------------
+// Shared G.4 fitting helpers
+// ---------------------------------------------------------------------
+
+/// The modal STRUCTURE color of one sprite row (None when the
+/// row carries no structure pixel).
+fn row_modal(sprite: &RgbaImage, r: u32) -> Option<Rgba<u8>> {
+    modal_color((0..sprite.width()).filter_map(|x| {
+        let px = *sprite.get_pixel(x, r);
+        if structure(px) {
+            Some(px)
+        } else {
+            None
+        }
+    }))
+}
+
+/// A band's side materials: the modal color of the band rows'
+/// edge samples, taken PER SIDE — each row's outermost
+/// structure pixel on that side. Per side, not pooled (the
+/// ConsoleDesk rule pools): the vending machine's two edges
+/// genuinely differ (a white highlight strip on the left, the
+/// green side panel on the right), and pooling hands both
+/// flanks the more constant edge's color. Falls back to the
+/// panel color when a band has no edge samples on a side.
+fn band_edge_modals(
+    sprite: &RgbaImage,
+    rows: Range<u32>,
+    bot: u32,
+    fallback: Rgba<u8>,
+) -> (Rgba<u8>, Rgba<u8>) {
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    for y in rows {
+        let r = bot - y;
+        let (mut first, mut last) = (None, None);
+        for x in 0..sprite.width() {
+            let px = *sprite.get_pixel(x, r);
+            if structure(px) {
+                if first.is_none() {
+                    first = Some(px);
+                }
+                last = Some(px);
+            }
+        }
+        if let Some(px) = first {
+            left.push(px);
+        }
+        if let Some(px) = last {
+            right.push(px);
+        }
+    }
+    (
+        modal_color(left.into_iter()).unwrap_or(fallback),
+        modal_color(right.into_iter()).unwrap_or(fallback),
+    )
+}
+
+/// The structure x-extent of one sprite row (None when empty).
+fn row_extent(sprite: &RgbaImage, r: u32) -> Option<(u32, u32)> {
+    let (mut x0, mut x1) = (sprite.width(), 0u32);
+    let mut any = false;
+    for x in 0..sprite.width() {
+        if structure(*sprite.get_pixel(x, r)) {
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            any = true;
+        }
+    }
+    if any {
+        Some((x0, x1))
+    } else {
+        None
+    }
+}
+
+/// Fill one model row as a closed cabinet row (the G.4 shared
+/// construction): front plane verbatim, back plane the panel
+/// grain, flank cells (the row extent's edge columns, interior
+/// depth) in that side's material (`sides` = (left, right)),
+/// interior the front pixel verbatim. Rows whose sprite row
+/// has no structure stay empty.
+fn fill_cabinet_row(
+    m: &mut PropModel,
+    sprite: &RgbaImage,
+    grain: &Grain,
+    panel: Oklab,
+    y: u32,
+    r: u32,
+    d: u32,
+    sides: (Rgba<u8>, Rgba<u8>),
+) {
+    let Some((rx0, rx1)) = row_extent(sprite, r) else {
+        return;
+    };
+    for x in rx0..=rx1 {
+        let px = *sprite.get_pixel(x, r);
+        if !structure(px) {
+            continue;
+        }
+        for z in 0..d {
+            let c = if z == d - 1 {
+                px
+            } else if z == 0 {
+                grain.back(panel, x, y)
+            } else if x == rx0 {
+                sides.0
+            } else if x == rx1 {
+                sides.1
+            } else {
+                px
+            };
+            m.set(x, y, z, Some(c));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// LaundryAppliance (Stage G.4)
+// ---------------------------------------------------------------------
+
+/// Fitted laundry-appliance parameters (module docs, "Stage
+/// G.4"): the band boundaries of the front — control strip,
+/// door field, seam, lower body, plinth — fitted as runs of
+/// rows whose modal color differs from the front's dominant
+/// modal color, plus each band's side material and the model
+/// depth (the pipeline's top-region rule).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaundryFit {
+    /// Model rows [fh - control_h, fh): the control strip.
+    pub control_h: u32,
+    /// Model rows [0, plinth_h): the plinth.
+    pub plinth_h: u32,
+    /// The seam's model rows (inclusive): the joint between
+    /// the door field and the lower body.
+    pub seam_rows: (u32, u32),
+    /// Model depth (sub-cells).
+    pub depth: u32,
+    /// Side (flank) materials per band, (left, right): the
+    /// modal color of the band rows' edge columns on that side.
+    pub control_side: (Rgba<u8>, Rgba<u8>),
+    pub door_side: (Rgba<u8>, Rgba<u8>),
+    pub seam_side: (Rgba<u8>, Rgba<u8>),
+    pub body_side: (Rgba<u8>, Rgba<u8>),
+    pub plinth_side: (Rgba<u8>, Rgba<u8>),
+}
+
+impl LaundryFit {
+    /// The side materials of the band containing model row `y`
+    /// (fh = the model's front height), as (left, right).
+    pub fn side_of(&self, y: u32, fh: u32) -> (Rgba<u8>, Rgba<u8>) {
+        if y >= fh - self.control_h {
+            self.control_side
+        } else if y > self.seam_rows.1 {
+            self.door_side
+        } else if y >= self.seam_rows.0 {
+            self.seam_side
+        } else if y >= self.plinth_h {
+            self.body_side
+        } else {
+            self.plinth_side
+        }
+    }
+}
+
+pub fn laundry_fit(sprite: &RgbaImage, seg: &Segmentation) -> LaundryFit {
+    let fr = frame(sprite, seg);
+    let (_, panel) = region_primaries(sprite, &seg.front_rows);
+    let fallback = rgba(panel);
+    // Dominant modal color of the whole front region (the
+    // door/body enamel): every band boundary is a run of rows
+    // whose own modal differs from it.
+    let dominant = modal_color(
+        seg.front_rows
+            .clone()
+            .flat_map(|r| (0..sprite.width()).map(move |x| (x, r)))
+            .filter_map(|(x, r)| {
+                let px = *sprite.get_pixel(x, r);
+                if structure(px) {
+                    Some(px)
+                } else {
+                    None
+                }
+            }),
+    )
+    .unwrap_or(fallback);
+    let rows = seg.front_rows.clone();
+    let modal_at = |r: u32| row_modal(sprite, r);
+    // Control band: rows from the front's top whose modal is
+    // not the dominant color, up to the first dominant row.
+    let mut control_h = 0u32;
+    for r in rows.clone() {
+        if modal_at(r) != Some(dominant) {
+            control_h += 1;
+        } else {
+            break;
+        }
+    }
+    // Plinth: the same run counted from the front's bottom.
+    let mut plinth_h = 0u32;
+    for r in rows.clone().rev() {
+        if modal_at(r) != Some(dominant) {
+            plinth_h += 1;
+        } else {
+            break;
+        }
+    }
+    // Seam: the non-dominant run strictly between the control
+    // band and the plinth, nearest the remaining band's center.
+    // (Fallback, when no run reads: the single middle row —
+    // assumed, like ShelfUnit's evenly-spaced fallback.)
+    let mid_lo = rows.start + control_h;
+    let mid_hi = rows.end - plinth_h; // exclusive
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    let mut r = mid_lo;
+    while r < mid_hi {
+        if modal_at(r) != Some(dominant) {
+            let s = r;
+            while r < mid_hi && modal_at(r) != Some(dominant) {
+                r += 1;
+            }
+            runs.push((s, r - 1));
+        } else {
+            r += 1;
+        }
+    }
+    let center = (mid_lo + mid_hi) as f32 / 2.0;
+    let seam_sprite = runs
+        .into_iter()
+        .min_by(|a, b| {
+            let ca = ((a.0 + a.1) as f32 / 2.0 - center).abs();
+            let cb = ((b.0 + b.1) as f32 / 2.0 - center).abs();
+            ca.partial_cmp(&cb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or_else(|| {
+            let m = (mid_lo + mid_hi - 1) / 2;
+            (m, m)
+        });
+    // Sprite rows -> model rows (y = bot - row), ascending.
+    let seam_rows = (fr.bot - seam_sprite.1, fr.bot - seam_sprite.0);
+    let fh = fr.fh;
+    let side = |rows_y: Range<u32>| band_edge_modals(sprite, rows_y, fr.bot, fallback);
+    LaundryFit {
+        control_h,
+        plinth_h,
+        seam_rows,
+        depth: fr.d,
+        control_side: side(fh - control_h..fh),
+        door_side: side(seam_rows.1 + 1..fh - control_h),
+        seam_side: side(seam_rows.0..seam_rows.1 + 1),
+        body_side: side(plinth_h..seam_rows.0),
+        plinth_side: side(0..plinth_h),
+    }
+}
+
+fn build_laundry(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let fr = frame(sprite, seg);
+    let fit = laundry_fit(sprite, seg);
+    let (_, panel) = region_primaries(sprite, &seg.front_rows);
+    let grain = Grain::new(sprite);
+    let (w, fh, d) = (sprite.width(), fr.fh, fr.d);
+    let mut m = PropModel::new([w, fh, d]);
+    for y in 0..fh {
+        let r = fr.bot - y;
+        fill_cabinet_row(&mut m, sprite, &grain, panel, y, r, d, fit.side_of(y, fh));
+    }
+    // Top surface: the top region un-projected over the top
+    // row's depth behind the front plane, as in ShelfUnit /
+    // ConsoleDesk.
+    let ytop = fh - 1;
+    for x in fr.x0..=fr.x1 {
+        for z in 0..d - 1 {
+            let sr = top_row_for_z(seg, d, z);
+            let px = *sprite.get_pixel(x, sr);
+            if structure(px) {
+                m.set(x, ytop, z, Some(px));
+            }
+        }
+    }
+    m
+}
+
+// ---------------------------------------------------------------------
+// VendingMachine (Stage G.4)
+// ---------------------------------------------------------------------
+
+/// The vending cabinet's depth in sub-cells (module docs:
+/// ASSUMED — half the sprite width, the tall-cabinet
+/// precedent; the scored segmentation's top region is a shelf
+/// seam inside the display, so the builder works from the
+/// silhouette rows and fits its own depth proportion).
+pub const VENDING_DEPTH: u32 = 16;
+/// The dispensing bay's depth in sub-cells (module docs:
+/// ASSUMED — half the cabinet depth; a shallow trough with a
+/// back wall, not a through-hole).
+pub const VENDING_BAY_DEPTH: u32 = 8;
+
+/// A dispensing bay modeled OPEN (module docs): the column
+/// range (model x) and row range (model y) that are empty at
+/// the front, to [`VENDING_BAY_DEPTH`] cells of depth.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VendingBay {
+    pub cols: Range<u32>,
+    pub rows: Range<u32>,
+}
+
+/// Fitted vending-machine parameters (module docs, "Stage
+/// G.4"). The frame is the sprite's SILHOUETTE (the scored
+/// front region is a shelf seam inside the display for these
+/// sprites): height = silhouette height, front rows = the
+/// silhouette rows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VendingFit {
+    /// Model height (silhouette height in rows).
+    pub height: u32,
+    /// Model depth (sub-cells) — [`VENDING_DEPTH`], assumed.
+    pub depth: u32,
+    /// Model rows [0, base_h): the base below the bay.
+    pub base_h: u32,
+    /// The dispensing bay (fitted void run, module docs).
+    pub bay: VendingBay,
+    /// The bay's back-wall color: the modal paint of the bay
+    /// region's dark pixels (the slot's own paint).
+    pub bay_wall: Rgba<u8>,
+    /// Side (flank) materials per band, (left, right): the
+    /// modal color of the band rows' edge columns on that
+    /// side. Bands: upper cabinet (above the bay), the bay
+    /// rows themselves, the base.
+    pub upper_side: (Rgba<u8>, Rgba<u8>),
+    pub bay_side: (Rgba<u8>, Rgba<u8>),
+    pub base_side: (Rgba<u8>, Rgba<u8>),
+}
+
+impl VendingFit {
+    /// The side materials of the band containing model row
+    /// `y`, as (left, right).
+    pub fn side_of(&self, y: u32) -> (Rgba<u8>, Rgba<u8>) {
+        if y < self.base_h {
+            self.base_side
+        } else if self.bay.rows.contains(&y) {
+            self.bay_side
+        } else {
+            self.upper_side
+        }
+    }
+}
+
+/// A front pixel that reads as VOID for the bay detector (the
+/// console opening's rule): not structure, or opaque near-dark.
+fn vending_void(px: Rgba<u8>) -> bool {
+    !structure(px) || lab_of(px).l < 0.20
+}
+
+pub fn vending_fit(sprite: &RgbaImage, seg: &Segmentation) -> VendingFit {
+    let sil = seg.silhouette_rows.clone();
+    let fh = sil.end - sil.start;
+    let bot = sil.end - 1;
+    let (_, panel) = region_primaries(sprite, &sil);
+    let fallback = rgba(panel);
+    // Global structure extent of the silhouette.
+    let (mut gx0, mut gx1) = (sprite.width() - 1, 0u32);
+    for r in sil.clone() {
+        if let Some((a, b)) = row_extent(sprite, r) {
+            gx0 = gx0.min(a);
+            gx1 = gx1.max(b);
+        }
+    }
+    let ext_w = gx1 - gx0 + 1;
+    // Bay rows: scan model rows from the bottom; a row
+    // qualifies when its longest interior VOID run is at least
+    // half the extent width. The bay is the first contiguous
+    // qualifying run in the bottom half (the base rows below
+    // it do not qualify; the shelf-shadow row above the bay's
+    // frame, void run 14 of 32 on f_vending_c, does not clear
+    // the half-width floor either).
+    let qualifies = |y: u32| -> bool {
+        let r = bot - y;
+        let (mut run, mut best) = (0u32, 0u32);
+        for x in gx0..=gx1 {
+            if vending_void(*sprite.get_pixel(x, r)) {
+                run += 1;
+                best = best.max(run);
+            } else {
+                run = 0;
+            }
+        }
+        best * 2 >= ext_w
+    };
+    let mut bay_rows: Option<Range<u32>> = None;
+    for y in 0..fh / 2 {
+        if qualifies(y) {
+            let start = y;
+            let mut end = y + 1;
+            while end < fh && qualifies(end) {
+                end += 1;
+            }
+            bay_rows = Some(start..end);
+            break;
+        }
+    }
+    let bay_rows = bay_rows.unwrap_or(fh / 4..fh / 4 + 2); // assumed fallback (module docs)
+    let base_h = bay_rows.start;
+    // Bay columns: the console opening's column vote over the
+    // bay rows — columns void in at least half the bay rows;
+    // of the contiguous runs at least 6 wide, the one nearest
+    // the extent's center.
+    let w = sprite.width();
+    let n_rows = bay_rows.end - bay_rows.start;
+    let mut col_void = vec![0u32; w as usize];
+    for y in bay_rows.clone() {
+        let r = bot - y;
+        for x in 0..w {
+            if vending_void(*sprite.get_pixel(x, r)) {
+                col_void[x as usize] += 1;
+            }
+        }
+    }
+    let need = n_rows.div_ceil(2);
+    let center = (gx0 + gx1) as f32 / 2.0;
+    let mut runs: Vec<Range<u32>> = Vec::new();
+    let mut x = 0u32;
+    while x < w {
+        if col_void[x as usize] >= need {
+            let s = x;
+            while x < w && col_void[x as usize] >= need {
+                x += 1;
+            }
+            runs.push(s..x);
+        } else {
+            x += 1;
+        }
+    }
+    let bay_cols = runs
+        .into_iter()
+        .filter(|r| r.end - r.start >= 6)
+        .min_by(|a, b| {
+            let ca = ((a.start + a.end - 1) as f32 / 2.0 - center).abs();
+            let cb = ((b.start + b.end - 1) as f32 / 2.0 - center).abs();
+            ca.partial_cmp(&cb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        // Assumed fallback (module docs).
+        .unwrap_or(gx0 + 4..gx1 - 3);
+    // Bay back wall: the modal dark paint inside the bay.
+    let bay_wall = modal_color(bay_rows.clone().flat_map(|y| {
+        let r = bot - y;
+        bay_cols.clone().filter_map(move |x| {
+            let px = *sprite.get_pixel(x, r);
+            if px[3] >= 128 && lab_of(px).l < 0.20 {
+                Some(px)
+            } else {
+                None
+            }
+        })
+    }))
+    .unwrap_or(fallback);
+    let side = |rows_y: Range<u32>| band_edge_modals(sprite, rows_y, bot, fallback);
+    VendingFit {
+        height: fh,
+        depth: VENDING_DEPTH.min(sprite.width()),
+        base_h,
+        bay: VendingBay {
+            cols: bay_cols,
+            rows: bay_rows.clone(),
+        },
+        bay_wall,
+        upper_side: side(bay_rows.end..fh),
+        bay_side: side(bay_rows),
+        base_side: side(0..base_h),
+    }
+}
+
+fn build_vending(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let fit = vending_fit(sprite, seg);
+    let sil = seg.silhouette_rows.clone();
+    let bot = sil.end - 1;
+    let (_, panel) = region_primaries(sprite, &sil);
+    let grain = Grain::new(sprite);
+    let (w, fh, d) = (sprite.width(), fit.height, fit.depth);
+    let mut m = PropModel::new([w, fh, d]);
+    for y in 0..fh {
+        let r = bot - y;
+        fill_cabinet_row(&mut m, sprite, &grain, panel, y, r, d, fit.side_of(y));
+    }
+    // The dispensing bay: empty from the front plane back
+    // VENDING_BAY_DEPTH cells, closed by a back wall in the
+    // bay's own modal paint. The frame posts flanking the bay
+    // and the rows above/below it keep their cabinet fill.
+    let wall_z = d - 1 - VENDING_BAY_DEPTH;
+    for y in fit.bay.rows.clone() {
+        for x in fit.bay.cols.clone() {
+            for z in wall_z + 1..d {
+                m.set(x, y, z, None);
+            }
+            m.set(x, y, wall_z, Some(fit.bay_wall));
         }
     }
     m
