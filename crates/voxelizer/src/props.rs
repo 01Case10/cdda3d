@@ -342,6 +342,16 @@
 //!   [`HEAD_END_OVERRIDES`]: on f_bed the detector alone picks
 //!   the foot (its band + posts are wider), while the depicted
 //!   headboard is the plain band at the sprite's top rows.
+//!   Round 2 (Joey's corrections on the built model): the foot
+//!   end carries a real FOOTBOARD — a plain frame panel spanning
+//!   the full width, ground to the mattress top — and the long
+//!   side walls are built from the silhouette PERIMETER, not
+//!   from color classification: every perimeter cell gets a
+//!   frame wall from the ground to the mattress underside
+//!   whatever its top color reads as, because the sprite's edge
+//!   cells alternate between frame shades and mattress tones
+//!   and a color-classified wall gaps wherever the edge reads
+//!   as mattress.
 //! * **EndOn** (the tank): the sprite's round face is the end
 //!   cap; the model is a horizontal cylinder (disc cross-section,
 //!   length = cap diameter unless pinned in
@@ -2184,7 +2194,7 @@ fn chamfer_distances(sil: &[bool], w: u32, h: u32) -> Vec<u32> {
 /// The modal (most common) color of a pixel stream, ties toward
 /// the smallest RGBA key (BTreeMap order + strict >), as in
 /// [`row_field`].
-fn modal_color<I: Iterator<Item = Rgba<u8>>>(it: I) -> Option<Rgba<u8>> {
+pub(crate) fn modal_color<I: Iterator<Item = Rgba<u8>>>(it: I) -> Option<Rgba<u8>> {
     let mut counts: std::collections::BTreeMap<[u8; 4], u32> =
         std::collections::BTreeMap::new();
     for px in it {
@@ -2370,6 +2380,14 @@ pub struct BedFit {
     pub head_rows: Range<u32>,
     /// Plan x extent (inclusive) the headboard slab spans.
     pub head_x: (u32, u32),
+    /// Model y of the footboard panel's top face: the mattress
+    /// top itself (the spec band is mattress_top ± 2 — a
+    /// footboard rises TO mattress height, not above it).
+    pub footboard_top: u32,
+    /// Plan rows (z) the footboard panel occupies.
+    pub foot_rows: Range<u32>,
+    /// Plan x extent (inclusive) the footboard panel spans.
+    pub foot_x: (u32, u32),
 }
 
 /// Rim band width (plan cells) within which border material is
@@ -2466,6 +2484,27 @@ pub fn bed_fit(id: &str, sprite: &RgbaImage) -> Option<BedFit> {
             }
         }
     }
+    // The footboard: the OTHER end's strip, capped at the
+    // headboard's plan thickness (the frame's end panels share
+    // a thickness; the foot strip as drawn also carries the
+    // band's painted shadow, which is not panel). At least one
+    // row: the foot-end plane is always a panel.
+    let foot_depth_raw = if head_at_top { bot_strip } else { top_strip };
+    let foot_depth = foot_depth_raw.clamp(1, head_depth.max(1));
+    let foot_rows = if head_at_top {
+        (h - foot_depth)..h
+    } else {
+        0..foot_depth
+    };
+    let (mut fx0, mut fx1) = (w - 1, 0u32);
+    for z in foot_rows.clone() {
+        for x in 0..w {
+            if sil[cell(x, z)] {
+                fx0 = fx0.min(x);
+                fx1 = fx1.max(x);
+            }
+        }
+    }
     let mattress_top = (w / 4).max(4);
     let headboard_top = mattress_top + (w * 5 / 16).max(6);
     Some(BedFit {
@@ -2476,6 +2515,9 @@ pub fn bed_fit(id: &str, sprite: &RgbaImage) -> Option<BedFit> {
         headboard_top,
         head_rows,
         head_x: (hx0, hx1),
+        footboard_top: mattress_top,
+        foot_rows,
+        foot_x: (fx0, fx1),
     })
 }
 
@@ -2503,6 +2545,19 @@ fn framed_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
                 }
                 continue;
             }
+            if fit.foot_rows.contains(&z) && x >= fit.foot_x.0 && x <= fit.foot_x.1 {
+                // The footboard: a plain frame panel spanning
+                // the full width, ground to the mattress top.
+                // Its top face is the sprite verbatim (the
+                // top-face rule), the body below it frame.
+                for y in 0..fit.footboard_top {
+                    m.set(x, y, z, Some(fit.frame));
+                }
+                let top_px = *sprite.get_pixel(x, z);
+                let top_c = if structure(top_px) { top_px } else { fit.frame };
+                m.set(x, fit.footboard_top, z, Some(top_c));
+                continue;
+            }
             if !sil[cell(x, z)] {
                 continue;
             }
@@ -2515,7 +2570,17 @@ fn framed_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
                 }
             } else {
                 // Mattress block: ~3 cells thick at the top,
-                // its top face the sprite verbatim.
+                // its top face the sprite verbatim. A PERIMETER
+                // mattress cell first gets the side frame wall
+                // under it — ground to the mattress underside,
+                // in frame material regardless of the cell's
+                // top color — so the long sides never gap where
+                // the sprite's edge reads as mattress.
+                if dist[cell(x, z)] == 1 {
+                    for y in 0..(fit.mattress_top - 2) {
+                        m.set(x, y, z, Some(fit.frame));
+                    }
+                }
                 for y in (fit.mattress_top - 2)..=fit.mattress_top {
                     let c = if y == fit.mattress_top {
                         top_px

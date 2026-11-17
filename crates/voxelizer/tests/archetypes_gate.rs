@@ -19,10 +19,14 @@
 //!
 //! The G.3 rework (pipeline §24) reduced the archetype set to
 //! ShelfUnit (signed off, unchanged) and ConsoleDesk (reworked:
-//! front plane verbatim, stepped depth, knee-hole open). The
-//! deleted archetypes' ids (tank, bunk, dissection table) route
-//! by sprite VIEW now — views_gate.rs asserts those models.
-//! Sprites: f_bookcase, f_console.
+//! front verbatim, knee-hole open). Round 2 gave the console
+//! its workstation profile: one common back plane, the
+//! terminal front recessed behind the desk ledge, and per-band
+//! side materials (terminal casing gray / desk gray / cabinet
+//! beige, each the modal color of its region's edge columns).
+//! The deleted archetypes' ids (tank, bunk, dissection table)
+//! route by sprite VIEW now — views_gate.rs asserts those
+//! models. Sprites: f_bookcase, f_console.
 
 use image::{Rgba, RgbaImage};
 use std::collections::HashSet;
@@ -235,7 +239,7 @@ fn shelf_unit_opens_real_compartments() {
 }
 
 #[test]
-fn console_front_verbatim_stepped_depth_open_base() {
+fn console_front_verbatim_recessed_terminal_open_base() {
     let (sprite, seg) = load("f_console");
     let fit = console_fit(&sprite, &seg);
     let fh = seg.front_rows.end - seg.front_rows.start;
@@ -244,7 +248,16 @@ fn console_front_verbatim_stepped_depth_open_base() {
     let m = build(Archetype::ConsoleDesk, &sprite, &seg);
     assert_same_model(&m, &build(Archetype::ConsoleDesk, &sprite, &seg));
     let d = m.size[2];
-    assert!(fit.base_depth < d, "base steps back from the full depth");
+    assert!(
+        fit.recess >= 1 && fit.recess < d,
+        "terminal recess fitted: {}",
+        fit.recess
+    );
+    assert!(
+        fit.base_h >= 1 && fit.base_h < fit.desk_h,
+        "base band inside the desk rows: {}",
+        fit.base_h
+    );
     // The knee-hole is fitted where the sprite draws it: the
     // bottom 8 model rows, columns 12..28 (dark recess rows over
     // a transparent cutout — measured from the sprite).
@@ -259,9 +272,13 @@ fn console_front_verbatim_stepped_depth_open_base() {
             }
         }
     }
-    // Front plane == the sprite's front region verbatim,
-    // exhaustive over structure pixels outside the opening.
+    // Front faces == the sprite's front region verbatim,
+    // exhaustive over structure pixels outside the opening:
+    // desk/base rows at the front plane (z = d - 1), terminal
+    // rows at the recessed front (z = d - 1 - recess) and EMPTY
+    // at the front plane — the recess is real air.
     let bot = seg.front_rows.end - 1;
+    let front_z = |y: u32| if y >= fit.desk_h { d - 1 - fit.recess } else { d - 1 };
     for y in 0..fh {
         for x in 0..sprite.width() {
             if op.cols.contains(&x) && op.rows.contains(&y) {
@@ -269,23 +286,76 @@ fn console_front_verbatim_stepped_depth_open_base() {
             }
             let px = *sprite.get_pixel(x, bot - y);
             if structure(px) {
-                assert_eq!(m.get(x, y, d - 1), Some(px), "front verbatim {x},{y}");
+                assert_eq!(m.get(x, y, front_z(y)), Some(px), "front verbatim {x},{y}");
+                if y >= fit.desk_h {
+                    assert_eq!(m.get(x, y, d - 1), None, "recess void {x},{y}");
+                }
             }
         }
     }
-    // Stepped depth: some terminal-rise column reaches the back
-    // plane (z = 0); base columns outside the opening stop at
-    // the stepped depth (nothing behind d - base_depth).
-    let rise_reaches_back = (0..sprite.width()).any(|x| {
-        structure(*sprite.get_pixel(x, bot - (fh - 1))) && m.get(x, fh - 1, 0).is_some()
-    });
-    assert!(rise_reaches_back, "console rise keeps the full depth");
-    let base_stops = (0..sprite.width()).any(|x| {
-        !op.cols.contains(&x)
-            && structure(*sprite.get_pixel(x, bot))
-            && m.get(x, 0, 0).is_none()
-            && m.get(x, 0, d - fit.base_depth).is_some()
-    });
-    assert!(base_stops, "base rows stop at the stepped depth");
+    // Silhouette: ONE common back plane — every filled cell row
+    // reaches z = 0 in every band (the round-1 base step notched
+    // the rear; it is gone) — and each row's frontmost solid
+    // cell sits exactly at its band's fitted front plane.
+    for y in 0..fh {
+        let mut frontmost: Option<u32> = None;
+        for x in 0..sprite.width() {
+            if op.cols.contains(&x) && op.rows.contains(&y) {
+                continue;
+            }
+            if !structure(*sprite.get_pixel(x, bot - y)) {
+                continue;
+            }
+            assert!(m.get(x, y, 0).is_some(), "back plane {x},{y}");
+            frontmost = frontmost.max((0..d).rev().find(|&z| m.get(x, y, z).is_some()));
+        }
+        assert_eq!(frontmost, Some(front_z(y)), "row {y} front plane");
+    }
+    // Side band colors: flank cells strictly between the back
+    // and front planes carry the band's fitted side material —
+    // asserted within OKLab 0.03 (the builder writes the modal
+    // edge color flat, so this is near-exact; the tolerance
+    // only covers the comparison, not a material spread). The
+    // top row is exempt: it carries the un-projected top
+    // surface, not flank material.
+    let bands = [
+        (0..fit.base_h, fit.base_side, "base"),
+        (fit.base_h..fit.desk_h, fit.desk_side, "desk"),
+        (fit.desk_h..fh, fit.term_side, "terminal"),
+    ];
+    for (rows, side, name) in bands {
+        let mut sampled = 0u32;
+        for y in rows {
+            if y == fh - 1 {
+                continue;
+            }
+            let r = bot - y;
+            let (mut rx0, mut rx1) = (sprite.width(), 0u32);
+            let mut any = false;
+            for x in 0..sprite.width() {
+                if structure(*sprite.get_pixel(x, r)) {
+                    rx0 = rx0.min(x);
+                    rx1 = rx1.max(x);
+                    any = true;
+                }
+            }
+            if !any || rx0 == rx1 {
+                continue;
+            }
+            for x in [rx0, rx1] {
+                for z in 1..front_z(y) {
+                    if let Some(c) = m.get(x, y, z) {
+                        let dist = lab(c).distance(lab(side));
+                        assert!(
+                            dist <= 0.03,
+                            "{name} flank {x},{y},{z}: {c:?} vs side {side:?} (d={dist})"
+                        );
+                        sampled += 1;
+                    }
+                }
+            }
+        }
+        assert!(sampled > 0, "{name} band has flank cells");
+    }
     assert_albedo(&sprite, &seg, &m, &[]);
 }

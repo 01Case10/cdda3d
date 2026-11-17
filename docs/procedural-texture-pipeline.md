@@ -757,3 +757,28 @@ barrel sides show horizontal ribbing inherited from the cap
 sprite's row banding; the mockup's barrel is smooth with strap
 bands — a Stage H texture decision, not hidden. Showcase:
 examples/views_showcase.rs -> target/stage-g/rework.png.
+
+## 26. Stage G.3 rework round 2 — bed sides + console sides (2026-11-16)
+
+Joey's corrections on the SS25 showcase: (1) the bed's foot end is
+a FOOTBOARD, and part of the bed's side was missing; (2) the
+console looks wrong from the sides. Fixed, parent re-verified
+(voxelizer suites green; approved_models_gate hashes UNCHANGED).
+Bed: footboard panel fitted (foot strip capped at the headboard's
+plan thickness, full silhouette width x 2..29, frame from ground
+to footboard_top = mattress_top = 8); side walls are now built
+from the SILHOUETTE PERIMETER — every perimeter cell gets a frame
+wall ground -> mattress underside regardless of its top color
+(the gaps came from wood shades outside the frame-color tolerance
+being built as floating mattress). Gates exhaustive: both side
+planes frame at every column/height, foot-end plane frame across
+the full width. Console: the 55% base depth step is DELETED — all
+bands share the back plane (z=0), desk/base fronts at z=23, the
+terminal front recessed exactly 4 (screen face at z=19, verbatim,
+air in front); per-band flank materials fitted from each region's
+edge columns (terminal [66,63,60], desk [66,63,60] — the sprite's
+sliver column is the same dark for both, rule applied literally —
+base [171,157,132] beige); base band fitted by color (first beige
+row up, base_h 11, dark plinth rows belong to the band). Side now
+reads: beige cabinet below, dark terminal above, desk ledge in
+front of the recessed screen.

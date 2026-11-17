@@ -49,20 +49,33 @@
 //!   reconstructed. The old builder replaced the console's front
 //!   with palette panels + a clean accent screen rectangle and
 //!   lost the sprite's detail; the sprite's front is already a
-//!   complete drawing of the console, so the front plane is now
-//!   the sprite's front region VERBATIM across the full front
-//!   (the solid model's front rule). What the archetype adds
-//!   over the solid model is DEPTH STRUCTURE: the console rise
-//!   (rows at/above the fitted desk height — the top region's
-//!   height) keeps the full segmentation depth, the desk/base
-//!   rows below it step back to ~55% depth, and the base's open
+//!   complete drawing of the console, so the front face is the
+//!   sprite's front region VERBATIM (the solid model's front
+//!   rule). What the archetype adds over the solid model is the
+//!   workstation's PROFILE and SIDE MATERIALS (round 2, Joey's
+//!   correction — the first rework's sides read near-black
+//!   top-to-bottom and its base stepped back at the rear):
+//!   the rows split into three bands — BASE (the beige cabinet
+//!   rows, fitted by their warm light edge color), DESK (up to
+//!   the fitted desk height), TERMINAL (the console rise). All
+//!   bands share one BACK plane; the desk and base fronts sit
+//!   at the front plane, while the terminal's front face is
+//!   RECESSED a few cells behind it (a real CRT workstation:
+//!   desk ledge in front of the screen), its face still the
+//!   sprite verbatim, just set back. Each band's SIDES are that
+//!   band's own material — the modal color of the band region's
+//!   edge columns: dark casing gray for the terminal, desk gray
+//!   for the desk band, beige for the cabinet. The base's open
 //!   compartment — the dark knee-hole the sprite draws in its
 //!   bottom rows (opaque near-black recess rows over a
-//!   transparent cutout) — is modeled OPEN: the opening's
-//!   columns are empty through the depth, the side cabinets
-//!   solid. FITTED: desk height, base depth (55% of full,
-//!   rounded), the opening's rows and columns (contiguous void
-//!   runs from the bottom, strictly inside the frame's extent).
+//!   transparent cutout) — is modeled OPEN through the depth;
+//!   it opens at the front only in the sense that the side
+//!   cabinets flanking it are full-depth, so from the side the
+//!   base reads as one solid beige cabinet. FITTED: desk
+//!   height, base band height, the three side materials, the
+//!   opening's rows and columns (contiguous void runs from the
+//!   bottom, strictly inside the frame's extent). ASSUMED: the
+//!   terminal recess (4 cells — the mockup's ledge depth).
 //!
 //! Everything is deterministic: fixed iteration order, palettes
 //! from the deterministic analyzer, grain fBm seeded from the
@@ -72,8 +85,8 @@ use crate::analyze::content_hash;
 use crate::color::Oklab;
 use crate::noise::Fbm;
 use crate::props::{
-    front_structure_extent, grain_amp, lab_of, region_primaries, structure, top_row_for_z,
-    PropModel, Segmentation, SHADOW_L,
+    front_structure_extent, grain_amp, lab_of, modal_color, region_primaries, structure,
+    top_row_for_z, PropModel, Segmentation, SHADOW_L,
 };
 use image::{Rgba, RgbaImage};
 use std::ops::Range;
@@ -341,13 +354,28 @@ pub struct ConsoleOpening {
     pub rows: Range<u32>,
 }
 
+/// The terminal front's recess behind the front plane, in
+/// cells (module docs: assumed from the mockup's ledge depth).
+pub const CONSOLE_RECESS: u32 = 4;
+
 /// Fitted console parameters: the desk height (model rows below
-/// the console rise), the base rows' stepped depth, and the
-/// base's open compartment when the sprite draws one.
+/// the console rise), the base band's height, the terminal
+/// recess, the three bands' side materials, and the base's
+/// open compartment when the sprite draws one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsoleFit {
     pub desk_h: u32,
-    pub base_depth: u32,
+    /// Model rows [0, base_h) are the cabinet base band; rows
+    /// [base_h, desk_h) the desk band; [desk_h, fh) the
+    /// terminal band.
+    pub base_h: u32,
+    pub recess: u32,
+    /// Side (flank) material per band: the modal color of the
+    /// band region's edge columns (the sprite's outermost
+    /// structure pixels, both sides).
+    pub term_side: Rgba<u8>,
+    pub desk_side: Rgba<u8>,
+    pub base_side: Rgba<u8>,
     pub opening: Option<ConsoleOpening>,
 }
 
@@ -362,7 +390,7 @@ pub fn console_fit(sprite: &RgbaImage, seg: &Segmentation) -> ConsoleFit {
     let fr = frame(sprite, seg);
     let top_h = seg.top_rows.end - seg.top_rows.start;
     let desk_h = fr.fh.saturating_sub(top_h).max(1).min(fr.fh);
-    let base_depth = ((0.55 * fr.d as f32).round() as u32).max(2).min(fr.d);
+    let recess = CONSOLE_RECESS.min(fr.d.saturating_sub(1));
     // Opening: scan rows from the bottom; a row qualifies when
     // its longest VOID run is >= 6 columns wide and strictly
     // inside the frame's extent (a cabinet on both sides). The
@@ -430,7 +458,62 @@ pub fn console_fit(sprite: &RgbaImage, seg: &Segmentation) -> ConsoleFit {
     } else {
         None
     };
-    ConsoleFit { desk_h, base_depth, opening }
+    // Bands and their side materials (module docs). A row's
+    // edge samples are its outermost structure pixels, left and
+    // right. The base band is fitted by color: the cabinet rows
+    // are the warm, light (beige) rows at the bottom — the scan
+    // starts at the first beige row (the dark plinth rows below
+    // it belong to the base band) and stops at the first
+    // non-beige row above the beige run.
+    let row_edges = |y: u32| -> Option<(Rgba<u8>, Rgba<u8>)> {
+        let r = fr.bot - y;
+        let (mut first, mut last) = (None, None);
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if structure(px) {
+                if first.is_none() {
+                    first = Some(px);
+                }
+                last = Some(px);
+            }
+        }
+        first.zip(last)
+    };
+    let beige = |px: Rgba<u8>| px[0] as i32 - px[2] as i32 >= 15 && lab_of(px).l >= 0.45;
+    let (mut base_h, mut first_beige) = (0u32, None);
+    for y in 0..desk_h {
+        let is_beige = row_edges(y).map_or(false, |(a, b)| beige(a) && beige(b));
+        if is_beige {
+            if first_beige.is_none() {
+                first_beige = Some(y);
+            }
+            base_h = y + 1;
+        } else if first_beige.is_some() {
+            break;
+        }
+    }
+    let (_, panel) = region_primaries(sprite, &seg.front_rows);
+    let band_side = |rows: Range<u32>| -> Rgba<u8> {
+        modal_color(
+            rows.flat_map(|y| row_edges(y).into_iter().flat_map(|(a, b)| [a, b])),
+        )
+        .unwrap_or_else(|| rgba(panel))
+    };
+    let term_side = band_side(desk_h..fr.fh);
+    let desk_side = band_side(base_h..desk_h);
+    let base_side = match first_beige {
+        Some(fb) => band_side(fb..base_h),
+        None => band_side(0..base_h),
+    };
+    ConsoleFit {
+        desk_h,
+        base_h,
+        recess,
+        term_side,
+        desk_side,
+        base_side,
+        opening,
+    }
 }
 
 fn build_console(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
@@ -439,11 +522,29 @@ fn build_console(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let (_, panel) = region_primaries(sprite, &seg.front_rows);
     let grain = Grain::new(sprite);
     let (w, fh, d) = (sprite.width(), fr.fh, fr.d);
-    let depth_of = |y: u32| if y >= fit.desk_h { d } else { fit.base_depth };
+    // The profile (module docs): every band fills from the
+    // common back plane (z = 0); desk and base fronts sit at
+    // the front plane, the terminal's front face is recessed.
+    let front_z = |y: u32| {
+        if y >= fit.desk_h {
+            d - 1 - fit.recess
+        } else {
+            d - 1
+        }
+    };
+    let side_of = |y: u32| {
+        if y >= fit.desk_h {
+            fit.term_side
+        } else if y >= fit.base_h {
+            fit.desk_side
+        } else {
+            fit.base_side
+        }
+    };
     let mut m = PropModel::new([w, fh, d]);
-    // The solid model's fill, with the depth stepped per row:
-    // front plane verbatim, back plane the panel grain, flanks
-    // the side grain, interior the front pixel (unseen).
+    // Front face verbatim (at the band's front plane), back
+    // plane the panel grain, flanks the band's own side
+    // material, interior the front pixel (unseen).
     for y in 0..fh {
         let r = fr.bot - y;
         let (mut rx0, mut rx1) = (w, 0u32);
@@ -458,19 +559,19 @@ fn build_console(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
         if !any {
             continue;
         }
-        let zd = depth_of(y);
+        let fz = front_z(y);
         for x in rx0..=rx1 {
             let px = *sprite.get_pixel(x, r);
             if !structure(px) {
                 continue;
             }
-            for z in (d - zd)..d {
-                let c = if z == d - 1 {
+            for z in 0..=fz {
+                let c = if z == fz {
                     px
-                } else if z == d - zd {
+                } else if z == 0 {
                     grain.back(panel, x, y)
                 } else if x == rx0 || x == rx1 {
-                    grain.side(panel, z, y)
+                    side_of(y)
                 } else {
                     px
                 };
@@ -478,14 +579,16 @@ fn build_console(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             }
         }
     }
-    // Top surface: the topmost row's cells behind the front
-    // plane take the top region's un-projection, as in the
-    // solid model.
+    // Top surface: the topmost (terminal) row's cells behind
+    // its recessed front face take the top region's
+    // un-projection over the terminal block's own depth, as in
+    // the solid model.
     let ytop = fh - 1;
-    let zd = depth_of(ytop);
+    let fz = front_z(ytop);
+    let td = d - fit.recess;
     for x in fr.x0..=fr.x1 {
-        for z in (d - zd)..(d - 1) {
-            let sr = top_row_for_z(seg, d, z);
+        for z in 0..fz {
+            let sr = top_row_for_z(seg, td, z);
             let px = *sprite.get_pixel(x, sr);
             if structure(px) {
                 m.set(x, ytop, z, Some(px));

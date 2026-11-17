@@ -9,7 +9,10 @@
 //!   top at the front end, saddle stands at both ends;
 //! * the bed chain (TopDown, framed): back plane 100% frame
 //!   material (the headboard slab occludes the mattress), top
-//!   face verbatim, headboard above the mattress;
+//!   face verbatim, headboard above the mattress; round 2: a
+//!   real footboard panel at the foot end (full width, ground
+//!   to ~mattress top) and gapless long side walls built from
+//!   the silhouette perimeter, not color classification;
 //! * f_slab (TopDown, terrace): column heights are a function
 //!   of chamfer distance only (the sprite is NOT 90°-rotationally
 //!   symmetric, so the ring-function assertion replaces the
@@ -261,6 +264,61 @@ fn bed_back_is_all_frame_and_top_is_verbatim() {
     }
     // The mattress top sits one cell proud of the frame rails.
     assert_eq!(fit.mattress_top, fit.frame_top + 1);
+    // Round 2 — the footboard: its top is within 2 cells of
+    // the mattress top (the spec band), and the foot-end plane
+    // (z = md - 1) is frame material across the FULL width
+    // from the ground to at least mattress_top - 2.
+    assert!(
+        fit.footboard_top.abs_diff(fit.mattress_top) <= 2,
+        "footboard top {} within 2 of mattress top {}",
+        fit.footboard_top,
+        fit.mattress_top
+    );
+    for x in fit.foot_x.0..=fit.foot_x.1 {
+        for y in 0..=(fit.mattress_top - 2) {
+            assert_eq!(
+                m.get(x, y, md - 1),
+                Some(fit.frame),
+                "footboard plane {x},{y}"
+            );
+        }
+    }
+    // The panel body: frame below its top face over its whole
+    // plan extent.
+    for z in fit.foot_rows.clone() {
+        for x in fit.foot_x.0..=fit.foot_x.1 {
+            for y in 0..fit.footboard_top {
+                assert_eq!(m.get(x, y, z), Some(fit.frame), "footboard {x},{y},{z}");
+            }
+        }
+    }
+    // Round 2 — the long side walls never gap: every plan row
+    // outside the end panels, on BOTH side planes (the row's
+    // silhouette extent columns), is frame material at every
+    // height from the ground to the mattress underside —
+    // exhaustive, whatever the sprite's edge color reads as.
+    for z in 0..md {
+        if fit.head_rows.contains(&z) || fit.foot_rows.contains(&z) {
+            continue;
+        }
+        let (mut lx, mut rx) = (mw - 1, 0u32);
+        let mut any = false;
+        for x in 0..mw {
+            if structure(*sprite.get_pixel(x, z)) {
+                lx = lx.min(x);
+                rx = rx.max(x);
+                any = true;
+            }
+        }
+        if !any {
+            continue;
+        }
+        for x in [lx, rx] {
+            for y in 0..(fit.mattress_top - 2) {
+                assert_eq!(m.get(x, y, z), Some(fit.frame), "side wall {x},{y},{z}");
+            }
+        }
+    }
 }
 
 #[test]

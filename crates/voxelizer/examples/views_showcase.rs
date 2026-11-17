@@ -224,8 +224,9 @@ fn main() {
                 let seg = segment_for(sprite_id, &sprite).expect("console segments");
                 let f = console_fit(&sprite, &seg);
                 format!(
-                    "desk_h {} base_depth {} opening {:?}",
-                    f.desk_h, f.base_depth, f.opening
+                    "desk_h {} base_h {} recess {} sides {:?}/{:?}/{:?} opening {:?}",
+                    f.desk_h, f.base_h, f.recess, f.term_side.0, f.desk_side.0, f.base_side.0,
+                    f.opening
                 )
             }
             "f_slab" => {
