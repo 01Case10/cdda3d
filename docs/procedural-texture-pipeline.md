@@ -1157,6 +1157,44 @@ fire-surface + flat-lid tests; coverage total stays 222, the
 pre-drive 119 unchanged. Strips re-rendered and re-presented
 2026-11-17.
 
+FIX ROUND 3 (Joey's two further reviews, 2026-11-17; committed
+`850ede7`, suite 103/103, total still 222):
+
+- **Cylinder tops, again.** The archetypes still extruded the
+  drawn ellipse band as wall (the fire barrel's fire stood
+  proud of the rim as a plug; against the sprite, the fire is
+  a flat disc inside the rim). The fit now MEASURES the
+  opening band (`measure_opening_rows`: prefix rows whose
+  drawn extent is still widening, or whose inner pixels are
+  majority interior-classified — dark two-means cluster or
+  fire-hued; measured over fully-opaque drawn pixels, since
+  structure()'s alpha>=128 admits antialiasing fringe that
+  widens the top rows). Measured: barrels 10/28 band rows,
+  keg 8, vats 10, trash can 5. The model builds only the wall
+  below the band (height = wall height), and the contents
+  surface drops just opening/4 below the rim. Surface colors
+  are dominant paint-FAMILY means (16-step buckets — the fire
+  gradient defeats an exact modal), the fire family winning
+  for burning variants, dark interior family otherwise; the
+  lid keeps the all-band family.
+- **Lathe for irregular round shapes** (Joey, on
+  f_alien_gasper: "the front should match the back; the back
+  should not be flat and the sides should not be flat
+  either"): `lathe_model` + `LATHE_PINS` (12: gasper, resin
+  pod, egg sacks x2, clay kiln, kilns x2, boulders x3 + glow,
+  fungal clump — the last five moved from CYLINDER_PINS).
+  Per-row discs follow the sprite's profile (each row's
+  extent is that height's diameter, centered on the row's own
+  center, so twists are followed); every voxel carries its
+  column's paint, so front-most and back-most voxels are both
+  the sprite pixel and the side silhouette is the depth
+  profile. A wide top row band with majority-dark inner
+  pixels (the gasper's mouth) becomes rings over a dark
+  interior surface instead of a solid pale slab. Gate:
+  `lathe_front_matches_back_and_sides_follow_profile`.
+  Remaining CYLINDER_PINS: water heater, log stool, punching
+  bag, sand castle (constant-profile closed forms).
+
 ## 33. Stage F part 2 — border height-blending outcome (2026-11-17)
 
 DONE, merged to main @ 0ace695 (not pushed), parent re-verified.
