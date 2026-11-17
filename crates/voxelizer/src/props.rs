@@ -3304,7 +3304,7 @@ pub const REST_EGG_PINS: &[&str] = &["f_egg_sackbw", "f_egg_sackcs"];
 /// a central axis — its arms sweep a disc, so discs around
 /// the axis are the faithful read (a solid extrusion made
 /// its sides flat gold planks, Joey's review 2026-11-17).
-pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ", "f_orrery"];
+pub const REST_LATHE_PINS: &[&str] = &["f_alien_pod", "f_alien_pod_organ"];
 
 /// Closed solids on a raw segment with a fitted depth
 /// override (the depth rule misreads both: the anvil's
@@ -3480,6 +3480,67 @@ fn birdbath_model(sprite: &RgbaImage) -> Option<PropModel> {
     Some(m)
 }
 
+/// The orrery (mockup: target/stage-g/mockups/
+/// f_orrery_sides.png). The sprite is a candelabrum-like
+/// mechanism: a flared base and decorated column, then
+/// thin rods with colored finial tips rising from an arm
+/// assembly. A solid extrusion made the sides gold
+/// planks; a lathe made the head a solid trophy drum
+/// (both rejected by Joey, 2026-11-17). The build: the
+/// lower half (base + column + gear body) is a narrow
+/// structure extrusion 4 deep; the head (top half of the
+/// band: arms + rods) is a cross like the plants — the
+/// rod profile reads from front and side alike.
+fn orrery_model(sprite: &RgbaImage) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let head_rows = fh / 2; // top half of the band is arms + rods
+    let mut m = PropModel::new([w, fh, w]);
+    let zc = (w / 2) as i32;
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        let xs: Vec<u32> = (0..w)
+            .filter(|&x| opaque(*sprite.get_pixel(x, r)))
+            .collect();
+        if xs.is_empty() {
+            continue;
+        }
+        if y >= fh - head_rows {
+            // Head: side slab (silhouette mapped to z at
+            // the row's median x), then front slab.
+            let med = xs[xs.len() / 2] as i32;
+            for &x in &xs {
+                let px = *sprite.get_pixel(x, r);
+                for dx in [med - 1, med] {
+                    if dx >= 0 && (dx as u32) < w {
+                        m.set(dx as u32, y, x, Some(px));
+                    }
+                }
+            }
+            for &x in &xs {
+                let px = *sprite.get_pixel(x, r);
+                for dz in [zc - 1, zc] {
+                    m.set(x, y, dz as u32, Some(px));
+                }
+            }
+        } else {
+            // Lower: narrow structure extrusion, 4 deep.
+            for &x in &xs {
+                let px = *sprite.get_pixel(x, r);
+                for dz in (zc - 2)..=(zc + 1) {
+                    m.set(x, y, dz as u32, Some(px));
+                }
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -3566,6 +3627,11 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
     if id == "f_birdbath" {
         if let Some(m) = birdbath_model(sprite) {
+            return Some(m);
+        }
+    }
+    if id == "f_orrery" {
+        if let Some(m) = orrery_model(sprite) {
             return Some(m);
         }
     }
