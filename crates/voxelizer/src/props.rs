@@ -4351,6 +4351,561 @@ fn beam(
 /// sprite's real-world referent. Sprites wider than
 /// 32 (the 64px racks, tripod, clothesline, stooks)
 /// are built at tile scale from their proportions.
+
+/// Class D3 (machines and bodies), hand-built from
+/// each sprite's real-world referent.
+fn d3_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match id {
+        "f_alembic" => Some(d3_alembic()),
+        "f_beverly_shear" => Some(d3_beverly_shear()),
+        "f_drill_press" => Some(d3_drill_press()),
+        "f_hydraulic_press" => Some(d3_hydraulic_press()),
+        "f_manual_tire_changer" => Some(d3_tire_changer()),
+        "f_ergometer" => Some(d3_ergometer()),
+        "f_exercise" => Some(d3_exercise_bench()),
+        "f_mannequin" => Some(d3_mannequin()),
+        "f_training_dummy_heavy" => Some(d3_dummy(true)),
+        "f_training_dummy_light" => Some(d3_dummy(false)),
+        "f_pinball_machine" => Some(d3_pinball(sprite)),
+        "f_mailbox" => Some(d3_mailbox()),
+        "f_recycle_bin" => Some(d3_recycle_bin(sprite)),
+        "f_water_pump" => Some(d3_water_pump()),
+        "f_wind_mill" => Some(d3_windmill()),
+        "f_exodii_portal_tower" => Some(d3_portal_tower()),
+        "f_exodii_lamp_string_warped" => Some(d3_lamp_string()),
+        "f_eyewash" => Some(d3_eyewash()),
+        _ => None,
+    }
+}
+
+/// Alembic still: copper boiler, a swooping glass
+/// arm, two receiver flasks.
+fn d3_alembic() -> PropModel {
+    let mut m = PropModel::new([32, 30, 32]);
+    let copper = rgb(196, 116, 52);
+    let copper_dk = rgb(150, 84, 36);
+    let glass = rgb(198, 204, 198);
+    let flask = rgb(148, 150, 148);
+    // Boiler: squat pot with a domed lid.
+    cyl_y(&mut m, 9, 13, 5.0, 0, 7, copper);
+    cyl_y(&mut m, 9, 13, 4.2, 8, 10, copper_dk);
+    cyl_y(&mut m, 9, 13, 2.4, 11, 13, copper);
+    for a in 0..24 {
+        let t = a as f32 / 24.0 * std::f32::consts::TAU;
+        let x = (9.0 + 5.0 * t.cos()) as u32;
+        let z = (13.0 + 5.0 * t.sin()) as u32;
+        m.set(x, 4, z, Some(copper_dk));
+    }
+    // The arm: three beam segments arcing right.
+    beam(&mut m, 9, 13, 13, 12, 23, 14, glass);
+    beam(&mut m, 12, 23, 14, 18, 26, 15, glass);
+    beam(&mut m, 18, 26, 15, 23, 24, 16, glass);
+    beam(&mut m, 23, 24, 16, 26, 19, 16, glass);
+    // Receiver flasks: neck + bell.
+    for (cx, cz, top) in [(23i32, 16i32, 20u32), (26, 16, 15)] {
+        cyl_y(&mut m, cx, cz, 1.2, top - 3, top, flask);
+        cyl_y(&mut m, cx, cz, 3.4, top - 9, top - 4, flask);
+        cyl_y(&mut m, cx, cz, 3.9, top - 10, top - 9, flask);
+    }
+    m
+}
+
+/// Beverly shear: bench body, jaw, and the long
+/// curved blade arm.
+fn d3_beverly_shear() -> PropModel {
+    let mut m = PropModel::new([32, 23, 32]);
+    let steel = rgb(150, 152, 155);
+    let steel_dk = rgb(96, 98, 102);
+    box_fill(&mut m, 13, 18, 0, 6, 13, 18, steel_dk);
+    box_fill(&mut m, 14, 17, 6, 10, 14, 17, steel);
+    // The workpiece in the jaw.
+    box_fill(&mut m, 15, 17, 8, 8, 17, 20, rgb(196, 164, 110));
+    // Curved arm in the front plane.
+    for (x, y) in [
+        (16u32, 10u32),
+        (16, 13),
+        (15, 16),
+        (15, 19),
+        (16, 21),
+        (17, 22),
+    ] {
+        box_fill(&mut m, x, x + 1, y, y + 1, 14, 15, steel);
+    }
+    m
+}
+
+/// Drill press, built in profile: base, column,
+/// table, head extending forward, spindle at its tip.
+fn d3_drill_press() -> PropModel {
+    let mut m = PropModel::new([32, 35, 32]);
+    let green = rgb(84, 168, 92);
+    let green_dk = rgb(56, 120, 64);
+    let grey = rgb(150, 152, 150);
+    let grey_dk = rgb(96, 98, 96);
+    box_fill(&mut m, 11, 21, 0, 3, 7, 25, green_dk);
+    cyl_y(&mut m, 16, 10, 2.2, 3, 30, grey);
+    // Table on its bracket.
+    box_fill(&mut m, 14, 18, 12, 15, 10, 14, green_dk);
+    box_fill(&mut m, 11, 21, 15, 17, 14, 25, grey);
+    m.set(16, 17, 20, Some(grey_dk));
+    // Head and motor housing.
+    box_fill(&mut m, 12, 20, 28, 34, 8, 25, green);
+    box_fill(&mut m, 12, 20, 32, 34, 8, 13, green_dk);
+    // Spindle and chuck at the head's tip.
+    cyl_y(&mut m, 16, 23, 1.1, 23, 28, grey_dk);
+    cyl_y(&mut m, 16, 23, 1.7, 24, 26, grey);
+    // Red switch on the head's front face.
+    m.set(16, 31, 25, Some(rgb(206, 44, 40)));
+    m.set(13, 30, 25, Some(green_dk));
+    m
+}
+
+/// Hydraulic press: red H-frame, ram, bolster table.
+fn d3_hydraulic_press() -> PropModel {
+    let mut m = PropModel::new([32, 37, 32]);
+    let red = rgb(198, 52, 44);
+    let red_dk = rgb(150, 38, 34);
+    let steel_dk = rgb(84, 86, 90);
+    for x in [9u32, 20] {
+        box_fill(&mut m, x, x + 3, 0, 34, 13, 18, red);
+        box_fill(&mut m, x - 1, x + 4, 0, 1, 10, 21, red_dk);
+    }
+    box_fill(&mut m, 9, 23, 31, 36, 13, 18, red);
+    box_fill(&mut m, 9, 23, 0, 3, 13, 18, red_dk);
+    // Ram cylinder and piston.
+    cyl_y(&mut m, 16, 15, 2.6, 25, 31, steel_dk);
+    cyl_y(&mut m, 16, 15, 1.6, 20, 25, rgb(170, 172, 175));
+    // Bolster table.
+    box_fill(&mut m, 10, 22, 16, 19, 11, 20, steel_dk);
+    m
+}
+
+/// Manual tire changer: base, a wheel rim on its
+/// hub, and the red swing-arm post.
+fn d3_tire_changer() -> PropModel {
+    let mut m = PropModel::new([32, 26, 32]);
+    let dark = rgb(52, 52, 56);
+    let grey = rgb(152, 154, 156);
+    let grey_dk = rgb(100, 102, 105);
+    let red = rgb(204, 56, 44);
+    box_fill(&mut m, 8, 24, 0, 2, 8, 24, dark);
+    // Rim: a ring in the front plane with spokes.
+    for dx in -8i32..=8 {
+        for dy in -8i32..=8 {
+            let d = ((dx * dx + dy * dy) as f32).sqrt();
+            if (6.0..=7.6).contains(&d) {
+                for z in 14..=16u32 {
+                    m.set((16 + dx) as u32, (13 + dy) as u32, z, Some(grey));
+                }
+            }
+        }
+    }
+    box_fill(&mut m, 15, 17, 12, 14, 13, 17, grey_dk);
+    for (x, y) in [(16u32, 19u32), (16, 7), (10, 13), (22, 13)] {
+        box_fill(&mut m, x - 1, x + 1, y - 1, y + 1, 14, 16, grey_dk);
+    }
+    // Red post and swing arm.
+    box_fill(&mut m, 8, 10, 0, 24, 14, 16, red);
+    box_fill(&mut m, 8, 20, 22, 24, 14, 16, red);
+    box_fill(&mut m, 19, 20, 18, 22, 14, 16, grey_dk);
+    m
+}
+
+/// Ergometer (stationary bike): base rails, flywheel
+/// body at the front, saddle and handlebar posts.
+fn d3_ergometer() -> PropModel {
+    let mut m = PropModel::new([32, 40, 32]);
+    let grey = rgb(168, 170, 172);
+    let grey_dk = rgb(104, 106, 110);
+    let cyan = rgb(64, 148, 178);
+    let white = rgb(226, 228, 228);
+    for x in [11u32, 19] {
+        box_fill(&mut m, x, x + 2, 0, 2, 6, 26, grey_dk);
+    }
+    // Flywheel body at the front.
+    box_fill(&mut m, 10, 22, 2, 14, 18, 26, grey);
+    for x in 12..=20u32 {
+        for y in 4..=12u32 {
+            m.set(x, y, 26, Some(white));
+        }
+    }
+    // Seat post and saddle.
+    beam(&mut m, 15, 10, 9, 15, 24, 7, grey_dk);
+    box_fill(&mut m, 12, 20, 24, 26, 5, 11, cyan);
+    // Handlebar post, bar, grips, console.
+    beam(&mut m, 15, 12, 21, 15, 30, 23, grey_dk);
+    box_fill(&mut m, 8, 24, 30, 31, 23, 25, grey);
+    box_fill(&mut m, 8, 10, 30, 31, 23, 25, cyan);
+    box_fill(&mut m, 22, 24, 30, 31, 23, 25, cyan);
+    box_fill(&mut m, 13, 19, 32, 34, 23, 25, grey_dk);
+    m.set(16, 33, 25, Some(white));
+    // Pedal cranks.
+    box_fill(&mut m, 8, 10, 7, 9, 20, 22, cyan);
+    box_fill(&mut m, 22, 24, 7, 9, 20, 22, cyan);
+    m
+}
+
+/// Bench press station: two uprights, a barbell,
+/// and the red bench between them.
+fn d3_exercise_bench() -> PropModel {
+    let mut m = PropModel::new([32, 39, 32]);
+    let steel = rgb(158, 160, 163);
+    let steel_dk = rgb(102, 104, 108);
+    let red = rgb(172, 34, 36);
+    let red_dk = rgb(128, 24, 28);
+    for x in [5u32, 25] {
+        box_fill(&mut m, x, x + 2, 0, 36, 14, 17, steel);
+        box_fill(&mut m, x - 1, x + 3, 0, 2, 9, 22, steel_dk);
+    }
+    // Barbell: bar + plate discs at both ends.
+    tube_x(&mut m, 2, 30, 34, 15, 0.9, steel);
+    for xc in [3i32, 28] {
+        for dy in -5i32..=5 {
+            for dz in -5i32..=5 {
+                let d = ((dy * dy + dz * dz) as f32).sqrt();
+                if d <= 5.0 {
+                    for x in xc..=xc + 1 {
+                        m.set(x as u32, (34 + dy) as u32, (15 + dz) as u32, Some(steel_dk));
+                    }
+                }
+            }
+        }
+    }
+    // Bench: pad on a leg frame.
+    box_fill(&mut m, 9, 23, 11, 14, 12, 19, red);
+    box_fill(&mut m, 9, 23, 11, 11, 12, 19, red_dk);
+    for x in [11u32, 19] {
+        box_fill(&mut m, x, x + 2, 0, 11, 14, 17, steel_dk);
+        box_fill(&mut m, x - 1, x + 3, 0, 1, 11, 20, steel_dk);
+    }
+    m
+}
+
+/// Mannequin: a pale humanoid figure.
+fn d3_mannequin() -> PropModel {
+    let mut m = PropModel::new([32, 33, 32]);
+    let body = rgb(206, 204, 199);
+    let body_dk = rgb(168, 166, 160);
+    for x in [13u32, 17] {
+        box_fill(&mut m, x, x + 2, 0, 14, 14, 17, body);
+        box_fill(&mut m, x, x + 2, 0, 1, 17, 20, body_dk);
+    }
+    box_fill(&mut m, 12, 20, 14, 16, 13, 18, body);
+    box_fill(&mut m, 11, 21, 16, 26, 13, 18, body);
+    box_fill(&mut m, 12, 20, 24, 26, 13, 18, body_dk);
+    beam(&mut m, 10, 25, 14, 7, 16, 14, body);
+    beam(&mut m, 21, 25, 14, 24, 16, 14, body);
+    cyl_y(&mut m, 16, 15, 1.2, 26, 27, body_dk);
+    box_fill(&mut m, 13, 19, 28, 32, 13, 18, body);
+    m
+}
+
+/// Training dummy (pell): a padded torso and helmet
+/// head on a post with a weighted base. The heavy
+/// version is steel-grey and broader; the light one
+/// is wood and tan.
+fn d3_dummy(heavy: bool) -> PropModel {
+    let mut m = PropModel::new([32, 30, 32]);
+    let (pad, strap, helm, face) = if heavy {
+        (rgb(150, 148, 145), rgb(88, 86, 84), rgb(140, 142, 145), rgb(210, 180, 120))
+    } else {
+        (rgb(190, 150, 90), rgb(110, 80, 44), rgb(150, 100, 55), rgb(226, 196, 140))
+    };
+    cyl_y(&mut m, 16, 16, 6.0, 0, 1, rgb(160, 100, 40));
+    cyl_y(&mut m, 16, 16, 1.5, 1, 10, rgb(96, 74, 44));
+    let r = if heavy { 5.0 } else { 4.2 };
+    cyl_y(&mut m, 16, 16, r - 0.6, 10, 13, pad);
+    cyl_y(&mut m, 16, 16, r, 14, 20, pad);
+    cyl_y(&mut m, 16, 16, r - 0.8, 21, 23, pad);
+    for y in [13u32, 20] {
+        for a in 0..28 {
+            let t = a as f32 / 28.0 * std::f32::consts::TAU;
+            let x = (16.0 + r * t.cos()) as u32;
+            let z = (16.0 + r * t.sin()) as u32;
+            m.set(x, y, z, Some(strap));
+        }
+    }
+    for x in [9u32, 21] {
+        box_fill(&mut m, x, x + 2, 17, 20, 14, 17, pad);
+    }
+    cyl_y(&mut m, 16, 16, 3.0, 24, 28, helm);
+    for x in 13..=19u32 {
+        m.set(x, 25, 19, Some(face));
+        m.set(x, 26, 19, Some(face));
+    }
+    m.set(16, 29, 16, Some(helm));
+    m
+}
+
+/// Pinball machine: legs, a stepped cabinet with
+/// the playfield art on its steps, and the backbox
+/// with the sprite's art on its face.
+fn d3_pinball(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 27, 32]);
+    let navy = rgb(36, 40, 92);
+    let grey = rgb(150, 152, 155);
+    for x in [12u32, 27] {
+        for z in [8u32, 23] {
+            box_fill(&mut m, x, x + 1, 0, 8, z, z + 1, grey);
+        }
+    }
+    // Cabinet in three steps, art sampled per step.
+    for (z0, z1, y) in [(6u32, 13u32, 16u32), (14, 19, 14), (20, 26, 12)] {
+        box_fill(&mut m, 11, 29, 8, y, z0, z1, navy);
+        for x in 12..=28u32 {
+            let row = 6 + (26 - z1) / 2;
+            let px = *sprite.get_pixel(x, row);
+            if opaque(px) {
+                m.set(x, y, z1 - 1, Some(px));
+                m.set(x, y, z0, Some(px));
+            }
+        }
+    }
+    // Coin door on the front.
+    box_fill(&mut m, 17, 22, 8, 11, 26, 26, grey);
+    // Backbox with its art stamped on the face.
+    box_fill(&mut m, 11, 29, 16, 26, 6, 10, navy);
+    for x in 11..=29u32 {
+        for y in 16..=26u32 {
+            let px = *sprite.get_pixel(x, 26 - y);
+            if opaque(px) {
+                m.set(x, y, 10, Some(px));
+            }
+        }
+    }
+    m
+}
+
+/// Mailbox: post, and the tunnel-profile box with
+/// its door and red flag.
+fn d3_mailbox() -> PropModel {
+    let mut m = PropModel::new([32, 25, 32]);
+    let blue = rgb(128, 138, 198);
+    let blue_dk = rgb(88, 96, 152);
+    let wood = rgb(146, 110, 62);
+    box_fill(&mut m, 15, 17, 0, 12, 14, 16, wood);
+    box_fill(&mut m, 12, 20, 11, 12, 14, 16, wood);
+    // Tunnel shell extruded along z.
+    for z in 10..=20u32 {
+        for x in 12..=20u32 {
+            m.set(x, 13, z, Some(blue));
+        }
+        for y in 14..=19u32 {
+            m.set(12, y, z, Some(blue));
+            m.set(20, y, z, Some(blue));
+        }
+        for x in 13..=19u32 {
+            m.set(x, 20, z, Some(blue));
+        }
+        for x in 15..=17u32 {
+            m.set(x, 21, z, Some(blue));
+        }
+    }
+    // Door on the front face.
+    for x in 13..=19u32 {
+        for y in 14..=19u32 {
+            m.set(x, y, 20, Some(blue_dk));
+        }
+    }
+    m.set(16, 17, 20, Some(rgb(60, 62, 66)));
+    // Flag, up, on the right side.
+    box_fill(&mut m, 21, 21, 18, 22, 17, 18, rgb(206, 52, 44));
+    m
+}
+
+/// Recycle bin: tapered green body, lid, and the
+/// sprite stamped on the front.
+fn d3_recycle_bin(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 17, 32]);
+    let green = rgb(72, 130, 82);
+    let green_lt = rgb(96, 156, 102);
+    box_fill(&mut m, 12, 20, 0, 11, 12, 19, green);
+    box_fill(&mut m, 11, 21, 11, 15, 11, 20, green);
+    box_fill(&mut m, 10, 22, 15, 16, 10, 21, green_lt);
+    for x in 11..=21u32 {
+        for y in 0..=16u32 {
+            let px = *sprite.get_pixel(x - 1, 27 - y);
+            if opaque(px) {
+                let z = if y <= 11 { 19 } else { 20 };
+                m.set(x, y, z, Some(px));
+            }
+        }
+    }
+    m
+}
+
+/// Hand water pump: flanged base, pipe, head, spout.
+fn d3_water_pump() -> PropModel {
+    let mut m = PropModel::new([32, 37, 32]);
+    let green = rgb(86, 150, 106);
+    let green_dk = rgb(58, 108, 76);
+    cyl_y(&mut m, 16, 16, 4.2, 0, 2, green_dk);
+    cyl_y(&mut m, 16, 16, 1.8, 2, 24, green);
+    box_fill(&mut m, 13, 19, 24, 28, 13, 19, green);
+    // Spout toward the front with a downturned tip.
+    tube_z(&mut m, 19, 26, 16, 26, 1.2, green);
+    box_fill(&mut m, 15, 17, 23, 25, 25, 27, green_dk);
+    // Handle arcing up and back.
+    beam(&mut m, 15, 28, 13, 14, 36, 7, green_dk);
+    box_fill(&mut m, 13, 15, 35, 36, 5, 7, green_dk);
+    m
+}
+
+/// Farm windmill: lattice tower and a big fan wheel.
+fn d3_windmill() -> PropModel {
+    let mut m = PropModel::new([32, 51, 32]);
+    let rust = rgb(142, 96, 60);
+    let rust_lt = rgb(172, 118, 74);
+    let dark = rgb(96, 66, 40);
+    for (bx, bz) in [(7i32, 10i32), (25, 10), (7, 22), (25, 22)] {
+        let tx = if bx < 16 { 12 } else { 20 };
+        let tz = if bz < 16 { 13 } else { 19 };
+        beam(&mut m, bx, 0, bz, tx, 33, tz, rust);
+    }
+    for y in [12u32, 22] {
+        let t = y as f32 / 33.0;
+        let xl = (7.0 + 5.0 * t) as u32;
+        let xh = (25.0 - 5.0 * t) as u32;
+        let zl = (10.0 + 3.0 * t) as u32;
+        let zh = (22.0 - 3.0 * t) as u32;
+        box_fill(&mut m, xl, xh, y, y, zl, zl, dark);
+        box_fill(&mut m, xl, xh, y, y, zh, zh, dark);
+        box_fill(&mut m, xl, xl, y, y, zl, zh, dark);
+        box_fill(&mut m, xh, xh, y, y, zl, zh, dark);
+    }
+    box_fill(&mut m, 11, 21, 33, 34, 12, 20, dark);
+    // Fan wheel in the front plane.
+    let (cx, cy) = (16i32, 41i32);
+    for dx in -10i32..=10 {
+        for dy in -10i32..=10 {
+            let d = ((dx * dx + dy * dy) as f32).sqrt();
+            if d > 10.2 || d < 1.6 {
+                continue;
+            }
+            let ang = (dy as f32).atan2(dx as f32);
+            let sector = ((ang / std::f32::consts::TAU * 9.0).rem_euclid(9.0)) as u32;
+            let frac = (ang / std::f32::consts::TAU * 9.0).rem_euclid(1.0);
+            if d <= 4.0 || frac < 0.62 || sector % 3 == 0 && frac < 0.8 {
+                let c = if hash01((cx + dx) as u32, (cy + dy) as u32) < 0.35 {
+                    rust
+                } else {
+                    rust_lt
+                };
+                for z in 10..=11u32 {
+                    m.set((cx + dx) as u32, (cy + dy) as u32, z, Some(c));
+                }
+            }
+        }
+    }
+    box_fill(&mut m, 14, 18, 39, 43, 11, 14, dark);
+    m
+}
+
+/// Exodii portal tower: four banded legs, a central
+/// column, and the cradle with its two prongs.
+fn d3_portal_tower() -> PropModel {
+    let mut m = PropModel::new([32, 48, 32]);
+    let dark = rgb(70, 78, 70);
+    let darker = rgb(48, 54, 48);
+    let gold = rgb(178, 138, 52);
+    let grey = rgb(150, 152, 150);
+    for (bx, bz) in [(10i32, 12i32), (22, 12), (10, 20), (22, 20)] {
+        let tx = if bx < 16 { 12 } else { 20 };
+        let tz = if bz < 16 { 13 } else { 19 };
+        beam(&mut m, bx, 0, bz, tx, 36, tz, dark);
+        for y in [6i32, 24] {
+            let t = y as f32 / 36.0;
+            let lx = (bx as f32 + (tx - bx) as f32 * t) as u32;
+            let lz = (bz as f32 + (tz - bz) as f32 * t) as u32;
+            box_fill(&mut m, lx - 1, lx + 1, y as u32, y as u32 + 1, lz - 1, lz + 1, gold);
+        }
+    }
+    cyl_y(&mut m, 16, 16, 2.0, 8, 38, darker);
+    // Cradle: shallow wide bowl with raised ends.
+    box_fill(&mut m, 6, 26, 38, 40, 10, 22, grey);
+    box_fill(&mut m, 6, 8, 41, 43, 10, 22, grey);
+    box_fill(&mut m, 24, 26, 41, 43, 10, 22, grey);
+    box_fill(&mut m, 6, 26, 41, 42, 10, 11, grey);
+    box_fill(&mut m, 6, 26, 41, 42, 21, 22, grey);
+    // Prongs: gold left, green right.
+    box_fill(&mut m, 7, 8, 44, 47, 12, 13, gold);
+    box_fill(&mut m, 24, 25, 44, 47, 19, 20, rgb(140, 190, 110));
+    // Two small lights on the cradle's front.
+    m.set(13, 39, 22, Some(rgb(230, 150, 170)));
+    m.set(19, 39, 22, Some(rgb(230, 150, 170)));
+    m
+}
+
+/// Warped lamp string: a leaning post with a cloth
+/// wrap, a glowing green lamp blob, and a rock base.
+fn d3_lamp_string() -> PropModel {
+    let mut m = PropModel::new([32, 43, 32]);
+    let rock = rgb(172, 166, 150);
+    let post = rgb(62, 67, 86);
+    let cloth = rgb(182, 156, 114);
+    cyl_y(&mut m, 16, 16, 5.0, 0, 1, rock);
+    cyl_y(&mut m, 16, 16, 3.8, 2, 2, rock);
+    beam(&mut m, 15, 2, 15, 13, 34, 14, post);
+    for y in 16..=22u32 {
+        let t = (y - 2) as f32 / 32.0;
+        let px = (15.0 - 2.0 * t) as u32;
+        box_fill(&mut m, px - 1, px + 1, y, y, 13, 17, cloth);
+    }
+    // Lamp blob: a rough sphere of greens.
+    let greens = [rgb(118, 236, 130), rgb(80, 200, 96), rgb(192, 250, 182)];
+    for dx in -4i32..=4 {
+        for dy in -4i32..=4 {
+            for dz in -4i32..=4 {
+                let d = ((dx * dx + dy * dy + dz * dz) as f32).sqrt();
+                if d <= 3.6 && hash01((dx * 31 + dz) as u32, (dy + 40) as u32) > 0.18 {
+                    let c = greens[(hash01(dx as u32, dy as u32) * 3.0) as usize % 3];
+                    m.set(
+                        (13 + dx) as u32,
+                        (38 + dy) as u32,
+                        (14 + dz) as u32,
+                        Some(c),
+                    );
+                }
+            }
+        }
+    }
+    m.set(13, 33, 14, Some(greens[1]));
+    m.set(14, 34, 15, Some(greens[0]));
+    m
+}
+
+/// Eyewash station: pipe post, sign panel, bowl,
+/// and the angled shower pipe.
+fn d3_eyewash() -> PropModel {
+    let mut m = PropModel::new([32, 39, 32]);
+    let green = rgb(96, 176, 92);
+    let green_dk = rgb(66, 132, 64);
+    cyl_y(&mut m, 19, 16, 3.4, 0, 1, green_dk);
+    cyl_y(&mut m, 19, 16, 1.3, 1, 36, green);
+    // Sign panel at the top, extending left.
+    box_fill(&mut m, 6, 18, 33, 36, 15, 16, rgb(232, 234, 230));
+    box_fill(&mut m, 6, 9, 33, 36, 15, 16, green);
+    m.set(7, 35, 16, Some(rgb(206, 44, 40)));
+    m.set(12, 34, 16, Some(green_dk));
+    m.set(15, 34, 16, Some(green_dk));
+    // Bowl: a ring on a short arm at mid height.
+    beam(&mut m, 18, 24, 15, 11, 24, 15, green_dk);
+    for dx in -4i32..=4 {
+        for dz in -4i32..=4 {
+            let d = ((dx * dx + dz * dz) as f32).sqrt();
+            if (3.0..=4.2).contains(&d) {
+                m.set((10 + dx) as u32, 25, (16 + dz) as u32, Some(green));
+            } else if d < 3.0 {
+                m.set((10 + dx) as u32, 24, (16 + dz) as u32, Some(green_dk));
+            }
+        }
+    }
+    m.set(10, 26, 16, Some(green_dk));
+    // Angled shower pipe down to the right.
+    beam(&mut m, 19, 22, 15, 25, 12, 15, rgb(140, 142, 145));
+    m
+}
+
 fn d2_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     match id {
         "f_aluminum_stepladder" => Some(d2_stepladder()),
@@ -5006,6 +5561,9 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         return Some(m);
     }
     if let Some(m) = d2_model(id, sprite) {
+        return Some(m);
+    }
+    if let Some(m) = d3_model(id, sprite) {
         return Some(m);
     }
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {

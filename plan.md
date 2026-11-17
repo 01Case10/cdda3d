@@ -1667,3 +1667,15 @@ flared grain head), target box (stamped crate), police barricade
 counter stub), trailer bed head (ribbed panel), camp chair (X-frame +
 fabric), stool (round seat, splayed legs). Coverage 263 -> 278 of 351.
 64px sprites built at tile scale from their proportions.
+
+D3 (machines/bodies) addendum (2026-11-17): all 18 hand-built in
+props.rs (d3_model): alembic (copper boiler, glass arm, receiver
+flasks), beverly shear, drill press (profile build), hydraulic press
+(H-frame), tire changer (rim ring + swing arm), ergometer (stationary
+bike), bench press station, mannequin (pale humanoid), training
+dummies x2 (pell: padded torso + helm on a post), pinball (stepped
+cabinet, art sampled from the sprite, stamped backbox), mailbox
+(tunnel profile + flag), recycle bin (stamped front), water pump,
+windmill (lattice tower + fan wheel), exodii portal tower (banded
+legs + cradle), warped lamp string (glow blob on a leaning post),
+eyewash station. Coverage 278 -> 296 of 351.
