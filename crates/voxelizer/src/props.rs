@@ -4137,9 +4137,9 @@ fn manual_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         "f_floor_lamp" => Some(manual_floor_lamp()),
         "f_wind_vane" => Some(manual_wind_vane(sprite)),
         "f_TV_antenna" => Some(manual_tv_antenna()),
-        "f_cellphone_booster" => Some(manual_cellphone_booster()),
+        "f_cellphone_booster" => Some(section_solid(sprite, 0.6, 6)),
         "f_ventilator" => Some(manual_ventilator()),
-        "f_machinery_light" => Some(manual_machinery_light()),
+        "f_machinery_light" => Some(section_solid(sprite, 0.55, 11)),
         "f_ground_cable" => Some(manual_ground_cable()),
         _ => None,
     }
@@ -4252,21 +4252,82 @@ fn manual_tv_antenna() -> PropModel {
 /// sprite composes them) joined by two bracket arms.
 /// Whites/greys from the sprite ((255,255,255),
 /// (155,155,155)).
-fn manual_cellphone_booster() -> PropModel {
-    let mut m = PropModel::new([32, 28, 32]);
-    let white = rgb(228, 228, 226);
-    let grey = rgb(150, 150, 150);
-    let dark = rgb(80, 80, 80);
-    // Main panel: x 18..27, y 4..25, z 19..20.
-    box_fill(&mut m, 18, 27, 4, 25, 19, 20, white);
-    box_fill(&mut m, 18, 27, 4, 25, 18, 18, grey);
-    // Second panel: x 5..11, y 7..22, z 10..11.
-    box_fill(&mut m, 5, 11, 7, 22, 10, 11, white);
-    box_fill(&mut m, 5, 11, 7, 22, 12, 12, grey);
-    // Bracket arms joining them at y 10 and y 19.
-    box_fill(&mut m, 11, 18, 10, 11, 13, 15, dark);
-    box_fill(&mut m, 11, 18, 19, 20, 13, 15, dark);
-    box_fill(&mut m, 14, 16, 11, 19, 13, 15, dark);
+/// A sprite-faithful section solid (hand-fitted for
+/// the machinery light and the cellphone booster, whose
+/// freehand builds did not match their tiles -- Joey,
+/// 2026-11-17): every row's opaque clusters fill as
+/// boxes whose depth scales with the cluster's width
+/// (factor, clamped 3..=max_d), so the front IS the
+/// sprite, open gaps between members stay open, and
+/// every section has real depth. Clusters that are
+/// entirely near-black are the sprite's ground shadow
+/// and are dropped.
+fn section_solid(sprite: &RgbaImage, factor: f32, max_d: u32) -> PropModel {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next().unwrap_or(0)..rows.last().map(|r| r + 1).unwrap_or(0);
+    let fh = band.end - band.start;
+    let mut m = PropModel::new([w, fh.max(1), 32]);
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        let mut x = 0;
+        while x < w {
+            if !opaque(*sprite.get_pixel(x, r)) {
+                x += 1;
+                continue;
+            }
+            let a = x;
+            while x < w && opaque(*sprite.get_pixel(x, r)) {
+                x += 1;
+            }
+            let b = x - 1;
+            // Drop pure-shadow clusters.
+            let solid_px = (a..=b).any(|px| {
+                let c = sprite.get_pixel(px, r).0;
+                c[0] >= 40 || c[1] >= 40 || c[2] >= 40
+            });
+            if !solid_px {
+                continue;
+            }
+            let wdt = b - a + 1;
+            // Odd depths only, so every section centers
+            // on the same z and adjoining sections meet
+            // flush instead of stepping by one cell.
+            let mut d = ((wdt as f32 * factor).round() as u32).clamp(3, max_d);
+            if d % 2 == 0 {
+                d += 1;
+            }
+            let z0 = 16 - (d - 1) / 2;
+            let z1 = z0 + d - 1;
+            // De-void: near-black paint is the sprite's
+            // outline/shadow, not surface color -- on a
+            // side face it smears into a black slab (the
+            // orrery lesson). Surface voxels showing a
+            // near-black pixel take the cluster's modal
+            // solid tone instead.
+            let modal = modal_color((a..=b).filter_map(|px| {
+                let c = *sprite.get_pixel(px, r);
+                let v = c.0;
+                if v[0] < 40 && v[1] < 40 && v[2] < 40 {
+                    None
+                } else {
+                    Some(c)
+                }
+            }));
+            for vx in a..=b {
+                let mut px = *sprite.get_pixel(vx, r);
+                let v = px.0;
+                if v[0] < 40 && v[1] < 40 && v[2] < 40 {
+                    if let Some(mc) = modal {
+                        px = mc;
+                    }
+                }
+                for z in z0..=z1 {
+                    m.set(vx, y, z, Some(px));
+                }
+            }
+        }
+    }
     m
 }
 
@@ -4309,32 +4370,6 @@ fn manual_ventilator() -> PropModel {
 /// posts, and the lamp head with two pale lamps. Greens
 /// from the sprite ((157,169,73), (123,132,61),
 /// (79,86,38)).
-fn manual_machinery_light() -> PropModel {
-    let mut m = PropModel::new([32, 32, 32]);
-    let dark = rgb(86, 94, 42);
-    let mid = rgb(126, 135, 62);
-    let light = rgb(158, 170, 74);
-    let steel = rgb(168, 168, 160);
-    for (x, z) in [(9u32, 12u32), (21, 12), (9, 19), (21, 19)] {
-        box_fill(&mut m, x, x + 1, 0, 0, z, z + 1, rgb(40, 40, 38));
-    }
-    box_fill(&mut m, 8, 24, 1, 7, 11, 21, dark);
-    box_fill(&mut m, 7, 25, 8, 10, 10, 22, mid);
-    // Motor block on the right of the table.
-    box_fill(&mut m, 17, 24, 11, 19, 13, 20, light);
-    box_fill(&mut m, 17, 24, 20, 20, 13, 20, mid);
-    // Two posts rising at the left-center.
-    box_fill(&mut m, 10, 11, 11, 24, 14, 15, steel);
-    box_fill(&mut m, 14, 15, 11, 24, 14, 15, steel);
-    // Lamp head across the posts' tops.
-    box_fill(&mut m, 8, 21, 25, 30, 12, 19, light);
-    box_fill(&mut m, 8, 21, 30, 30, 12, 19, mid);
-    // Two pale lamps on the head's front face.
-    box_fill(&mut m, 10, 12, 27, 28, 19, 19, rgb(236, 232, 184));
-    box_fill(&mut m, 16, 18, 27, 28, 19, 19, rgb(236, 232, 184));
-    m
-}
-
 /// Ground cable (unconnected): two loose coils lying
 /// flat -- a red ring and a green ring -- with two
 /// white/yellow plugs at the red coil's edge. Reds
