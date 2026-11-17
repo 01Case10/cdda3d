@@ -4389,38 +4389,58 @@ fn manual_machinery_light(sprite: &RgbaImage) -> PropModel {
     m.set(23, 35, 16, Some(rgb(66, 74, 30))); // side boss
     box_fill(&mut m, 18, 18, 40, 41, 15, 16, lens); // top peg
     // --- posts ---------------------------------------
-    box_fill(&mut m, 4, 6, 35, 50, 13, 16, brown); // column
-    stamp(&mut m, 4, 6, 35, 50, 16);
-    box_fill(&mut m, 10, 10, 35, 50, 15, 16, steel); // rod 1
-    stamp(&mut m, 10, 10, 35, 50, 16);
-    box_fill(&mut m, 12, 13, 35, 50, 15, 16, steel); // rod 2
-    stamp(&mut m, 12, 13, 35, 50, 16);
-    // The bright fitting at the column's top.
-    box_fill(&mut m, 5, 9, 47, 48, 13, 17, steel_dk);
-    stamp(&mut m, 5, 9, 47, 48, 17);
+    box_fill(&mut m, 4, 6, 34, 50, 13, 16, brown); // column
+    stamp(&mut m, 4, 6, 34, 50, 16);
+    box_fill(&mut m, 10, 10, 34, 50, 15, 16, steel); // rod 1
+    stamp(&mut m, 10, 10, 34, 50, 16);
+    box_fill(&mut m, 12, 13, 34, 50, 15, 16, steel); // rod 2
+    stamp(&mut m, 12, 13, 34, 50, 16);
+    // The bright fitting at the column's top, flush
+    // with the posts' front plane.
+    box_fill(&mut m, 5, 9, 47, 48, 13, 16, steel_dk);
+    stamp(&mut m, 5, 9, 47, 48, 16);
     // Conduit: clipped behind the rods, landing on
     // the head's back and the body's back top.
     box_fill(&mut m, 11, 11, 35, 50, 13, 13, conduit);
     box_fill(&mut m, 11, 11, 51, 51, 9, 13, conduit);
     m.set(11, 34, 9, Some(conduit));
     // --- head ----------------------------------------
-    box_fill(&mut m, 1, 15, 51, 58, 9, 24, olive);
+    box_fill(&mut m, 1, 15, 51, 58, 14, 24, olive);
     stamp(&mut m, 1, 15, 51, 58, 24);
-    // Underside notch (the sprite's dark recess).
-    for x in 8..=9 {
-        for z in 18..=24 {
-            m.set(x, 51, z, None);
+    // Top posts as small clean knobs (their sprite
+    // stamps include outline-black pixels that read
+    // as a plaque at the front plane): a brown knob
+    // with a pale cap at the left, a shorter steel
+    // knob right of center.
+    box_fill(&mut m, 2, 4, 59, 61, 20, 21, brown);
+    box_fill(&mut m, 2, 4, 61, 61, 20, 21, rgb(216, 210, 186));
+    box_fill(&mut m, 9, 12, 59, 60, 20, 21, steel_dk);
+    m.set(10, 60, 21, Some(rgb(216, 210, 186)));
+    // Lamp pods in profile: just the head's front
+    // corner cells on each side face.
+    for xf in [1u32, 15] {
+        box_fill(&mut m, xf, xf, 53, 55, 23, 24, dark);
+        m.set(xf, 54, 24, Some(lens));
+    }
+    // Ledge paint: every upward face that the tilted
+    // front view can see takes the sprite row just
+    // above its component (body top <- row 28, head
+    // top <- row 4, housing steps <- olive_dk where
+    // the row above is empty air).
+    for x in 4..=27u32 {
+        let px = *sprite.get_pixel(x, 28);
+        for z in 9..=22u32 {
+            if m.get(x, 34, z).is_some() {
+                m.set(x, 34, z, Some(if opaque(px) { px } else { olive_dk }));
+            }
         }
     }
-    // Top posts, recessed from the front plane.
-    box_fill(&mut m, 2, 5, 59, 61, 13, 16, brown);
-    stamp(&mut m, 2, 5, 59, 61, 16);
-    box_fill(&mut m, 8, 14, 59, 61, 13, 19, olive_dk);
-    stamp(&mut m, 8, 14, 59, 61, 19);
-    // Lamp pods in profile on both side faces.
-    for xf in [1u32, 15] {
-        box_fill(&mut m, xf, xf, 52, 56, 21, 24, dark);
-        box_fill(&mut m, xf, xf, 53, 55, 23, 24, lens);
+    for x in 1..=15u32 {
+        for z in 14..=23u32 {
+            if m.get(x, 58, z).is_some() {
+                m.set(x, 58, z, Some(olive_dk));
+            }
+        }
     }
     m
 }
