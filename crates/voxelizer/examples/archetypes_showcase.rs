@@ -221,6 +221,20 @@ fn main() {
                     f.opening
                 )
             }
+            Archetype::LaundryAppliance => {
+                let f = laundry_fit(&sprite, &seg);
+                format!(
+                    "control_h {} plinth_h {} seam {:?} depth {}",
+                    f.control_h, f.plinth_h, f.seam_rows, f.depth
+                )
+            }
+            Archetype::VendingMachine => {
+                let f = vending_fit(&sprite, &seg);
+                format!(
+                    "height {} depth {} base_h {} bay {:?}",
+                    f.height, f.depth, f.base_h, f.bay
+                )
+            }
         };
         println!("{served_id} <- {sprite_id}: {arch:?}; {fit_note}");
         let oy = row as u32 * CELL_H;
