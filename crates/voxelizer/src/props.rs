@@ -2586,18 +2586,15 @@ pub const BLOB_PINS: &[&str] = &[
     "f_fungal_clump",
 ];
 
-/// Drape pins: the egg sacks are NOT rocks — the sprite is a
-/// low, crumpled, draped pile (wider than tall, fold shading
-/// running vertically). The mass blob's distance-transform
-/// inflation made them thick slabs (Joey, 2026-11-17: "clearly
-/// does not match"). The drape variant keeps the depth
-/// modest (0.62 x widest row), thins the edges harder, and
-/// modulates each column's depth by its fold shading (dark
-/// fold columns end shallower — a scalloped back edge).
-/// Mockup: target/stage-g/mockups/f_egg_sacke_sides.png
-/// (sprite-derived: mirrored back, columns rearranged for
-/// the side profile).
-pub const DRAPE_PINS: &[&str] = &["f_egg_sacke", "f_egg_sackws"];
+/// Egg-pile pins: the egg sacks are mounds of individual
+/// eggs (Joey, 2026-11-17: "These are mounds of things and
+/// eggs. The back shouldn't be flat"). Routed to
+/// [`egg_pile_model`]: a blob mass whose back and sides are
+/// formed by packed egg spheres, so every non-front face
+/// reads as individual round eggs. The front stays the
+/// sprite verbatim (Joey approved the fronts).
+/// Mockup: target/stage-g/mockups/f_egg_sacke_sides.png.
+pub const EGG_PINS: &[&str] = &["f_egg_sacke", "f_egg_sackws"];
 
 /// An irregular lump fitted to the sprite: the front face is
 /// the sprite verbatim (every structure pixel is a column at
@@ -2609,7 +2606,7 @@ pub const DRAPE_PINS: &[&str] = &["f_egg_sacke", "f_egg_sackws"];
 /// asymmetric, never a disc profile. Every voxel carries its
 /// column's sprite paint (mottled rock/fungal texture wraps
 /// the mass). Depth budget = the widest row (<= 32).
-fn blob_model(sprite: &RgbaImage, seg: &Segmentation, drape: bool) -> Option<PropModel> {
+fn blob_base(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
@@ -2639,44 +2636,7 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation, drape: bool) -> Option<Pro
     if d_max < 4 {
         return None;
     }
-    // Mass: depth budget = the widest row. Drape: a modest
-    // 0.62 x — a pile of sacks is much thinner than a rock.
-    let d = if drape {
-        ((d_max as f32 * 0.62).round() as u32).max(4).min(32)
-    } else {
-        d_max.min(32)
-    };
-    // Per-column fold shading for the drape: the mean L of
-    // the column's structure pixels, normalized over columns
-    // (dark fold columns are the drape's valleys).
-    let col_fold: Vec<f32> = if drape {
-        let means: Vec<Option<f32>> = (0..w)
-            .map(|x| {
-                let ls: Vec<f32> = (0..fh)
-                    .map(|y| *sprite.get_pixel(x, bot - y))
-                    .filter(|p| structure(*p))
-                    .map(|p| lab_of(p).l)
-                    .collect();
-                if ls.is_empty() {
-                    None
-                } else {
-                    Some(ls.iter().sum::<f32>() / ls.len() as f32)
-                }
-            })
-            .collect();
-        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
-        for m in means.iter().flatten() {
-            lo = lo.min(*m);
-            hi = hi.max(*m);
-        }
-        let span = (hi - lo).max(0.01);
-        means
-            .iter()
-            .map(|m| m.map_or(1.0, |v| 0.85 + 0.15 * (v - lo) / span))
-            .collect()
-    } else {
-        vec![1.0; w as usize]
-    };
+    let d = d_max.min(32);
     // Depth from the silhouette's DISTANCE TRANSFORM (mockup
     // round, 2026-11-17): a column's depth follows how deep
     // inside the silhouette it sits — the mass is an inflated
@@ -2756,26 +2716,13 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation, drape: bool) -> Option<Pro
             // not slab backwards at full depth) and a ground
             // boost at the base (the back face reaches the
             // ground across the width — a grounded mass, per
-            // the mockup's side profile). The drape skips the
-            // ground boost (it is a soft pile, not a grounded
-            // rock), thins its edges harder, and applies the
-            // fold modulation.
+            // the mockup's side profile).
             let (cy0, cy1) = col_ext[x as usize].unwrap_or((y, y));
             let v = (y - cy0) as f32 / ((cy1 - cy0) as f32).max(1.0);
-            let depth = if drape {
-                let dome = 1.0 - 0.25 * v * v;
-                d as f32
-                    * dfrac.powf(0.8)
-                    * lump
-                    * dome
-                    * col_fold[x as usize]
-            } else {
-                let dome = 1.0 - 0.38 * v * v;
-                let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
-                let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
-                depth = depth.max(d as f32 * 0.45 * gfrac);
-                depth
-            };
+            let dome = 1.0 - 0.38 * v * v;
+            let mut depth = d as f32 * dfrac.powf(0.65) * lump * dome;
+            let gfrac = ((0.4 * fh as f32 - y as f32) / (0.4 * fh as f32)).clamp(0.0, 1.0);
+            depth = depth.max(d as f32 * 0.45 * gfrac);
             let depth = (depth.round() as u32).clamp(2, d);
             for z in (d - depth)..d {
                 m.set(x, y, z, Some(px));
@@ -2785,7 +2732,135 @@ fn blob_model(sprite: &RgbaImage, seg: &Segmentation, drape: bool) -> Option<Pro
     if m.solid_count() == 0 {
         return None;
     }
-    wrap_row_pattern(&mut m, sprite, seg, &row_ext);
+    Some(m)
+}
+
+/// The blob mass with the pattern wrap (boulders, fungal
+/// clump).
+fn blob_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
+    let mut m = blob_base(sprite, seg)?;
+    let fh = seg.front_rows.end - seg.front_rows.start;
+    let bot = seg.front_rows.end - 1;
+    let rows: Vec<Option<(u32, u32)>> = (0..fh)
+        .map(|y| {
+            let r = bot - y;
+            let xs: Vec<u32> = (0..sprite.width())
+                .filter(|&x| structure(*sprite.get_pixel(x, r)))
+                .collect();
+            if xs.is_empty() {
+                None
+            } else {
+                Some((xs[0], xs[xs.len() - 1]))
+            }
+        })
+        .collect();
+    wrap_row_pattern(&mut m, sprite, seg, &rows);
+    Some(m)
+}
+
+/// Deterministic 2D hash -> [0, 1) (xorshift-multiply), for
+/// the egg scatter (rebuilds must be identical).
+fn hash01(a: u32, b: u32) -> f32 {
+    let mut h = (a.wrapping_mul(0x9E3779B1) ^ b.wrapping_mul(0x85EBCA6B)) as u64;
+    h ^= h >> 29;
+    h = h.wrapping_mul(0xBF58476D1CE4E5B9);
+    h ^= h >> 32;
+    (h % 10000) as f32 / 10000.0
+}
+
+/// A mound of individual eggs (the egg sacks): the blob
+/// mass, with packed egg spheres seated on its back surface
+/// so the back and sides are formed by round egg caps —
+/// individually tinted — instead of a smooth relief. Egg
+/// discs may bulge past the silhouette only in the back
+/// half (z <= d-3), so the front face and its silhouette
+/// stay exactly the sprite.
+fn egg_pile_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
+    let mut m = blob_base(sprite, seg)?;
+    let (w, fh, d) = (sprite.width(), m.size[1], m.size[2]);
+    let bot = seg.front_rows.end - 1;
+    // Back endpoint (z-min) of the base mass per column.
+    let back_z = |m: &PropModel, x: u32, y: u32| -> Option<u32> {
+        (0..d).find(|&z| m.get(x, y, z).is_some())
+    };
+    // Silhouette dilated by 2 (where egg bulges may live).
+    let mut dilated = vec![false; (w * fh) as usize];
+    for y in 0..fh {
+        for x in 0..w {
+            if structure(*sprite.get_pixel(x, bot - y)) {
+                for dy in -2i32..=2 {
+                    for dx in -2i32..=2 {
+                        let (nx, ny) = (x as i32 + dx, y as i32 + dy);
+                        if nx >= 0 && ny >= 0 && nx < w as i32 && ny < fh as i32 {
+                            dilated[(ny * w as i32 + nx) as usize] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Egg seats: a jittered grid over the silhouette.
+    let mut eggs: Vec<(i32, i32, i32, f32, f32)> = Vec::new(); // x, y, z, r, tint
+    let mut gy = 1i32;
+    while gy < fh as i32 - 1 {
+        let mut gx = 2i32;
+        while gx < w as i32 - 1 {
+            let cx = (gx + ((hash01(gx as u32, gy as u32) - 0.5) * 2.4) as i32)
+                .clamp(0, w as i32 - 1);
+            let cy = (gy + ((hash01(gy as u32, gx as u32 ^ 0x5EED) - 0.5) * 2.4) as i32)
+                .clamp(0, fh as i32 - 1);
+            if let Some(bz) = back_z(&m, cx as u32, cy as u32) {
+                let r = 2.1 + hash01(cx as u32 ^ 0xE66, cy as u32) * 1.1;
+                let cz = bz as i32 + (r * 0.72) as i32;
+                let tint = 0.86 + hash01(cx as u32, cy as u32 ^ 0x7177) * 0.26;
+                eggs.push((cx, cy, cz, r, tint));
+            }
+            gx += 4;
+        }
+        gy += 3;
+    }
+    // Lay the eggs: sphere voxels, tinted per egg.
+    for &(ex, ey, ez, r, tint) in &eggs {
+        let ri = r.ceil() as i32;
+        for dy in -ri..=ri {
+            for dx in -ri..=ri {
+                for dz in -ri..=ri {
+                    let dist2 = (dx * dx + dy * dy + dz * dz) as f32;
+                    if dist2 > r * r {
+                        continue;
+                    }
+                    let (x, y, z) = (ex + dx, ey + dy, ez + dz);
+                    if x < 0 || y < 0 || z < 0 || x >= w as i32 || y >= fh as i32 || z >= d as i32 {
+                        continue;
+                    }
+                    let (x, y, z) = (x as u32, y as u32, z as u32);
+                    if z == d - 1 {
+                        continue; // the front face stays the sprite
+                    }
+                    let in_sil = structure(*sprite.get_pixel(x, bot - y));
+                    if !in_sil && !(z <= d.saturating_sub(3) && dilated[(y * w + x) as usize]) {
+                        continue;
+                    }
+                    // Paint: the egg seat's column paint (or
+                    // the voxel's own column when it has one),
+                    // tinted per egg.
+                    let src = if in_sil {
+                        *sprite.get_pixel(x, bot - y)
+                    } else {
+                        *sprite.get_pixel(ex as u32, bot - ey as u32)
+                    };
+                    let t = tint * (1.0 - 0.25 * (dist2.sqrt() / r));
+                    let c = Rgba([
+                        (src[0] as f32 * t).min(255.0) as u8,
+                        (src[1] as f32 * t).min(255.0) as u8,
+                        (src[2] as f32 * t).min(255.0) as u8,
+                        255,
+                    ]);
+                    m.set(x, y, z, Some(c));
+                }
+            }
+        }
+    }
     Some(m)
 }
 
@@ -3189,12 +3264,12 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         }
     }
     if BLOB_PINS.contains(&id) {
-        if let Some(m) = blob_model(sprite, &seg, false) {
+        if let Some(m) = blob_model(sprite, &seg) {
             return Some(m);
         }
     }
-    if DRAPE_PINS.contains(&id) {
-        if let Some(m) = blob_model(sprite, &seg, true) {
+    if EGG_PINS.contains(&id) {
+        if let Some(m) = egg_pile_model(sprite, &seg) {
             return Some(m);
         }
     }
