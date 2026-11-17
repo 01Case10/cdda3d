@@ -436,6 +436,70 @@ fn hollow_cylinder_has_a_real_cavity() {
 }
 
 #[test]
+fn horizontal_barrel_lies_on_its_side() {
+    // Joey's identification (2026-11-17, with a photo of the
+    // real object): f_fvat is an alcohol barrel lying on its
+    // side — head + tap toward the viewer, stave-and-hoop body
+    // receding. The vertical-cylinder treatment was wrong.
+    let sprite = load_raw("f_fvat_empty");
+    let seg = seamless_segment(&sprite).expect("seamless seg");
+    let fit = voxelizer::archetypes::horizontal_barrel_fit(&sprite, &seg).expect("fit");
+    assert_eq!(
+        (fit.far_rows, fit.body_rows, fit.head_rows),
+        (5, 20, 18),
+        "measured regions of the shared vat sprite"
+    );
+    let m = model_for("f_fvat_empty", &sprite).expect("models");
+    assert_eq!(m.size[1], 24, "model height = barrel diameter");
+    assert_eq!(m.size[2], 32, "model depth = barrel length");
+    // Head face (front, z = depth-2) is the dark head wood,
+    // distinctly darker than the body.
+    let head = m.get(13, 11, m.size[2] - 2).expect("head face");
+    assert!(lab(head).l < 0.55, "head is dark wood: {:?}", head.0);
+    let body = m.get(13, 11, 11).expect("body interior");
+    assert!(lab(body).l > lab(head).l + 0.1, "body brighter than head");
+    // The tap protrudes one cell proud of the head, low on it,
+    // in the sprite's blue-grey.
+    let tap = (0..m.size[0])
+        .flat_map(|x| (0..m.size[1]).map(move |y| (x, y)))
+        .find(|&(x, y)| m.get(x, y, m.size[2] - 1).is_some())
+        .expect("tap protrudes from the head");
+    let tc = m.get(tap.0, tap.1, m.size[2] - 1).expect("tap voxel");
+    assert!(
+        tc[2] >= tc[0] && tap.1 < m.size[1] / 2,
+        "tap is blue-grey and low on the head: {:?} at y={}",
+        tc.0, tap.1
+    );
+    // Hoops wrap the body: at a hoop z the body's top surface
+    // is mostly grey metal; at a stave z it is mostly wood.
+    let grey_frac = |z: u32| {
+        let mut n = 0;
+        let mut g = 0;
+        for x in 0..m.size[0] {
+            if let Some(y) = (0..m.size[1]).rev().find(|&y| m.get(x, y, z).is_some()) {
+                let c = m.get(x, y, z).expect("surface");
+                n += 1;
+                if (c[0] as i32 - c[1] as i32).abs() < 14 && c[0] > 90 {
+                    g += 1;
+                }
+            }
+        }
+        g as f32 / n.max(1) as f32
+    };
+    assert!(
+        grey_frac(19) > grey_frac(11) + 0.15,
+        "hoop ring at z=19 ({:.2}) vs staves at z=11 ({:.2})",
+        grey_frac(19),
+        grey_frac(11)
+    );
+    assert!(
+        grey_frac(11) < 0.15,
+        "staves at z=11: {:.2}",
+        grey_frac(11)
+    );
+}
+
+#[test]
 fn closed_cylinder_has_a_flat_fitted_lid() {
     let sprite = load_raw("f_wood_keg");
     let m = model_for("f_wood_keg", &sprite).expect("keg models");

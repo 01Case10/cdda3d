@@ -238,10 +238,19 @@ fn main() {
             Archetype::HollowCylinder | Archetype::ClosedCylinder => {
                 match cylinder_fit(&sprite, &seg) {
                     Some(f) => format!(
-                        "d {} fh {} interior_depth {} surface {:?}",
-                        f.d, f.fh, f.interior_depth, f.surface_color.0
+                        "d {} fh {} opening_rows {} surface {:?}",
+                        f.d, f.fh, f.opening_rows, f.surface_color.0
                     ),
                     None => "no cylinder fit".to_string(),
+                }
+            }
+            Archetype::HorizontalBarrel => {
+                match voxelizer::archetypes::horizontal_barrel_fit(&sprite, &seg) {
+                    Some(f) => format!(
+                        "d {} far {} body {} head {}",
+                        f.d, f.far_rows, f.body_rows, f.head_rows
+                    ),
+                    None => "no barrel fit".to_string(),
                 }
             }
         };

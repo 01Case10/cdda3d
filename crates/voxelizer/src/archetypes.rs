@@ -181,6 +181,15 @@ pub enum Archetype {
     VendingMachine,
     HollowCylinder,
     ClosedCylinder,
+    /// A barrel lying on its side (the fermentation vats, per
+    /// Joey's identification 2026-11-17 with a photo of the
+    /// real object): axis along the depth, the head facing the
+    /// viewer with the tap low on it, the stave-and-hoop body
+    /// receding behind. The sprite draws exactly that: dark
+    /// horizontal-grained head at the bottom of the drawing,
+    /// bright stave body with hoops above it, the far end's
+    /// curve at the top.
+    HorizontalBarrel,
 }
 
 /// The archetype id table: furniture id -> archetype. The
@@ -220,11 +229,15 @@ pub const ARCHETYPE_IDS: &[(&str, Archetype)] = &[
     ("f_55gal_firebarrel", Archetype::HollowCylinder),
     ("f_55gal_firebarrel_fd_fire", Archetype::HollowCylinder),
     ("f_trashcan", Archetype::HollowCylinder),
-    // Closed cylinders — a lidded keg and the fermenting vats;
-    // the sprite's top ellipse band becomes a flat lid disc.
+    // Closed cylinders — a lidded keg; the sprite's top
+    // ellipse band becomes a flat lid disc.
     ("f_wood_keg", Archetype::ClosedCylinder),
-    ("f_fvat_empty", Archetype::ClosedCylinder),
-    ("f_fvat_full", Archetype::ClosedCylinder),
+    // Horizontal barrels — the fermentation vats are alcohol
+    // barrels lying on their sides (Joey's identification,
+    // 2026-11-17, with a photo of the real object): head +
+    // tap toward the viewer, body receding.
+    ("f_fvat_empty", Archetype::HorizontalBarrel),
+    ("f_fvat_full", Archetype::HorizontalBarrel),
 ];
 
 /// The archetype serving a furniture id, if one has been
@@ -249,6 +262,7 @@ pub fn build(archetype: Archetype, sprite: &RgbaImage, seg: &Segmentation) -> Pr
         Archetype::VendingMachine => build_vending(sprite, seg),
         Archetype::HollowCylinder => build_hollow_cylinder(sprite, seg),
         Archetype::ClosedCylinder => build_closed_cylinder(sprite, seg),
+        Archetype::HorizontalBarrel => build_horizontal_barrel(sprite, seg),
     }
 }
 
@@ -1601,6 +1615,163 @@ fn build_closed_cylinder(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             // fitted lid material; the rim ring keeps its paint.
             if rn <= disc.inner_rn() {
                 m.set(x, fit.fh - 1, z, Some(fit.surface_color));
+            }
+        }
+    }
+    m
+}
+
+// ---------------------------------------------------------------------
+// HorizontalBarrel (Joey's identification, 2026-11-17): the
+// fermentation vat sprite is an alcohol barrel lying on its
+// side, drawn end-on — the dark horizontal-grained region at
+// the bottom of the drawing is the HEAD (with the tap low on
+// it, as in his photo), the bright stave-and-hoop region above
+// it is the body receding, and the widening rows at the very
+// top are the far end's curve. Measured on the sprite (both
+// ids share it): band 43 rows = far curve 5 + body 20 + head
+// 18; diameter 24.
+
+/// Fitted regions of a horizontal-barrel sprite.
+pub struct BarrelFit {
+    /// Barrel diameter (sprite structure width).
+    pub d: u32,
+    /// Sprite rows of the far end's curve (top of the drawing).
+    pub far_rows: u32,
+    /// Sprite rows of the receding body.
+    pub body_rows: u32,
+    /// Sprite rows of the head (bottom of the drawing).
+    pub head_rows: u32,
+}
+
+/// Fit the three regions: the far curve is the extent-widening
+/// prefix; the head is the dark suffix (row mean L below the
+/// body median minus a fitted margin — the head is drawn in
+/// darker horizontal-grained wood and carries no hoops).
+pub fn horizontal_barrel_fit(sprite: &RgbaImage, seg: &Segmentation) -> Option<BarrelFit> {
+    let (x0, x1) = front_structure_extent(sprite, seg);
+    let d = x1 - x0 + 1;
+    if d < 8 {
+        return None;
+    }
+    let band = seg.front_rows.clone();
+    let full = band.end - band.start;
+    let drawn = |x: u32, r: u32| {
+        let p = *sprite.get_pixel(x, r);
+        p[3] >= 254 && !(p[0] == 0 && p[1] == 0 && p[2] == 0)
+    };
+    let mut ext_w: Vec<u32> = Vec::new();
+    let mut mean_l: Vec<f32> = Vec::new();
+    for r in band.clone() {
+        let xs: Vec<u32> = (0..sprite.width()).filter(|&x| drawn(x, r)).collect();
+        if xs.is_empty() {
+            ext_w.push(0);
+            mean_l.push(0.0);
+            continue;
+        }
+        ext_w.push(xs[xs.len() - 1] - xs[0] + 1);
+        let inner: Vec<Rgba<u8>> = xs.iter().map(|&x| *sprite.get_pixel(x, r)).collect();
+        mean_l.push(
+            inner.iter().map(|p| lab_of(*p).l).sum::<f32>() / inner.len() as f32,
+        );
+    }
+    let far_rows = ext_w.iter().take_while(|&&w| w < d).count() as u32;
+    // Body lightness: median row mean over the band's middle.
+    let mut mid: Vec<f32> = mean_l[full as usize / 3..2 * full as usize / 3].to_vec();
+    mid.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let body_l = mid[mid.len() / 2];
+    let mut head_rows = 0u32;
+    for i in (0..full as usize).rev() {
+        if mean_l[i] < body_l - 0.07 {
+            head_rows += 1;
+        } else {
+            break;
+        }
+    }
+    if head_rows < 3 || far_rows + head_rows + 4 > full {
+        return None;
+    }
+    Some(BarrelFit {
+        d,
+        far_rows,
+        body_rows: full - far_rows - head_rows,
+        head_rows,
+    })
+}
+
+fn build_horizontal_barrel(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let fit = horizontal_barrel_fit(sprite, seg).expect("barrel fit");
+    let (x0, x1) = front_structure_extent(sprite, seg);
+    let d = fit.d;
+    let band = seg.front_rows.clone();
+    let w = sprite.width();
+    // Layout along z: back head 2, body (depth - 4), head 1,
+    // tap 1. Total depth = d + 8 (a barrel is longer than its
+    // diameter), capped at 32.
+    let depth = (d + 8).min(32);
+    let body_len = depth - 4;
+    let head_z = depth - 2;
+    let cx = (x0 + x1) as f32 / 2.0;
+    let cy = (d - 1) as f32 / 2.0;
+    let in_disc = |x: u32, y: u32| {
+        let dx = (x as f32 - cx) / (d as f32 / 2.0);
+        let dy = (y as f32 - cy) / (d as f32 / 2.0);
+        dx * dx + dy * dy <= 1.0
+    };
+    let body_top = band.start + fit.far_rows;
+    let head_top = band.end - fit.head_rows;
+    let mut m = PropModel::new([w, d, depth]);
+    for x in x0..=x1 {
+        for y in 0..d {
+            if !in_disc(x, y) {
+                continue;
+            }
+            // Back head: the far curve's rows, stretched over
+            // the diameter (the drawing squashes the far head
+            // the same way as the near one).
+            let far_row = band.start + (fit.far_rows - 1)
+                - y * (fit.far_rows - 1) / (d - 1).max(1);
+            for z in 0..2 {
+                m.set(x, y, z, Some(*sprite.get_pixel(x, far_row)));
+            }
+            // Body: the sprite's body rows map along the
+            // length (top of the region = far end).
+            for zb in 0..body_len {
+                let row = body_top + zb * (fit.body_rows - 1) / (body_len - 1).max(1);
+                m.set(x, y, 2 + zb, Some(*sprite.get_pixel(x, row)));
+            }
+            // Head: the dark region, stretched over the
+            // diameter — sprite row head_top is the head's top.
+            let head_row = head_top + (d - 1 - y) * (fit.head_rows - 1) / (d - 1).max(1);
+            m.set(x, y, head_z, Some(*sprite.get_pixel(x, head_row)));
+        }
+    }
+    // The tap: the head region's blue-grey pixel cluster,
+    // protruding one cell from the head face at its drawn
+    // position (low on the head, as in the photo).
+    // (Blue-ish pixels in the head's upper rows are hoop
+    // shadow, not the tap — the tap cluster is in the lower
+    // half of the head.)
+    let tap_px: Vec<(u32, u32)> = (head_top + fit.head_rows / 2..band.end)
+        .flat_map(|r| (x0..=x1).map(move |x| (x, r)))
+        .filter(|&(x, r)| {
+            let p = *sprite.get_pixel(x, r);
+            structure(p) && p[2] > p[0] && p[1] > p[0]
+        })
+        .collect();
+    if !tap_px.is_empty() {
+        let tx = tap_px.iter().map(|p| p.0).sum::<u32>() / tap_px.len() as u32;
+        let tr = tap_px.iter().map(|p| p.1).sum::<u32>() / tap_px.len() as u32;
+        let ty = (band.end - 1 - tr) * (d - 1) / (band.end - head_top - 1).max(1);
+        let color = modal_color(tap_px.iter().map(|&(x, r)| *sprite.get_pixel(x, r)))
+            .unwrap_or(Rgba([106, 133, 135, 255]));
+        // One cell proud of the head face (head_z = depth-2).
+        for dx in 0..2u32 {
+            for dy in 0..2u32 {
+                let (x, y) = (tx + dx, ty + dy);
+                if x < w && y < d {
+                    m.set(x, y, depth - 1, Some(color));
+                }
             }
         }
     }
