@@ -340,7 +340,7 @@ const SOLID_ALPHA: u8 = 254;
 /// A field/sliver color below this OKLab L is shadow (a recess or
 /// painted shade), not a material color; unseen-face inference
 /// never uses it as one (module docs, "Inferred unseen faces").
-const SHADOW_L: f32 = 0.15;
+pub(crate) const SHADOW_L: f32 = 0.15;
 /// De-shading gain clamp (module docs, "Albedo only — de-shading"):
 /// a derived color's OKLab L is scaled by its row's gain, never by
 /// more than this either way — the correction removes a smooth
@@ -514,7 +514,7 @@ fn opaque(px: Rgba<u8>) -> bool {
     px[3] >= ALPHA_OPAQUE
 }
 
-fn lab_of(px: Rgba<u8>) -> Oklab {
+pub(crate) fn lab_of(px: Rgba<u8>) -> Oklab {
     Oklab::from_srgb_u8([px[0], px[1], px[2]])
 }
 
@@ -851,7 +851,7 @@ fn region_mean(sprite: &RgbaImage, rows: &Range<u32>) -> Rgba<u8> {
 /// Map a depth cell z (0 = back, d-1 = front) to the top-region
 /// sprite row it un-projects from: z = d-1 is the top region's last
 /// row (the front-top edge), rows repeat/stretch by nearest sample.
-fn top_row_for_z(seg: &Segmentation, d: u32, z: u32) -> u32 {
+pub(crate) fn top_row_for_z(seg: &Segmentation, d: u32, z: u32) -> u32 {
     let th = seg.top_rows.end - seg.top_rows.start;
     let back_steps = d - 1 - z;
     let row_back = (back_steps * th / d).min(th - 1);
@@ -873,7 +873,7 @@ fn is_fringe(px: Rgba<u8>) -> bool {
 
 /// Structure: a pixel that is real object paint — opaque and not
 /// fringe. The solid model's silhouette/extent test.
-fn structure(px: Rgba<u8>) -> bool {
+pub(crate) fn structure(px: Rgba<u8>) -> bool {
     opaque(px) && !is_fringe(px)
 }
 
@@ -1290,7 +1290,7 @@ fn deshade(px: Rgba<u8>, gain: f32) -> Rgba<u8> {
 }
 
 /// [`deshade`] on an OKLab color.
-fn deshade_lab(lab: Oklab, gain: f32) -> Oklab {
+pub(crate) fn deshade_lab(lab: Oklab, gain: f32) -> Oklab {
     Oklab {
         l: (lab.l * gain).clamp(0.0, 1.0),
         a: lab.a,
@@ -1494,7 +1494,7 @@ fn sliver_band_mean_l(
 /// as `generate::weighted_median_l`): sort by L, accumulate
 /// weights, return the L where the cumulative weight reaches
 /// half the total.
-fn weighted_median_l(clusters: &[(f32, f32)]) -> f32 {
+pub(crate) fn weighted_median_l(clusters: &[(f32, f32)]) -> f32 {
     let mut ls: Vec<(f32, f32)> = clusters.to_vec();
     ls.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let total: f32 = ls.iter().map(|x| x.1).sum();
@@ -1521,7 +1521,7 @@ fn weighted_median_l(clusters: &[(f32, f32)]) -> f32 {
 /// over the non-shadow clusters is the material's reference
 /// lightness. Gain clamped to [DESHADE_GAIN_MIN, DESHADE_GAIN_MAX]
 /// like the row gains.
-fn region_primaries(sprite: &RgbaImage, rows: &Range<u32>) -> (Oklab, Oklab) {
+pub(crate) fn region_primaries(sprite: &RgbaImage, rows: &Range<u32>) -> (Oklab, Oklab) {
     let crop = image::imageops::crop_imm(
         sprite,
         0,
@@ -1561,7 +1561,7 @@ fn region_primaries(sprite: &RgbaImage, rows: &Range<u32>) -> (Oklab, Oklab) {
 /// material: wood tones (OKLab hue 35..=95 deg with real chroma)
 /// get visible grain, flat tones (metal/plastic, chroma < 0.03)
 /// stay near-flat, everything else is in between.
-fn grain_amp(lab: Oklab) -> f32 {
+pub(crate) fn grain_amp(lab: Oklab) -> f32 {
     let chroma = (lab.a * lab.a + lab.b * lab.b).sqrt();
     if chroma < 0.03 {
         return 0.03;
@@ -1695,7 +1695,7 @@ fn back_panels(
 
 /// The front region's STRUCTURE x-extent: fringe pixels never
 /// extend it (module docs, "Inferred unseen faces").
-fn front_structure_extent(sprite: &RgbaImage, seg: &Segmentation) -> (u32, u32) {
+pub(crate) fn front_structure_extent(sprite: &RgbaImage, seg: &Segmentation) -> (u32, u32) {
     let (mut x0, mut x1) = (sprite.width() - 1, 0u32);
     for y in seg.front_rows.clone() {
         for x in 0..sprite.width() {

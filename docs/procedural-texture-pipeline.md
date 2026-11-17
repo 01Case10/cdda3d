@@ -604,3 +604,29 @@ louver banding; counter flank carries the two-panel split (30
 stone rim cells over 330 body cells). The albedo synthetic's left
 flank is Panel by default and now uses the panel budget (measured
 side max 0.023 overall).
+
+## 22. Stage G.3 archetypes — lab set (2026-11-16)
+
+DONE (generation side), parent re-verified in the main tree
+(archetypes_gate 6/6, lib 36/36, props_gate 9/9). archetypes.rs:
+`archetype_for(id)` (explicit table + pins) and parametric builders
+on the signed-off base (albedo-only, de-shaded palettes,
+deterministic). Mapping: ShelfUnit <- f_bookcase, f_rack,
+f_utility_shelf (+ warehouse/vitrified via looks_like; vitrified
+has NO sprite — assigned, unrenderable today); ContainmentTank <-
+f_standing_tank, f_storage_tank (CDDA has no true containment
+furniture: f_alien_pod doesn't segment, f_fvat_* are barrels —
+deliberately unassigned; specimen skipped, nothing reads one
+cleanly); ConsoleDesk <- f_console, f_console_broken, gas consoles;
+DissectionTable <- f_surgical_table (NO sprite exists — fitted and
+shown on f_slab); Bunk <- f_bunkbed/_down (2 levels), f_triple_
+bunkbed (3), sprite via looks_like to f_bed. Fitted vs assumed is
+documented per archetype in the module: shelf boards from the
+front's recess bands (bookcase: 5 bands -> 6 boards, compartments
+genuinely OPEN), tank liquid line from the strongest row-mean step
+(fired at 11/39), console screen rect from the accent-pixel
+bounding box ([0,196,0] green), slab/pedestal proportions and bunk
+posts/ladder assumed. Gate-design note: the albedo darkness floor
+is taken from RAW palette clusters because de-shading lifts dark
+clusters toward the median by design. Engine stamping of models
+(base + archetypes) rides the v2 models section (next commit).

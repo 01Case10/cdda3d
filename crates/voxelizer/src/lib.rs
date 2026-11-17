@@ -4,6 +4,7 @@
 //! Everything iterates in sorted order so reruns are byte-identical.
 
 pub mod analyze;
+pub mod archetypes;
 pub mod classify;
 pub mod color;
 pub mod effects;
@@ -24,6 +25,7 @@ use std::path::{Path, PathBuf};
 use tileset::{resolve, Stage, TileEntry, Tileset};
 
 pub use analyze::*;
+pub use archetypes::*;
 pub use classify::*;
 pub use color::*;
 pub use effects::*;
