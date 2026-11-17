@@ -3351,8 +3351,6 @@ pub const REST_MEMBER_PINS: &[&str] = &[
     "f_hoist_pulley",
     "f_hanging_meathook",
     "f_ground_cable",
-    "f_electrical_conduit",
-    "f_LIXA_electrical_conduit",
     "f_lane",
 ];
 
@@ -4015,6 +4013,42 @@ fn dish_model(sprite: &RgbaImage) -> Option<PropModel> {
     Some(m)
 }
 
+/// A thin upright as a flat structure extrusion
+/// (front/back faces carry the sprite, structure pixels
+/// fill between) -- kept for the two conduit bundles,
+/// the one flat build Joey approved in the D1 group.
+fn frame_model(sprite: &RgbaImage, depth: u32) -> Option<PropModel> {
+    let (w, h) = (sprite.width(), sprite.height());
+    let mut rows = (0..h).filter(|&y| (0..w).any(|x| opaque(*sprite.get_pixel(x, y))));
+    let band = rows.next()?..rows.last()? + 1;
+    let fh = band.end - band.start;
+    let zc = 16i32;
+    let z0 = zc - (depth as i32) / 2;
+    let z1 = z0 + depth as i32 - 1;
+    let mut m = PropModel::new([w, fh, 32]);
+    for y in 0..fh {
+        let r = band.end - 1 - y;
+        for x in 0..w {
+            let px = *sprite.get_pixel(x, r);
+            if !opaque(px) {
+                continue;
+            }
+            if structure(px) {
+                for z in z0..=z1 {
+                    m.set(x, y, z as u32, Some(px));
+                }
+            } else {
+                m.set(x, y, z0 as u32, Some(px));
+                m.set(x, y, z1 as u32, Some(px));
+            }
+        }
+    }
+    if m.solid_count() == 0 {
+        return None;
+    }
+    Some(m)
+}
+
 /// The opaque band as a segmentation, with none of
 /// [`seamless_segment`]'s firing criteria — for rest-of-
 /// props pins whose sprites are too thin, sparse, or
@@ -4059,6 +4093,16 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
             if let Some(m) = lathe_model(sprite, &seg) {
                 return Some(m);
             }
+        }
+    }
+    if id == "f_electrical_conduit" || id == "f_LIXA_electrical_conduit" {
+        // The two conduit bundles keep the flat
+        // extrusion: Joey reviewed the whole D1 group
+        // (2026-11-17) and these were the only side
+        // views he called OK -- a wall-run pipe bundle
+        // reads correctly as a flat row.
+        if let Some(m) = frame_model(sprite, 2) {
+            return Some(m);
         }
     }
     if REST_MEMBER_PINS.contains(&id) {
