@@ -520,3 +520,35 @@ sprite's handedness — earlier sheets' model renders were mirrored
 (parent, from the sheet): f_locker's depth is 4 sub-cells (its cap
 is 2 rows at the 2:1 rule), so side views read paper-thin — a
 category minimum-depth decision, recorded for Joey's call.
+
+## 19. Stage G fixes round 3 — depth floor, plain-panel backs, black artifacts (2026-11-16)
+
+Joey approved the minimum-depth rule, rejected rule-derived backs
+("make educated guesses"), and flagged a black column on the
+fridge's right view + a black spot on the bookcase. All fixed,
+parent re-verified (props_gate 7/7, lib 36/36). ROOT CAUSES (both
+in color data, not the renderer — its face factors are
+1.0/0.82/0.64/0.45 and the offending cells were literally
+[0,0,0]): (1) fridge black column = transparent-black fringe —
+the sprite's right edge column x=31 rows 23-55 is [0,0,0,128]
+(no color data) but the alpha>=128 silhouette test admitted it as
+structure, so it extended the extent and was copied/slivered as
+pure black (measured L=0.00 over the front 6 depth cells). Fix:
+a STRUCTURE test (opaque AND not fringe) — fringe never extends
+the silhouette and is never a color source. (2) bookcase black =
+shelf-shadow rows used as material: shelf interiors are fully
+opaque pure black (280 px, 24% of the front), so their row field
+was [0,0,0] and got painted across sides/back. Fix: shadow sources
+(L < 0.15) are recesses, not material — side sources borrow the
+nearest non-shadow row's field. MINIMUM DEPTH: floor-standing
+props (silhouette >= 24 rows) get d >= ceil(width/3); locker
+4 -> 11, others unchanged (gate-pinned). BACKS are now plain
+panels by construction: one panel in the front region's primary
+material (largest non-shadow palette cluster, k=5 — bookcase ->
+wood [69,48,10], not its 24% black cluster), L modulated by
+stretched fBm grain (amplitude by material: wood ±9%, flat/metal
+±3%, else ±5%); two panels only when the top is a distinct slab
+(top/front mean distance >= 0.15 AND top >= 1/3 of silhouette —
+counter and table fire; the fridge's teal cap at 8/47 rows
+correctly does not). A no-black gate now covers all five props
+(986-2,200 inferred cells each, all L >= 0.10).

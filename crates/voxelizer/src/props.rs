@@ -131,6 +131,22 @@
 //! *inferred* — educated decisions from the sprite's own materials
 //! and structure, not smears or mirrors:
 //!
+//! * **Structure vs fringe.** A pixel is STRUCTURE (object paint)
+//!   when it is opaque and not *fringe*: fringe pixels are
+//!   transparent black — RGB exactly (0,0,0) at alpha < 254. They
+//!   carry no color data at all (un-premultiplied edge/shadow
+//!   residue in the source PNGs); the `alpha >= 128` test alone
+//!   admits them, and copying one verbatim paints a pure-black
+//!   cell. Measured: f_fridge's whole right edge column (x=31) is
+//!   fringe, and it produced a black column down the model's right
+//!   flank (front plane verbatim + sliver un-projection sampling
+//!   the same column). Fringe never extends the solid model's
+//!   silhouette or extent and is never a color source; in the gate
+//!   sprites it occurs only at row edges, never interior (the one
+//!   interior case, f_table's under-shadow, is already
+//!   non-structure under the base rule). Segmentation and the
+//!   deprecated models keep the plain opaque test — only the solid
+//!   model applies the structure rule.
 //! * **Row field.** Each front row has a FIELD color: the modal
 //!   (most common) solid-paint color among the row's pixels,
 //!   ignoring the outermost 2 columns of the front extent on each
@@ -142,11 +158,43 @@
 //!   side at the same heights: shelf lines, aprons and seams
 //!   continue around the flank. Vertical front detail (door
 //!   splits, handles, vents) does NOT wrap: it never dominates a
-//!   row's mode, so it never enters the field.
-//! * **Back.** The back plane takes the row field darkened x0.7:
-//!   the object's rear panel in the same material with the same
-//!   horizontal banding — not a darkened mirror of the front, so
-//!   handles and door detail don't ghost through.
+//!   row's mode, so it never enters the field. One correction:
+//!   SHADOW rows are recesses, not material — f_bookcase's shelf
+//!   interiors are fully-opaque pure black (24% of its front), so
+//!   their field IS black and the raw rule painted black bands
+//!   down the flanks and across the back. A side source (field or
+//!   sliver pixel) whose L < [`SHADOW_L`] is therefore replaced by
+//!   the nearest non-shadow row's field (ties prefer the row
+//!   above): the flank reads as the continuous side panel the
+//!   object actually has.
+//! * **Back.** The back is its own construction, NOT a symmetry
+//!   of the front: a plain panel (or two) in the prop's primary
+//!   material, where the primary material is the largest
+//!   NON-SHADOW palette cluster of the front region
+//!   (`analyze_image`, k=5) — the non-shadow guard matters, since
+//!   a naive largest-cluster pick hands the bookcase's back to its
+//!   shelf shadow. The panel carries no row banding and no front
+//!   detail; its only variation is a subtle deterministic grain:
+//!   the primary's OKLab L modulated by stretched fBm noise
+//!   (seeded from the sprite's content hash; sampled at (x/6, y)
+//!   so the grain streaks horizontally), amplitude by material —
+//!   ±9% for wood tones (OKLab hue 35..=95 deg, chroma >= 0.03),
+//!   ±3% for flat tones (chroma < 0.03: metal, plastic), ±5%
+//!   otherwise. TWO panels when the top region is a distinct slab
+//!   component rather than the same box's top face: the top and
+//!   front region means differ by >= 0.15 OKLab AND the top region
+//!   is at least a third of the silhouette height (a deep slab —
+//!   countertop, tabletop — vs a shallow cap like a fridge's,
+//!   which is the same material however it is painted). The upper
+//!   panel (top region's primary) covers the back rows whose front
+//!   field belongs to the top material (field closer to the top
+//!   primary than to the front primary, scanned from the boundary
+//!   down); if no front row matches, the split falls back to the
+//!   top region's proportional share of the silhouette. Limits of
+//!   the judgment: the palette cluster is a centroid, so a front
+//!   whose largest non-shadow cluster is a trim color would
+//!   mislead it; and a two-material front split VERTICALLY (not by
+//!   rows) is read as its dominant material only.
 //! * **Top** stays evidence-based: the top region un-projected
 //!   (see [`solid_model`]).
 //!
@@ -167,8 +215,9 @@
 //! * Sprites taller than the tile (32x64 lockers/fridges): handled —
 //!   the model grid follows the sprite, height is not clamped to 32.
 
-use crate::analyze::analyze_image;
+use crate::analyze::{analyze_image, content_hash};
 use crate::color::Oklab;
+use crate::noise::Fbm;
 use image::{Rgba, RgbaImage};
 use std::ops::Range;
 
@@ -202,6 +251,13 @@ const SUPPORT_FLOOR: f32 = 0.08;
 /// contact shadow in UltiCa furniture sprites sits at alpha 128;
 /// the object itself is painted fully opaque.
 const SOLID_ALPHA: u8 = 254;
+/// A field/sliver color below this OKLab L is shadow (a recess or
+/// painted shade), not a material color; unseen-face inference
+/// never uses it as one (module docs, "Inferred unseen faces").
+const SHADOW_L: f32 = 0.15;
+/// Floor-standing props (silhouette at least this many rows) get
+/// a minimum model depth — see [`Segmentation::depth_cells_for`].
+const MIN_DEPTH_SILHOUETTE_ROWS: u32 = 24;
 /// Open-base box variant fires at or above this fraction of
 /// front-extent columns not grounded at the base.
 const OPEN_BASE_FRACTION: f32 = 0.25;
@@ -261,6 +317,30 @@ impl Segmentation {
     pub fn depth_cells(&self) -> u32 {
         let th = self.top_rows.end - self.top_rows.start;
         ((th as f32 * DEPTH_PER_TOP_ROW).round() as u32).clamp(2, MAX_DEPTH)
+    }
+    /// Depth for the solid model: [`Self::depth_cells`] with a
+    /// minimum-depth floor for floor-standing props. The raw rule
+    /// reads depth off the drawn top region, so a tall piece whose
+    /// cap is drawn thin (f_locker: a 2-row cap) comes out
+    /// paper-thin (4 sub-cells) although the real object is a deep
+    /// cabinet. When the silhouette is at least
+    /// [`MIN_DEPTH_SILHOUETTE_ROWS`] rows tall — a floor-standing
+    /// piece, not a countertop item — the depth is at least a
+    /// third of the sprite width, the educated proportion for
+    /// lockers/wardrobes (real units run ~1/3 as deep as wide).
+    /// Measured on the gate set: only f_locker changes (4 -> 11);
+    /// counter 32, bookcase 14, table 32, fridge 16 already clear
+    /// the floor. The deprecated box/column models keep the raw
+    /// rule.
+    pub fn depth_cells_for(&self, sprite_width: u32) -> u32 {
+        let d = self.depth_cells();
+        let silh = self.silhouette_rows.end - self.silhouette_rows.start;
+        if silh >= MIN_DEPTH_SILHOUETTE_ROWS {
+            let floor = (sprite_width + 2) / 3; // ceil(width / 3)
+            d.max(floor)
+        } else {
+            d
+        }
     }
 }
 
@@ -658,6 +738,20 @@ fn solid(px: Rgba<u8>) -> bool {
     px[3] >= SOLID_ALPHA
 }
 
+/// Fringe: transparent black — RGB exactly (0,0,0) below
+/// [`SOLID_ALPHA`]. Such pixels carry no color data (edge/shadow
+/// residue in the source PNGs); treating one as paint produces a
+/// pure-black cell (module docs, "Inferred unseen faces").
+fn is_fringe(px: Rgba<u8>) -> bool {
+    px[3] < SOLID_ALPHA && px[0] == 0 && px[1] == 0 && px[2] == 0
+}
+
+/// Structure: a pixel that is real object paint — opaque and not
+/// fringe. The solid model's silhouette/extent test.
+fn structure(px: Rgba<u8>) -> bool {
+    opaque(px) && !is_fringe(px)
+}
+
 /// Base structure of a front region (module docs, "Base
 /// structure"): whether the box is solid or slab-and-legs, the
 /// header band height, and each extent column's groundedness.
@@ -908,13 +1002,13 @@ fn side_color(
                 sl.cols.start + off
             };
             let px = *sprite.get_pixel(sx, r);
-            if opaque(px) {
+            if structure(px) {
                 return Some(shade(px, 0.85));
             }
         }
     }
     let px = *sprite.get_pixel(edge_x, r);
-    if opaque(px) {
+    if structure(px) {
         Some(shade(px, 0.7))
     } else {
         None
@@ -1058,7 +1152,137 @@ fn row_field(sprite: &RgbaImage, r: u32, x0: u32, x1: u32) -> Option<Rgba<u8>> {
     };
     modal(tx0, tx1, SOLID_ALPHA)
         .or_else(|| modal(x0, x1, SOLID_ALPHA))
-        .or_else(|| modal(x0, x1, ALPHA_OPAQUE))
+        .or_else(|| modal(x0, x1, ALPHA_OPAQUE).filter(|c| !is_fringe(*c)))
+}
+
+/// The primary material of a sprite region: the largest palette
+/// cluster (`analyze_image`, k=5) that is not shadow — shadow
+/// clusters are recesses, not material (f_bookcase's largest
+/// cluster overall is its wood, but the runner-up is pure-black
+/// shelf shadow at 24% of the front; a naive largest-cluster pick
+/// on a shadow-dominated front would hand the back to the shadow).
+/// Falls back to the largest cluster, then the region mean.
+fn primary_material(sprite: &RgbaImage, rows: &Range<u32>) -> Oklab {
+    let crop = image::imageops::crop_imm(
+        sprite,
+        0,
+        rows.start,
+        sprite.width(),
+        rows.end - rows.start,
+    )
+    .to_image();
+    let a = analyze_image(&crop, 5);
+    a.palette
+        .iter()
+        .find(|p| p.lab.l >= SHADOW_L)
+        .or_else(|| a.palette.first())
+        .map(|p| p.lab)
+        .unwrap_or_else(|| lab_of(region_mean(sprite, rows)))
+}
+
+/// Grain amplitude (fraction of L) for a back panel of the given
+/// material: wood tones (OKLab hue 35..=95 deg with real chroma)
+/// get visible grain, flat tones (metal/plastic, chroma < 0.03)
+/// stay near-flat, everything else is in between.
+fn grain_amp(lab: Oklab) -> f32 {
+    let chroma = (lab.a * lab.a + lab.b * lab.b).sqrt();
+    if chroma < 0.03 {
+        return 0.03;
+    }
+    let hue = lab.b.atan2(lab.a).to_degrees();
+    if (35.0..=95.0).contains(&hue) {
+        0.09
+    } else {
+        0.05
+    }
+}
+
+/// The solid model's back: one plain panel in the front region's
+/// primary material — or two, when the top region is a distinct
+/// slab component (module docs, "Inferred unseen faces"). Panels
+/// are colored per cell by [`BackPanels::color`]: the panel's
+/// primary with its L grain-modulated by stretched fBm.
+struct BackPanels {
+    fbm: Fbm,
+    front: Oklab,
+    /// (top primary, number of back rows it covers from the top).
+    upper: Option<(Oklab, u32)>,
+}
+
+impl BackPanels {
+    fn color(&self, x: u32, y: u32, fh: u32) -> Rgba<u8> {
+        let base = match self.upper {
+            Some((top, count)) if y >= fh - count => top,
+            _ => self.front,
+        };
+        let n = self.fbm.sample(x as f32 / 6.0, y as f32);
+        let t = ((n - 0.5) * 2.0).clamp(-1.0, 1.0);
+        let mut lab = base;
+        lab.l = (lab.l * (1.0 + grain_amp(base) * t)).clamp(0.02, 0.98);
+        let [r, g, b] = lab.to_srgb_u8();
+        Rgba([r, g, b, 255])
+    }
+}
+
+fn back_panels(
+    sprite: &RgbaImage,
+    seg: &Segmentation,
+    fields: &[Option<Rgba<u8>>],
+    fh: u32,
+) -> BackPanels {
+    let front = primary_material(sprite, &seg.front_rows);
+    let fbm = Fbm::new(content_hash(sprite.as_raw()), 16).octaves(2);
+    let top_h = seg.top_rows.end - seg.top_rows.start;
+    let silh = seg.silhouette_rows.end - seg.silhouette_rows.start;
+    // Two-panel test: distinct material AND a deep slab share of
+    // the silhouette (a shallow cap is the same box's top face,
+    // however it is painted — the fridge's teal cap over a gray
+    // body must not split the back).
+    let region_mean_lab = |rows: &Range<u32>| -> Oklab {
+        let crop = image::imageops::crop_imm(
+            sprite,
+            0,
+            rows.start,
+            sprite.width(),
+            rows.end - rows.start,
+        )
+        .to_image();
+        analyze_image(&crop, 1).mean_color
+    };
+    let two_panel = region_mean_lab(&seg.top_rows).distance(region_mean_lab(&seg.front_rows))
+        >= 0.15
+        && top_h * 3 >= silh;
+    let upper = if two_panel {
+        let top_primary = primary_material(sprite, &seg.top_rows);
+        // Upper rows: front fields that belong to the top material,
+        // scanned from the boundary down.
+        let mut count = 0u32;
+        for i in 0..fh {
+            let f = fields[(fh - 1 - i) as usize];
+            let belongs = f.map_or(false, |c| {
+                let l = lab_of(c);
+                l.distance(top_primary) < l.distance(front)
+            });
+            if belongs {
+                count += 1;
+            } else {
+                break;
+            }
+        }
+        if count == 0 || count >= fh {
+            // No front row reads as top material (or all do):
+            // fall back to the top's proportional silhouette share.
+            count = ((fh as f32 * top_h as f32 / silh as f32).round() as u32).clamp(1, fh - 1);
+        }
+        Some((top_primary, count))
+    } else {
+        None
+    };
+    BackPanels {
+        fbm,
+        front,
+        upper,
+    }
 }
 
 /// THE prop model: the front silhouette extruded through the full
@@ -1067,27 +1291,32 @@ fn row_field(sprite: &RgbaImage, r: u32, x0: u32, x1: u32) -> Option<Rgba<u8>> {
 /// (the failure that retired the G.2 shell).
 ///
 /// * Cross-section: voxel (x, y, z) is solid iff the front-region
-///   pixel at (x, front_bottom - y) is opaque and z < d, with
-///   d = [`Segmentation::depth_cells`] uniform for every silhouette
-///   column. (Depth does not vary per column: the top region sets
-///   the one depth, exactly as in the earlier models.)
+///   pixel at (x, front_bottom - y) is STRUCTURE (opaque, not
+///   transparent-black fringe — see [`structure`]) and z < d, with
+///   d = [`Segmentation::depth_cells_for`] uniform for every
+///   silhouette column. (Depth does not vary per column: the top
+///   region sets the one depth, exactly as in the earlier models.)
 /// * Front plane (z = d-1): the sprite pixel verbatim — the front
 ///   projection is the front silhouette exactly, colors included.
 ///   Nothing below overwrites the front plane.
-/// * Back plane (z = 0): the row's field color darkened x0.7 — the
-///   rear panel inferred from the front's own material (module
-///   docs, "Inferred unseen faces"), NOT a darkened mirror of the
-///   front pixel. Interior cells: the front pixel x0.7 (never
-///   visible in a surface render, but correct if the model is
-///   sliced).
+/// * Back plane (z = 0): a plain panel (or two) in the prop's
+///   primary material with a subtle noise grain — the rear
+///   construction inferred as its own object (module docs,
+///   "Inferred unseen faces"), NOT a darkened mirror of the front
+///   and NOT the row fields. Interior cells: the front pixel x0.7
+///   (never visible in a surface render, but correct if the model
+///   is sliced).
 /// * Side surfaces: each row's leftmost/rightmost solid columns are
 ///   real surface (the model is filled behind them), colored on the
 ///   interior depth cells by inference: the detected sliver
 ///   un-projected where one exists on that side ([`side_color`] —
 ///   real sprite evidence wins), else the row's field color x0.85,
 ///   so horizontal bands wrap at their heights and vertical front
-///   detail does not. The front/back planes keep their own colors,
-///   so side shading never touches the exact front projection.
+///   detail does not. Shadow-colored sources (field or sliver,
+///   L < [`SHADOW_L`]) are replaced by the nearest non-shadow
+///   row's field — recesses are not material. The front/back
+///   planes keep their own colors, so side shading never touches
+///   the exact front projection.
 /// * Top surface: stepped, following the silhouette — each column
 ///   x's top surface is its own topmost solid voxel, colored for
 ///   z in 0..d-1 from the top region via [`top_row_for_z`] (the
@@ -1104,13 +1333,14 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     let w = sprite.width();
     let front = &seg.front_rows;
     let fh = front.end - front.start;
-    let d = seg.depth_cells();
+    let d = seg.depth_cells_for(w);
     let bot = front.end - 1;
-    // Front region's opaque x-extent (base_plan + row_pixel ranges).
+    // Front region's STRUCTURE x-extent (base_plan + row_pixel
+    // ranges): fringe pixels never extend it (module docs).
     let (mut x0, mut x1) = (w - 1, 0u32);
     for y in front.clone() {
         for x in 0..w {
-            if opaque(*sprite.get_pixel(x, y)) {
+            if structure(*sprite.get_pixel(x, y)) {
                 x0 = x0.min(x);
                 x1 = x1.max(x);
             }
@@ -1121,7 +1351,7 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
     // The solidity mask: the whole model is this mask extruded
     // through every depth cell.
     let is_solid = |x: u32, y: u32| -> bool {
-        if !opaque(*sprite.get_pixel(x, bot - y)) {
+        if !structure(*sprite.get_pixel(x, bot - y)) {
             return false;
         }
         if !plan.open || y >= slab_bottom {
@@ -1131,14 +1361,45 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
         // (x is within the extent: its front pixel is opaque.)
         plan.grounded[(x - x0) as usize]
     };
-    // Per-row field colors for the inferred faces (back + sides),
-    // indexed by model y.
+    // Per-row field colors for the inferred side faces, indexed
+    // by model y.
     let fields: Vec<Option<Rgba<u8>>> = (0..fh)
         .map(|y| row_field(sprite, bot - y, x0, x1))
         .collect();
+    // Side fields with SHADOW BORROWING: a shadow field (a recess
+    // row — f_bookcase's shelf interiors are pure black) borrows
+    // the nearest non-shadow row's field; ties prefer the row
+    // above (larger model y = smaller sprite row). A front that is
+    // shadow throughout keeps its own fields.
+    let side_fields: Vec<Option<Rgba<u8>>> = (0..fh)
+        .map(|y| {
+            let own = fields[y as usize];
+            if own.map_or(false, |f| lab_of(f).l >= SHADOW_L) {
+                return own;
+            }
+            for dist in 1..fh {
+                if y + dist < fh {
+                    if let Some(f) = fields[(y + dist) as usize] {
+                        if lab_of(f).l >= SHADOW_L {
+                            return Some(f);
+                        }
+                    }
+                }
+                if dist <= y {
+                    if let Some(f) = fields[(y - dist) as usize] {
+                        if lab_of(f).l >= SHADOW_L {
+                            return Some(f);
+                        }
+                    }
+                }
+            }
+            own
+        })
+        .collect();
+    // The back: plain panel(s) in the primary material(s).
+    let back = back_panels(sprite, seg, &fields, fh);
     let mut m = PropModel::new([w, fh, d]);
-    // Base fill: front verbatim, back = row field x0.7 (the front
-    // pixel x0.55 only when the row has no field at all), interior
+    // Base fill: front verbatim, back = the panel color, interior
     // x0.7.
     for y in 0..fh {
         for x in 0..w {
@@ -1150,10 +1411,7 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 let c = if z == d - 1 {
                     px
                 } else if z == 0 {
-                    match fields[y as usize] {
-                        Some(f) => shade(f, 0.7),
-                        None => shade(px, 0.55),
-                    }
+                    back.color(x, y, fh)
                 } else {
                     shade(px, 0.7)
                 };
@@ -1184,11 +1442,21 @@ pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
                 .as_ref()
                 .map_or(false, |sl| sl.on_right == on_right);
             for z in 1..d - 1 {
-                let c = if sliver_here {
+                let mut c = if sliver_here {
                     side_color(sprite, seg, edge_x, r, z, d, on_right)
                 } else {
-                    fields[y as usize].map(|f| shade(f, 0.85))
+                    None
                 };
+                // A shadow-colored source (a sliver pixel sampled
+                // from a recess row) is not material evidence:
+                // fall back to the row's borrowed field, as does
+                // missing evidence (a transparent sliver sample).
+                if c.map_or(false, |col| lab_of(col).l < SHADOW_L) {
+                    c = None;
+                }
+                if c.is_none() {
+                    c = side_fields[y as usize].map(|f| shade(f, 0.85));
+                }
                 if let Some(c) = c {
                     m.set(edge_x, y, z, Some(c));
                 }
@@ -1418,6 +1686,69 @@ mod tests {
             for z in 0..d {
                 assert!(sm.get(16, y, z).is_some(), "slab at (16,{y},{z})");
             }
+        }
+    }
+
+    #[test]
+    fn depth_floor_only_for_floor_standing_props() {
+        // Tall silhouette (30 rows) with a 2-row cap: the raw rule
+        // gives 4 (the f_locker failure); the floor gives ceil(32/3).
+        let tall = Segmentation {
+            silhouette_rows: 0..30,
+            top_rows: 0..2,
+            front_rows: 2..30,
+            side: None,
+            confidence: 1.0,
+        };
+        assert_eq!(tall.depth_cells(), 4, "raw rule stays as documented");
+        assert_eq!(tall.depth_cells_for(32), 11, "floor-standing minimum depth");
+        // Short silhouette (10 rows): no floor applies.
+        let short = Segmentation {
+            silhouette_rows: 0..10,
+            top_rows: 0..2,
+            front_rows: 2..10,
+            side: None,
+            confidence: 1.0,
+        };
+        assert_eq!(short.depth_cells_for(32), 4, "no floor for short props");
+    }
+
+    #[test]
+    fn solid_model_excludes_transparent_black_fringe() {
+        // A solid block whose right edge column is transparent
+        // black (the f_fridge x=31 case): the fringe column is not
+        // structure — no cells there, at any depth.
+        let mut img = RgbaImage::new(32, 32);
+        for y in 2..6 {
+            for x in 0..32 {
+                img.put_pixel(x, y, Rgba([210, 190, 150, 255]));
+            }
+        }
+        for y in 6..20 {
+            for x in 0..=30 {
+                img.put_pixel(x, y, Rgba([150, 115, 80, 255]));
+            }
+            img.put_pixel(31, y, Rgba([0, 0, 0, 128]));
+        }
+        let seg = Segmentation {
+            silhouette_rows: 2..20,
+            top_rows: 2..6,
+            front_rows: 6..20,
+            side: None,
+            confidence: 1.0,
+        };
+        let sm = solid_model(&img, &seg);
+        let (fh, d) = (sm.size[1], sm.size[2]);
+        for y in 0..fh {
+            for z in 0..d {
+                assert_eq!(sm.get(31, y, z), None, "fringe cell at (31,{y},{z})");
+                assert!(sm.get(30, y, z).is_some(), "structure at (30,{y},{z})");
+            }
+            assert_eq!(
+                sm.get(30, y, d - 1),
+                Some(Rgba([150, 115, 80, 255])),
+                "front verbatim next to the fringe"
+            );
         }
     }
 }

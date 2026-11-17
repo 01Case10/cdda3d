@@ -22,9 +22,32 @@
 //! faces: the test recomputes each front row's FIELD color itself
 //! (modal solid-paint color, outermost 2 extent columns trimmed)
 //! and asserts the solid model's non-sliver side cells are that
-//! field x0.85 and its back plane is that field x0.7 — so the
-//! sides/back are the object's own material with horizontal bands
-//! wrapped, not a smeared edge column or a mirrored front.
+//! field x0.85 — horizontal bands wrap the flanks, not a smeared
+//! edge column. The back is asserted differently (see below): it
+//! is a plain panel in the primary material, not the row fields.
+//!
+//! Back-panel + artifact fixes covered here (2026-11-16, second
+//! review round):
+//! * Backs are plain panels: f_fridge/f_bookcase back cells sit
+//!   within OKLab 0.06 of the prop's primary material (largest
+//!   non-shadow palette cluster, recomputed here via the
+//!   analyzer), the bookcase back's row-mean L variance is tiny
+//!   (no banding), and f_counter's back is two-material (rim band
+//!   in the countertop material, body panel in the front primary).
+//! * Black artifacts, root-caused: (1) f_fridge's right edge
+//!   column is transparent black ([0,0,0,128] fringe — no color
+//!   data), which the old alpha>=128 silhouette copied verbatim
+//!   onto the front plane and the sliver un-projection — the
+//!   solid model's silhouette is now STRUCTURE (opaque, not
+//!   fringe), asserted in `check_solid`; (2) f_bookcase's shelf
+//!   rows are fully-opaque pure black, so their row field was
+//!   black and painted black bands on sides/back — shadow fields
+//!   now borrow the nearest non-shadow field for side coloring,
+//!   and backs are panels. `stage_g_no_black_inferred_cells`
+//!   asserts no side/back cell (rim excluded — the rim belongs to
+//!   the top surface) in any gate prop has L < 0.10.
+//! * Minimum depth: `stage_g_minimum_depth` pins the floored
+//!   depths (f_locker 4 -> 11; the rest unchanged).
 //!
 //! Weak-case fixes covered here (2026-11-16):
 //! * f_table's box is slab-and-legs: its front base is painted
@@ -73,6 +96,38 @@ const PROPS: [(&str, std::ops::RangeInclusive<u32>, f32); 4] = [
 fn load(ts: &tileset::Tileset, id: &str) -> image::RgbaImage {
     let entry = ts.entries.get(id).unwrap_or_else(|| panic!("tileset has {id}"));
     composite_entry(ts, entry).unwrap_or_else(|| panic!("{id} composites"))
+}
+
+/// Structure, the solid model's silhouette test (recomputed from
+/// the documented convention): opaque and not transparent-black
+/// fringe (RGB exactly 0 below alpha 254 carries no color data).
+fn structure(px: image::Rgba<u8>) -> bool {
+    px[3] >= 128 && !(px[3] < 254 && px[0] == 0 && px[1] == 0 && px[2] == 0)
+}
+
+/// A sprite region's primary material, recomputed via the public
+/// analyzer: the largest palette cluster (k=5) that is not shadow
+/// (L >= 0.15).
+fn primary_of(sprite: &image::RgbaImage, rows: &std::ops::Range<u32>) -> Oklab {
+    let crop = image::imageops::crop_imm(
+        sprite,
+        0,
+        rows.start,
+        sprite.width(),
+        rows.end - rows.start,
+    )
+    .to_image();
+    let a = analyze_image(&crop, 5);
+    a.palette
+        .iter()
+        .find(|p| p.lab.l >= 0.15)
+        .or_else(|| a.palette.first())
+        .map(|p| p.lab)
+        .expect("front region has a palette")
+}
+
+fn lab_of(px: image::Rgba<u8>) -> Oklab {
+    Oklab::from_srgb_u8([px[0], px[1], px[2]])
 }
 
 /// Shared model assertions. `solid_box` selects the box variant:
@@ -225,8 +280,8 @@ fn check_solid(id: &str, sprite: &image::RgbaImage, seg: &Segmentation, open_bas
     );
     let bot = seg.front_rows.end - 1;
     let expected = |x: u32, y: u32| -> bool {
-        if sprite.get_pixel(x, bot - y)[3] < 128 {
-            return false; // not in the front silhouette
+        if !structure(*sprite.get_pixel(x, bot - y)) {
+            return false; // not in the (structure) front silhouette
         }
         if !open_base {
             return true;
@@ -385,27 +440,25 @@ fn field_of(sprite: &image::RgbaImage, seg: &Segmentation, r: u32) -> image::Rgb
         .unwrap_or_else(|| panic!("front row {r} has a field color"))
 }
 
-/// Inferred unseen faces of the solid model (f_fridge sides + back,
-/// f_bookcase band wrap). The top rim is excluded throughout: a
-/// column's topmost cell belongs to the top surface (top-region
-/// un-projection), not to the side/back inference.
+/// Inferred unseen faces of the solid model (f_fridge sides, plain
+/// panel backs, f_bookcase band wrap). The top rim is excluded
+/// throughout: a column's topmost cell belongs to the top surface
+/// (top-region un-projection), not to the side/back inference.
 #[test]
 fn stage_g_solid_model_inferred_faces() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
 
     // ---- f_fridge: (a) non-sliver side == field x0.85, (b) back
-    // plane == field x0.7 across the door area.
+    // plane is a plain panel in the primary material.
     let sprite = load(&ts, "f_fridge");
     let seg = segment(&sprite).expect("f_fridge segments");
     let sm = solid_model(&sprite, &seg);
     let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
     let bot = seg.front_rows.end - 1;
-    // Per-column topmost silhouette cell (model y).
-    let col_top = |x: u32| -> u32 {
-        (0..fh)
-            .rev()
-            .find(|&y| sprite.get_pixel(x, bot - y)[3] >= 128)
-            .expect("column has silhouette")
+    // Per-column topmost STRUCTURE cell (model y); None for the
+    // fringe-only column x=31, which has no cells at all now.
+    let col_top = |x: u32| -> Option<u32> {
+        (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
     };
     let sliver_on = |on_right: bool| {
         seg.side.as_ref().map_or(false, |sl| sl.on_right == on_right)
@@ -413,10 +466,10 @@ fn stage_g_solid_model_inferred_faces() {
     let mut side_cells = 0usize;
     for y in 0..fh {
         let r = bot - y;
-        let cols: Vec<u32> = (0..w).filter(|&x| sprite.get_pixel(x, r)[3] >= 128).collect();
+        let cols: Vec<u32> = (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
         let (lo, hi) = (*cols.first().unwrap(), *cols.last().unwrap());
         for (edge, on_right) in [(lo, false), (hi, true)] {
-            if sliver_on(on_right) || y == col_top(edge) {
+            if sliver_on(on_right) || col_top(edge) == Some(y) {
                 continue; // sliver evidence wins there; top rim is the top surface
             }
             for z in 1..d - 1 {
@@ -430,52 +483,57 @@ fn stage_g_solid_model_inferred_faces() {
         }
     }
     assert!(side_cells > 100, "f_fridge: side assertion must be non-vacuous ({side_cells} cells)");
-    // (b) Back plane over sampled rows spanning the door area: the
-    // rear panel is the row field x0.7 — and the sample must
-    // contain cells whose front pixel differs from the field, so
-    // the equality would have failed for the old mirrored back.
+    // (b) Back plane: every non-rim back cell within OKLab 0.06 of
+    // the primary material — a single plain panel with only its
+    // noise grain. Non-vacuous: the sample must include cells
+    // whose FRONT pixel is far from the primary, so a mirrored or
+    // field-based back would fail here.
+    let primary = primary_of(&sprite, &seg.front_rows);
     let mut back_cells = 0usize;
     let mut non_vacuous = 0usize;
     for y in 0..fh {
         let r = bot - y;
-        if y == fh - 1 || (r - seg.front_rows.start) % 3 != 1 {
-            continue;
-        }
-        let f = field_of(&sprite, &seg, r);
-        for x in (0..w).step_by(2) {
-            if sprite.get_pixel(x, r)[3] < 128 || y == col_top(x) {
+        for x in 0..w {
+            if !structure(*sprite.get_pixel(x, r)) || col_top(x) == Some(y) {
                 continue;
             }
-            assert_eq!(
-                sm.get(x, y, 0),
-                Some(shade(f, 0.7)),
-                "f_fridge: back cell at ({x},{y},0) must be the row field x0.7"
+            let c = sm.get(x, y, 0).expect("f_fridge: back cell exists");
+            let dist = lab_of(c).distance(primary);
+            assert!(
+                dist <= 0.06,
+                "f_fridge: back cell at ({x},{y},0) is {dist:.3} from the primary material"
             );
             back_cells += 1;
-            if *sprite.get_pixel(x, r) != f {
+            if lab_of(*sprite.get_pixel(x, r)).distance(primary) > 0.06 {
                 non_vacuous += 1;
             }
         }
     }
-    assert!(back_cells > 50, "f_fridge: back assertion must sample widely ({back_cells} cells)");
+    assert!(back_cells > 500, "f_fridge: back assertion must be wide ({back_cells} cells)");
     assert!(
-        non_vacuous > 0,
-        "f_fridge: sampled back cells must include front detail the field discards"
+        non_vacuous > 100,
+        "f_fridge: back sample must include much front detail the panel discards ({non_vacuous})"
     );
-    println!("f_fridge: {side_cells} side cells == field x0.85, {back_cells} back cells == field x0.7 ({non_vacuous} with front detail discarded)");
+    println!("f_fridge: {side_cells} side cells == field x0.85, {back_cells} back cells within 0.06 of the primary ({non_vacuous} over discarded front detail)");
 
-    // ---- (c) f_bookcase: horizontal shelf bands wrap around the
+    // ---- f_bookcase: (c) horizontal shelf bands wrap around the
     // non-sliver side — some row's side color differs from both
-    // vertical neighbors'.
+    // vertical neighbors'; (d) the back is ONE plain wood panel:
+    // every non-rim cell within 0.06 of the primary and the
+    // row-mean L variance across rows is tiny (no banding — the
+    // old field-based back had whole pure-black rows).
     let sprite = load(&ts, "f_bookcase");
     let seg = segment(&sprite).expect("f_bookcase segments");
     let sm = solid_model(&sprite, &seg);
     let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
     let bot = seg.front_rows.end - 1;
+    let col_top = |x: u32| -> Option<u32> {
+        (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
+    };
     let sliver_left = seg.side.as_ref().map_or(false, |sl| !sl.on_right);
     let side_at = |y: u32| -> Option<image::Rgba<u8>> {
         let r = bot - y;
-        let cols: Vec<u32> = (0..w).filter(|&x| sprite.get_pixel(x, r)[3] >= 128).collect();
+        let cols: Vec<u32> = (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
         let edge = if sliver_left { *cols.last().unwrap() } else { *cols.first().unwrap() };
         sm.get(edge, y, d / 2)
     };
@@ -489,6 +547,205 @@ fn stage_g_solid_model_inferred_faces() {
         }
     }
     assert!(wrapped, "f_bookcase: at least one shelf-band row's side color must differ from both neighbors");
+    // (d) plain wood panel back.
+    let primary = primary_of(&sprite, &seg.front_rows);
+    let mut row_means: Vec<f32> = Vec::new();
+    let mut back_cells = 0usize;
+    for y in 0..fh {
+        let r = bot - y;
+        let (mut lsum, mut n) = (0.0f32, 0u32);
+        for x in 0..w {
+            if !structure(*sprite.get_pixel(x, r)) || col_top(x) == Some(y) {
+                continue;
+            }
+            let c = sm.get(x, y, 0).expect("f_bookcase: back cell exists");
+            let dist = lab_of(c).distance(primary);
+            assert!(
+                dist <= 0.06,
+                "f_bookcase: back cell at ({x},{y},0) is {dist:.3} from the primary material"
+            );
+            lsum += lab_of(c).l;
+            n += 1;
+            back_cells += 1;
+        }
+        if n > 0 {
+            row_means.push(lsum / n as f32);
+        }
+    }
+    assert!(back_cells > 500, "f_bookcase: back assertion must be wide ({back_cells} cells)");
+    let mean = row_means.iter().sum::<f32>() / row_means.len() as f32;
+    let var = row_means.iter().map(|m| (m - mean) * (m - mean)).sum::<f32>()
+        / row_means.len() as f32;
+    assert!(
+        var < 0.001,
+        "f_bookcase: back row-mean L variance {var:.5} must show no banding (< 0.001)"
+    );
+    println!("f_bookcase: {back_cells} back cells within 0.06 of the primary, row-mean L variance {var:.5}");
+}
+
+/// f_counter's back is TWO plain panels: the countertop is a
+/// distinct slab material (top/front means 0.155 apart, top = 20
+/// of 32 silhouette rows), so the back's rim band carries the
+/// countertop material and everything below the rim is the front
+/// primary panel. The rim row's back cells belong to the top
+/// surface pass (the countertop's back edge row, achromatic light
+/// gray [163,163,163]); per-cell OKLab distance to the beige body
+/// primary is a coin flip there (0.058-0.065 — both materials are
+/// light), so the rim is asserted on its band MEAN (> 0.06 from
+/// the body primary) and its achromaticity (chroma < 0.025, vs
+/// the warm body primary's ~0.05), while every non-rim cell must
+/// be within 0.06 of the front primary — 2 base colors in total.
+#[test]
+fn stage_g_counter_back_is_two_panels() {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    let sprite = load(&ts, "f_counter");
+    let seg = segment(&sprite).expect("f_counter segments");
+    let sm = solid_model(&sprite, &seg);
+    let (w, fh, _d) = (sm.size[0], sm.size[1], sm.size[2]);
+    let bot = seg.front_rows.end - 1;
+    let col_top = |x: u32| -> Option<u32> {
+        (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
+    };
+    let front_primary = primary_of(&sprite, &seg.front_rows);
+    let top_primary = primary_of(&sprite, &seg.top_rows);
+    assert!(
+        front_primary.distance(top_primary) > 0.10,
+        "f_counter: the two panel materials must actually differ ({:.3})",
+        front_primary.distance(top_primary)
+    );
+    let mut body_cells = 0usize;
+    let mut rim_cells = 0usize;
+    let mut rim_lab_sum = (0.0f32, 0.0f32, 0.0f32);
+    for y in 0..fh {
+        let r = bot - y;
+        for x in 0..w {
+            if !structure(*sprite.get_pixel(x, r)) {
+                continue;
+            }
+            let c = sm.get(x, y, 0).expect("f_counter: back cell exists");
+            if col_top(x) == Some(y) {
+                // Rim: countertop territory — achromatic stone,
+                // not the warm body material.
+                let l = lab_of(c);
+                let chroma = (l.a * l.a + l.b * l.b).sqrt();
+                assert!(
+                    chroma < 0.025,
+                    "f_counter: rim back cell at ({x},{y},0) must be achromatic stone (chroma {chroma:.3}, rgb {:?})",
+                    c.0
+                );
+                rim_lab_sum.0 += l.l;
+                rim_lab_sum.1 += l.a;
+                rim_lab_sum.2 += l.b;
+                rim_cells += 1;
+            } else {
+                let dist = lab_of(c).distance(front_primary);
+                assert!(
+                    dist <= 0.06,
+                    "f_counter: body back cell at ({x},{y},0) is {dist:.3} from the front primary"
+                );
+                body_cells += 1;
+            }
+        }
+    }
+    assert!(body_cells > 100 && rim_cells > 10, "f_counter: both panels sampled (body {body_cells}, rim {rim_cells})");
+    let rim_mean = Oklab {
+        l: rim_lab_sum.0 / rim_cells as f32,
+        a: rim_lab_sum.1 / rim_cells as f32,
+        b: rim_lab_sum.2 / rim_cells as f32,
+    };
+    assert!(
+        rim_mean.distance(front_primary) > 0.06,
+        "f_counter: rim band mean must differ from the body primary ({:.3})",
+        rim_mean.distance(front_primary)
+    );
+    println!("f_counter: back = achromatic rim band (mean {:.3} from body) + {body_cells} body cells within 0.06 of the front primary", rim_mean.distance(front_primary));
+}
+
+/// Minimum depth (deliverable A): floor-standing props (silhouette
+/// >= 24 rows) get depth >= ceil(width/3). Pinned depths: only
+/// f_locker changes (4 -> 11); the rest were already deeper.
+#[test]
+fn stage_g_minimum_depth() {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    for (id, want) in [
+        ("f_counter", 32),
+        ("f_bookcase", 14),
+        ("f_table", 32),
+        ("f_fridge", 16),
+        ("f_locker", 11),
+    ] {
+        let sprite = load(&ts, id);
+        let seg = segment_for(id, &sprite).unwrap_or_else(|| panic!("{id} segments"));
+        let sm = solid_model(&sprite, &seg);
+        assert_eq!(
+            sm.size[2], want,
+            "{id}: solid model depth {} != pinned {want} (raw rule {})",
+            sm.size[2],
+            seg.depth_cells()
+        );
+        println!("{id}: depth {} (raw {})", sm.size[2], seg.depth_cells());
+    }
+}
+
+/// No black inferred cells (deliverable C gate): for every gate
+/// prop, every BACK cell and every SIDE surface cell (interior z
+/// at a row's structure extremes) — top rim excluded, since the
+/// rim belongs to the evidence-based top surface — has OKLab
+/// L >= 0.10. (Front-plane cells are exempt by construction: they
+/// are the sprite verbatim, shadow paint included.)
+#[test]
+fn stage_g_no_black_inferred_cells() {
+    let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
+    for id in ["f_counter", "f_bookcase", "f_table", "f_fridge", "f_locker"] {
+        let sprite = load(&ts, id);
+        let seg = segment_for(id, &sprite).unwrap_or_else(|| panic!("{id} segments"));
+        let sm = solid_model(&sprite, &seg);
+        let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+        let bot = seg.front_rows.end - 1;
+        let col_top = |x: u32| -> Option<u32> {
+            (0..fh).rev().find(|&y| structure(*sprite.get_pixel(x, bot - y)))
+        };
+        let mut checked = 0usize;
+        for y in 0..fh {
+            let r = bot - y;
+            let cols: Vec<u32> =
+                (0..w).filter(|&x| structure(*sprite.get_pixel(x, r))).collect();
+            if cols.is_empty() {
+                continue;
+            }
+            let (lo, hi) = (*cols.first().unwrap(), *cols.last().unwrap());
+            for x in cols.iter().cloned() {
+                if col_top(x) == Some(y) {
+                    continue;
+                }
+                let c = sm.get(x, y, 0).expect("back cell exists");
+                assert!(
+                    lab_of(c).l >= 0.10,
+                    "{id}: back cell at ({x},{y},0) has L {:.3} (rgb {:?})",
+                    lab_of(c).l,
+                    c.0
+                );
+                checked += 1;
+            }
+            for edge in [lo, hi] {
+                if col_top(edge) == Some(y) {
+                    continue;
+                }
+                for z in 1..d - 1 {
+                    let c = sm.get(edge, y, z).expect("side cell exists");
+                    assert!(
+                        lab_of(c).l >= 0.10,
+                        "{id}: side cell at ({edge},{y},{z}) has L {:.3} (rgb {:?})",
+                        lab_of(c).l,
+                        c.0
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 100, "{id}: no-black assertion must be wide ({checked} cells)");
+        println!("{id}: {checked} inferred side/back cells all L >= 0.10");
+    }
 }
 
 #[test]
