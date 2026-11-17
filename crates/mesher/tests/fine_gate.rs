@@ -323,3 +323,183 @@ fn bookcase_volume_memory_vs_dense() {
     );
     assert_eq!(report.stamped_cells, 32 * 20 * 18 + 32);
 }
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3 (9.7): rotated stamping — stamp_model_rotated
+// ---------------------------------------------------------------------
+
+use mesher::fine::stamp_model_rotated;
+
+/// An asymmetric fixture for the rotation tests: an L in plan
+/// (a full back row + a full west column at `my = 0`), a
+/// distinct block in each of the four plan corners, and one
+/// tall cell at the front-west corner so height preservation
+/// is checked too. No symmetry of any kind: any wrong
+/// rotation (mirror, transpose, off-by-one) moves a marker.
+fn l_model() -> TestModel {
+    let mut m = TestModel::new([6, 3, 5]);
+    // L arms at my = 0: back row (mz = 0) and west column
+    // (mx = 0).
+    for mx in 0..6 {
+        m.set(mx, 0, 0, blk(94, 0.94));
+    }
+    for mz in 0..5 {
+        m.set(0, 0, mz, blk(95, 0.95));
+    }
+    // Distinct corner markers (overwriting the arm cells).
+    m.set(0, 0, 0, blk(90, 0.90)); // back-west
+    m.set(5, 0, 0, blk(91, 0.91)); // back-east
+    m.set(0, 0, 4, blk(92, 0.92)); // front-west
+    m.set(5, 0, 4, blk(93, 0.93)); // front-east
+    // One tall cell: front-west corner, top height.
+    m.set(0, 2, 4, blk(96, 0.96));
+    m
+}
+
+/// Snapshot of one tile's whole fine volume through the
+/// layer: index `(fz * FINE + ly) * FINE + lx` over
+/// `z0..z0 + depth` (depth = the layer's level depth, 96).
+fn tile_snapshot(layer: &FineLayer, tile: (i32, i32), z0: i32) -> Vec<Option<Block>> {
+    let mut out = Vec::with_capacity((FINE * FINE * 96) as usize);
+    for fz in z0..z0 + 96 {
+        for ly in 0..FINE {
+            for lx in 0..FINE {
+                out.push(layer.block_at_fine(tile.0 * FINE + lx, tile.1 * FINE + ly, fz));
+            }
+        }
+    }
+    out
+}
+
+/// One rotation step of the spec transform, applied to a
+/// tile-local coordinate: `(lx, ly) -> (FINE - 1 - ly, lx)`.
+fn rot_step(lx: i32, ly: i32) -> (i32, i32) {
+    (FINE - 1 - ly, lx)
+}
+
+#[test]
+fn rotated_stamp_turn0_equals_stamp_model() {
+    let model = l_model();
+    let tile = (4, 4);
+    let z0 = 32;
+    let mut plain = FineLayer::default();
+    let want_report = stamp_model(&mut plain, tile, z0, &model).unwrap();
+    // Turns 0 and every multiple of 4 must reproduce
+    // stamp_model exactly, cell-for-cell over the whole tile
+    // volume (layer reads AND sampler reads against the
+    // coarse world).
+    let map = coarse_world();
+    let plain_sampler = FineSampler::new(&map, &plain);
+    for turns in [0u8, 4, 8] {
+        let mut rotated = FineLayer::default();
+        let report = stamp_model_rotated(&mut rotated, tile, z0, &model, turns).unwrap();
+        assert_eq!(report.stamped_cells, want_report.stamped_cells);
+        assert_eq!(
+            tile_snapshot(&rotated, tile, z0),
+            tile_snapshot(&plain, tile, z0),
+            "turns {turns}: layer volume must equal stamp_model's"
+        );
+        let sampler = FineSampler::new(&map, &rotated);
+        for fz in z0..z0 + 96 {
+            for ly in 0..FINE {
+                for lx in 0..FINE {
+                    let (fx, fy) = (tile.0 * FINE + lx, tile.1 * FINE + ly);
+                    assert_eq!(
+                        sampler.block_at_fine(fx, fy, fz),
+                        plain_sampler.block_at_fine(fx, fy, fz),
+                        "turns {turns}: sampler read at fine ({fx},{fy},{fz})"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn rotated_stamp_quarter_turns_match_independent_rotation() {
+    let model = l_model();
+    let tile = (1, 2);
+    let z0 = 32;
+    let mut base = FineLayer::default();
+    let base_report = stamp_model_rotated(&mut base, tile, z0, &model, 0).unwrap();
+    let base_snap = tile_snapshot(&base, tile, z0);
+    let idx = |lx: i32, ly: i32, fz: i32| ((fz * FINE + ly) * FINE + lx) as usize;
+    for turns in 1..=3u8 {
+        // Independently rotate the turn-0 snapshot: every
+        // stamped source cell (lx, ly) lands at rot^turns.
+        let mut expected: Vec<Option<Block>> = vec![None; base_snap.len()];
+        for fz in 0..96 {
+            for ly in 0..FINE {
+                for lx in 0..FINE {
+                    let cell = base_snap[idx(lx, ly, fz)];
+                    if cell.is_none() {
+                        continue;
+                    }
+                    let (mut rx, mut ry) = (lx, ly);
+                    for _ in 0..turns {
+                        (rx, ry) = rot_step(rx, ry);
+                    }
+                    expected[idx(rx, ry, fz)] = cell;
+                }
+            }
+        }
+        let mut layer = FineLayer::default();
+        let report = stamp_model_rotated(&mut layer, tile, z0, &model, turns).unwrap();
+        assert_eq!(
+            report.stamped_cells, base_report.stamped_cells,
+            "turns {turns}: rotation copies every cell, none lost or duplicated"
+        );
+        assert_eq!(
+            tile_snapshot(&layer, tile, z0),
+            expected,
+            "turns {turns}: stamped volume must equal the independently \
+             rotated turn-0 volume, voxel-for-voxel"
+        );
+    }
+    // Spot-check the front marker's facing per turn count:
+    // turn 0 front-west corner sits flush SOUTH (ly = 31);
+    // one step puts the front on the WEST edge (lx = 0), two
+    // on the NORTH edge (ly = 0), three on the EAST (lx = 31).
+    let front = blk(92, 0.92);
+    let front_at = |turns: u8| {
+        let mut layer = FineLayer::default();
+        stamp_model_rotated(&mut layer, tile, z0, &model, turns).unwrap();
+        let vol = &layer.volumes_for_tile(tile)[0];
+        (0..FINE)
+            .flat_map(|ly| (0..FINE).map(move |lx| (lx, ly)))
+            .find(|&(lx, ly)| vol.get(lx, ly, z0) == Some(front))
+            .expect("front marker is stamped")
+    };
+    assert_eq!(front_at(0), (0, 31), "turn 0: front flush south");
+    assert_eq!(front_at(1), (0, 0), "turn 1: front on the west edge");
+    assert_eq!(front_at(2), (31, 0), "turn 2: front on the north edge");
+    assert_eq!(front_at(3), (31, 31), "turn 3: front on the east edge");
+}
+
+#[test]
+fn rotated_stamp_oversize_errors_at_every_turn() {
+    let model = l_model();
+    // A good stamp already on the target tile: every refused
+    // rotated stamp must leave it (and the layer) untouched.
+    let mut layer = FineLayer::default();
+    stamp_model(&mut layer, (0, 0), 0, &model).unwrap();
+    let before = tile_snapshot(&layer, (0, 0), 0);
+    for size in [[33, 1, 1], [1, 1, 33], [1, 97, 1]] {
+        let bad = TestModel::new(size);
+        for turns in 0..=3u8 {
+            let err = stamp_model_rotated(&mut layer, (0, 0), 0, &bad, turns).unwrap_err();
+            assert_eq!(err, StampError::ExceedsTile { size });
+            assert_eq!(
+                tile_snapshot(&layer, (0, 0), 0),
+                before,
+                "size {size:?} turns {turns}: a refused stamp leaves the layer unchanged"
+            );
+        }
+        // And on a fresh tile, nothing is inserted at any turn.
+        for turns in 0..=3u8 {
+            assert!(stamp_model_rotated(&mut layer, (5, 5), 0, &bad, turns).is_err());
+        }
+        assert!(layer.volumes_for_tile((5, 5)).is_empty());
+    }
+    assert_eq!(layer.tile_count(), 1);
+}

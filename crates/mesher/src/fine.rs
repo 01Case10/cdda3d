@@ -480,10 +480,43 @@ pub fn stamp_model(
     fine_z0: i32,
     model: &dyn ModelCells,
 ) -> Result<StampReport, StampError> {
+    stamp_model_rotated(layer, tile, fine_z0, model, 0)
+}
+
+/// Stamp `model` into `layer` as tile `tile`'s fine volume at
+/// absolute fine-z origin `fine_z0`, rotated within the tile
+/// footprint by `quarter_turns` quarter turns (plan §11b,
+/// 9.7).
+///
+/// The base mapping is [`stamp_model`]'s, unchanged: model
+/// cell `(mx, my, mz)` first lands at tile-local
+/// `(lx, ly) = (mx, (FINE - d) + mz)` with height `my`. Each
+/// cell's `(lx, ly)` is then rotated by `quarter_turns % 4`
+/// steps of `(lx, ly) -> (FINE - 1 - ly, lx)` inside the
+/// 32x32 tile footprint; height is untouched, so one step
+/// turns the model's front from the tile's SOUTH edge to its
+/// WEST edge, two steps put it on the NORTH edge, and three
+/// on the EAST edge. `quarter_turns = 0` (or any multiple of
+/// 4) is exactly [`stamp_model`].
+///
+/// Errors: exactly [`stamp_model`]'s — a model with
+/// `w > FINE`, `d > FINE`, or `h > layer.depth_z` returns
+/// [`StampError::ExceedsTile`] and leaves `layer` unchanged,
+/// at every turn count (rotation never changes which models
+/// fit: a footprint that fits unrotated fits rotated, since
+/// both axes are bounded by the same `FINE`).
+pub fn stamp_model_rotated(
+    layer: &mut FineLayer,
+    tile: (i32, i32),
+    fine_z0: i32,
+    model: &dyn ModelCells,
+    quarter_turns: u8,
+) -> Result<StampReport, StampError> {
     let [w, h, d] = model.size();
     if w > FINE as u32 || d > FINE as u32 || h > layer.depth_z as u32 {
         return Err(StampError::ExceedsTile { size: [w, h, d] });
     }
+    let turns = quarter_turns % 4;
     let mut volume = FineVolume::new(tile, fine_z0, layer.depth_z);
     let mut cells = 0usize;
     // y (up) outermost so each column is filled bottom-up.
@@ -491,8 +524,12 @@ pub fn stamp_model(
         for mz in 0..d {
             for mx in 0..w {
                 if let Some(block) = model.cell(mx, my, mz) {
-                    let ly = (FINE - d as i32) + mz as i32;
-                    volume.set(mx as i32, ly, my as i32, Some(block));
+                    let mut lx = mx as i32;
+                    let mut ly = (FINE - d as i32) + mz as i32;
+                    for _ in 0..turns {
+                        (lx, ly) = (FINE - 1 - ly, lx);
+                    }
+                    volume.set(lx, ly, my as i32, Some(block));
                     cells += 1;
                 }
             }
