@@ -6,20 +6,27 @@
 //! drawn in 3/4 view — top rows are the object's top surface, the
 //! band below is its front face, sometimes with a side sliver — so a
 //! sprite carries more shape than a silhouette. This module recovers
-//! that shape in two forms:
+//! that shape in one canonical form, plus the two earlier forms kept
+//! for reference:
 //!
-//! * [`box_model`] (G.1): one cuboid whose depth comes from the top
-//!   region's height and whose height comes from the front region's
-//!   height, each face textured by un-projecting its sprite region.
+//! * [`solid_model`] (THE model): the front silhouette extruded
+//!   through the full model depth and filled at every depth cell —
+//!   a real solid whose cross-section is the silhouette itself, so
+//!   no viewing angle can see into a hollow interior or a gap.
 //!   Fronts whose base is open (legs + painted shadow, e.g. tables)
-//!   get a slab-and-legs variant instead — see "Base structure".
-//! * [`column_model`] (G.2): a closed shell — a front wall of
-//!   per-pixel columns whose front projection reproduces the
-//!   sprite's front region exactly, a top cap extending backward, a
-//!   mirrored back panel, and side/bottom closure strips, so the
-//!   model reads as a closed object from any outside angle.
+//!   keep only their grounded columns under the slab — see "Base
+//!   structure".
+//! * [`box_model`] (G.1, deprecated): one cuboid whose depth comes
+//!   from the top region's height and whose height comes from the
+//!   front region's height, each face textured by un-projecting its
+//!   sprite region.
+//! * [`column_model`] (G.2, deprecated): a closed shell — a front
+//!   wall of per-pixel columns whose front projection reproduces
+//!   the sprite's front region exactly, a top cap extending
+//!   backward, a mirrored back panel, and side/bottom closure
+//!   strips.
 //!
-//! Both consume a [`Segmentation`] produced by [`segment`]. The
+//! All consume a [`Segmentation`] produced by [`segment`]. The
 //! engine-side stamping of these models is a later round; everything
 //! here is voxelizer-side and deterministic (fixed iteration order,
 //! no RNG, no wall clock).
@@ -669,7 +676,11 @@ fn base_plan(sprite: &RgbaImage, seg: &Segmentation, x0: u32, x1: u32) -> BasePl
     }
 }
 
-/// G.1: the box model. A cuboid spanning the front region's opaque
+/// G.1: the box model. Deprecated — superseded by [`solid_model`],
+/// which is the canonical prop model; kept for the gate and as a
+/// reference implementation of the face un-projections.
+///
+/// A cuboid spanning the front region's opaque
 /// x-extent, height = front region height, depth from the top
 /// region. Faces are textured by un-projecting their sprite region;
 /// the interior is filled with the front region's mean color (it is
@@ -884,7 +895,13 @@ fn side_color(
     }
 }
 
-/// G.2: the column model. A closed shell of surfaces:
+/// G.2: the column model. Deprecated — superseded by
+/// [`solid_model`], which is the canonical prop model; kept for the
+/// gate and as a reference. (Its shell construction is what left a
+/// visible open wedge on deep props' flanks: closure strips only
+/// join the walls at each row's silhouette extremes.)
+///
+/// A closed shell of surfaces:
 ///
 /// * the **front wall** at z = depth-1: for every opaque front-region
 ///   pixel (x, r), one voxel at height `bot - r` with that pixel's
@@ -970,6 +987,129 @@ pub fn column_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
             let px = *sprite.get_pixel(sx, r);
             for z in 1..d - 1 {
                 m.set(sx, y, z, Some(shade(px, 0.7)));
+            }
+        }
+    }
+    m
+}
+
+/// THE prop model: the front silhouette extruded through the full
+/// model depth and filled at *every* depth cell — a real solid, so
+/// no viewing angle can see into a hollow interior or a side gap
+/// (the failure that retired the G.2 shell).
+///
+/// * Cross-section: voxel (x, y, z) is solid iff the front-region
+///   pixel at (x, front_bottom - y) is opaque and z < d, with
+///   d = [`Segmentation::depth_cells`] uniform for every silhouette
+///   column. (Depth does not vary per column: the top region sets
+///   the one depth, exactly as in the earlier models.)
+/// * Front plane (z = d-1): the sprite pixel verbatim — the front
+///   projection is the front silhouette exactly, colors included.
+///   Nothing below overwrites the front plane.
+/// * Back plane (z = 0): the front pixel darkened x0.55. Interior
+///   cells: x0.7 (never visible in a surface render, but correct if
+///   the model is sliced).
+/// * Side surfaces: each row's leftmost/rightmost solid columns are
+///   real surface (the model is filled behind them), colored on the
+///   interior depth cells by [`side_color`] — the sliver
+///   un-projection where a sliver was detected, else the front
+///   pixel x0.7. The front/back planes keep their own colors, so
+///   side shading never touches the exact front projection.
+/// * Top surface: stepped, following the silhouette — each column
+///   x's top surface is its own topmost solid voxel, colored for
+///   z in 0..d-1 from the top region via [`top_row_for_z`] (the
+///   box's un-projection). The front plane of that voxel keeps the
+///   front pixel, so the top reads as a rim behind the front-top
+///   edge, as in the box.
+/// * Open base ([`base_plan`]): where the front's base is open
+///   (tables), the slab rows (header band + top) stay solid across
+///   the full silhouette, below the slab only grounded columns are
+///   solid through the depth, and the under-space is empty at every
+///   z — including the front plane, whose "silhouette" there is
+///   painted shadow, not structure.
+pub fn solid_model(sprite: &RgbaImage, seg: &Segmentation) -> PropModel {
+    let w = sprite.width();
+    let front = &seg.front_rows;
+    let fh = front.end - front.start;
+    let d = seg.depth_cells();
+    let bot = front.end - 1;
+    // Front region's opaque x-extent (base_plan + row_pixel ranges).
+    let (mut x0, mut x1) = (w - 1, 0u32);
+    for y in front.clone() {
+        for x in 0..w {
+            if opaque(*sprite.get_pixel(x, y)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+            }
+        }
+    }
+    let plan = base_plan(sprite, seg, x0, x1);
+    let slab_bottom = fh - plan.header_rows; // model y; only if plan.open
+    // The solidity mask: the whole model is this mask extruded
+    // through every depth cell.
+    let is_solid = |x: u32, y: u32| -> bool {
+        if !opaque(*sprite.get_pixel(x, bot - y)) {
+            return false;
+        }
+        if !plan.open || y >= slab_bottom {
+            return true;
+        }
+        // Below the slab of an open base: grounded columns only.
+        // (x is within the extent: its front pixel is opaque.)
+        plan.grounded[(x - x0) as usize]
+    };
+    let mut m = PropModel::new([w, fh, d]);
+    // Base fill: front verbatim, back x0.55, interior x0.7.
+    for y in 0..fh {
+        for x in 0..w {
+            if !is_solid(x, y) {
+                continue;
+            }
+            let px = *sprite.get_pixel(x, bot - y);
+            for z in 0..d {
+                let c = if z == d - 1 {
+                    px
+                } else if z == 0 {
+                    shade(px, 0.55)
+                } else {
+                    shade(px, 0.7)
+                };
+                m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    // Side surfaces: each row's silhouette extremes, interior depth
+    // cells only (front/back planes keep their colors above).
+    for y in 0..fh {
+        let mut extremes: Option<(u32, u32)> = None;
+        for x in 0..w {
+            if is_solid(x, y) {
+                extremes = Some(match extremes {
+                    None => (x, x),
+                    Some((lo, _)) => (lo, x),
+                });
+            }
+        }
+        let Some((lo, hi)) = extremes else { continue };
+        let r = bot - y;
+        for (edge_x, on_right) in [(lo, false), (hi, true)] {
+            for z in 1..d - 1 {
+                if let Some(c) = side_color(sprite, seg, edge_x, r, z, d, on_right) {
+                    m.set(edge_x, y, z, Some(c));
+                }
+            }
+        }
+    }
+    // Top surface: per column, its topmost solid voxel, colored
+    // from the top region across the depth behind the front plane.
+    for x in 0..w {
+        let Some(ytop) = (0..fh).rev().find(|&y| is_solid(x, y)) else {
+            continue;
+        };
+        for z in 0..d - 1 {
+            let sr = top_row_for_z(seg, d, z);
+            if let Some(px) = row_pixel(sprite, x, sr, x0, x1) {
+                m.set(x, ytop, z, Some(px));
             }
         }
     }
@@ -1131,5 +1271,58 @@ mod tests {
         // Determinism.
         assert_eq!(bm, box_model(&img, &seg));
         assert_eq!(cm, column_model(&img, &seg));
+    }
+
+    #[test]
+    fn solid_model_is_filled_and_projects_exactly() {
+        let img = synthetic();
+        let seg = segment(&img).unwrap();
+        let sm = solid_model(&img, &seg);
+        let (fh, d) = (sm.size[1], sm.size[2]);
+        let bot = seg.front_rows.end - 1;
+        // Cross-section == front silhouette, filled at EVERY z.
+        for x in 0..32 {
+            for y in 0..fh {
+                let px = *img.get_pixel(x, bot - y);
+                let want = opaque(px);
+                for z in 0..d {
+                    assert_eq!(sm.get(x, y, z).is_some(), want, "at ({x},{y},{z})");
+                }
+                if want {
+                    assert_eq!(sm.get(x, y, d - 1), Some(px), "front verbatim at ({x},{y})");
+                }
+            }
+        }
+        assert_eq!(sm, solid_model(&img, &seg), "deterministic");
+    }
+
+    #[test]
+    fn solid_model_open_base_keeps_only_legs_under_the_slab() {
+        let (img, seg) = synthetic_open_base();
+        let plan = base_plan(&img, &seg, 0, 31);
+        assert!(plan.open);
+        let sm = solid_model(&img, &seg);
+        let (fh, d) = (sm.size[1], sm.size[2]);
+        let slab_bottom = fh - plan.header_rows;
+        // Under-space: empty at every depth, front plane included.
+        for y in 0..slab_bottom {
+            for z in 0..d {
+                assert_eq!(sm.get(16, y, z), None, "under-space at (16,{y},{z})");
+            }
+        }
+        // Legs: solid at every depth where the front pixel is paint.
+        for x in [3u32, 28] {
+            for y in 0..slab_bottom {
+                for z in 0..d {
+                    assert!(sm.get(x, y, z).is_some(), "leg at ({x},{y},{z})");
+                }
+            }
+        }
+        // Slab: solid across the width at every depth.
+        for y in slab_bottom..fh {
+            for z in 0..d {
+                assert!(sm.get(16, y, z).is_some(), "slab at (16,{y},{z})");
+            }
+        }
     }
 }

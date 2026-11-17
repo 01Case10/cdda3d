@@ -477,3 +477,22 @@ break; fridge measures 1.00) + edge rescale. Fridge 0.55 -> 0.75;
 counter 0.85, bookcase 0.84, table 0.92; negatives (f_chair,
 t_grass) still None. Updated showcase (locker added as fifth row)
 re-presented to Joey 2026-11-16 for the §12 sign-off.
+
+## 17. Stage G unified solid model (2026-11-16, Joey's direction)
+
+Joey's ruling on the §16 sheet: one model, a REAL 3D model — the
+two variants confused the comparison, and the column shell showed
+an open wedge on the fridge's side. `solid_model` replaces both as
+THE model (box/column kept, deprecated): cross-section = the front
+silhouette exactly, extruded through the full depth and filled at
+every z (gate-asserted exhaustively per prop: counter 11,840 /
+bookcase 16,128 / table 2,944 / fridge 19,232 / locker 4,608 voxels
+checked); front plane = sprite pixels verbatim; open-base rule
+unchanged (table under-space empty at every z). Top surface is
+stepped — it follows each column's own silhouette top, colored from
+the top region by the existing un-projection. Parent re-verified
+in the main tree (props_gate 3/3, lib 34/34). Joey's follow-up
+direction, same day: the next showcase must show front / back /
+left / right views, and the faces the sprite never shows (sides,
+back) should be EDUCATED DECISIONS, not edge-stretch or mirrored
+front detail — that inference pass is the next G work item.

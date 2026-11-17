@@ -1,7 +1,7 @@
 //! Stage G showcase: contact sheet of inferred 3D prop models for
-//! sign-off. One row per furniture id, columns:
-//!   [original sprite | box front-3/4 | box back-3/4 |
-//!    column front-3/4 | column back-3/4]
+//! sign-off. One row per furniture id, ONE model per prop (the
+//! solid model), columns:
+//!   [original sprite | solid front-3/4 | solid back-3/4]
 //! Models are drawn with a tiny software isometric cube renderer
 //! (surface voxels only, painter-sorted, three shaded faces).
 //! Output: target/stage-g/props.png (relative to the worktree root).
@@ -195,7 +195,7 @@ fn render_model(sheet: &mut RgbaImage, model: &PropModel, view: V3, ox: u32, oy:
 
 fn main() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
-    let mut sheet = RgbaImage::from_pixel(CELL_W * 5, CELL_H * IDS.len() as u32, BACKDROP);
+    let mut sheet = RgbaImage::from_pixel(CELL_W * 3, CELL_H * IDS.len() as u32, BACKDROP);
     for (row, id) in IDS.iter().enumerate() {
         let entry = ts.entries.get(*id).unwrap_or_else(|| panic!("tileset has {id}"));
         let sprite = composite_entry(&ts, entry).unwrap_or_else(|| panic!("{id} composites"));
@@ -220,12 +220,9 @@ fn main() {
         let sx = (CELL_W - big.width()) / 2;
         let sy = oy + CELL_H - big.height() - 10;
         image::imageops::overlay(&mut sheet, &big, sx as i64, sy as i64);
-        let bm = box_model(&sprite, &seg);
-        let cm = column_model(&sprite, &seg);
-        render_model(&mut sheet, &bm, V3(1.0, 0.9, 1.0), CELL_W, oy);
-        render_model(&mut sheet, &bm, V3(-1.0, 0.9, -1.0), CELL_W * 2, oy);
-        render_model(&mut sheet, &cm, V3(1.0, 0.9, 1.0), CELL_W * 3, oy);
-        render_model(&mut sheet, &cm, V3(-1.0, 0.9, -1.0), CELL_W * 4, oy);
+        let sm = solid_model(&sprite, &seg);
+        render_model(&mut sheet, &sm, V3(1.0, 0.9, 1.0), CELL_W, oy);
+        render_model(&mut sheet, &sm, V3(-1.0, 0.9, -1.0), CELL_W * 2, oy);
     }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let out = manifest.join("../../target/stage-g/props.png");

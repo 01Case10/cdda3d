@@ -11,6 +11,13 @@
 //! pixels, column front projection == front silhouette, column back
 //! panel == mirrored silhouette) and the `None` cases.
 //!
+//! The canonical model is now `solid_model` (the front silhouette
+//! extruded and filled at every depth cell): `check_solid` asserts
+//! its front projection == front silhouette exactly (colors
+//! included) and SOLIDITY — every silhouette cell filled at every
+//! z, no gaps — for all five props. The box/column assertions below
+//! still run (both models are kept, deprecated).
+//!
 //! Weak-case fixes covered here (2026-11-16):
 //! * f_table's box is slab-and-legs: its front base is painted
 //!   shadow (alpha 128) between two leg runs, so the under-space
@@ -194,6 +201,58 @@ fn check_models(id: &str, sprite: &image::RgbaImage, seg: &Segmentation, solid_b
     }
 }
 
+/// The canonical solid model. `open_base` is f_table only (probed,
+/// same facts as the slab-and-legs box assertions): a 1-row apron
+/// slab at the top of the front, leg runs at x 1..=3 and 28..=30;
+/// the under-space between the legs is painted shadow and must be
+/// empty at every z — front plane included.
+fn check_solid(id: &str, sprite: &image::RgbaImage, seg: &Segmentation, open_base: bool) {
+    let sm = solid_model(sprite, seg);
+    assert_eq!(sm, solid_model(sprite, seg), "{id}: solid model deterministic");
+    let (w, fh, d) = (sm.size[0], sm.size[1], sm.size[2]);
+    assert_eq!(
+        fh,
+        seg.front_rows.end - seg.front_rows.start,
+        "{id}: solid model height = front height"
+    );
+    let bot = seg.front_rows.end - 1;
+    let expected = |x: u32, y: u32| -> bool {
+        if sprite.get_pixel(x, bot - y)[3] < 128 {
+            return false; // not in the front silhouette
+        }
+        if !open_base {
+            return true;
+        }
+        y >= fh - 1 || (1..=3).contains(&x) || (28..=30).contains(&x)
+    };
+    let mut solid_voxels = 0usize;
+    for x in 0..w {
+        for y in 0..fh {
+            let want = expected(x, y);
+            // (b) SOLIDITY: a silhouette cell is filled at EVERY z;
+            // a non-silhouette cell at none. No gaps, anywhere.
+            for z in 0..d {
+                assert_eq!(
+                    sm.get(x, y, z).is_some(),
+                    want,
+                    "{id}: solid model solidity mismatch at ({x},{y},{z})"
+                );
+            }
+            if want {
+                solid_voxels += d as usize;
+                // (a) Front projection == front silhouette exactly,
+                // colors included.
+                assert_eq!(
+                    sm.get(x, y, d - 1),
+                    Some(*sprite.get_pixel(x, bot - y)),
+                    "{id}: solid front color mismatch at ({x},{y})"
+                );
+            }
+        }
+    }
+    println!("{id}: solid model {w}x{fh}x{d} — {solid_voxels} solid voxels, all asserted filled at every z");
+}
+
 #[test]
 fn stage_g_props_segment_and_project_exactly() {
     let ts = tileset::load_decomposed(&ultica_dir()).expect("UltiCa loads");
@@ -226,6 +285,7 @@ fn stage_g_props_segment_and_project_exactly() {
         assert_eq!(seg, segment(&sprite).unwrap(), "{id}: segmentation must be deterministic");
         // Only f_table has an open base; the rest are solid boxes.
         check_models(id, &sprite, &seg, *id != "f_table");
+        check_solid(id, &sprite, &seg, *id == "f_table");
     }
 }
 
@@ -262,6 +322,7 @@ fn stage_g_locker_segments_via_override() {
     // Solid box; its front face matches the sprite front region
     // (asserted inside check_models).
     check_models("f_locker", &sprite, &seg, true);
+    check_solid("f_locker", &sprite, &seg, false);
 }
 
 #[test]
