@@ -7235,8 +7235,30 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     // per-family batches then refine from the strips.
     let s = &id[2..];
     if s.contains("fencegate") || s.contains("door") {
+        if s.contains("fencegate") && !s.contains("privacy") {
+            // A gate in a fence line is a fence segment,
+            // not a door: panel builder at fence height.
+            return Some(terrain_fence_panel(sprite));
+        }
         let open = s.contains("open") || s.ends_with("_o") || s.contains("_o_");
-        return Some(terrain_door(sprite, open));
+        let style = if s.ends_with("frame") {
+            DoorStyle::Frame
+        } else if s.contains("curtain")
+            || s.contains("fencegate")
+            || s.split('_').any(|seg| seg == "b")
+        {
+            // Broken doors, curtains and open privacy
+            // gates: the sprite's own silhouette IS the
+            // panel (holes, parted curtains, gate halves
+            // at the frame edges) -- a filled modal slab
+            // invents door that is not there.
+            DoorStyle::Silhouette
+        } else if open {
+            DoorStyle::Open
+        } else {
+            DoorStyle::Closed
+        };
+        return Some(terrain_door(sprite, style));
     }
     if s.contains("tree")
         || s.contains("shrub")
@@ -7276,7 +7298,11 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         return Some(terrain_fence_panel(sprite));
     }
     if s.contains("window") {
-        return Some(terrain_window(sprite));
+        // Empty windows and bare frames have no pane:
+        // the builder's glass plane would fill the
+        // opening with the sprite's interior colour.
+        let pane = !(s.contains("empty") || s.ends_with("frame"));
+        return Some(terrain_window(sprite, pane));
     }
     if s.contains("wall") {
         let h = if s.contains("half") { 48 } else { 96 };
@@ -8287,7 +8313,15 @@ fn terrain_box(sprite: &RgbaImage, h: i32) -> PropModel {
 /// A door: frame posts + header, and a panel textured
 /// from the sprite. Open doors swing the panel 55
 /// degrees toward the front on its hinge at x=2.
-fn terrain_door(sprite: &RgbaImage, open: bool) -> PropModel {
+#[derive(Clone, Copy, PartialEq)]
+enum DoorStyle {
+    Closed,
+    Open,
+    Frame,
+    Silhouette,
+}
+
+fn terrain_door(sprite: &RgbaImage, style: DoorStyle) -> PropModel {
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
     let h = 84i32;
     let mut m = PropModel::new([32, h as u32, 32]);
@@ -8317,7 +8351,24 @@ fn terrain_door(sprite: &RgbaImage, open: bool) -> PropModel {
             }
         }
     }
-    if !open {
+    if style == DoorStyle::Frame {
+        // Bare frame: no panel at all.
+    } else if style == DoorStyle::Silhouette {
+        for x in 2..30i32 {
+            for y in 0..(h - 3) {
+                let sy = (sh - 1 - (y * sh / h)).clamp(0, sh - 1);
+                let p = *sprite.get_pixel((x * sw / 32).clamp(0, sw - 1) as u32, sy as u32);
+                if p[3] < 128 {
+                    continue;
+                }
+                m.set(x as u32, y as u32, 14, Some(p));
+                m.set(x as u32, y as u32, 17, Some(p));
+                let inner = shade(p, 0.8);
+                m.set(x as u32, y as u32, 15, Some(inner));
+                m.set(x as u32, y as u32, 16, Some(inner));
+            }
+        }
+    } else if style == DoorStyle::Closed {
         for x in 2..30i32 {
             for y in 0..(h - 3) {
                 let c = face(x * sw / 32, y);
@@ -8351,7 +8402,7 @@ fn terrain_door(sprite: &RgbaImage, open: bool) -> PropModel {
 /// A window: frame border in the sprite's modal edge
 /// colour, glass plane carrying the sprite itself
 /// (drawn bars and glare come with it).
-fn terrain_window(sprite: &RgbaImage) -> PropModel {
+fn terrain_window(sprite: &RgbaImage, pane: bool) -> PropModel {
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
     let h = 64i32;
     let mut m = PropModel::new([32, h as u32, 32]);
@@ -8373,7 +8424,7 @@ fn terrain_window(sprite: &RgbaImage) -> PropModel {
                 for z in 14..=17 {
                     m.set(x as u32, y as u32, z as u32, Some(modal));
                 }
-            } else {
+            } else if pane {
                 let c = face(x * sw / 32, y);
                 for z in [15, 16] {
                     m.set(x as u32, y as u32, z as u32, Some(c));

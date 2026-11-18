@@ -189,16 +189,35 @@ pub fn load_sprite_image(
 /// straight segment / connected face. Falls back to the
 /// entry's own fg when no center variant exists.
 pub fn terrain_fg_image(ts: &Tileset, entry: &TileEntry) -> Option<RgbaImage> {
-    if let Some(center) = entry.additional_tiles.get("center") {
-        if let Some(img) = center
+    let img = if let Some(center) = entry.additional_tiles.get("center") {
+        center
             .fg
             .as_ref()
             .and_then(|r| load_sprite_image(ts, center, r))
+            .or_else(|| {
+                entry.fg.as_ref().and_then(|r| load_sprite_image(ts, entry, r))
+            })
+    } else {
+        entry.fg.as_ref().and_then(|r| load_sprite_image(ts, entry, r))
+    }?;
+    // Overlay entries (locked / pickable / alarmed
+    // variants): the fg is a small status icon
+    // ("pickable", "armed_trap") and the object itself
+    // is the bg sprite, named by tile id. Composite the
+    // icon over the object, exactly as the 2D tile
+    // draws -- building from the icon alone produced a
+    // modal-colour slab with a glyph on it.
+    let opaque = img.pixels().filter(|px| px[3] >= 128).count();
+    if opaque < 64 {
+        if let Some(bg) = entry
+            .bg
+            .as_ref()
+            .and_then(|r| load_sprite_image(ts, entry, r))
         {
-            return Some(img);
+            return Some(composite_over(&bg, &img));
         }
     }
-    entry.fg.as_ref().and_then(|r| load_sprite_image(ts, entry, r))
+    Some(img)
 }
 
 /// Composite an entry's fg over its bg (either may be absent).
