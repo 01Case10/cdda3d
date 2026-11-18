@@ -4382,37 +4382,79 @@ fn excl_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
 }
 
-/// Alien anemone: a rock mound sprouting teal
-/// tentacles.
+/// Alien anemone: a columnar grey body with a
+/// broad crown of teal tentacles -- the sprite's
+/// tentacles spread wider than the body and are
+/// its dominant feature.
 fn excl_anemone() -> PropModel {
-    let mut m = PropModel::new([32, 17, 32]);
-    let rock = rgb(130, 128, 125);
-    let rock_dk = rgb(98, 96, 94);
-    cyl_y(&mut m, 16, 16, 7.0, 0, 2, rock);
-    cyl_y(&mut m, 16, 16, 6.0, 3, 5, rock);
-    cyl_y(&mut m, 16, 16, 4.5, 6, 8, rock_dk);
-    cyl_y(&mut m, 16, 16, 3.0, 9, 10, rock);
-    let teal = rgb(96, 196, 168);
-    let teal_lt = rgb(150, 232, 204);
-    for i in 0..8 {
-        let t = i as f32 / 8.0 * std::f32::consts::TAU;
-        let bx = (16.0 + 2.6 * t.cos()) as i32;
-        let bz = (16.0 + 2.6 * t.sin()) as i32;
-        let tall = 4 + (i % 3);
-        for y in 0..tall {
-            let lean = if y >= tall - 1 { 1 } else { 0 };
-            m.set(
-                (bx + lean * t.cos() as i32) as u32,
-                10 + y,
-                (bz + lean * t.sin() as i32) as u32,
-                Some(teal),
-            );
+    let mut m = PropModel::new([32, 22, 32]);
+    let greys = [
+        rgb(110, 108, 106),
+        rgb(126, 124, 122),
+        rgb(140, 138, 134),
+        rgb(96, 94, 92),
+    ];
+    // Irregular column: per-layer radius with hash
+    // jitter and speckle.
+    for y in 0..13u32 {
+        let r = match y {
+            0..=2 => 6.4,
+            3..=6 => 5.4,
+            7..=10 => 4.4,
+            _ => 3.6,
+        };
+        let cx = if y > 8 { 17 } else { 16 };
+        for dx in -8i32..=8 {
+            for dz in -8i32..=8 {
+                let d = ((dx * dx + dz * dz) as f32).sqrt();
+                let jitter = hash01((dx + 20) as u32 * 7 + y, (dz + 20) as u32 * 13) * 1.2;
+                if d <= r + jitter - 0.6 {
+                    let c = greys[(hash01((dx + 20) as u32 * 3 + y * 31, (dz + 20) as u32 * 5) * 4.0)
+                        as usize
+                        % 4];
+                    m.set((cx + dx) as u32, y, (16 + dz) as u32, Some(c));
+                }
+            }
         }
-        m.set(bx as u32, 10 + tall, bz as u32, Some(teal_lt));
-        m.set((bx + 1) as u32, 10 + tall, bz as u32, Some(teal_lt));
     }
-    m.set(16, 11, 16, Some(teal));
-    m.set(16, 12, 16, Some(teal_lt));
+    // The crown: a dozen-plus tentacles leaning
+    // outward, two cells thick at the base, with
+    // bulb tips.
+    let teal = rgb(96, 196, 168);
+    let teal_dk = rgb(64, 158, 132);
+    let tip = rgb(160, 240, 210);
+    let stalks: [(i32, i32, u32); 13] = [
+        (0, 0, 8),
+        (2, 0, 7),
+        (-2, 0, 6),
+        (0, 2, 7),
+        (0, -2, 6),
+        (3, 2, 5),
+        (-3, 2, 6),
+        (3, -2, 6),
+        (-3, -2, 5),
+        (1, 3, 5),
+        (-1, -3, 6),
+        (3, 0, 4),
+        (-2, 3, 4),
+    ];
+    for (ox, oz, tall) in stalks {
+        let bx = 16 + ox;
+        let bz = 16 + oz;
+        for dy in 0..tall {
+            let lean = (dy / 2) as i32;
+            let lx = bx + lean * ox.signum() + if ox == 0 && dy > 2 { 0 } else { 0 };
+            let lz = bz + lean * oz.signum();
+            m.set(lx as u32, 13 + dy, lz as u32, Some(teal));
+            if dy < tall / 2 {
+                m.set((lx - ox.signum()) as u32, 13 + dy, (lz - oz.signum()) as u32, Some(teal_dk));
+            }
+            if dy == tall - 1 {
+                m.set(lx as u32, 13 + dy + 1, lz as u32, Some(tip));
+                m.set((lx + 1) as u32, 13 + dy, lz as u32, Some(tip));
+            }
+        }
+    }
     m
 }
 
