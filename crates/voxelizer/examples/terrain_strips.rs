@@ -316,10 +316,20 @@ fn main() {
         // roughly (0.92 * height + 0.55 * depth) cells.
         let cell_h = ((model.size[1] as f32 * 0.92 + model.size[2] as f32 * 0.55) * 4.0 + 30.0) as u32;
         let mut strip = RgbaImage::from_pixel(CELL_W * 5, cell_h, BACKDROP);
+        // Fit the sprite thumbnail inside the cell:
+        // upscale x2 when it fits, shrink when the
+        // sprite is taller than the model's cell (a
+        // 64px sprite over a height-10 ground slab
+        // used to underflow the y offset and panic).
+        let max_w = CELL_W - 16;
+        let max_h = cell_h.saturating_sub(16).max(16);
+        let k = ((max_w as f32 / sprite.width() as f32)
+            .min(max_h as f32 / sprite.height() as f32))
+        .min(2.0);
         let big = image::imageops::resize(
             &sprite,
-            sprite.width() * 2,
-            sprite.height() * 2,
+            ((sprite.width() as f32 * k) as u32).max(1),
+            ((sprite.height() as f32 * k) as u32).max(1),
             image::imageops::FilterType::Nearest,
         );
         let sx = (CELL_W - big.width()) / 2;

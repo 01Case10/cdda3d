@@ -7311,7 +7311,13 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     if s.contains("stairs") || s.contains("ladder") || s.starts_with("ramp") {
         return Some(terrain_stairs(sprite, s.contains("down")));
     }
-    let liquid = s.contains("water")
+    // "water" objects are not liquid terrain: a water
+    // cooler, a hand pump and a solid water cube are
+    // objects that happen to contain the word.
+    let water_object = s.contains("water_cooler")
+        || s.contains("water_pump")
+        || s.contains("water_cube");
+    let liquid = (s.contains("water") && !water_object)
         || s.contains("lava")
         || s.contains("sewage")
         || s.starts_with("pool")
@@ -7341,7 +7347,8 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         || s == "clay"
         || s == "ash";
     if ground {
-        return Some(terrain_ground(sprite, liquid));
+        let mound = s.contains("mound");
+        return Some(terrain_ground(sprite, liquid, mound));
     }
     terrain_silhouette(sprite)
 }
@@ -8439,9 +8446,9 @@ fn terrain_window(sprite: &RgbaImage, pane: bool) -> PropModel {
 /// top carries the sprite as its texture (the sprite
 /// IS the top-down drawing of the ground). Liquids
 /// are flat; solids get +-2 of hash relief.
-fn terrain_ground(sprite: &RgbaImage, liquid: bool) -> PropModel {
+fn terrain_ground(sprite: &RgbaImage, liquid: bool, mound: bool) -> PropModel {
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
-    let mut m = PropModel::new([32, 10, 32]);
+    let mut m = PropModel::new([32, if mound { 16 } else { 10 }, 32]);
     let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
         .unwrap_or(rgb(100, 100, 100));
     for x in 0..32i32 {
@@ -8456,7 +8463,16 @@ fn terrain_ground(sprite: &RgbaImage, liquid: bool) -> PropModel {
             } else {
                 (hash01(x as u32, z as u32) * 2.4) as i32
             };
-            let top = 6 + relief.min(2);
+            // A mound heaps toward the tile centre.
+            let bump = if mound {
+                let dx = x as f32 - 15.5;
+                let dz = z as f32 - 15.5;
+                let d = (dx * dx + dz * dz).sqrt();
+                ((1.0 - d / 22.0).max(0.0) * 5.0) as i32
+            } else {
+                0
+            };
+            let top = 6 + relief.min(2) + bump;
             for y in 0..=top {
                 let cc = if y == top { c } else { shade(c, 0.72) };
                 m.set(x as u32, y as u32, z as u32, Some(cc));

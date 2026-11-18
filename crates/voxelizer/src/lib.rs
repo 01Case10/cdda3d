@@ -189,6 +189,23 @@ pub fn load_sprite_image(
 /// straight segment / connected face. Falls back to the
 /// entry's own fg when no center variant exists.
 pub fn terrain_fg_image(ts: &Tileset, entry: &TileEntry) -> Option<RgbaImage> {
+    // "_olight" variants are a floor plus a drawn
+    // overhead light fixture (fg = "overhead_light",
+    // bg = the floor sprite). The fixture belongs to
+    // the lighting system, not the terrain model:
+    // build from the floor alone. (Building from the
+    // lamp produced a black slab with a grey smudge.)
+    if !entry.ids.is_empty()
+        && entry.ids.iter().all(|i| i.ends_with("_olight"))
+    {
+        if let Some(bg) = entry
+            .bg
+            .as_ref()
+            .and_then(|r| load_sprite_image(ts, entry, r))
+        {
+            return Some(bg);
+        }
+    }
     let img = if let Some(center) = entry.additional_tiles.get("center") {
         center
             .fg
