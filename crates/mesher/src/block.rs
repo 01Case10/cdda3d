@@ -99,7 +99,13 @@ pub fn block_for_tile(id: u32) -> Block {
 /// Shape for a fake-data tile id.
 pub fn tile_shape(id: u32) -> TileShape {
     match id {
-        TILE_FLOOR_WOOD | TILE_GROUND => TileShape::FloorSlab,
+        // Water is a floor slab: its surface sits at the
+        // floor line of its level (matching the real
+        // snapshot path, where t_water_dp's voxelizer
+        // height is 1). As a full-height tile it stood
+        // two blocks proud of the grass -- a fish tank,
+        // not a pond (Joey, 2026-11-17).
+        TILE_FLOOR_WOOD | TILE_GROUND | TILE_WATER => TileShape::FloorSlab,
         TILE_ROOF => TileShape::RoofSlab,
         _ => TileShape::Full,
     }

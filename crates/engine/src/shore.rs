@@ -199,10 +199,11 @@ mod tests {
         let map = crate::world::build_sample_scene(WorldScale::default());
         let filtered = crate::world::filtered_map(&map, crate::world::HOUSE_MIN_GAME_Z, &[0, 1]);
         let map_masks = shore_masks_for_map(&filtered, &is_water);
-        // 4x4 pond x 3 blocks tall (water is full-height).
-        assert_eq!(map_masks.len(), 16 * 3);
+        // 4x4 pond, one block per tile (water is a
+        // floor slab, mesher::tile_shape).
+        assert_eq!(map_masks.len(), 16);
         // Corner tile of the pond at (16, 14): water neighbors at
-        // E, SE, S only (bits 2, 3, 4), at every block height.
+        // E, SE, S only (bits 2, 3, 4).
         assert_eq!(map_masks[&[16, 14, 0]], 0b0001_1100);
         // Center tiles are interior.
         assert_eq!(map_masks[&[17, 15, 0]], 0xFF);

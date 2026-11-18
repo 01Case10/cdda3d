@@ -300,14 +300,25 @@ mod tests {
     }
 
     #[test]
-    fn fake_house_meshes_non_empty_and_cutaway_reduces_it() {
+    fn fake_house_meshes_non_empty_and_levels_filter() {
         let (_m, full, full_stats) = mesh_fake_house(&[0, 1]);
         assert!(full.total_quads() > 0);
         assert!(full_stats.chunks == 1);
-        // Hiding the roof level must remove geometry.
+        // Level filtering isolates the roof: level 1 alone
+        // meshes only the roof deck, level 0 alone the
+        // house under it. (The old assertion -- hiding the
+        // roof level strictly reduces the quad count --
+        // held only while the roof floated: a seated deck
+        // culls the wall-top faces it covers, so the totals
+        // need not drop. 2026-11-17.)
         let (_m2, no_roof, _) = mesh_fake_house(&[0]);
-        assert!(no_roof.total_quads() < full.total_quads());
-        // Showing only the roof level keeps some geometry, less than full.
+        assert!(no_roof.total_quads() > 0);
+        // The totals differ, but not by "more roof = more
+        // quads": measured 57 full vs 59 without the roof
+        // level -- the seated deck caps the wall-top ring
+        // (which fragments into runs around the door and
+        // windows) with a handful of greedy quads.
+        assert!(no_roof.total_quads() != full.total_quads());
         let (_m3, roof_only, _) = mesh_fake_house(&[1]);
         assert!(roof_only.total_quads() > 0);
         assert!(roof_only.total_quads() < full.total_quads());

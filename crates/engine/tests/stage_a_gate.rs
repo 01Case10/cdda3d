@@ -221,8 +221,16 @@ fn stage_a_textured_captures_stay_rich_both_renderers() {
         let Some(img) = capture(&args) else { continue };
         let distinct: std::collections::HashSet<[u8; 4]> =
             img.pixels().map(|p| p.0).collect();
+        // The guard band: a flat-shaded fallback of this
+        // scene has ~35 distinct colors, so >64 proves
+        // textures are really being sampled with a wide
+        // margin. (The threshold was 100 until 2026-11-17:
+        // seating the fixture house's roof as a deck on
+        // its wall plate hid the roof slab's underside
+        // and lower sides from the camera, costing the
+        // frame a few fixture colors: 98 on raster.)
         assert!(
-            distinct.len() > 100,
+            distinct.len() > 64,
             "{}: textured capture must stay rich, got {} distinct colors",
             renderer.name(),
             distinct.len()

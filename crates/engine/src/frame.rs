@@ -291,7 +291,9 @@ pub fn sample_scene_ground_tiles() -> Vec<billboard::decor::GroundTile> {
     let scale = mesher::scale::WorldScale::default();
     let map = crate::world::build_sample_scene(scale);
     let per_u = scale.blocks_per_z_level;
-    let roof_z = (per_u + (per_u - scale.roof_slab_blocks.min(per_u))) as i32;
+    // The roof deck is the first block of the level above
+    // (mesher::chunk RoofSlab placement).
+    let roof_z = per_u as i32;
     let mut out = Vec::new();
     let mut coords: Vec<[i32; 2]> = map.chunks.keys().copied().collect();
     coords.sort();

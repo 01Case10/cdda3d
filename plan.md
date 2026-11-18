@@ -1714,3 +1714,10 @@ layer per distinct prop colour -- a full gallery has ~3,600, over
 this VM software adapter's 256-layer cap (and over the 2,048
 typical hardware cap), so the example quantises its copies to a
 shared 240-colour palette. The emitted model data is unaffected.
+
+## Addendum 2026-11-17 (evening): fixture water + roof seating fixes (Joey's catches from the prop gallery)
+
+- WATER: mesher `tile_shape` classified TILE_WATER as full-height (3 blocks) while grass/floors are 1-block slabs, so the sample pond rendered as a translucent tank standing 2 blocks proud of the grass. Water is a FloorSlab now, matching the real snapshot path (t_water_dp height_voxels 1). Shore test premise updated (pond = 16 blocks, not 48).
+- ROOF: TILE_ROOF stamped as the TOP slab of its level, so a roof authored on the level above its walls (both fixture scenes, CDDA-style) floated 2 blocks over them. First fix tried (roof moved into the walls' level) broke every cutaway-to-interior gate (~7: 2c.4/2c.6, phase9 props-under-roof, 2g.1a knock-ons). Final fix: RoofSlab stamps as the BOTTOM slab of its level -- a deck seated on the wall plate, exactly the snapshot path's Floor::RoofOf placement; scale.rs doc corrected; frame.rs under-roof probe follows (roof_z = first block of the level above). Cutaway gates pass with their original intent.
+- Gate premises updated with reasons recorded in situ: world cutaway test (quad totals are not monotonic under greedy meshing -- seated deck: full 57 vs no-roof 59), rt_gate raster cutaway (silhouette instead of quad count), stage_a richness threshold 100 -> 64 (flat fallback ~35 colors; the deck hides the roof slab's underside, 98 colors on raster). House goldens re-blessed after eyeballing the deck captures; composed golden byte-identical, untouched.
+- Full engine suite: only remaining failure is the pre-existing stage_g_model_round_trip_fixture (stale premise from the coverage drive, see the 2026-11-17 plan note at fe5fa62).

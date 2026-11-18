@@ -166,11 +166,24 @@ fn gate_2c_4_and_2c_6_render_parity() {
         cut_hits < full_hits,
         "cutaway RT capture must show less geometry ({cut_hits} !< {full_hits})"
     );
-    // And the raster path agrees on the direction of the change.
+    // And the raster path agrees on the direction of the change:
+    // its cutaway silhouette shrinks too. (This used to compare
+    // greedy-mesh quad counts, but those are not monotonic in
+    // scene content -- the seated roof deck caps the wall-top
+    // ring with a few big quads, so the full mesh can be the
+    // smaller one. The silhouette is the honest measure, same
+    // as the RT half above. 2026-11-17.)
     let raster_cut_path = dir.join("raster_cut.png");
-    let raster_cut = run_capture(&args(RendererKind::Raster, 0, raster_cut_path.to_str().unwrap()))
+    let _raster_cut = run_capture(&args(RendererKind::Raster, 0, raster_cut_path.to_str().unwrap()))
         .expect("raster cutaway capture");
-    assert!(raster_cut.quads < raster.quads);
+    let raster_cut_img = image::open(&raster_cut_path).unwrap().to_rgba8();
+    let raster_cut_sil = raster_silhouette(&raster_cut_img);
+    let raster_full_hits = raster_sil.iter().filter(|s| **s).count();
+    let raster_cut_hits = raster_cut_sil.iter().filter(|s| **s).count();
+    assert!(
+        raster_cut_hits < raster_full_hits,
+        "cutaway raster capture must show less geometry ({raster_cut_hits} !< {raster_full_hits})"
+    );
 }
 
 // ------------------------------------------------------- texture hookup
