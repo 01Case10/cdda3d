@@ -1703,3 +1703,14 @@ control box, gold-element mast, curved dish arm, second mast),
 small dish (the sprite's disc on a dished surface + feed arm),
 traffic light (portable: concrete base, green pole, three-lens
 head), winter wreath (green ring, brown bow accents).
+
+Prop gallery (2026-11-17): crates/engine/examples/prop_gallery.rs
+runs the voxelizer over the real tileset (v2), stamps 124 prop
+models into the engine's sample scene and captures the frame
+(docs/prop-views/prop_gallery_engine.png). Findings: 4 models built
+from 64px sprites exceed the one-tile stamp footprint (FINE=32) and
+are refused by design; the frame builder assigns one texture-array
+layer per distinct prop colour -- a full gallery has ~3,600, over
+this VM software adapter's 256-layer cap (and over the 2,048
+typical hardware cap), so the example quantises its copies to a
+shared 240-colour palette. The emitted model data is unaffected.
