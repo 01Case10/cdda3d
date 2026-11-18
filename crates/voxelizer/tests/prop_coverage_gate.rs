@@ -184,7 +184,7 @@ const REGRESSION: &[(&str, usize)] = &[
 /// props batch 1 (2026-11-17: 11 ambiguous-class ids —
 /// 2 slabs, 2 egg piles, 2 lathe pods, 2 depth solids,
 /// 2 thin extrusions, the birdbath).
-const COVERAGE_TOTAL: usize = 340;
+const COVERAGE_TOTAL: usize = 351;
 
 #[test]
 fn pre_drive_models_unchanged() {
@@ -633,13 +633,17 @@ fn panel_slab_is_thin_and_front_verbatim() {
 }
 
 #[test]
-fn exclusions_and_skeletons_still_decline() {
+fn full_furniture_coverage() {
+    // Every furniture material in the audit now has
+    // a model (351 of 351); the former exclusion
+    // pins were modeled on Joey's instruction.
     for id in [
-        "f_traffic_light",            // exclusion pin (pole)
-        "f_bed_frame",                // exclusion pin (slatted frame)
-        "f_deckchair",                // class A exclusion pin
+        "f_alien_anemone",
+        "f_bed_frame",
+        "f_deckchair",
+        "f_traffic_light",
     ] {
         let sprite = load_sprite(id);
-        assert!(model_for(id, &sprite).is_none(), "{id} must stay unmodeled");
+        assert!(model_for(id, &sprite).is_some(), "{id} must be modeled");
     }
 }

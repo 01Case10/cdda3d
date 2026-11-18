@@ -4361,6 +4361,309 @@ fn beam(
 /// zapper established); flat mats and water plants
 /// take a plan slab; the lotus adds its bud; the
 /// indoor plants get a real pot under the cross.
+
+/// Class A (the former exclusion pins), modeled on
+/// Joey's instruction: every furniture id gets a
+/// model.
+fn excl_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match id {
+        "f_alien_anemone" => Some(excl_anemone()),
+        "f_bed_frame" => excl_bed_frame(sprite),
+        "f_bullettrailer_table_bottom" => plan_slab(sprite, 5),
+        "f_bullettrailer_table_middle" => plan_slab(sprite, 4),
+        "f_bullettrailer_table_top" => plan_slab(sprite, 4),
+        "f_chair" => Some(excl_chair()),
+        "f_deckchair" => Some(excl_deckchair()),
+        "f_scrap_antenna" => Some(excl_scrap_antenna()),
+        "f_small_satelitte_dish" => Some(excl_small_dish(sprite)),
+        "f_traffic_light" => Some(excl_traffic_light()),
+        "f_winter_wreath" => Some(excl_wreath()),
+        _ => None,
+    }
+}
+
+/// Alien anemone: a rock mound sprouting teal
+/// tentacles.
+fn excl_anemone() -> PropModel {
+    let mut m = PropModel::new([32, 17, 32]);
+    let rock = rgb(130, 128, 125);
+    let rock_dk = rgb(98, 96, 94);
+    cyl_y(&mut m, 16, 16, 7.0, 0, 2, rock);
+    cyl_y(&mut m, 16, 16, 6.0, 3, 5, rock);
+    cyl_y(&mut m, 16, 16, 4.5, 6, 8, rock_dk);
+    cyl_y(&mut m, 16, 16, 3.0, 9, 10, rock);
+    let teal = rgb(96, 196, 168);
+    let teal_lt = rgb(150, 232, 204);
+    for i in 0..8 {
+        let t = i as f32 / 8.0 * std::f32::consts::TAU;
+        let bx = (16.0 + 2.6 * t.cos()) as i32;
+        let bz = (16.0 + 2.6 * t.sin()) as i32;
+        let tall = 4 + (i % 3);
+        for y in 0..tall {
+            let lean = if y >= tall - 1 { 1 } else { 0 };
+            m.set(
+                (bx + lean * t.cos() as i32) as u32,
+                10 + y,
+                (bz + lean * t.sin() as i32) as u32,
+                Some(teal),
+            );
+        }
+        m.set(bx as u32, 10 + tall, bz as u32, Some(teal_lt));
+        m.set((bx + 1) as u32, 10 + tall, bz as u32, Some(teal_lt));
+    }
+    m.set(16, 11, 16, Some(teal));
+    m.set(16, 12, 16, Some(teal_lt));
+    m
+}
+
+/// Bed frame: the sprite is a plan view -- a plan
+/// slab with the headboard band raised.
+fn excl_bed_frame(sprite: &RgbaImage) -> Option<PropModel> {
+    let mut m = plan_slab(sprite, 3)?;
+    let (w, h) = (sprite.width(), sprite.height());
+    for z in 0..h {
+        for x in 0..w {
+            if !opaque(*sprite.get_pixel(x, z)) {
+                continue;
+            }
+            let top = if z <= 7 {
+                7
+            } else if z >= h - 4 {
+                5
+            } else {
+                continue;
+            };
+            let px = *sprite.get_pixel(x, z);
+            for y in 3..top {
+                m.set(x, y, z, Some(px));
+            }
+        }
+    }
+    Some(m)
+}
+
+/// A simple chair: grey frame, tan seat and back
+/// panels (the sprite's south face).
+fn excl_chair() -> PropModel {
+    let mut m = PropModel::new([32, 26, 32]);
+    let frame = rgb(128, 130, 133);
+    let tan = rgb(206, 188, 152);
+    for x in [11u32, 20] {
+        for z in [11u32, 19] {
+            box_fill(&mut m, x, x + 1, 0, 11, z, z + 1, frame);
+        }
+        box_fill(&mut m, x, x + 1, 11, 25, 11, 12, frame);
+    }
+    box_fill(&mut m, 10, 22, 11, 13, 11, 20, frame);
+    box_fill(&mut m, 12, 19, 12, 12, 13, 18, tan);
+    box_fill(&mut m, 10, 22, 19, 25, 11, 12, frame);
+    box_fill(&mut m, 12, 19, 20, 24, 12, 12, tan);
+    m
+}
+
+/// Deckchair: wooden side frames and a long reclined
+/// sling.
+fn excl_deckchair() -> PropModel {
+    let mut m = PropModel::new([32, 18, 32]);
+    let wood = rgb(150, 108, 58);
+    let fabric = rgb(226, 228, 230);
+    let stripe = rgb(96, 124, 192);
+    for x in [10i32, 21] {
+        beam(&mut m, x, 0, 24, x, 9, 12, wood);
+        beam(&mut m, x, 0, 6, x, 16, 11, wood);
+        box_fill(&mut m, x as u32, x as u32 + 1, 0, 1, 6, 25, wood);
+    }
+    // The sling: overlapping stepped bands from the
+    // backrest top to the seat front, in the sprite's
+    // blue-and-white stripes (stripes run along the
+    // sling, so they vary along x).
+    let steps = [
+        (15u32, 10i32),
+        (13, 13),
+        (11, 16),
+        (9, 19),
+        (8, 22),
+    ];
+    for (y, z) in steps {
+        for x in 11..=21u32 {
+            let c = if x % 4 == 1 || x % 4 == 2 {
+                stripe
+            } else {
+                fabric
+            };
+            for dy in 0..=1u32 {
+                for dz in 0..=3u32 {
+                    m.set(x, y - dy, (z + dz as i32) as u32, Some(c));
+                }
+            }
+        }
+    }
+    // The sling's back drape: it wraps over the top
+    // bar and hangs down the back (without it the
+    // stepped sling reads as a single band from
+    // behind, the steps grazing out of view).
+    for x in 11..=21u32 {
+        let c = if x % 4 == 1 || x % 4 == 2 {
+            stripe
+        } else {
+            fabric
+        };
+        for y in 9..=13u32 {
+            m.set(x, y, 10, Some(c));
+        }
+    }
+    m
+}
+
+/// Scrap antenna station: a brown equipment
+/// cabinet with a control box and indicator lights,
+/// a tall mast with five gold elements, a curved
+/// dish arm, and a second shorter mast.
+fn excl_scrap_antenna() -> PropModel {
+    let mut m = PropModel::new([32, 45, 32]);
+    let brown = rgb(106, 88, 74);
+    let brown_dk = rgb(80, 65, 54);
+    let green_dk = rgb(74, 96, 74);
+    let gold = rgb(216, 180, 32);
+    let grey = rgb(170, 172, 175);
+    // Cabinet with panel lines.
+    box_fill(&mut m, 8, 24, 0, 16, 10, 22, brown);
+    for y in [5u32, 11] {
+        for x in 8..=24u32 {
+            m.set(x, y, 22, Some(brown_dk));
+        }
+    }
+    box_fill(&mut m, 8, 24, 0, 1, 10, 22, brown_dk);
+    // Control box with gold buttons and a drooping
+    // magenta cable.
+    box_fill(&mut m, 12, 19, 3, 7, 22, 23, rgb(150, 152, 155));
+    m.set(13, 5, 23, Some(gold));
+    m.set(17, 4, 23, Some(gold));
+    for (i, (x, y)) in [(20u32, 5u32), (21, 4), (22, 3), (23, 2)]
+        .iter()
+        .enumerate()
+    {
+        let _ = i;
+        m.set(*x, *y, 23, Some(rgb(196, 44, 110)));
+    }
+    // Indicator row: purple, green, pink.
+    m.set(11, 14, 22, Some(rgb(150, 60, 220)));
+    m.set(12, 14, 22, Some(rgb(150, 60, 220)));
+    m.set(15, 14, 22, Some(rgb(52, 196, 84)));
+    m.set(16, 14, 22, Some(rgb(52, 196, 84)));
+    m.set(19, 14, 22, Some(rgb(226, 90, 160)));
+    m.set(20, 14, 22, Some(rgb(226, 90, 160)));
+    // Display unit on the cabinet top.
+    box_fill(&mut m, 14, 18, 17, 20, 11, 14, rgb(52, 54, 56));
+    for x in 15..=17u32 {
+        for y in 18..=19u32 {
+            m.set(x, y, 14, Some(rgb(150, 60, 220)));
+        }
+    }
+    // Tall mast with five gold elements.
+    box_fill(&mut m, 10, 11, 16, 44, 13, 14, green_dk);
+    for y in [22u32, 27, 32, 37, 42] {
+        box_fill(&mut m, 9, 12, y, y + 1, 13, 14, gold);
+    }
+    // Curved dish arm sweeping right and down.
+    for (x, y) in [
+        (13u32, 41u32),
+        (15, 39),
+        (17, 36),
+        (19, 33),
+        (21, 30),
+        (23, 27),
+        (24, 25),
+    ] {
+        box_fill(&mut m, x, x + 1, y, y + 1, 13, 14, grey);
+    }
+    // Second, shorter mast with a feed box.
+    box_fill(&mut m, 23, 24, 16, 30, 13, 14, green_dk);
+    box_fill(&mut m, 22, 25, 30, 32, 12, 15, grey);
+    m
+}
+
+/// Small satellite dish: the sprite's disc on a
+/// dished surface, feed arm, and mount post.
+fn excl_small_dish(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 27, 32]);
+    let (cx, cy) = (16i32, 13i32);
+    for y in 0..27u32 {
+        for x in 0..32u32 {
+            let px = *sprite.get_pixel(x, 26 - y);
+            if !opaque(px) {
+                continue;
+            }
+            let dx = x as i32 - cx;
+            let dy = y as i32 - cy;
+            let d = ((dx * dx + dy * dy) as f32).sqrt();
+            let z = 13 + (3.0 * (1.0 - (d / 14.0).powi(2))).round() as u32;
+            m.set(x, y, z.min(16), Some(px));
+        }
+    }
+    // Feed arm and feed box.
+    beam(&mut m, 15, 1, 13, 15, 9, 18, rgb(90, 92, 95));
+    box_fill(&mut m, 15, 17, 9, 11, 18, 19, rgb(70, 72, 75));
+    // Mount post and base.
+    box_fill(&mut m, 15, 17, 0, 5, 11, 13, rgb(110, 112, 115));
+    box_fill(&mut m, 12, 20, 0, 0, 9, 15, rgb(110, 112, 115));
+    m
+}
+
+/// Portable traffic light: a green pole with a
+/// three-lens head on a round concrete base.
+fn excl_traffic_light() -> PropModel {
+    let mut m = PropModel::new([32, 47, 32]);
+    let green = rgb(38, 128, 84);
+    let green_dk = rgb(28, 96, 62);
+    cyl_y(&mut m, 16, 16, 8.0, 0, 2, rgb(128, 128, 128));
+    cyl_y(&mut m, 16, 16, 1.3, 2, 44, green);
+    // Head with the three lenses on the front.
+    box_fill(&mut m, 13, 19, 35, 45, 14, 17, rgb(40, 42, 44));
+    for (ly, c) in [
+        (42u32, rgb(216, 48, 40)),
+        (39, rgb(232, 186, 44)),
+        (36, rgb(52, 196, 84)),
+    ] {
+        box_fill(&mut m, 15, 16, ly, ly + 1, 17, 17, c);
+    }
+    box_fill(&mut m, 13, 19, 45, 46, 14, 17, green_dk);
+    m
+}
+
+/// Winter wreath: a green ring with brown bow
+/// accents, in the front plane.
+fn excl_wreath() -> PropModel {
+    let mut m = PropModel::new([32, 20, 32]);
+    let green = rgb(52, 102, 44);
+    let green_lt = rgb(84, 142, 62);
+    let bow = rgb(128, 84, 48);
+    let (cx, cy) = (16i32, 10i32);
+    for dx in -9i32..=9 {
+        for dy in -9i32..=9 {
+            let d = ((dx * dx + dy * dy) as f32).sqrt();
+            if (5.2..=9.2).contains(&d) {
+                let c = if hash01((cx + dx) as u32, (cy + dy) as u32) < 0.4 {
+                    green_lt
+                } else {
+                    green
+                };
+                for z in 14..=15u32 {
+                    m.set((cx + dx) as u32, (cy + dy) as u32, z, Some(c));
+                }
+            }
+        }
+    }
+    // Bow accents at the sides and bottom, hanger
+    // at the top.
+    box_fill(&mut m, 6, 8, 9, 11, 14, 15, bow);
+    box_fill(&mut m, 24, 26, 9, 11, 14, 15, bow);
+    box_fill(&mut m, 14, 18, 0, 2, 14, 15, bow);
+    m.set(16, 19, 14, Some(bow));
+    m.set(16, 19, 15, Some(bow));
+    m
+}
+
 fn veg_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     match id {
         "f_lilypad" | "f_flower_spurge" => plan_slab(sprite, 2),
@@ -5701,6 +6004,9 @@ pub fn coverage_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         return Some(m);
     }
     if let Some(m) = veg_model(id, sprite) {
+        return Some(m);
+    }
+    if let Some(m) = excl_model(id, sprite) {
         return Some(m);
     }
     if let Some((_, t)) = PLAN_SLAB_PINS.iter().find(|(k, _)| *k == id) {

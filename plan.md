@@ -1688,3 +1688,18 @@ fungal mass + fungal tangle (3 thick); the lotus is a plan slab plus
 its bud raised at the sprite's pinkest cluster. The four indoor
 plants get a terracotta lathe pot under a cross of the foliage rows.
 Coverage 296 -> 340 of 351; only the 11 exclusion-pin ids remain.
+
+Exclusions (class A) addendum (2026-11-17): the 11 former exclusion
+pins modeled on Joey's instruction -- furniture coverage is now
+351 of 351, and the gate's decline test is replaced by a
+full-coverage test. Hand builds in props.rs (excl_model): anemone
+(rock mound + teal tentacles), bed frame (plan slab, headboard band
+raised -- the sprite is a plan view), the three bullet-trailer table
+fragments (plan slabs), chair (grey frame, tan panels), deckchair
+(wood frame, blue-white striped sling with a back drape -- without
+the drape the stepped sling grazes out of view from behind), scrap
+antenna (an antenna STATION: brown cabinet with indicators and a
+control box, gold-element mast, curved dish arm, second mast),
+small dish (the sprite's disc on a dished surface + feed arm),
+traffic light (portable: concrete base, green pole, three-lens
+head), winter wreath (green ring, brown bow accents).
