@@ -55,6 +55,14 @@ pub fn fake_material_ids() -> std::collections::HashMap<u32, String> {
 /// halves can never disagree about a material. Must run *before*
 /// `build_tree`: the virtual ids ride into the tree's side-table.
 /// Returns the assignments the spec builder must emit variants for.
+///
+/// Materials carrying a shore set (water) are NOT rewritten here:
+/// the shore system is water's connection system — an 8-neighbor
+/// superset of the cardinal multitile rule — and
+/// [`prepare_fake_shore_variants`] recognizes water cells by their
+/// base id. Rewriting water to multitile virtual ids first left
+/// no cell carrying the base id, so the shore pass silently
+/// matched nothing and every water tile kept its plain top.
 pub fn prepare_fake_variants(
     world: &mut VoxelWorld,
     dir: &std::path::Path,
@@ -64,7 +72,11 @@ pub fn prepare_fake_variants(
     let id_map = fake_material_ids();
     let multitile_ids: std::collections::HashSet<u32> = id_map
         .iter()
-        .filter(|(_, game_id)| table.get(game_id).is_some_and(|m| m.multitile))
+        .filter(|(_, game_id)| {
+            table
+                .get(game_id)
+                .is_some_and(|m| m.multitile && m.shore_layers.is_empty())
+        })
         .map(|(num, _)| *num)
         .collect();
     Ok(treebuild::connect::assign_variants(
@@ -80,8 +92,11 @@ pub fn prepare_fake_variants(
 /// table in `dir` (materials carrying a shore set) through the
 /// same fake id map the spec builder uses. Must run *after*
 /// [`prepare_fake_variants`] (shore virtual ids allocate above
-/// the multitile ones) and *before* `build_tree`. Returns the
-/// assignments the spec builder must emit shore entries for.
+/// the multitile ones) and *before* `build_tree`. Water cells
+/// still carry their base ids at this point because
+/// `prepare_fake_variants` excludes shore materials from its
+/// rewrite. Returns the assignments the spec builder must emit
+/// shore entries for.
 pub fn prepare_fake_shore_variants(
     world: &mut VoxelWorld,
     dir: &std::path::Path,

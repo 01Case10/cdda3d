@@ -7246,10 +7246,22 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         || s.contains("forsythia")
         || s.contains("pine")
     {
+        if s.starts_with("bamboo") {
+            return Some(bamboo_model(sprite));
+        }
+        if s.contains("fungal") {
+            // A fungal young tree is a solid pale
+            // spire (bulbous head, narrow waist, flared
+            // base) -- per-layer discs, not branches.
+            return Some(disc_model(sprite, 76, false));
+        }
+        if s.contains("fern") {
+            return Some(fern_model(sprite));
+        }
         let base = if s.contains("tree") || s.contains("pine") {
             76
-        } else if s.starts_with("bamboo") {
-            48
+        } else if s.contains("underbrush") {
+            26
         } else if s.contains("shrub") {
             40
         } else {
@@ -7448,6 +7460,165 @@ fn thicket_model(sprite: &RgbaImage, h: i32) -> PropModel {
 /// reads in 3D from every side with air between the
 /// branches. The run containing the trunk column in
 /// the lower half is the trunk: thicker, tapering.
+/// Bamboo: a stand of culms (vertical banded stalks)
+/// with leaf tufts. Culm columns are sprite columns
+/// opaque over most of the plant's height; adjacent
+/// ones cluster into stalks. Leaf pixels away from
+/// the culms become thicket tufts. Sprites with no
+/// culm columns at all (the base bamboo is pure leaf
+/// strokes over grass) fall back to the thicket.
+fn bamboo_model(sprite: &RgbaImage) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let (mut top, mut bottom) = (sh, -1);
+    for r in 0..sh {
+        if (0..sw).any(|x| sprite.get_pixel(x as u32, r as u32)[3] >= 128) {
+            top = top.min(r);
+            bottom = bottom.max(r);
+        }
+    }
+    if bottom < 0 {
+        return PropModel::new([32, 10, 32]);
+    }
+    let frac = (bottom - top + 1) as f32 / sh as f32;
+    let h = ((48.0 * frac) as i32).max(10);
+    let rows = (bottom - top + 1).max(1);
+    // Culm columns: opaque over >= 55% of the height.
+    let mut culm_col = vec![false; sw as usize];
+    for x in 0..sw {
+        let n = (top..=bottom)
+            .filter(|&r| sprite.get_pixel(x as u32, r as u32)[3] >= 128)
+            .count();
+        culm_col[x as usize] = (n as f32) >= 0.45 * (rows as f32);
+    }
+    // Cluster culm columns (gaps of <= 2 merged).
+    let mut clusters: Vec<Vec<i32>> = Vec::new();
+    let mut x = 0;
+    while x < sw {
+        if culm_col[x as usize] {
+            let mut cl = vec![x];
+            let mut xx = x + 1;
+            let mut gap = 0;
+            while xx < sw && gap <= 2 {
+                if culm_col[xx as usize] {
+                    cl.push(xx);
+                    gap = 0;
+                } else {
+                    gap += 1;
+                }
+                xx += 1;
+            }
+            clusters.push(cl);
+            x = xx;
+        } else {
+            x += 1;
+        }
+    }
+    if clusters.is_empty() {
+        return thicket_model(sprite, h);
+    }
+    // Leaf tufts from a sprite copy with the culm
+    // columns (dilated by 1) blanked out.
+    let mut masked = sprite.clone();
+    for cl in &clusters {
+        for &cx in cl {
+            for dx in -1..=1 {
+                let xx = cx + dx;
+                if xx >= 0 && xx < sw {
+                    for r in 0..sh {
+                        masked.put_pixel(xx as u32, r as u32, Rgba([0, 0, 0, 0]));
+                    }
+                }
+            }
+        }
+    }
+    let mut m = thicket_model(&masked, h);
+    // Culms drawn over the tufts.
+    let culm_pal = palette_of(
+        (0..sw)
+            .filter(|&x| culm_col[x as usize])
+            .flat_map(|x| (top..=bottom).map(move |r| (x, r)))
+            .map(|(x, r)| *sprite.get_pixel(x as u32, r as u32))
+            .filter(|p| p[3] >= 128),
+        10,
+    );
+    for cl in &clusters {
+        let cx_px = cl[cl.len() / 2];
+        let cx = cx_px * 32 / sw;
+        let z_off = ((cx_px - sw / 2) as f32 * 0.3) as i32;
+        // Culm top: the tallest column of the
+        // cluster (the centre column may be a
+        // broken stalk -- the winter dead bamboo
+        // rendered as ground stubs).
+        let ctop = cl
+            .iter()
+            .filter_map(|&cx| {
+                (top..=bottom).find(|&r| sprite.get_pixel(cx as u32, r as u32)[3] >= 128)
+            })
+            .min()
+            .unwrap_or(top);
+        let top_y = (sh - 1 - ctop) * h / sh;
+        for y in 0..=top_y.min(h - 1) {
+            let r = (h - 1 - y) * sh / h;
+            let mut c = *sprite.get_pixel(cx_px as u32, r as u32);
+            if c[3] < 128 {
+                c = pick(&culm_pal, hash01(cx as u32, y as u32));
+            }
+            for dz in -1..=1i32 {
+                for dx in -1..=1i32 {
+                    if dx * dx + dz * dz > 2 {
+                        continue;
+                    }
+                    let (vx, vz) = (cx + dx, 16 + z_off + dz);
+                    if vx < 0 || vx >= 32 || vz < 0 || vz >= 32 {
+                        continue;
+                    }
+                    m.set(vx as u32, y as u32, vz as u32, Some(c));
+                }
+            }
+        }
+    }
+    m
+}
+
+/// Fern: a fan of fronds from a ground point -- the
+/// sprite's silhouette as a two-plane cross (the
+/// construction Joey accepted for furniture plants).
+/// Discs filled the fan into a lumpy blob with black
+/// gaps.
+fn fern_model(sprite: &RgbaImage) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let (mut top, mut bottom) = (sh, -1);
+    for r in 0..sh {
+        if (0..sw).any(|x| sprite.get_pixel(x as u32, r as u32)[3] >= 128) {
+            top = top.min(r);
+            bottom = bottom.max(r);
+        }
+    }
+    if bottom < 0 {
+        return PropModel::new([32, 8, 32]);
+    }
+    let frac = (bottom - top + 1) as f32 / sh as f32;
+    let h = ((40.0 * frac) as i32).clamp(8, 36);
+    let mut m = PropModel::new([32, h as u32, 32]);
+    for r in 0..sh {
+        let y = (sh - 1 - r) * h / sh;
+        for x in 0..sw {
+            let p = *sprite.get_pixel(x as u32, r as u32);
+            if p[3] < 128 {
+                continue;
+            }
+            let c = x * 32 / sw;
+            for dz in 15..=16i32 {
+                m.set(c as u32, y as u32, dz as u32, Some(p));
+            }
+            for dx in 15..=16i32 {
+                m.set(dx as u32, y as u32, c as u32, Some(p));
+            }
+        }
+    }
+    m
+}
+
 fn branch_model(sprite: &RgbaImage, h: i32, spans: &[Option<(i32, i32)>]) -> PropModel {
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
     let mut m = PropModel::new([32, h as u32, 32]);
@@ -7495,36 +7666,48 @@ fn branch_model(sprite: &RgbaImage, h: i32, spans: &[Option<(i32, i32)>]) -> Pro
             }
         }
         for (a, b) in runs {
-            let cx_px = (a + b) / 2;
             let is_trunk = (a <= trunk_cx_px && trunk_cx_px <= b) && r >= sh / 2;
-            let rad = if is_trunk {
-                // Taper: 3.2 at the ground to 1.5 at the
-                // trunk's top.
-                3.2 - 1.7 * (y as f32 / h as f32)
-            } else {
-                1.3
-            };
-            let cx = cx_px * 32 / sw;
-            let z_off = ((cx_px - trunk_cx_px) as f32 * 32.0 / sw as f32 * 0.55) as i32;
-            let cz = 16 + z_off;
-            let ri = rad.ceil() as i32;
-            for dz in -ri..=ri {
-                for dx in -ri..=ri {
-                    let d = ((dx * dx + dz * dz) as f32).sqrt();
-                    if d > rad {
-                        continue;
+            // A wide run is a horizontal limb (or a
+            // fungal shelf): step discs along it as a
+            // tube instead of one disc at its centre
+            // (stacks of centred discs read as totems).
+            let run_cells = ((b - a + 1) * 32 / sw).max(1);
+            let steps = if is_trunk { 1 } else { (run_cells / 3).max(1) };
+            for i in 0..steps {
+                let cx_px = if steps == 1 {
+                    (a + b) / 2
+                } else {
+                    a + (b - a) * (2 * i + 1) / (2 * steps)
+                };
+                let rad = if is_trunk {
+                    // Taper: 3.2 at the ground to 1.5 at
+                    // the trunk's top.
+                    3.2 - 1.7 * (y as f32 / h as f32)
+                } else {
+                    1.3
+                };
+                let cx = cx_px * 32 / sw;
+                let z_off = ((cx_px - trunk_cx_px) as f32 * 32.0 / sw as f32 * 0.55) as i32;
+                let cz = 16 + z_off;
+                let ri = rad.ceil() as i32;
+                for dz in -ri..=ri {
+                    for dx in -ri..=ri {
+                        let d = ((dx * dx + dz * dz) as f32).sqrt();
+                        if d > rad {
+                            continue;
+                        }
+                        let (vx, vz) = (cx + dx, cz + dz);
+                        if vx < 0 || vx >= 32 || vz < 0 || vz >= 32 {
+                            continue;
+                        }
+                        let p = *sprite.get_pixel(cx_px as u32, r as u32);
+                        let c = if p[3] >= 128 {
+                            p
+                        } else {
+                            pick(&barks, hash01(vx as u32, y as u32))
+                        };
+                        m.set(vx as u32, y as u32, vz as u32, Some(c));
                     }
-                    let (vx, vz) = (cx + dx, cz + dz);
-                    if vx < 0 || vx >= 32 || vz < 0 || vz >= 32 {
-                        continue;
-                    }
-                    let p = *sprite.get_pixel(cx_px as u32, r as u32);
-                    let c = if p[3] >= 128 {
-                        p
-                    } else {
-                        pick(&barks, hash01(vx as u32, y as u32))
-                    };
-                    m.set(vx as u32, y as u32, vz as u32, Some(c));
                 }
             }
         }
@@ -7545,7 +7728,43 @@ fn branch_model(sprite: &RgbaImage, h: i32, spans: &[Option<(i32, i32)>]) -> Pro
 /// winter tree is a thin branch silhouette. A thin core
 /// disc at the trunk column runs through the crown so
 /// limbs read inside the foliage.
+/// Crop an oversize canvas (96x96 renders of a
+/// tile-filling subject) to its opaque bbox and
+/// resample to tile width, so spans and heights
+/// measure the SUBJECT, not the canvas margins (the
+/// 96px pine measured 13 cells wide and rendered as
+/// a pencil).
+fn normalize_oversize(sprite: &RgbaImage) -> RgbaImage {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let (mut x0, mut y0, mut x1, mut y1) = (sw, sh, -1, -1);
+    for r in 0..sh {
+        for x in 0..sw {
+            if sprite.get_pixel(x as u32, r as u32)[3] >= 128 {
+                x0 = x0.min(x);
+                y0 = y0.min(r);
+                x1 = x1.max(x);
+                y1 = y1.max(r);
+            }
+        }
+    }
+    if x1 < 0 {
+        return sprite.clone();
+    }
+    let (bw, bh) = ((x1 - x0 + 1).max(1), (y1 - y0 + 1).max(1));
+    let crop = image::imageops::crop_imm(sprite, x0 as u32, y0 as u32, bw as u32, bh as u32)
+        .to_image();
+    let nh = ((32 * bh / bw).clamp(8, 96)) as u32;
+    image::imageops::resize(&crop, 32, nh, image::imageops::FilterType::Nearest)
+}
+
 fn vegetation_model(sprite: &RgbaImage, base_h: i32) -> PropModel {
+    let normalized;
+    let sprite = if sprite.width() > 48 || sprite.height() > 96 {
+        normalized = normalize_oversize(sprite);
+        &normalized
+    } else {
+        sprite
+    };
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
     // Per-row opaque spans + bbox.
     let mut spans: Vec<Option<(i32, i32)>> = Vec::with_capacity(sh as usize);
@@ -7554,7 +7773,11 @@ fn vegetation_model(sprite: &RgbaImage, base_h: i32) -> PropModel {
     for r in 0..sh {
         let mut span: Option<(i32, i32)> = None;
         for x in 0..sw {
-            if sprite.get_pixel(x as u32, r as u32)[3] >= 128 {
+            let p = sprite.get_pixel(x as u32, r as u32);
+            // Drop shadows are semi-transparent black:
+            // they are not part of the plant.
+            let shadow = p[3] < 250 && p[0] < 40 && p[1] < 40 && p[2] < 40;
+            if p[3] >= 128 && !shadow {
                 span = Some(match span {
                     None => (x, x),
                     Some((a, b)) => (a.min(x), b.max(x)),
@@ -7573,7 +7796,14 @@ fn vegetation_model(sprite: &RgbaImage, base_h: i32) -> PropModel {
     } else {
         1.0
     };
-    let h = ((base_h as f32 * frac) as i32).max(10);
+    let mut h = ((base_h as f32 * frac) as i32).max(10);
+    if base_h <= 44 && max_w > 0 {
+        // Shrub class: cap the height near the crown
+        // width -- several berry shrubs rendered as
+        // tall cans.
+        let w_cells = max_w * 32 / sw;
+        h = h.min((w_cells as f32 * 1.15) as i32).max(10);
+    }
     let mut m = PropModel::new([32, h as u32, 32]);
     if bottom < 0 || max_w == 0 {
         return m;
@@ -7589,6 +7819,17 @@ fn vegetation_model(sprite: &RgbaImage, base_h: i32) -> PropModel {
             .filter(|p| looks_like_foliage(**p))
             .count();
         if opaque_n > 0 && (leafy_n as f32) < 0.15 * (opaque_n as f32) {
+            return branch_model(sprite, h, &spans);
+        }
+        // Tree-class with a minority of leaf colour:
+        // branch structure carrying sparse leaves
+        // (harvested orchard trees, dead trees, winter
+        // fruit trees all rendered as puffballs or
+        // grey clouds before this route).
+        if base_h >= 60
+            && opaque_n > 0
+            && (leafy_n as f32) < 0.45 * (opaque_n as f32)
+        {
             return branch_model(sprite, h, &spans);
         }
         // Sparse-stroke case (bamboo, loose thickets):
@@ -7685,9 +7926,18 @@ fn vegetation_model(sprite: &RgbaImage, base_h: i32) -> PropModel {
         } else {
             // Crown: elliptical disc (depth squashed by
             // leafiness), front shell = the sprite's own
-            // pixels snapped to the full palette.
-            let rad_x = span_rad.max(1.2);
-            let rad_z = (span_rad * depth_factor).max(1.0);
+            // pixels snapped to the full palette. The
+            // top fifth tapers in, so the crown rounds
+            // off instead of ending in a flat full-width
+            // "lid" disc (every berry shrub wore one).
+            let taper = if y > h * 4 / 5 {
+                let t = (y - h * 4 / 5) as f32 / ((h - h * 4 / 5).max(1)) as f32;
+                1.0 - 0.55 * t
+            } else {
+                1.0
+            };
+            let rad_x = (span_rad * taper).max(1.2);
+            let rad_z = (span_rad * depth_factor * taper).max(1.0);
             let ri_x = rad_x.ceil() as i32;
             let ri_z = rad_z.ceil() as i32;
             for dz in -ri_z..=ri_z {
@@ -8292,9 +8542,14 @@ fn is_foliage(px: Rgba<u8>) -> bool {
 /// "not bark" test fails on snow-covered winter
 /// sprites (snow counts as leafy there).
 fn looks_like_foliage(px: Rgba<u8>) -> bool {
-    px[3] >= 128
-        && ((px[1] > px[0] && px[1] >= px[2])
-            || ((px[0] as i32 - px[2] as i32) > 40 && px[0] as i32 >= 2 * px[1] as i32))
+    if px[3] < 128 {
+        return false;
+    }
+    let (r, g, b) = (px[0] as i32, px[1] as i32, px[2] as i32);
+    (g > r && g >= b)
+        || (r - b > 40 && r >= 2 * g)
+        || (g - b > 55 && r - b > 60)
+        || (r > 150 && b > g && r - b > 30)
 }
 
 fn is_bark(px: Rgba<u8>) -> bool {

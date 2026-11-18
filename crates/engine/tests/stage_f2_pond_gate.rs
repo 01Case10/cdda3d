@@ -95,6 +95,49 @@ fn tileset_with_water(base: &Path) -> PathBuf {
     dir
 }
 
+/// The fixture tileset plus a MULTITILE `t_water_dp` entry in
+/// the real UltiCa shape: the base fg is the `unconnected`
+/// variant (a blue blob, transparent outside the middle, over a
+/// grass bg — a lone puddle), and the `center` additional tile
+/// is full-tile water. This is the shape that made a body of
+/// water render as one puddle per tile.
+fn tileset_with_multitile_water(base: &Path) -> PathBuf {
+    let dir = base.join("tileset");
+    copy_dir(&fixture_dir(), &dir);
+    let pngs = dir.join("pngs_normal_32x32");
+    let checker = |img: &mut RgbaImage, x: u32, y: u32| {
+        let v = if (x + y) % 2 == 0 { 0 } else { 12 };
+        img.put_pixel(
+            x,
+            y,
+            Rgba([WATER_RGB[0], WATER_RGB[1] + v, WATER_RGB[2], 255]),
+        );
+    };
+    // Center variant: full-tile water.
+    let mut center = RgbaImage::new(32, 32);
+    for y in 0..32 {
+        for x in 0..32 {
+            checker(&mut center, x, y);
+        }
+    }
+    center.save(pngs.join("water_center.png")).unwrap();
+    // Unconnected variant: a centered blob, transparent around
+    // it (the grass bg shows through when composited).
+    let mut blob = RgbaImage::new(32, 32);
+    for y in 8..24 {
+        for x in 8..24 {
+            checker(&mut blob, x, y);
+        }
+    }
+    blob.save(pngs.join("water_unconnected.png")).unwrap();
+    std::fs::write(
+        pngs.join("t_water_dp.json"),
+        "{\n \"additional_tiles\": [\n  {\n   \"bg\": \"grass_bg\",\n   \"fg\": \"water_center\",\n   \"id\": \"center\"\n  },\n  {\n   \"bg\": \"grass_bg\",\n   \"fg\": \"water_unconnected\",\n   \"id\": \"unconnected\"\n  }\n ],\n \"bg\": \"grass_bg\",\n \"fg\": \"water_unconnected\",\n \"id\": \"t_water_dp\",\n \"multitile\": true\n}\n",
+    )
+    .unwrap();
+    dir
+}
+
 fn run_voxelizer(tileset: &Path, out: &Path, emit_v2: bool) {
     let _ = std::fs::remove_dir_all(out);
     std::fs::create_dir_all(out).unwrap();
@@ -184,6 +227,52 @@ fn f2_shore_emission_and_forms() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+// --------------------------------------- plain top of multitile
+/// Regression (2026-11-17): a body of water rendered as multiple
+/// cumulative puddles — one per tile. Root cause, voxelizer half:
+/// a multitile entry's base sprite is its UNCONNECTED variant
+/// (the lone-tile drawing), and that sprite became the material's
+/// plain top layer, which is exactly the layer interior water
+/// tiles keep. The plain top of a multitile ground material is
+/// its CENTER (fully-connected) variant.
+#[test]
+fn f2_multitile_water_plain_top_is_center() {
+    let base = std::env::temp_dir().join(format!("f2pond_mt_{}", std::process::id()));
+    let ts = tileset_with_multitile_water(&base);
+    let v2 = base.join("v2");
+    run_voxelizer(&ts, &v2, true);
+    let v2_json = read_json(&v2.join("materials.json"));
+    let water = v2_json["materials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == "t_water_dp")
+        .expect("materials include t_water_dp")
+        .clone();
+    assert_eq!(water["multitile"], true);
+    let layer_bytes = |l: u64| {
+        std::fs::read(v2.join("blocks").join(format!("layer_{l:04}.png"))).unwrap()
+    };
+    let top = layer_bytes(water["top_layer"].as_u64().unwrap());
+    let center = layer_bytes(water["subtile_layers"]["center"].as_u64().unwrap());
+    let unconnected = layer_bytes(water["subtile_layers"]["unconnected"].as_u64().unwrap());
+    assert_eq!(
+        top, center,
+        "plain top of multitile water must be the center variant"
+    );
+    assert_ne!(
+        top, unconnected,
+        "plain top must not be the unconnected (lone puddle) variant"
+    );
+    // The shore set still attaches to the multitile water.
+    assert_eq!(
+        v2_json["shores"].as_array().map(|s| s.len()),
+        Some(255),
+        "multitile water still carries the shore set"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 // ----------------------------------------------------- round-trip
 #[test]
 fn f2_shore_round_trip_through_loader_and_spec() {
@@ -267,6 +356,86 @@ fn f2_spec_without_shore_assignments_equals_base_spec() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+// ------------------------------------------- RT preparation order
+/// Regression (2026-11-17), engine half of the puddles bug: the
+/// RT path ran the Phase 2d multitile rewrite before the shore
+/// preparation, and the shore preparation recognizes water by
+/// its BASE material id — so with a (real, multitile) water
+/// material every water cell had already been rewritten to a
+/// multitile virtual id, the shore pass matched nothing, and
+/// every water tile kept its plain top. Shore-carrying
+/// materials are excluded from the multitile rewrite; this test
+/// runs the exact preparation sequence `render_rt_frame` runs.
+#[test]
+fn f2_rt_shore_survives_multitile_water() {
+    use mesher::block::TILE_WATER;
+    let base = std::env::temp_dir().join(format!("f2pond_rtord_{}", std::process::id()));
+    let dir = capture_assets(&base, true);
+
+    // The sample scene's 4x4 pond, prepared as the RT path does.
+    let levels = engine::rt::capture_visible_levels(1);
+    let mut world = engine::rt::world_for_levels_sv(&levels, None, true);
+    let mt = engine::rt::prepare_fake_variants(&mut world, &dir).unwrap();
+    assert!(
+        mt.iter().all(|a| a.base_id != TILE_WATER),
+        "shore water must not be multitile-rewritten: {mt:?}"
+    );
+    let shore = engine::rt::prepare_fake_shore_variants(&mut world, &dir).unwrap();
+    assert!(
+        !shore.is_empty(),
+        "shore assignments must exist for the pond"
+    );
+    assert!(shore.iter().all(|a| a.base_id == TILE_WATER));
+    // A pond corner cell was rewritten to its shore variant; an
+    // interior cell keeps the base water id (plain top = the
+    // center variant, per the voxelizer rule above).
+    let corner_mask = 0b0001_1100u8;
+    let corner_virtual = shore
+        .iter()
+        .find(|a| a.mask == corner_mask)
+        .expect("corner mask assigned")
+        .virtual_id;
+    assert_eq!(
+        world.get([16, 14, 0]).unwrap().material_id,
+        corner_virtual,
+        "pond corner takes its shore variant"
+    );
+    assert_eq!(
+        world.get([17, 15, 0]).unwrap().material_id,
+        TILE_WATER,
+        "pond interior keeps the base water entry"
+    );
+
+    // A large body of water (12x12): every border tile takes a
+    // shore variant, every interior tile keeps the base entry —
+    // no tile is left carrying a per-tile puddle top.
+    let mut big = treebuild::world::VoxelWorld::new();
+    for y in 0..12 {
+        for x in 0..12 {
+            big.set(
+                [x, y, 0],
+                treebuild::world::VoxelCell::new([0.2, 0.4, 0.8], TILE_WATER),
+            );
+        }
+    }
+    let mt = engine::rt::prepare_fake_variants(&mut big, &dir).unwrap();
+    assert!(mt.iter().all(|a| a.base_id != TILE_WATER));
+    let shore = engine::rt::prepare_fake_shore_variants(&mut big, &dir).unwrap();
+    let interior = big
+        .iter()
+        .filter(|(_, c)| c.material_id == TILE_WATER)
+        .count();
+    assert_eq!(interior, 100, "10x10 interior keeps the base entry");
+    let edged = big.iter().filter(|(_, c)| c.material_id != TILE_WATER).count();
+    assert_eq!(edged, 44, "the 12x12 border takes shore variants");
+    assert!(
+        shore.len() >= 8,
+        "border masks cover corners and straights: {} assignments",
+        shore.len()
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 // ------------------------------------------------------------ GPU
 /// Hand-built asset dir for the capture: solid-color layers for
 /// the fake scene's materials, with the water material carrying
@@ -303,6 +472,16 @@ fn capture_assets(base: &Path, with_shores: bool) -> PathBuf {
     let water_index = mats.len();
     push("t_water_dp", WATER_RGB, &mut mats);
     push("t_tree", [40, 90, 35], &mut mats);
+    // The real UltiCa t_water_dp is multitile — the fixture
+    // water must be too, or the RT multitile/shore interaction
+    // (the shore preparation running after the multitile
+    // rewrite) is invisible to the capture gate below.
+    for m in mats.iter_mut() {
+        if m["id"] == "t_water_dp" {
+            m["multitile"] = serde_json::json!(true);
+            m["subtile_layers"] = serde_json::json!({ "center": water_index });
+        }
+    }
     std::fs::write(
         dir.join("blocks.json"),
         format!(

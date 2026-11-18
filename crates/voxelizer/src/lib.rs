@@ -365,6 +365,7 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             ),
         };
         let wall_like = is_wall_like(id, &entry);
+        let is_furniture = id.starts_with("f_");
         // Side: wall sides stay the sprite verbatim (its trim band
         // sits at the wall's top and its baseboard at its bottom —
         // their correct positions on a side face; see the Stage F
@@ -377,10 +378,23 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
         // the top layer changes: side, bottom and subtile (side
         // variant) layers keep the sprite. Furniture is excluded —
         // its top feeds the extrusion columns.
-        let top_img = if wall_like && !id.starts_with("f_") && tile == TEXTURE_SIZE {
+        //
+        // Multitile ground (terrain, fields, roads — not walls,
+        // not furniture): the entry's base fg is the UNCONNECTED
+        // variant by tileset convention — in the 2D game the base
+        // sprite is what an isolated tile draws (for water, a
+        // lone puddle composited over grass). A voxel block's
+        // plain face is the opposite default: the fully-connected
+        // CENTER variant, with connection shaping left to the
+        // variant systems (shore tops for water). Taking the
+        // base sprite as the plain top made every connected
+        // water tile — interiors above all, which keep the plain
+        // top by the shore rule — render as its own separate
+        // puddle. The alpha flags follow the face actually used.
+        let (top_img, alpha) = if wall_like && !is_furniture && tile == TEXTURE_SIZE {
             let family = family_sprites(ts, &entry);
             if family.is_empty() {
-                sprite_top.clone()
+                (sprite_top.clone(), alpha)
             } else {
                 let palette = analyze_image(&sprite_top, 5).palette;
                 let class = classify(
@@ -390,10 +404,20 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                     &cfg.overrides,
                 )
                 .class;
-                generate_wall_cap(class, &family).image
+                (generate_wall_cap(class, &family).image, alpha)
+            }
+        } else if entry.multitile && !wall_like && !is_furniture {
+            match entry.additional_tiles.get("center").and_then(|sub| {
+                composite_entry(ts, sub).map(|img| make_top_face(&img, ts, sub, tile))
+            }) {
+                Some(t) => {
+                    let a = analyze_alpha(&t);
+                    (t, a)
+                }
+                None => (sprite_top.clone(), alpha),
             }
         } else {
-            sprite_top.clone()
+            (sprite_top.clone(), alpha)
         };
         let bottom_img = darken(&side_img, 0.5);
         let top_layer = push_layer(&mut layers, top_img.clone());
@@ -417,7 +441,6 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
             o.validate()
                 .map_err(|e| format!("override for {id}: {e}"))?;
         }
-        let is_furniture = id.starts_with("f_");
         let (height, sub_model) = if is_furniture {
             let h = furniture_height(id, ov);
             let mode = ov
