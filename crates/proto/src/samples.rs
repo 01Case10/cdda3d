@@ -259,6 +259,211 @@ pub fn sample_snapshot() -> SnapshotT {
     }
 }
 
+// ---------------------------------------------------------------------
+// Roofed house (2026-11-17): fake data in the exact shape the fork's
+// exporter sends for a player standing inside a roofed house, built
+// from the game's own data and the exporter's own rules — NOT from
+// the engine's stub-house layout:
+//
+// - View window: `Exporter::build_snapshot` with the default
+//   `ViewSpec` (voxel_exporter.h): centre = player tile, radius
+//   <= 60, `z_below = 1, z_above = 1` around the player's z. A
+//   player at z 0 therefore receives SubmapBlocks for z -1, 0, +1.
+// - One SubmapBlock per (submap, z): origin = (sx*12, sy*12, z),
+//   per-tile arrays of 144, row-major (block_to_wire).
+// - Ground floor (bungalow-style mapgen, e.g. bungalow01_1):
+//   grass outside, a 6x6 footprint at (3..=8, 3..=8) — wall
+//   perimeter, wood floor inside, door in the south wall, windows
+//   in the north/west walls, a table, an item pile.
+// - Roof level: bungalow01_roof is a separate mapgen at z +1 with
+//   fill `t_shingle_flat_roof` over the whole footprint (walls
+//   included) and `t_open_air` everywhere else. That explicit form
+//   is `sample_roofed_house_snapshot`.
+// - The implicit form also exists in the game: where the z +1 tile
+//   is `t_open_air`, the roof is each z 0 def's `roof` field
+//   (ter_t::roof, exported as TileDef.roof_result). Real values
+//   from the pinned game data: t_floor -> t_wood_treated_roof,
+//   t_wall -> t_flat_roof, t_window -> t_flat_roof,
+//   t_door_c -> t_wood_roof, t_grass -> none. That form is
+//   `sample_implicit_roof_snapshot` (identical except z +1 is all
+//   open air).
+// - Player entity: the real adapter emits the avatar first with
+//   id 1, type_def 0, sprite_id "player" (voxel_real_adapter.cpp).
+// ---------------------------------------------------------------------
+
+pub const TER_GRASS: u32 = 6;
+pub const TER_ROOF_SHINGLE: u32 = 7;
+pub const TER_OPEN_AIR: u32 = 8;
+pub const TER_ROOF_FLAT: u32 = 9;
+pub const TER_ROOF_WOOD_TREATED: u32 = 10;
+pub const TER_ROOF_WOOD: u32 = 11;
+
+/// TileDefs for the roofed house, with the game's real `roof`
+/// values carried in `roof_result`.
+pub fn sample_roofed_tiledefs() -> TileDefsT {
+    let def = |id: u32, string_id: &str, name: &str, roof: Option<&str>| TileDefT {
+        id,
+        string_id: Some(string_id.into()),
+        name: Some(name.into()),
+        kind: TileKind::Terrain,
+        flags: None,
+        hot_flags: 0,
+        connect_groups: None,
+        connects_to_groups: None,
+        rotate_to_groups: None,
+        open_result: None,
+        close_result: None,
+        bash_result: None,
+        looks_like: None,
+        fg_ref: -1,
+        bg_ref: -1,
+        roof_result: roof.map(|s| s.to_string()),
+    };
+    let mut wall = def(TER_WALL, "t_wall", "wall", Some("t_flat_roof"));
+    wall.connect_groups = Some(vec![0]);
+    wall.connects_to_groups = Some(vec![0]);
+    let mut door = def(TER_DOOR, "t_door_c", "closed door", Some("t_wood_roof"));
+    door.open_result = Some("t_door_o".into());
+    TileDefsT {
+        connect_groups: Some(vec!["wall".into()]),
+        protocol_version: PROTOCOL_VERSION,
+        defs: Some(vec![
+            def(TER_OPEN_AIR, "t_open_air", "open air", None),
+            def(TER_GRASS, "t_grass", "grass", None),
+            def(TER_FLOOR, "t_floor", "floor", Some("t_wood_treated_roof")),
+            wall,
+            door,
+            def(TER_DOOR_OPEN, "t_door_o", "open door", Some("t_wood_roof")),
+            def(TER_WINDOW, "t_window", "window", Some("t_flat_roof")),
+            def(
+                TER_ROOF_SHINGLE,
+                "t_shingle_flat_roof",
+                "shingle flat roof",
+                None,
+            ),
+            def(TER_ROOF_FLAT, "t_flat_roof", "flat roof", None),
+            def(
+                TER_ROOF_WOOD_TREATED,
+                "t_wood_treated_roof",
+                "wood treated roof",
+                None,
+            ),
+            def(TER_ROOF_WOOD, "t_wood_roof", "wood roof", None),
+            {
+                let mut t = def(FURN_TABLE, "f_table", "table", None);
+                t.kind = TileKind::Furniture;
+                t
+            },
+        ]),
+    }
+}
+
+fn roofed_house_block(z: i32, explicit_roof: bool) -> SubmapBlockT {
+    let mut terrain = vec![TER_GRASS; TILES];
+    let mut furniture = vec![0u32; TILES];
+    let mut top_item = vec![0u32; TILES];
+    let mut item_count = vec![0u16; TILES];
+    let (lit, seen) = if z < 0 {
+        // The z_below = 1 window filler under a surface house:
+        // open air, dark, never seen.
+        terrain = vec![TER_OPEN_AIR; TILES];
+        (LitLevel::DARK, 0u8)
+    } else if z == 0 {
+        for y in 3..=8usize {
+            for x in 3..=8usize {
+                let edge = x == 3 || x == 8 || y == 3 || y == 8;
+                terrain[idx(x, y)] = if edge { TER_WALL } else { TER_FLOOR };
+            }
+        }
+        terrain[idx(6, 8)] = TER_DOOR;
+        terrain[idx(5, 3)] = TER_WINDOW;
+        terrain[idx(3, 6)] = TER_WINDOW;
+        furniture[idx(5, 5)] = FURN_TABLE;
+        top_item[idx(4, 4)] = ITEM_ROCK;
+        item_count[idx(4, 4)] = 3;
+        (LitLevel::LIT, 255u8)
+    } else {
+        // z +1: the roof mapgen level (explicit) or plain open
+        // air over everything (implicit — roofs then come from
+        // the z 0 defs' roof_result).
+        terrain = vec![TER_OPEN_AIR; TILES];
+        if explicit_roof {
+            for y in 3..=8usize {
+                for x in 3..=8usize {
+                    terrain[idx(x, y)] = TER_ROOF_SHINGLE;
+                }
+            }
+        }
+        (LitLevel::BRIGHT, 255u8)
+    };
+    SubmapBlockT {
+        origin: Some(v3(0, 0, z)),
+        terrain: Some(terrain),
+        furniture: Some(furniture),
+        trap: Some(vec![0; TILES]),
+        fields: Some(vec![]),
+        field_index: Some(vec![-1i32; TILES]),
+        displayed_field: Some(vec![
+            crate::DisplayedFieldT {
+                field_type: 0,
+                intensity: 0
+            };
+            TILES
+        ]),
+        top_item: Some(top_item),
+        item_count: Some(item_count),
+        lit: Some(vec![lit; TILES]),
+        seen: Some(vec![seen; TILES]),
+        has_graffiti: Some(vec![false; TILES]),
+    }
+}
+
+/// The avatar entity the real adapter emits (id 1, type 0,
+/// sprite "player"), standing inside the house at (6, 6, 0).
+pub fn sample_player_entity() -> EntityT {
+    EntityT {
+        id: 1,
+        type_def: 0,
+        sprite_id: Some("player".into()),
+        pos: Some(v3(6, 6, 0)),
+        facing: Facing::RIGHT,
+        overlays: Some(vec!["mut_base".into()]),
+        hp_frac: 255,
+        flags: 0,
+    }
+}
+
+fn roofed_snapshot(explicit_roof: bool) -> SnapshotT {
+    SnapshotT {
+        view_origin: Some(v3(6, 6, 0)),
+        view_radius: 12,
+        blocks: Some(vec![
+            roofed_house_block(-1, explicit_roof),
+            roofed_house_block(0, explicit_roof),
+            roofed_house_block(1, explicit_roof),
+        ]),
+        memory_blocks: None,
+        entities: Some(vec![sample_player_entity()]),
+        vehicles: None,
+        seq: 1,
+        epoch: 1,
+    }
+}
+
+/// Snapshot for a player inside a house whose roof arrives as
+/// explicit `t_shingle_flat_roof` terrain at z +1 (bungalow-style
+/// roof mapgen).
+pub fn sample_roofed_house_snapshot() -> SnapshotT {
+    roofed_snapshot(true)
+}
+
+/// Same house, but z +1 is all `t_open_air`: the roof exists
+/// only as the z 0 defs' `roof_result` values in
+/// [`sample_roofed_tiledefs`].
+pub fn sample_implicit_roof_snapshot() -> SnapshotT {
+    roofed_snapshot(false)
+}
+
 pub fn sample_delta() -> DeltaT {
     DeltaT {
         seq: 2,

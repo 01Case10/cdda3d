@@ -28,7 +28,7 @@
 //! itself is unchanged and never writes a furniture block —
 //! that absence IS the 9.0 suppression contract (below).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use hardcases::{floor_at, Column, DefTable, Floor};
 use mesher::block::{Block, Pass};
@@ -115,6 +115,86 @@ pub fn build_columns(
     }
     map.clear_dirty();
     map
+}
+
+// ---------------------------------------------------------------------
+// Wire ingestion: proto Snapshot -> columns -> block world
+// ---------------------------------------------------------------------
+
+/// Turn a wire `Snapshot` (the fork exporter's shape: one
+/// `SubmapBlock` per submap per z-level, 12x12 row-major terrain
+/// arrays) into per-column specs for [`build_columns`].
+///
+/// Live blocks only: `memory_blocks` are a separate presentation
+/// layer (terrain/furniture memory, never live state — the same
+/// split `lighting::grid_from_snapshot` enforces), so they never
+/// contribute columns here.
+///
+/// Every column spans the snapshot's full z range (the exporter's
+/// window is rectangular: every submap in it is sent at every z),
+/// with id 0 ("none") filling any z a column is absent at — all
+/// columns therefore share one `z_min`, as `build_columns`
+/// requires. Columns come out sorted by (x, y).
+pub fn columns_from_snapshot(snapshot: &proto::SnapshotT) -> Vec<ColumnSpec> {
+    let empty: Vec<proto::SubmapBlockT> = Vec::new();
+    let blocks = snapshot.blocks.as_ref().unwrap_or(&empty);
+    if blocks.is_empty() {
+        return Vec::new();
+    }
+    let mut z_min = i32::MAX;
+    let mut z_max = i32::MIN;
+    for b in blocks {
+        let z = b.origin.as_ref().map(|o| o.z).unwrap_or(0);
+        z_min = z_min.min(z);
+        z_max = z_max.max(z);
+    }
+    let mut by_tile: BTreeMap<(i32, i32), BTreeMap<i32, u32>> = BTreeMap::new();
+    for b in blocks {
+        let o = b
+            .origin
+            .as_ref()
+            .map(|v| (v.x, v.y, v.z))
+            .unwrap_or((0, 0, 0));
+        let Some(terrain) = b.terrain.as_ref() else {
+            continue;
+        };
+        for (i, &ter) in terrain.iter().take(144).enumerate() {
+            let x = o.0 + (i % 12) as i32;
+            let y = o.1 + (i / 12) as i32;
+            by_tile.entry((x, y)).or_default().insert(o.2, ter);
+        }
+    }
+    by_tile
+        .into_iter()
+        .map(|((x, y), levels)| {
+            let mut terrain = vec![0u32; (z_max - z_min + 1) as usize];
+            for (z, ter) in levels {
+                terrain[(z - z_min) as usize] = ter;
+            }
+            ColumnSpec {
+                x,
+                y,
+                z_min,
+                terrain,
+            }
+        })
+        .collect()
+}
+
+/// Build the block world directly from the two messages the fork
+/// sends at connect: `TileDefs` (which carry each terrain's
+/// `roof_result`) plus a `Snapshot`. This is [`build_columns`]
+/// with its def table and columns derived from the wire data
+/// instead of hand-built by the caller.
+pub fn build_snapshot_world(
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+    scale: WorldScale,
+    block_for: &dyn Fn(u32) -> Block,
+) -> ChunkMap {
+    let table = DefTable::from_tiledefs(defs);
+    let columns = columns_from_snapshot(snapshot);
+    build_columns(&table, &columns, scale, block_for)
 }
 
 // ---------------------------------------------------------------------
