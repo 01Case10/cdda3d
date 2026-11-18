@@ -7215,11 +7215,757 @@ mod tests {
 // them at terrain tiles in place of the block.
 
 pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
-    match id {
-        "t_tree" => Some(terrain_tree(sprite)),
-        "t_chainfence" => Some(terrain_chainfence(sprite)),
-        _ => None,
+    if !id.starts_with("t_") {
+        return None;
     }
+    match id {
+        "t_tree" => return Some(terrain_tree(sprite)),
+        "t_chainfence" => return Some(terrain_chainfence(sprite)),
+        _ => {}
+    }
+    // Terrain drive (2026-11-17, Joey: models for every
+    // tile, all seasons): family routing by id pattern;
+    // season variants are separate ids and route with
+    // their family, each built from its own sprite. The
+    // silhouette builder is the generic fallback, so
+    // every terrain id with a sprite gets a model; the
+    // per-family batches then refine from the strips.
+    let s = &id[2..];
+    if s.contains("fencegate") || s.contains("door") {
+        let open = s.contains("open") || s.ends_with("_o") || s.contains("_o_");
+        return Some(terrain_door(sprite, open));
+    }
+    if s.contains("tree")
+        || s.contains("shrub")
+        || s.starts_with("bamboo")
+        || s.contains("fern")
+        || s.contains("sapling")
+        || s.contains("underbrush")
+        || s.contains("azalea")
+        || s.contains("lilac")
+        || s.contains("forsythia")
+        || s.contains("pine")
+    {
+        let base = if s.contains("tree") || s.contains("pine") {
+            76
+        } else if s.starts_with("bamboo") {
+            76
+        } else if s.contains("shrub") {
+            40
+        } else {
+            52
+        };
+        return Some(vegetation_model(sprite, base));
+    }
+    if s.contains("fence") || s.contains("splitrail") || s.contains("barbed") || s.contains("railing") {
+        return Some(terrain_fence_panel(sprite));
+    }
+    if s.contains("window") {
+        return Some(terrain_window(sprite));
+    }
+    if s.contains("wall") {
+        let h = if s.contains("half") { 48 } else { 96 };
+        return Some(terrain_box(sprite, h));
+    }
+    if s.contains("stairs") || s.contains("ladder") || s.starts_with("ramp") {
+        return Some(terrain_stairs(sprite, s.contains("down")));
+    }
+    let liquid = s.contains("water")
+        || s.contains("lava")
+        || s.contains("sewage")
+        || s.starts_with("pool")
+        || s.contains("acid")
+        || s.contains("ice");
+    let ground = liquid
+        || s.starts_with("grass")
+        || s.starts_with("dirt")
+        || s.starts_with("sand")
+        || s.starts_with("pavement")
+        || s.starts_with("floor")
+        || s.starts_with("soil")
+        || s.starts_with("snow")
+        || s.starts_with("road")
+        || s.starts_with("sidewalk")
+        || s.starts_with("bridge")
+        || s.starts_with("gravel")
+        || s.starts_with("rubble")
+        || s.starts_with("moss")
+        || s.starts_with("puddle")
+        || s.contains("_floor")
+        || s.contains("linoleum")
+        || s.contains("carpet")
+        || s.starts_with("rock_floor")
+        || s == "rock"
+        || s.starts_with("slime")
+        || s == "clay"
+        || s == "ash";
+    if ground {
+        return Some(terrain_ground(sprite, liquid));
+    }
+    terrain_silhouette(sprite)
+}
+
+/// Vegetation (trees, shrubs, plants) by STRUCTURE,
+/// not colour: autumn foliage and bark share a palette,
+/// so colour classification collapses the crown (the
+/// v1 autumn tree came out a narrow column). Instead:
+/// rows wider than half the widest row are CROWN --
+/// discs follow the full opaque span, painted from the
+/// sprite's own pixels; rows below the crown are TRUNK
+/// -- narrow discs in the trunk-zone palette. Crown
+/// depth is squashed by leafiness (non-bark-coloured
+/// fraction): a leafy crown is nearly round, a bare
+/// winter tree is a thin branch silhouette. A thin core
+/// disc at the trunk column runs through the crown so
+/// limbs read inside the foliage.
+fn vegetation_model(sprite: &RgbaImage, base_h: i32) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    // Per-row opaque spans + bbox.
+    let mut spans: Vec<Option<(i32, i32)>> = Vec::with_capacity(sh as usize);
+    let (mut top, mut bottom) = (sh, -1);
+    let mut max_w = 0i32;
+    for r in 0..sh {
+        let mut span: Option<(i32, i32)> = None;
+        for x in 0..sw {
+            if sprite.get_pixel(x as u32, r as u32)[3] >= 128 {
+                span = Some(match span {
+                    None => (x, x),
+                    Some((a, b)) => (a.min(x), b.max(x)),
+                });
+            }
+        }
+        if let Some((a, b)) = span {
+            max_w = max_w.max(b - a + 1);
+            top = top.min(r);
+            bottom = bottom.max(r);
+        }
+        spans.push(span);
+    }
+    let frac = if bottom >= 0 {
+        (bottom - top + 1) as f32 / sh as f32
+    } else {
+        1.0
+    };
+    let h = ((base_h as f32 * frac) as i32).max(10);
+    let mut m = PropModel::new([32, h as u32, 32]);
+    if bottom < 0 || max_w == 0 {
+        return m;
+    }
+    // Crown = rows wider than half the widest row;
+    // trunk zone = rows below the lowest crown row.
+    let crown_bottom = (0..sh)
+        .rev()
+        .find(|&r| spans[r as usize].map_or(false, |(a, b)| b - a + 1 > max_w / 2))
+        .unwrap_or(-1);
+    // Trunk column: median span centre of the trunk zone
+    // (bbox centre when there is no trunk zone: a shrub).
+    let mut centres: Vec<i32> = (0..sh)
+        .filter(|&r| r > crown_bottom)
+        .filter_map(|r| spans[r as usize].map(|(a, b)| (a + b) / 2))
+        .collect();
+    centres.sort();
+    let trunk_cx_px = if centres.is_empty() {
+        sw / 2
+    } else {
+        centres[centres.len() / 2]
+    };
+    let trunk_cx = trunk_cx_px * 32 / sw;
+    // Leafiness from the loose colour test (paint/shape
+    // hint only -- never a shape gate).
+    let opaque_n = sprite.pixels().filter(|p| p[3] >= 128).count();
+    let leafy_n = sprite
+        .pixels()
+        .filter(|p| p[3] >= 128 && !is_bark(**p))
+        .count();
+    let leafiness = if opaque_n > 0 {
+        leafy_n as f32 / opaque_n as f32
+    } else {
+        1.0
+    };
+    let depth_factor = 0.35 + 0.65 * leafiness;
+    // Palettes: crown from ALL opaque pixels (leaves and
+    // twigs together); trunk from bark-coloured pixels
+    // in the trunk zone.
+    let full_pal = palette_of(sprite.pixels().copied().filter(|&p| p[3] >= 128), 24);
+    let dark = pick(&full_pal, 0.85);
+    let trunk_pal = palette_of(
+        (0..sh)
+            .filter(|&r| r > crown_bottom)
+            .flat_map(|r| (0..sw).map(move |x| (x, r)))
+            .map(|(x, r)| *sprite.get_pixel(x as u32, r as u32))
+            .filter(|&p| is_bark(p)),
+        8,
+    );
+    let trunk_col = if trunk_pal.is_empty() {
+        dark
+    } else {
+        pick(&trunk_pal, 0.3)
+    };
+    for y in 0..h {
+        let r = (h - 1 - y) * sh / h;
+        let Some((x0, x1)) = spans[r as usize] else {
+            continue;
+        };
+        let cx = ((x0 + x1) / 2) * 32 / sw;
+        let span_rad = ((x1 - x0 + 1) * 32 / sw) as f32 / 2.0;
+        if r > crown_bottom {
+            // Trunk zone: one narrow disc.
+            let rad = span_rad.clamp(1.2, 4.5);
+            let ri = rad.ceil() as i32;
+            for dz in -ri..=ri {
+                for dx in -ri..=ri {
+                    let d = ((dx * dx + dz * dz) as f32).sqrt();
+                    if d > rad + hash01((dx + ri) as u32, (y * 7) as u32) * 0.4 {
+                        continue;
+                    }
+                    let (x, z) = (cx + dx, 16 + dz);
+                    if x < 0 || x >= 32 || z < 0 || z >= 32 {
+                        continue;
+                    }
+                    let c = if trunk_pal.is_empty() {
+                        trunk_col
+                    } else {
+                        pick(&trunk_pal, hash01(x as u32, (y * 3 + z) as u32))
+                    };
+                    m.set(x as u32, y as u32, z as u32, Some(c));
+                }
+            }
+        } else {
+            // Crown: elliptical disc (depth squashed by
+            // leafiness), front shell = the sprite's own
+            // pixels snapped to the full palette.
+            let rad_x = span_rad.max(1.2);
+            let rad_z = (span_rad * depth_factor).max(1.0);
+            let ri_x = rad_x.ceil() as i32;
+            let ri_z = rad_z.ceil() as i32;
+            for dz in -ri_z..=ri_z {
+                for dx in -ri_x..=ri_x {
+                    let e = ((dx as f32 / rad_x).powi(2) + (dz as f32 / rad_z).powi(2)).sqrt();
+                    let edge = 1.0 + (hash01((dx + ri_x) as u32, (y * 31 + dz) as u32) - 0.5) * 0.14;
+                    if e > edge {
+                        continue;
+                    }
+                    let (x, z) = (cx + dx, 16 + dz);
+                    if x < 0 || x >= 32 || z < 0 || z >= 32 {
+                        continue;
+                    }
+                    let c = if dz > 0 && e > 0.82 {
+                        let sx = (x * sw / 32).clamp(0, sw - 1);
+                        let p = *sprite.get_pixel(sx as u32, r as u32);
+                        if p[3] >= 128 {
+                            *full_pal
+                                .iter()
+                                .min_by_key(|g| {
+                                    (g[0] as i32 - p[0] as i32).abs()
+                                        + (g[1] as i32 - p[1] as i32).abs()
+                                        + (g[2] as i32 - p[2] as i32).abs()
+                                })
+                                .unwrap_or(&dark)
+                        } else {
+                            pick(&full_pal, hash01(x as u32, y as u32))
+                        }
+                    } else if e > 0.82 {
+                        pick(&full_pal, hash01((x * 5 + z) as u32, (y * 11) as u32))
+                    } else {
+                        dark
+                    };
+                    m.set(x as u32, y as u32, z as u32, Some(c));
+                }
+            }
+            // Limb core through the crown at the trunk
+            // column.
+            for dz in -2..=2i32 {
+                for dx in -2..=2i32 {
+                    if dx * dx + dz * dz > 4 {
+                        continue;
+                    }
+                    let (x, z) = (trunk_cx + dx, 16 + dz);
+                    if x < 0 || x >= 32 || z < 0 || z >= 32 {
+                        continue;
+                    }
+                    m.set(x as u32, y as u32, z as u32, Some(trunk_col));
+                }
+            }
+        }
+    }
+    m
+}
+
+/// Per-layer discs from the sprite's row spans: the
+/// unified-solid vegetation / blob form. `base_h` is
+/// scaled by the sprite's opaque bbox fraction, so
+/// harvested and winter variants shrink with their
+/// drawings. With `bark_pass`, bark-classified spans
+/// draw over the canopy as trunk / limbs / branches
+/// (a dead tree is then all bark: bare branches).
+fn disc_model(sprite: &RgbaImage, base_h: i32, bark_pass: bool) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let mut top = sh;
+    let mut bottom = -1;
+    for r in 0..sh {
+        if (0..sw).any(|x| sprite.get_pixel(x as u32, r as u32)[3] >= 128) {
+            top = top.min(r);
+            bottom = bottom.max(r);
+        }
+    }
+    let frac = if bottom >= 0 {
+        (bottom - top + 1) as f32 / sh as f32
+    } else {
+        1.0
+    };
+    let h = ((base_h as f32 * frac) as i32).max(10);
+    let mut m = PropModel::new([32, h as u32, 32]);
+    let canopy_pal = palette_of(
+        sprite
+            .pixels()
+            .copied()
+            .filter(|&p| p[3] >= 128 && !(bark_pass && is_bark(p))),
+        20,
+    );
+    let dark = pick(&canopy_pal, 0.85);
+    let row_span = |r: i32, test: &dyn Fn(Rgba<u8>) -> bool| -> Option<(i32, i32)> {
+        let mut span: Option<(i32, i32)> = None;
+        for x in 0..sw {
+            if test(*sprite.get_pixel(x as u32, r as u32)) {
+                span = Some(match span {
+                    None => (x, x),
+                    Some((a, b)) => (a.min(x), b.max(x)),
+                });
+            }
+        }
+        span
+    };
+    for y in 0..h {
+        let r = (h - 1 - y) * sh / h;
+        if let Some((x0, x1)) = row_span(r, &|p| p[3] >= 128 && !(bark_pass && is_bark(p))) {
+            let cx = ((x0 + x1) / 2) * 32 / sw;
+            let rad = ((x1 - x0 + 1) * 32 / sw) as f32 / 2.0;
+            let ri = rad.ceil() as i32;
+            for dz in -ri..=ri {
+                for dx in -ri..=ri {
+                    let d = ((dx * dx + dz * dz) as f32).sqrt();
+                    let edge = rad + (hash01((dx + ri) as u32, (y * 31 + dz) as u32) - 0.5) * 1.6;
+                    if d > edge {
+                        continue;
+                    }
+                    let (x, z) = (cx + dx, 16 + dz);
+                    if x < 0 || x >= 32 || z < 0 || z >= 32 {
+                        continue;
+                    }
+                    let c = if dz > 0 && d > rad - 1.2 {
+                        let sx = (x * sw / 32).clamp(0, sw - 1);
+                        let p = *sprite.get_pixel(sx as u32, r as u32);
+                        if p[3] >= 128 && !(bark_pass && is_bark(p)) {
+                            *canopy_pal
+                                .iter()
+                                .min_by_key(|g| {
+                                    (g[0] as i32 - p[0] as i32).abs()
+                                        + (g[1] as i32 - p[1] as i32).abs()
+                                        + (g[2] as i32 - p[2] as i32).abs()
+                                })
+                                .unwrap_or(&dark)
+                        } else {
+                            pick(&canopy_pal, hash01(x as u32, y as u32))
+                        }
+                    } else if d > rad - 1.2 {
+                        pick(&canopy_pal, hash01((x * 5 + z) as u32, (y * 11) as u32))
+                    } else {
+                        dark
+                    };
+                    m.set(x as u32, y as u32, z as u32, Some(c));
+                }
+            }
+        }
+    }
+    if bark_pass {
+        let barks = palette_of(sprite.pixels().copied().filter(|&p| is_bark(p)), 10);
+        // Bare-tree case (winter / dead): if canopy-class
+        // pixels are a small minority of the opaque ones,
+        // the branches are the whole silhouette -- the
+        // bark pass then follows the span radius instead
+        // of the thin limb cap.
+        let opaque_n = sprite.pixels().filter(|p| p[3] >= 128).count();
+        let canopy_n = sprite
+            .pixels()
+            .filter(|p| p[3] >= 128 && !is_bark(**p))
+            .count();
+        let bare = opaque_n > 0 && (canopy_n as f32) < 0.15 * (opaque_n as f32);
+        if !barks.is_empty() {
+            for y in 0..h {
+                let r = (h - 1 - y) * sh / h;
+                let Some((x0, x1)) = row_span(r, &|p| is_bark(p)) else {
+                    continue;
+                };
+                let cx = ((x0 + x1) / 2) * 32 / sw;
+                let span_rad = ((x1 - x0 + 1) * 32 / sw) as f32 / 2.0;
+                let cap = if y <= h * 2 / 5 { 3.2 } else { 1.8 };
+                let rad = if bare {
+                    span_rad.max(1.2)
+                } else {
+                    span_rad.clamp(1.2, cap)
+                };
+                let ri = rad.ceil() as i32;
+                for dz in -ri..=ri {
+                    for dx in -ri..=ri {
+                        let d = ((dx * dx + dz * dz) as f32).sqrt();
+                        if d > rad + hash01((x0 + dx) as u32, (y * 7) as u32) * 0.4 {
+                            continue;
+                        }
+                        let (x, z) = (cx + dx, 16 + dz);
+                        if x < 0 || x >= 32 || z < 0 || z >= 32 {
+                            continue;
+                        }
+                        let c = pick(&barks, hash01(x as u32, (y * 3 + z) as u32));
+                        m.set(x as u32, y as u32, z as u32, Some(c));
+                    }
+                }
+            }
+        }
+    }
+    m
+}
+
+/// A fence half-segment from the sprite's own left
+/// half: the FG silhouette extruded on the tile's
+/// centre planes, with full-height posts at the edge
+/// and centre (in the sprite's modal colour). Picket,
+/// rail and solid fences all come from their drawings;
+/// the engine composes directions like t_chainfence.
+fn terrain_fence_panel(sprite: &RgbaImage) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let h = if sh >= 64 { 56 } else { 28 };
+    let mut m = PropModel::new([32, h as u32, 32]);
+    let post = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(120, 120, 120));
+    for x in 0..17i32 {
+        for y in 0..h {
+            let sx = (x * sw / 32).clamp(0, sw - 1);
+            // Block-max over the sprite rows this model
+            // row covers: thin rails (1px diagonals)
+            // vanish under point sampling at 32 -> 28.
+            let r0 = sh - 1 - ((y + 1) * sh / h);
+            let r1 = sh - 1 - (y * sh / h);
+            let mut found: Option<Rgba<u8>> = None;
+            for sy in r0..=r1 {
+                let p = *sprite.get_pixel(sx as u32, sy.clamp(0, sh - 1) as u32);
+                if p[3] >= 128 {
+                    found = Some(p);
+                    break;
+                }
+            }
+            if let Some(p) = found {
+                for z in [15, 16] {
+                    m.set(x as u32, y as u32, z as u32, Some(p));
+                }
+            }
+        }
+    }
+    for x in [0, 1, 15, 16] {
+        for z in [15, 16] {
+            for y in 0..h {
+                m.set(x as u32, y as u32, z as u32, Some(post));
+            }
+        }
+    }
+    m
+}
+
+/// A sprite-faced shell box (walls; boxy fallback):
+/// front and back carry the sprite, sides carry its
+/// edge columns, the top is capped with the face's
+/// top row. Shell thickness 2 -- the fine mesher only
+/// ever draws the surface.
+fn terrain_box(sprite: &RgbaImage, h: i32) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let mut m = PropModel::new([32, h as u32, 32]);
+    let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(120, 120, 120));
+    // Side/top fallback colour: the modal over NON-
+    // near-black opaque pixels. A sprite drawn on a
+    // dark backdrop (the ATM) has a near-black modal;
+    // its sides must not inherit the backdrop.
+    let side_modal = modal_color(
+        sprite
+            .pixels()
+            .copied()
+            .filter(|p| p[3] >= 128 && (p[0] >= 28 || p[1] >= 28 || p[2] >= 28)),
+    )
+    .unwrap_or(modal);
+    let face = |sx: i32, y: i32| -> Rgba<u8> {
+        let sy = (sh - 1 - (y * sh / h)).clamp(0, sh - 1);
+        let p = *sprite.get_pixel(sx.clamp(0, sw - 1) as u32, sy as u32);
+        if p[3] >= 128 {
+            p
+        } else {
+            modal
+        }
+    };
+    for y in 0..h {
+        for x in 0..32i32 {
+            let c = face(x * sw / 32, y);
+            for z in [30, 31] {
+                m.set(x as u32, y as u32, z as u32, Some(c));
+            }
+            for z in [0, 1] {
+                m.set(x as u32, y as u32, z as u32, Some(c));
+            }
+            // Side faces sample the sprite's edge
+            // columns; a near-black sample there is the
+            // sprite's backdrop margin (e.g. the ATM's
+            // dark surround), not a surface colour --
+            // fall back to the modal colour.
+            let side = |sx: i32, y: i32| -> Rgba<u8> {
+                let c = face(sx, y);
+                if c[0] < 28 && c[1] < 28 && c[2] < 28 {
+                    side_modal
+                } else {
+                    c
+                }
+            };
+            let cl = side(0, y);
+            let cr = side(sw - 1, y);
+            for xx in [0, 1] {
+                m.set(xx as u32, y as u32, x as u32, Some(cl));
+            }
+            for xx in [30, 31] {
+                m.set(xx as u32, y as u32, x as u32, Some(cr));
+            }
+        }
+    }
+    for x in 0..32i32 {
+        for z in 0..32i32 {
+            let c = face(x * sw / 32, h - 1);
+            m.set(x as u32, (h - 1) as u32, z as u32, Some(c));
+        }
+    }
+    m
+}
+
+/// A door: frame posts + header, and a panel textured
+/// from the sprite. Open doors swing the panel 55
+/// degrees toward the front on its hinge at x=2.
+fn terrain_door(sprite: &RgbaImage, open: bool) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let h = 84i32;
+    let mut m = PropModel::new([32, h as u32, 32]);
+    let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(120, 100, 80));
+    let face = |sx: i32, y: i32| -> Rgba<u8> {
+        let sy = (sh - 1 - (y * sh / h)).clamp(0, sh - 1);
+        let p = *sprite.get_pixel(sx.clamp(0, sw - 1) as u32, sy as u32);
+        if p[3] >= 128 {
+            p
+        } else {
+            modal
+        }
+    };
+    // Frame: posts + header in the modal colour.
+    for y in 0..h {
+        for x in [0, 1, 30, 31] {
+            for z in 13..=18 {
+                m.set(x as u32, y as u32, z as u32, Some(modal));
+            }
+        }
+    }
+    for x in 0..32i32 {
+        for y in (h - 3)..h {
+            for z in 13..=18 {
+                m.set(x as u32, y as u32, z as u32, Some(modal));
+            }
+        }
+    }
+    if !open {
+        for x in 2..30i32 {
+            for y in 0..(h - 3) {
+                let c = face(x * sw / 32, y);
+                m.set(x as u32, y as u32, 14, Some(c));
+                m.set(x as u32, y as u32, 17, Some(c));
+                let inner = shade(c, 0.8);
+                m.set(x as u32, y as u32, 15, Some(inner));
+                m.set(x as u32, y as u32, 16, Some(inner));
+            }
+        }
+    } else {
+        // Panel swung toward +z on the hinge at (2, 15).
+        let (cos_t, sin_t) = (0.574f32, 0.819f32); // 55 deg
+        for t in 0..27i32 {
+            for n in -2..2i32 {
+                let wx = 2 + (t as f32 * cos_t + n as f32 * sin_t).round() as i32;
+                let wz = 15 + (t as f32 * sin_t - n as f32 * cos_t).round() as i32;
+                if !(0..32).contains(&wx) || !(0..32).contains(&wz) {
+                    continue;
+                }
+                for y in 0..(h - 3) {
+                    let c = face((t + 2) * sw / 32, y);
+                    m.set(wx as u32, y as u32, wz as u32, Some(c));
+                }
+            }
+        }
+    }
+    m
+}
+
+/// A window: frame border in the sprite's modal edge
+/// colour, glass plane carrying the sprite itself
+/// (drawn bars and glare come with it).
+fn terrain_window(sprite: &RgbaImage) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let h = 64i32;
+    let mut m = PropModel::new([32, h as u32, 32]);
+    let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(140, 140, 140));
+    let face = |sx: i32, y: i32| -> Rgba<u8> {
+        let sy = (sh - 1 - (y * sh / h)).clamp(0, sh - 1);
+        let p = *sprite.get_pixel(sx.clamp(0, sw - 1) as u32, sy as u32);
+        if p[3] >= 128 {
+            p
+        } else {
+            modal
+        }
+    };
+    for y in 0..h {
+        for x in 0..32i32 {
+            let border = x < 3 || x > 28 || y < 3 || y > h - 4;
+            if border {
+                for z in 14..=17 {
+                    m.set(x as u32, y as u32, z as u32, Some(modal));
+                }
+            } else {
+                let c = face(x * sw / 32, y);
+                for z in [15, 16] {
+                    m.set(x as u32, y as u32, z as u32, Some(c));
+                }
+            }
+        }
+    }
+    m
+}
+
+/// A ground / liquid tile: a low relief block whose
+/// top carries the sprite as its texture (the sprite
+/// IS the top-down drawing of the ground). Liquids
+/// are flat; solids get +-2 of hash relief.
+fn terrain_ground(sprite: &RgbaImage, liquid: bool) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let mut m = PropModel::new([32, 10, 32]);
+    let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(100, 100, 100));
+    for x in 0..32i32 {
+        for z in 0..32i32 {
+            let p = *sprite.get_pixel(
+                (x * sw / 32).clamp(0, sw - 1) as u32,
+                (z * sh / 32).clamp(0, sh - 1) as u32,
+            );
+            let c = if p[3] >= 128 { p } else { modal };
+            let relief = if liquid {
+                0
+            } else {
+                (hash01(x as u32, z as u32) * 2.4) as i32
+            };
+            let top = 6 + relief.min(2);
+            for y in 0..=top {
+                let cc = if y == top { c } else { shade(c, 0.72) };
+                m.set(x as u32, y as u32, z as u32, Some(cc));
+            }
+        }
+    }
+    m
+}
+
+/// Stairs: six solid steps ascending toward the far
+/// side (z=0), tops textured from the sprite. Down
+/// stairs use the same structure darkened -- the
+/// stairwell reads as descending into shadow from
+/// most angles; orientation pins come with review.
+fn terrain_stairs(sprite: &RgbaImage, down: bool) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let mut m = PropModel::new([32, 96, 32]);
+    let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(110, 110, 110));
+    for k in 0..6i32 {
+        let top = (6 - k) * 16;
+        for z in (k * 5)..(k * 5 + 5) {
+            for x in 0..32i32 {
+                let p = *sprite.get_pixel(
+                    (x * sw / 32).clamp(0, sw - 1) as u32,
+                    (z * sh / 32).clamp(0, sh - 1) as u32,
+                );
+                let mut c = if p[3] >= 128 { p } else { modal };
+                if down {
+                    c = shade(c, 0.55);
+                }
+                for y in 0..top {
+                    let cc = if y >= top - 2 { c } else { shade(c, 0.6) };
+                    m.set(x as u32, y as u32, z as u32, Some(cc));
+                }
+            }
+        }
+    }
+    m
+}
+
+/// The generic fallback: a fully-opaque, frame-filling
+/// sprite becomes a sprite-faced box; anything else
+/// becomes the disc-solid of its silhouette.
+fn terrain_silhouette(sprite: &RgbaImage) -> Option<PropModel> {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let mut opaque = 0usize;
+    let (mut x0, mut x1, mut y0, mut y1) = (sw, -1, sh, -1);
+    for yy in 0..sh {
+        for xx in 0..sw {
+            if sprite.get_pixel(xx as u32, yy as u32)[3] >= 128 {
+                opaque += 1;
+                x0 = x0.min(xx);
+                x1 = x1.max(xx);
+                y0 = y0.min(yy);
+                y1 = y1.max(yy);
+            }
+        }
+    }
+    if opaque == 0 {
+        return None;
+    }
+    let coverage = opaque as f32 / (sw * sh) as f32;
+    let fills = (x1 - x0 + 1) as f32 >= 0.9 * sw as f32 && (y1 - y0 + 1) as f32 >= 0.9 * sh as f32;
+    if coverage >= 0.78 && fills {
+        let h = ((y1 - y0 + 1) * 64 / sh).clamp(16, 96);
+        return Some(terrain_box(sprite, h));
+    }
+    // Boxy silhouettes (median row mostly filled across
+    // its span) get the box form too, at their drawn
+    // height -- a hive or an ATM is not a cylinder.
+    let mut full_rows = 0usize;
+    let mut rows = 0usize;
+    for yy in y0..=y1 {
+        let mut lo = sw;
+        let mut hi = -1;
+        let mut n = 0usize;
+        for xx in 0..sw {
+            if sprite.get_pixel(xx as u32, yy as u32)[3] >= 128 {
+                lo = lo.min(xx);
+                hi = hi.max(xx);
+                n += 1;
+            }
+        }
+        if hi >= 0 {
+            rows += 1;
+            if n as f32 >= 0.8 * (hi - lo + 1) as f32 {
+                full_rows += 1;
+            }
+        }
+    }
+    if rows > 0 && full_rows as f32 >= 0.7 * rows as f32 {
+        let h = ((y1 - y0 + 1) * 64 / sh).clamp(16, 96);
+        return Some(terrain_box(sprite, h));
+    }
+    let base = if sh >= 96 {
+        72
+    } else if sh >= 64 {
+        56
+    } else {
+        56
+    };
+    Some(disc_model(sprite, base, false))
 }
 
 /// Top-`n` colors of an iterator, most frequent first.
@@ -7249,7 +7995,16 @@ fn is_foliage(px: Rgba<u8>) -> bool {
 }
 
 fn is_bark(px: Rgba<u8>) -> bool {
-    px[3] >= 128 && px[0] > px[1] && px[1] >= px[2] && px[0] < 175
+    // Brown trunk colours: r > g >= b with CLOSE channels
+    // (low saturation). Saturated reds/oranges (autumn
+    // foliage) have r far above b and are NOT bark --
+    // without the guard an autumn crown classifies as
+    // trunk and the canopy collapses to a column.
+    px[3] >= 128
+        && px[0] > px[1]
+        && px[1] >= px[2]
+        && px[0] < 175
+        && (px[0] as i32 - px[2] as i32) <= 70
 }
 
 /// A tree: bark trunk and limbs under a solid crown whose

@@ -182,6 +182,25 @@ pub fn load_sprite_image(
     }
 }
 
+/// The FG sprite a terrain model is built from. For a
+/// multitile entry the base fg is often just the
+/// unconnected variant (a lone fence post); the model
+/// builders want the "center" variant -- the full
+/// straight segment / connected face. Falls back to the
+/// entry's own fg when no center variant exists.
+pub fn terrain_fg_image(ts: &Tileset, entry: &TileEntry) -> Option<RgbaImage> {
+    if let Some(center) = entry.additional_tiles.get("center") {
+        if let Some(img) = center
+            .fg
+            .as_ref()
+            .and_then(|r| load_sprite_image(ts, center, r))
+        {
+            return Some(img);
+        }
+    }
+    entry.fg.as_ref().and_then(|r| load_sprite_image(ts, entry, r))
+}
+
 /// Composite an entry's fg over its bg (either may be absent).
 pub fn composite_entry(ts: &Tileset, entry: &TileEntry) -> Option<RgbaImage> {
     let bg = entry
@@ -545,10 +564,17 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                     // alone: the composite bakes the bg
                     // (grass under a tree) into the
                     // silhouette they measure.
-                    let fg = entry
-                        .fg
-                        .as_ref()
-                        .and_then(|r| load_sprite_image(ts, &entry, r));
+                    // t_chainfence keeps its base fg: its
+                    // approved model samples colours from
+                    // it and the builder is geometric.
+                    let fg = if id == "t_chainfence" {
+                        entry
+                            .fg
+                            .as_ref()
+                            .and_then(|r| load_sprite_image(ts, &entry, r))
+                    } else {
+                        terrain_fg_image(ts, &entry)
+                    };
                     crate::props::terrain_model_for(id, fg.as_ref().unwrap_or(img))
                 };
                 if let Some(model) = model {

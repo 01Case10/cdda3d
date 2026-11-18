@@ -127,7 +127,7 @@ fn fill_quad(img: &mut RgbaImage, pts: [(f32, f32); 4], color: Rgba<u8>) {
 }
 
 /// Render a prop model into `sheet` at cell origin (ox, oy).
-fn render_model(sheet: &mut RgbaImage, model: &PropModel, view: V3, ox: u32, oy: u32) {
+fn render_model(sheet: &mut RgbaImage, model: &PropModel, view: V3, ox: u32, oy: u32, cell_h: u32) {
     let [w, h, d] = model.size;
     let v = view.norm();
     let right = V3(0.0, 1.0, 0.0).cross(v).norm();
@@ -142,12 +142,18 @@ fn render_model(sheet: &mut RgbaImage, model: &PropModel, view: V3, ox: u32, oy:
             }
         }
     }
-    let s = ((CELL_W.min(CELL_H) as f32 / 2.0 - 12.0) / extent.max(1.0)).min(3.0);
+    // Fixed scale for every terrain strip: fit-to-cell
+    // shrank tall models (a 66-tall tree rendered its
+    // crown at half width) and made cross-model
+    // comparison meaningless. The strip's cell height
+    // is sized to the model instead (see main).
+    let _ = extent;
+    let s = 4.0f32;
     let project = |p: V3| -> (f32, f32) {
         let q = p.add(center.scale(-1.0));
         (
             ox as f32 + CELL_W as f32 / 2.0 + q.dot(right) * s,
-            oy as f32 + CELL_H as f32 / 2.0 - q.dot(up2) * s,
+            oy as f32 + cell_h as f32 / 2.0 - q.dot(up2) * s,
         )
     };
     let mut cells: Vec<(f32, u32, u32, u32, Rgba<u8>)> = Vec::new();
@@ -258,10 +264,14 @@ fn main() {
         };
         // FG alone, matching the emission path (the bg
         // composite would corrupt silhouette-built models).
-        let fg = entry
-            .fg
-            .as_ref()
-            .and_then(|r| voxelizer::load_sprite_image(&ts, entry, r));
+        let fg = if id == "t_chainfence" {
+            entry
+                .fg
+                .as_ref()
+                .and_then(|r| voxelizer::load_sprite_image(&ts, entry, r))
+        } else {
+            voxelizer::terrain_fg_image(&ts, entry)
+        };
         let Some(sprite) = fg.or_else(|| composite_entry(&ts, entry)) else {
             println!("{id}: no sprite");
             continue;
@@ -301,7 +311,11 @@ fn main() {
         };
         println!("{id}: model {:?} ({} cells)", model.size, model.voxels.iter().filter(|v| v.is_some()).count());
         sprite.save(out_dir.join(format!("{id}_fg.png"))).expect("save fg");
-        let mut strip = RgbaImage::from_pixel(CELL_W * 5, CELL_H, BACKDROP);
+        // Cell height sized to the model at the fixed
+        // render scale: projected vertical extent is
+        // roughly (0.92 * height + 0.55 * depth) cells.
+        let cell_h = ((model.size[1] as f32 * 0.92 + model.size[2] as f32 * 0.55) * 4.0 + 30.0) as u32;
+        let mut strip = RgbaImage::from_pixel(CELL_W * 5, cell_h, BACKDROP);
         let big = image::imageops::resize(
             &sprite,
             sprite.width() * 2,
@@ -309,12 +323,12 @@ fn main() {
             image::imageops::FilterType::Nearest,
         );
         let sx = (CELL_W - big.width()) / 2;
-        let sy = CELL_H - big.height() - 10;
+        let sy = cell_h - big.height() - 10;
         image::imageops::overlay(&mut strip, &big, sx as i64, sy as i64);
-        render_model(&mut strip, &model, V3(0.0, 0.65, 1.0), CELL_W, 0);
-        render_model(&mut strip, &model, V3(0.0, 0.65, -1.0), CELL_W * 2, 0);
-        render_model(&mut strip, &model, V3(-1.0, 0.65, 0.0), CELL_W * 3, 0);
-        render_model(&mut strip, &model, V3(1.0, 0.65, 0.0), CELL_W * 4, 0);
+        render_model(&mut strip, &model, V3(0.0, 0.65, 1.0), CELL_W, 0, cell_h);
+        render_model(&mut strip, &model, V3(0.0, 0.65, -1.0), CELL_W * 2, 0, cell_h);
+        render_model(&mut strip, &model, V3(-1.0, 0.65, 0.0), CELL_W * 3, 0, cell_h);
+        render_model(&mut strip, &model, V3(1.0, 0.65, 0.0), CELL_W * 4, 0, cell_h);
         strip.save(out_dir.join(format!("{id}.png"))).expect("save strip");
         println!("{id}: strip written");
     }

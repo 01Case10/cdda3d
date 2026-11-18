@@ -72,7 +72,10 @@ fn stage_g_model_round_trip_fixture() {
         .as_array()
         .expect("v2 over the fixture carries a models table (f_bookcase segments)");
 
-    // Every emitted model belongs to a furniture material.
+    // Every emitted model belongs to a furniture or a
+    // terrain material (terrain models joined in the
+    // 2026-11-17 terrain drive, Joey: models for every
+    // tile; before that this asserted furniture-only).
     let mats = &json["materials"];
     for e in models {
         let mi = e["material_index"].as_u64().unwrap();
@@ -82,14 +85,16 @@ fn stage_g_model_round_trip_fixture() {
             .iter()
             .find(|m| m["material_index"].as_u64() == Some(mi))
             .expect("model's material exists");
+        let mid = mat["id"].as_str().unwrap();
         assert!(
-            mat["id"].as_str().unwrap().starts_with("f_"),
-            "models are furniture-only, got {}",
-            mat["id"]
+            mid.starts_with("f_") || mid.starts_with("t_"),
+            "models are furniture/terrain only, got {mid}"
         );
     }
 
-    // f_bookcase has a model entry; f_table (no segmentation) does not.
+    // f_bookcase has a model entry; f_table has one too
+    // since the prop coverage drive (it segments now --
+    // the pre-drive premise here was that it does not).
     let bookcase_idx = material_index(mats, "f_bookcase");
     let table_idx = material_index(mats, "f_table");
     let entry = models
@@ -99,8 +104,8 @@ fn stage_g_model_round_trip_fixture() {
     assert!(
         models
             .iter()
-            .all(|e| e["material_index"].as_u64() != Some(table_idx)),
-        "f_table does not segment: no model entry"
+            .any(|e| e["material_index"].as_u64() == Some(table_idx)),
+        "f_table segments since the coverage drive: model entry exists"
     );
 
     // The expected model, built directly from the fixture sprite.
@@ -142,10 +147,10 @@ fn stage_g_model_round_trip_fixture() {
             }
         }
     }
-    // The unsegmented furniture stays model-less through the loader.
+    // f_table's model round-trips through the loader too.
     assert!(
-        table.get("f_table").unwrap().model.is_none(),
-        "f_table keeps the extruded-sprite path"
+        table.get("f_table").unwrap().model.is_some(),
+        "f_table model loaded"
     );
 
     let _ = std::fs::remove_dir_all(&base);
@@ -153,8 +158,13 @@ fn stage_g_model_round_trip_fixture() {
 
 #[test]
 fn stage_g_v2_without_models_keeps_stage_f_shape() {
-    // A grass-only tileset: nothing can segment, so the v2 file
-    // must carry no `models` key at all.
+    // An open-air-only tileset: t_open_air's sprite is
+    // fully transparent (it IS empty space), so it is
+    // the one terrain family with no model by design --
+    // the models table stays empty and the v2 file must
+    // carry no `models` key at all. (Before the terrain
+    // drive this used t_grass; grass has a relief-slab
+    // model now.)
     let base = std::env::temp_dir().join(format!("stage_g_nofurn_{}", std::process::id()));
     let mini = base.join("tileset");
     let png_dir = mini.join("pngs_normal_32x32");
@@ -163,11 +173,11 @@ fn stage_g_v2_without_models_keeps_stage_f_shape() {
     for f in ["tile_info.json"] {
         std::fs::copy(fx.join(f), mini.join(f)).unwrap();
     }
-    for f in ["t_grass.json", "grass_fg.png", "grass_bg.png"] {
+    for f in ["t_open_air.json", "open_air_fg.png"] {
         std::fs::copy(fx.join("pngs_normal_32x32").join(f), png_dir.join(f)).unwrap();
     }
     let ts = tileset::load_decomposed(&mini).expect("mini tileset loads");
-    assert_eq!(ts.entries.len(), 1, "mini tileset is grass only");
+    assert_eq!(ts.entries.len(), 1, "mini tileset is open air only");
 
     let out = base.join("out");
     std::fs::create_dir_all(&out).unwrap();
@@ -187,8 +197,8 @@ fn stage_g_v2_without_models_keeps_stage_f_shape() {
     );
     let table = MaterialTable::load(&out).expect("model-less v2 loads");
     assert!(
-        table.get("t_grass").unwrap().model.is_none(),
-        "grass has no prop model"
+        table.get("t_open_air").unwrap().model.is_none(),
+        "open air has no model"
     );
 
     let _ = std::fs::remove_dir_all(&base);

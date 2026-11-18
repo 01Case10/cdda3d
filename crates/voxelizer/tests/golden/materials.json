@@ -6641,9 +6641,9 @@
     "subtile_layers": {}
   },
   {
-    "id": "t_rock",
-    "resolved_id": "t_rock_var_red",
-    "resolution": "variant",
+    "id": "t_open_air",
+    "resolved_id": "t_open_air",
+    "resolution": "exact",
     "material_index": 11,
     "top_layer": 33,
     "side_layer": 34,
@@ -6662,9 +6662,9 @@
     "subtile_layers": {}
   },
   {
-    "id": "t_rock_var_red",
+    "id": "t_rock",
     "resolved_id": "t_rock_var_red",
-    "resolution": "exact",
+    "resolution": "variant",
     "material_index": 12,
     "top_layer": 36,
     "side_layer": 37,
@@ -6683,9 +6683,9 @@
     "subtile_layers": {}
   },
   {
-    "id": "t_seasonal",
-    "resolved_id": "t_seasonal_season_spring",
-    "resolution": "season",
+    "id": "t_rock_var_red",
+    "resolved_id": "t_rock_var_red",
+    "resolution": "exact",
     "material_index": 13,
     "top_layer": 39,
     "side_layer": 40,
@@ -6704,9 +6704,9 @@
     "subtile_layers": {}
   },
   {
-    "id": "t_seasonal_season_spring",
+    "id": "t_seasonal",
     "resolved_id": "t_seasonal_season_spring",
-    "resolution": "exact",
+    "resolution": "season",
     "material_index": 14,
     "top_layer": 42,
     "side_layer": 43,
@@ -6725,13 +6725,34 @@
     "subtile_layers": {}
   },
   {
-    "id": "t_totally_unknown",
-    "resolved_id": "t_totally_unknown",
-    "resolution": "missing",
+    "id": "t_seasonal_season_spring",
+    "resolved_id": "t_seasonal_season_spring",
+    "resolution": "exact",
     "material_index": 15,
     "top_layer": 45,
     "side_layer": 46,
     "bottom_layer": 47,
+    "height_voxels": 1,
+    "transparency": "opaque",
+    "cutout": false,
+    "transparent": false,
+    "tint": [
+      255,
+      255,
+      255
+    ],
+    "sub_model": null,
+    "multitile": false,
+    "subtile_layers": {}
+  },
+  {
+    "id": "t_totally_unknown",
+    "resolved_id": "t_totally_unknown",
+    "resolution": "missing",
+    "material_index": 16,
+    "top_layer": 48,
+    "side_layer": 49,
+    "bottom_layer": 50,
     "height_voxels": 3,
     "transparency": "opaque",
     "cutout": false,
@@ -6749,10 +6770,10 @@
     "id": "t_wall",
     "resolved_id": "t_wall",
     "resolution": "exact",
-    "material_index": 16,
-    "top_layer": 48,
-    "side_layer": 49,
-    "bottom_layer": 50,
+    "material_index": 17,
+    "top_layer": 51,
+    "side_layer": 52,
+    "bottom_layer": 53,
     "height_voxels": 3,
     "transparency": "opaque",
     "cutout": false,
@@ -6765,12 +6786,12 @@
     "sub_model": null,
     "multitile": true,
     "subtile_layers": {
-      "center": 51,
-      "corner": 52,
-      "edge": 53,
-      "end_piece": 54,
-      "t_connection": 55,
-      "unconnected": 56
+      "center": 54,
+      "corner": 55,
+      "edge": 56,
+      "end_piece": 57,
+      "t_connection": 58,
+      "unconnected": 59
     }
   }
 ]

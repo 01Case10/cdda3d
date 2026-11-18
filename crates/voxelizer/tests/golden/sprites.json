@@ -80,8 +80,18 @@
     "sheet": "normal.png"
   },
   {
-    "name": "rock_red",
+    "name": "open_air_fg",
     "x": 288,
+    "y": 0,
+    "width": 32,
+    "height": 32,
+    "offset_x": 0,
+    "offset_y": 0,
+    "sheet": "normal.png"
+  },
+  {
+    "name": "rock_red",
+    "x": 320,
     "y": 0,
     "width": 32,
     "height": 32,
@@ -91,7 +101,7 @@
   },
   {
     "name": "seasonal_spring",
-    "x": 320,
+    "x": 352,
     "y": 0,
     "width": 32,
     "height": 32,
@@ -101,7 +111,7 @@
   },
   {
     "name": "t_wall_center",
-    "x": 352,
+    "x": 384,
     "y": 0,
     "width": 32,
     "height": 32,
@@ -111,7 +121,7 @@
   },
   {
     "name": "t_wall_corner_ne",
-    "x": 384,
+    "x": 416,
     "y": 0,
     "width": 32,
     "height": 32,
@@ -121,16 +131,6 @@
   },
   {
     "name": "t_wall_corner_nw",
-    "x": 416,
-    "y": 0,
-    "width": 32,
-    "height": 32,
-    "offset_x": 0,
-    "offset_y": 0,
-    "sheet": "normal.png"
-  },
-  {
-    "name": "t_wall_corner_se",
     "x": 448,
     "y": 0,
     "width": 32,
@@ -140,7 +140,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_corner_sw",
+    "name": "t_wall_corner_se",
     "x": 480,
     "y": 0,
     "width": 32,
@@ -150,7 +150,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_edge_ew",
+    "name": "t_wall_corner_sw",
     "x": 0,
     "y": 64,
     "width": 32,
@@ -160,7 +160,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_edge_ns",
+    "name": "t_wall_edge_ew",
     "x": 32,
     "y": 64,
     "width": 32,
@@ -170,7 +170,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_end_piece_e",
+    "name": "t_wall_edge_ns",
     "x": 64,
     "y": 64,
     "width": 32,
@@ -180,7 +180,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_end_piece_n",
+    "name": "t_wall_end_piece_e",
     "x": 96,
     "y": 64,
     "width": 32,
@@ -190,7 +190,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_end_piece_s",
+    "name": "t_wall_end_piece_n",
     "x": 128,
     "y": 64,
     "width": 32,
@@ -200,7 +200,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_end_piece_w",
+    "name": "t_wall_end_piece_s",
     "x": 160,
     "y": 64,
     "width": 32,
@@ -210,7 +210,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_t_connection_e",
+    "name": "t_wall_end_piece_w",
     "x": 192,
     "y": 64,
     "width": 32,
@@ -220,7 +220,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_t_connection_n",
+    "name": "t_wall_t_connection_e",
     "x": 224,
     "y": 64,
     "width": 32,
@@ -230,7 +230,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_t_connection_s",
+    "name": "t_wall_t_connection_n",
     "x": 256,
     "y": 64,
     "width": 32,
@@ -240,7 +240,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_t_connection_w",
+    "name": "t_wall_t_connection_s",
     "x": 288,
     "y": 64,
     "width": 32,
@@ -250,7 +250,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "t_wall_unconnected",
+    "name": "t_wall_t_connection_w",
     "x": 320,
     "y": 64,
     "width": 32,
@@ -260,7 +260,7 @@
     "sheet": "normal.png"
   },
   {
-    "name": "table",
+    "name": "t_wall_unconnected",
     "x": 352,
     "y": 64,
     "width": 32,
@@ -270,8 +270,18 @@
     "sheet": "normal.png"
   },
   {
-    "name": "tall_thing",
+    "name": "table",
     "x": 384,
+    "y": 64,
+    "width": 32,
+    "height": 32,
+    "offset_x": 0,
+    "offset_y": 0,
+    "sheet": "normal.png"
+  },
+  {
+    "name": "tall_thing",
+    "x": 416,
     "y": 64,
     "width": 32,
     "height": 64,
@@ -281,7 +291,7 @@
   },
   {
     "name": "wood_floor",
-    "x": 416,
+    "x": 448,
     "y": 64,
     "width": 32,
     "height": 32,

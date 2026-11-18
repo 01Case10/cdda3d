@@ -1729,3 +1729,12 @@ Voxelizer: `terrain_model_for` emits v2 models for t_tree and t_chainfence from 
 Engine: `scene_prep::extend_prop_scene_with_terrain` runs in both fine paths (raster prepare_raster_fine_v, RT render_rt_frame_props) when a textures dir is present. It scans the level-filtered map for TILE_FOLIAGE / TILE_FENCE tiles whose material carries a model: trees get one placement as-is; fence tiles compute their 4-neighbour mask and get ONE placement of a composed model (rotated half-segments unioned per mask, deduped by mask; turns W0 N1 E2 S3 via rot_model, which matches stamp_model_rotated's (lx,ly)->(31-ly,lx)). Modelled tiles are suppressed by replacing them with the TILE_GROUND slab -- NOT air: models stand on the slab top (fine_z_origin = level base + floor slab), so airing the tile left a black pit under the first gallery tree. Isolated fence tiles (mask 0) keep their block. Scope: the fixture-scene fine paths; the snapshot path (build_columns worlds) does not call the extension yet.
 
 Verification: voxelizer suite green; engine suite 19/20 binaries green, only failure the pre-existing stage_g_model_round_trip_fixture (stale premise, see the 2026-11-17 water/roof addendum). Gallery re-rendered: fence run reads as chain-link in the world, trees stand on grass (docs/prop-views/prop_gallery_engine.png + gallery_zoom_fence/tree.png).
+
+## Terrain drive (2026-11-17, Joey: models for every tile, all seasons)
+Universe 1,074 terrain materials (387 season variants as separate ids, each from its own sprite);
+gate terrain_coverage_gate TERRAIN_TOTAL=1074 GREEN (open-air family exempt: transparent sprite =
+empty space). Family builders v1 in props::terrain_model_for (vegetation_model structural zones,
+fence panels from the multitile CENTER variant via terrain_fg_image, sprite-faced wall boxes,
+doors with swung open panels, window frames, ground/liquid relief slabs, stairs, silhouette
+fallback). Sample sheet docs/prop-views/terrain_samples_v4.png. State: ~/workspace/terrain-drive/state.txt.
+Batch review follows (two-pass rule); engine snapshot-path wiring is the follow-on.
