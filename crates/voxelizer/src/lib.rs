@@ -532,9 +532,26 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
         // readable plan/cap) keeps the extruded-sprite sub_model
         // it already carries — models replace the extrusion only
         // where a prop model exists.
-        if cfg.emit_v2 && is_furniture {
+        if cfg.emit_v2 {
             if let Some(img) = &sprite {
-                if let Some(model) = model_for(id, img) {
+                // Furniture takes the prop builders; terrain
+                // takes the terrain builders (fence, trees --
+                // ids whose block rendering is a textured
+                // cube). Each declines ids it does not serve.
+                let model = if is_furniture {
+                    model_for(id, img)
+                } else {
+                    // Terrain builders read the FG sprite
+                    // alone: the composite bakes the bg
+                    // (grass under a tree) into the
+                    // silhouette they measure.
+                    let fg = entry
+                        .fg
+                        .as_ref()
+                        .and_then(|r| load_sprite_image(ts, &entry, r));
+                    crate::props::terrain_model_for(id, fg.as_ref().unwrap_or(img))
+                };
+                if let Some(model) = model {
                     models.push((mat_idx, model));
                 }
             }

@@ -382,6 +382,212 @@ pub(crate) fn stamp_props_into(
     Ok(layer)
 }
 
+/// Rotate a full-frame (32x32 footprint) prop model by
+/// `turns` quarter turns, matching the fine stamper's
+/// rotation exactly: one turn maps cell (x, z) to
+/// (31 - z, x). Palette is preserved (rotation only
+/// permutes cells).
+fn rot_model(m: &materials::PropModelData, turns: u8) -> materials::PropModelData {
+    let mut cur = m.clone();
+    for _ in 0..turns % 4 {
+        let [w, h, d] = cur.size;
+        let mut nxt = materials::PropModelData {
+            size: [d, h, w],
+            palette: cur.palette.clone(),
+            voxels: vec![materials::PropModelData::EMPTY; cur.voxels.len()],
+        };
+        for y in 0..h {
+            for z in 0..d {
+                for x in 0..w {
+                    let v = cur.voxels[((y * d + z) * w + x) as usize];
+                    if v != materials::PropModelData::EMPTY {
+                        nxt.voxels[((y * w + x) * d + (d - 1 - z)) as usize] = v;
+                    }
+                }
+            }
+        }
+        cur = nxt;
+    }
+    cur
+}
+
+/// Union `src`'s cells into `dst` (same size; empty dst
+/// cells only), merging palettes by colour.
+fn union_model(dst: &mut materials::PropModelData, src: &materials::PropModelData) {
+    let [w, h, d] = src.size;
+    for y in 0..h {
+        for z in 0..d {
+            for x in 0..w {
+                if let Some(c) = src.get(x, y, z) {
+                    let di = ((y * d + z) * w + x) as usize;
+                    if dst.voxels[di] == materials::PropModelData::EMPTY {
+                        let idx = match dst.palette.iter().position(|p| *p == c) {
+                            Some(i) => i as u16,
+                            None => {
+                                dst.palette.push(c);
+                                (dst.palette.len() - 1) as u16
+                            }
+                        };
+                        dst.voxels[di] = idx;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Terrain models: extend a prop scene with placements
+/// for the map's modelled TERRAIN tiles -- trees (the
+/// foliage tile's material model, stamped as-is) and
+/// chain-link fences (the material's half-segment model,
+/// one rotated copy per connected direction, unioned
+/// into one composed model per neighbour mask). Modelled
+/// tiles are suppressed in `map` (replaced by the ground
+/// slab the model stands on) so the block and the model
+/// never double up. A fence tile with no fence neighbour keeps its
+/// block. Returns the extended scene (a clone; `props`
+/// is untouched). Model ids are allocated above the
+/// highest id already in `props`.
+pub(crate) fn extend_prop_scene_with_terrain(
+    map: &mut mesher::chunk::ChunkMap,
+    textures_dir: &Path,
+    scale: mesher::scale::WorldScale,
+    props: &crate::frame::PropScene,
+) -> Result<crate::frame::PropScene, String> {
+    use std::collections::BTreeSet;
+    let table = materials::MaterialTable::load(textures_dir)
+        .map_err(|e| format!("materials: {e}"))?;
+    let fake = crate::rt::fake_material_ids();
+    let per = scale.blocks_per_z_level as i32;
+    let mut fence: BTreeSet<(i32, i32, i32)> = BTreeSet::new();
+    let mut trees: Vec<(i32, i32, i32)> = Vec::new();
+    for (coord, chunk) in &map.chunks {
+        for level in 0..chunk.levels as i32 {
+            let bz = level * per;
+            for ly in 0..mesher::chunk::CHUNK_H as i32 {
+                for lx in 0..mesher::chunk::CHUNK_W as i32 {
+                    let id = chunk.grid.get(lx, ly, bz).id;
+                    let x = coord[0] * mesher::chunk::CHUNK_W as i32 + lx;
+                    let y = coord[1] * mesher::chunk::CHUNK_H as i32 + ly;
+                    if id == mesher::block::TILE_FENCE {
+                        fence.insert((x, y, level));
+                    } else if id == mesher::block::TILE_FOLIAGE {
+                        trees.push((x, y, level));
+                    }
+                }
+            }
+        }
+    }
+    if fence.is_empty() && trees.is_empty() {
+        return Ok(props.clone());
+    }
+    let mut out = props.clone();
+    let mut next_id = props
+        .models
+        .iter()
+        .map(|(id, _)| *id)
+        .max()
+        .map_or(0, |m| m + 1);
+    let mut suppress: Vec<(i32, i32, i32)> = Vec::new();
+    if !trees.is_empty() {
+        if let Some(model) = fake
+            .get(&mesher::block::TILE_FOLIAGE)
+            .and_then(|gid| table.get(gid))
+            .and_then(|m| m.model.clone())
+        {
+            let id = next_id;
+            next_id += 1;
+            out.models.push((id, model));
+            for &(x, y, level) in &trees {
+                out.placements.push(FurniturePlacement {
+                    x,
+                    y,
+                    level: level as u32,
+                    furn_id: id,
+                    quarter_turns: 0,
+                });
+                suppress.push((x, y, level));
+            }
+        }
+    }
+    if !fence.is_empty() {
+        if let Some(half) = fake
+            .get(&mesher::block::TILE_FENCE)
+            .and_then(|gid| table.get(gid))
+            .and_then(|m| m.model.clone())
+        {
+            // Direction bits: W=1 (turns 0), N=2 (1),
+            // E=4 (2), S=8 (3).
+            let mut by_mask: std::collections::HashMap<u8, u32> = Default::default();
+            for &(x, y, level) in &fence {
+                let mut mask = 0u8;
+                if fence.contains(&(x - 1, y, level)) {
+                    mask |= 1;
+                }
+                if fence.contains(&(x, y - 1, level)) {
+                    mask |= 2;
+                }
+                if fence.contains(&(x + 1, y, level)) {
+                    mask |= 4;
+                }
+                if fence.contains(&(x, y + 1, level)) {
+                    mask |= 8;
+                }
+                if mask == 0 {
+                    continue;
+                }
+                let id = match by_mask.get(&mask) {
+                    Some(id) => *id,
+                    None => {
+                        let mut composed = materials::PropModelData {
+                            size: half.size,
+                            palette: half.palette.clone(),
+                            voxels: vec![
+                                materials::PropModelData::EMPTY;
+                                half.voxels.len()
+                            ],
+                        };
+                        for (bit, turns) in [(1u8, 0u8), (2, 1), (4, 2), (8, 3)] {
+                            if mask & bit != 0 {
+                                union_model(&mut composed, &rot_model(&half, turns));
+                            }
+                        }
+                        let id = next_id;
+                        next_id += 1;
+                        out.models.push((id, composed));
+                        by_mask.insert(mask, id);
+                        id
+                    }
+                };
+                out.placements.push(FurniturePlacement {
+                    x,
+                    y,
+                    level: level as u32,
+                    furn_id: id,
+                    quarter_turns: 0,
+                });
+                suppress.push((x, y, level));
+            }
+        }
+    }
+    // Suppression replaces the tile with the ground slab:
+    // the model stands ON the ground (its fine origin is
+    // the slab top), so airing the whole tile would leave
+    // a pit under every tree.
+    let ground = mesher::block::block_for_tile(mesher::block::TILE_GROUND);
+    for (x, y, level) in suppress {
+        for b in 0..per {
+            let block = if b == 0 {
+                ground
+            } else {
+                mesher::block::Block::AIR
+            };
+            map.set_global_block(x, y, level * per + b, block);
+        }
+    }
+    Ok(out)
+}
+
 /// Phase 8 wiring: stamp a vehicle scene's models into a
 /// filtered map (their exported absolute part positions,
 /// verbatim — `vehicles::stamp_vehicle`). Returns how many
@@ -491,9 +697,20 @@ fn prepare_raster_fine_v(
         }
         None => None,
     };
-    let prep = prep_prop_spec(props, &mut spec_opt);
     let map = build_map(scale);
     let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    // Terrain models (trees, fences) join the prop scene
+    // before colours/layers are allocated; their tiles
+    // are suppressed in the filtered map.
+    let extended;
+    let props = match textures_dir {
+        Some(dir) => {
+            extended = extend_prop_scene_with_terrain(&mut filtered, dir, scale, props)?;
+            &extended
+        }
+        None => props,
+    };
+    let prep = prep_prop_spec(props, &mut spec_opt);
     if let Some(spec) = &spec_opt {
         // Coarse blocks only: stamped fine blocks already carry
         // their layers from `prop_block_for` at stamp time.
@@ -678,9 +895,20 @@ fn prepare_raster_lit_fine_v(
         }
         None => None,
     };
-    let prep = prep_prop_spec(props, &mut spec_opt);
     let map = build_map(scale);
     let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    // Terrain models (trees, fences) join the prop scene
+    // before colours/layers are allocated; their tiles
+    // are suppressed in the filtered map.
+    let extended;
+    let props = match textures_dir {
+        Some(dir) => {
+            extended = extend_prop_scene_with_terrain(&mut filtered, dir, scale, props)?;
+            &extended
+        }
+        None => props,
+    };
+    let prep = prep_prop_spec(props, &mut spec_opt);
     if let Some(spec) = &spec_opt {
         stamp_tex_layers(&mut filtered, spec);
     }

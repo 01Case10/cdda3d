@@ -553,6 +553,28 @@ fn render_rt_frame_props(
         }
         None => &props.placements,
     };
+    // Terrain models (trees, fences) join the scene;
+    // their placements append to the (possibly
+    // visibility-filtered) furniture placements.
+    let mut all_placements: Vec<crate::snapshot_world::FurniturePlacement> =
+        placements.to_vec();
+    let extended;
+    let props = match &args.textures {
+        Some(dir) => {
+            extended = crate::scene_prep::extend_prop_scene_with_terrain(
+                &mut filtered,
+                dir,
+                scale,
+                props,
+            )
+            .map_err(CaptureError::Device)?;
+            all_placements
+                .extend_from_slice(&extended.placements[props.placements.len()..]);
+            &extended
+        }
+        None => props,
+    };
+    let placements: &[crate::snapshot_world::FurniturePlacement] = &all_placements;
     let mut spec_opt = match &args.textures {
         Some(dir) => {
             let table = crate::materials::MaterialTable::load(dir)

@@ -7206,3 +7206,209 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------
+// Terrain models (2026-11-17, Joey: "The fence and trees
+// should also be models"). Terrain ids whose coarse rendering
+// is a textured cube get real prop models, emitted through
+// the same v2 models table as furniture; the engine stamps
+// them at terrain tiles in place of the block.
+
+pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+    match id {
+        "t_tree" => Some(terrain_tree(sprite)),
+        "t_chainfence" => Some(terrain_chainfence(sprite)),
+        _ => None,
+    }
+}
+
+/// Top-`n` colors of an iterator, most frequent first.
+fn palette_of<I: Iterator<Item = Rgba<u8>>>(it: I, n: usize) -> Vec<Rgba<u8>> {
+    let mut counts: std::collections::BTreeMap<[u8; 4], u32> =
+        std::collections::BTreeMap::new();
+    for px in it {
+        if px[3] >= 128 {
+            *counts.entry(px.0).or_insert(0) += 1;
+        }
+    }
+    let mut v: Vec<([u8; 4], u32)> = counts.into_iter().collect();
+    v.sort_by_key(|&(_, c)| std::cmp::Reverse(c));
+    v.truncate(n);
+    v.into_iter().map(|(c, _)| Rgba(c)).collect()
+}
+
+fn pick(palette: &[Rgba<u8>], h: f32) -> Rgba<u8> {
+    if palette.is_empty() {
+        return rgb(128, 128, 128);
+    }
+    palette[((h * palette.len() as f32) as usize).min(palette.len() - 1)]
+}
+
+fn is_foliage(px: Rgba<u8>) -> bool {
+    px[3] >= 128 && px[1] > px[0] && px[1] >= px[2]
+}
+
+fn is_bark(px: Rgba<u8>) -> bool {
+    px[3] >= 128 && px[0] > px[1] && px[1] >= px[2] && px[0] < 175
+}
+
+/// A tree: bark trunk and limbs under a solid crown whose
+/// per-layer radius follows the sprite's foliage silhouette.
+/// The sprite is a giant (96px) drawing of one tree on one
+/// tile, so the model is built at tile scale from the
+/// sprite's proportions. The caller passes the FG sprite
+/// alone (no bg composite): the bg's grass would otherwise
+/// read as foliage and grow the crown to the ground.
+fn terrain_tree(sprite: &RgbaImage) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let (mw, mh, md) = (32i32, 80i32, 32i32);
+    let mut m = PropModel::new([mw as u32, mh as u32, md as u32]);
+    let greens = palette_of(sprite.pixels().copied().filter(|&p| is_foliage(p)), 24);
+    let barks = palette_of(sprite.pixels().copied().filter(|&p| is_bark(p)), 10);
+    let dark_green = pick(&greens, 0.85);
+    // Per-sprite-row spans of foliage and bark (FG alpha).
+    let row_span = |r: i32, test: fn(Rgba<u8>) -> bool| -> Option<(i32, i32)> {
+        let mut span: Option<(i32, i32)> = None;
+        for x in 0..sw {
+            if test(*sprite.get_pixel(x as u32, r as u32)) {
+                span = Some(match span {
+                    None => (x, x),
+                    Some((a, b)) => (a.min(x), b.max(x)),
+                });
+            }
+        }
+        span
+    };
+    let row_of_y = |y: i32| -> i32 { (mh - 1 - y) * sh / mh };
+    // Crown first: per-layer discs from the foliage
+    // silhouette, solid to the core (no hollow shell).
+    for y in 0..mh {
+        let r = row_of_y(y);
+        let Some((x0, x1)) = row_span(r, is_foliage) else { continue };
+        let cx = ((x0 + x1) / 2) * mw / sw;
+        let rad = ((x1 - x0 + 1) * mw / sw) as f32 / 2.0;
+        let ri = rad.ceil() as i32;
+        for dz in -ri..=ri {
+            for dx in -ri..=ri {
+                let d = ((dx * dx + dz * dz) as f32).sqrt();
+                let edge = rad + (hash01((dx + ri) as u32, (y * 31 + dz) as u32) - 0.5) * 1.6;
+                if d > edge {
+                    continue;
+                }
+                let (x, z) = (cx + dx, 16 + dz);
+                if x < 0 || x >= mw || z < 0 || z >= md {
+                    continue;
+                }
+                let c = if dz > 0 && d > rad - 1.2 {
+                    // Front shell: the sprite's own leaf
+                    // pixel, snapped to the crown palette
+                    // (top-24 foliage colours) -- bounded
+                    // colour count for the texture-array
+                    // budget, no stray edge colours.
+                    let sx = (x * sw / mw).clamp(0, sw - 1);
+                    let p = *sprite.get_pixel(sx as u32, r as u32);
+                    if is_foliage(p) {
+                        *greens.iter().min_by_key(|g| {
+                            (g[0] as i32 - p[0] as i32).abs()
+                                + (g[1] as i32 - p[1] as i32).abs()
+                                + (g[2] as i32 - p[2] as i32).abs()
+                        }).unwrap_or(&dark_green)
+                    } else { pick(&greens, hash01(x as u32, y as u32)) }
+                } else if d > rad - 1.2 {
+                    pick(&greens, hash01((x * 5 + z) as u32, (y * 11) as u32))
+                } else {
+                    dark_green
+                };
+                m.set(x as u32, y as u32, z as u32, Some(c));
+            }
+        }
+    }
+    // Bark second, so the trunk and the limbs the sprite
+    // shows inside the crown draw over the foliage: a disc
+    // per layer at the bark span, thick for the trunk,
+    // capped thin for limbs.
+    for y in 0..mh {
+        let r = row_of_y(y);
+        let Some((x0, x1)) = row_span(r, is_bark) else { continue };
+        let cx = ((x0 + x1) / 2) * mw / sw;
+        let cap = if y <= mh * 2 / 5 { 3.4 } else { 2.0 };
+        let rad = (((x1 - x0 + 1) * mw / sw) as f32 / 2.0).clamp(1.2, cap);
+        let ri = rad.ceil() as i32;
+        for dz in -ri..=ri {
+            for dx in -ri..=ri {
+                let d = ((dx * dx + dz * dz) as f32).sqrt();
+                if d > rad + hash01((x0 + dx) as u32, (y * 7) as u32) * 0.4 {
+                    continue;
+                }
+                let (x, z) = (cx + dx, 16 + dz);
+                if x < 0 || x >= mw || z < 0 || z >= md {
+                    continue;
+                }
+                let c = if dz > 0 && (d - rad).abs() < 1.0 {
+                    let sx = (x * sw / mw).clamp(0, sw - 1);
+                    let p = *sprite.get_pixel(sx as u32, r as u32);
+                    if is_bark(p) { p } else { pick(&barks, hash01(dx as u32, y as u32)) }
+                } else {
+                    pick(&barks, hash01((cx + dx) as u32, (y * 3 + dz) as u32))
+                };
+                m.set(x as u32, y as u32, z as u32, Some(c));
+            }
+        }
+    }
+    // Root flare: bark reaching out at the base in the
+    // diagonals, as the sprite's roots splay.
+    for (dx, dz) in [(2, 0), (-2, 0), (0, 2), (0, -2), (2, 2), (-2, -2), (2, -2), (-2, 2)] {
+        for y in 0..2 {
+            m.set((16 + dx) as u32, y as u32, (16 + dz) as u32, Some(pick(&barks, hash01(dx as u32, dz as u32))));
+        }
+    }
+    m
+}
+
+/// A chain-link fence HALF-segment in the full tile
+/// frame (32x32): from the tile's centre post to the
+/// WEST edge post, top rail, and a see-through diamond
+/// mesh, the panel centred at z 15..=16 (symmetric
+/// about the tile centre, so the engine's quarter turns
+/// map it onto itself). The engine stamps one rotated
+/// copy per connected direction and unions them, so
+/// straights, corners, tees, crosses and ends all
+/// compose from this one model. An isolated tile (no
+/// connected direction) gets no placement and keeps
+/// its coarse block rendering.
+fn terrain_chainfence(sprite: &RgbaImage) -> PropModel {
+    let mut m = PropModel::new([32, 28, 32]);
+    let steel = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128 && p[0] > 120 && (p[0] as i32 - p[2] as i32).abs() < 40))
+        .unwrap_or(rgb(168, 175, 182));
+    let wire = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128)).unwrap_or(steel);
+    // Posts: west edge (x 0..=1) and centre (x 15..=16),
+    // z 15..=16, full height.
+    for x in [0, 1, 15, 16] {
+        for z in [15, 16] {
+            for y in 0..28 {
+                m.set(x, y, z, Some(steel));
+            }
+        }
+    }
+    // Top rail.
+    for x in 0..=16 {
+        for z in [15, 16] {
+            for y in 25..=26 {
+                m.set(x, y, z, Some(steel));
+            }
+        }
+    }
+    // Diamond mesh on both centre planes + bottom
+    // tension wire.
+    for x in 2..=14 {
+        for y in 2..=24 {
+            let wire_here = (x + y) % 6 == 0 || (x as i32 - y as i32).rem_euclid(6) == 0 || y == 2;
+            if wire_here {
+                for z in [15, 16] {
+                    m.set(x, y, z, Some(wire));
+                }
+            }
+        }
+    }
+    m
+}
