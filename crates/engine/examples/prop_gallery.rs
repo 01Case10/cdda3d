@@ -150,7 +150,7 @@ fn main() {
         }
         let mut ranked: Vec<([u8; 3], u64)> = freq.into_iter().collect();
         ranked.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-        let shared: Vec<[u8; 3]> = ranked.iter().take(240).map(|(c, _)| *c).collect();
+        let shared: Vec<[u8; 3]> = ranked.iter().take(160).map(|(c, _)| *c).collect();
         let shared_idx: HashMap<[u8; 3], u16> = shared
             .iter()
             .enumerate()
@@ -203,6 +203,7 @@ fn main() {
     let use_rt = !std::env::args().any(|a| a == "--raster");
     let args = CaptureArgs {
         snapshot: "sample-scene".to_string(),
+        textures: Some(assets.clone()),
         renderer: if use_rt {
             engine::capture::RendererKind::Rt
         } else {
