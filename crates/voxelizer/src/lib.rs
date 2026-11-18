@@ -590,7 +590,9 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                     // t_chainfence keeps its base fg: its
                     // approved model samples colours from
                     // it and the builder is geometric.
-                    let fg = if id == "t_chainfence" {
+                    let fg = if id == "t_chainfence"
+                        || id.starts_with("t_chainfence_season")
+                    {
                         entry
                             .fg
                             .as_ref()

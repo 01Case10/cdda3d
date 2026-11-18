@@ -7221,6 +7221,9 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     match id {
         "t_tree" => return Some(terrain_tree(sprite)),
         "t_chainfence" => return Some(terrain_chainfence(sprite)),
+        _ if id.starts_with("t_chainfence_season") => {
+            return Some(terrain_chainfence(sprite))
+        }
         _ => {}
     }
     // Terrain drive (2026-11-17, Joey: models for every
