@@ -7234,7 +7234,7 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     // every terrain id with a sprite gets a model; the
     // per-family batches then refine from the strips.
     let s = &id[2..];
-    if s.contains("fencegate") || s.contains("door") {
+    if s.contains("fencegate") || s.contains("door") || s.starts_with("card_") {
         if s.contains("fencegate") && !s.contains("privacy") {
             // A gate in a fence line is a fence segment,
             // not a door: panel builder at fence height.
@@ -7294,7 +7294,13 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         };
         return Some(vegetation_model(sprite, base));
     }
-    if s.contains("fence") || s.contains("splitrail") || s.contains("barbed") || s.contains("railing") {
+    if s.contains("fence")
+        || s.contains("splitrail")
+        || s.contains("barbed")
+        || s.contains("railing")
+        || s.contains("chaingate")
+        || s.contains("chickenwire_gate")
+    {
         return Some(terrain_fence_panel(sprite));
     }
     if s.contains("window") {
@@ -7307,6 +7313,9 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     if s.contains("wall") {
         let h = if s.contains("half") { 48 } else { 96 };
         return Some(terrain_box(sprite, h));
+    }
+    if s.contains("tarptent") || s.contains("improvised_shelter") {
+        return Some(terrain_tent(sprite));
     }
     if s.contains("stairs") || s.contains("ladder") || s.starts_with("ramp") {
         return Some(terrain_stairs(sprite, s.contains("down")));
@@ -7345,7 +7354,17 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         || s == "rock"
         || s.starts_with("slime")
         || s == "clay"
-        || s == "ash";
+        || s == "ash"
+        || s.starts_with("pit")
+        || s.contains("_pit")
+        || s.contains("golf_hole")
+        || s.contains("manhole")
+        || s == "grate"
+        || s.contains("railroad_track")
+        || s.contains("railroad_tie")
+        || s.contains("railroad_rubble")
+        || s.contains("roof")
+        || s.contains("chasm");
     if ground {
         let mound = s.contains("mound");
         return Some(terrain_ground(sprite, liquid, mound));
@@ -8482,6 +8501,35 @@ fn terrain_ground(sprite: &RgbaImage, liquid: bool, mound: bool) -> PropModel {
     m
 }
 
+/// A-frame tent prism: ridge along x at the tile
+/// centre, solid fill under the slopes (a CDDA tent
+/// is an enclosed volume). The sprite is a top-down
+/// tent drawing, so each column's top cell samples
+/// the sprite at (x, z) -- the roof reads correctly
+/// from above -- and the fill shades down.
+fn terrain_tent(sprite: &RgbaImage) -> PropModel {
+    let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
+    let mut m = PropModel::new([32, 56, 32]);
+    let modal = modal_color(sprite.pixels().copied().filter(|p| p[3] >= 128))
+        .unwrap_or(rgb(90, 90, 70));
+    for x in 0..32i32 {
+        for z in 0..32i32 {
+            let d = (z as f32 - 15.5).abs() / 15.5;
+            let top = ((1.0 - d) * 52.0) as i32 + 2;
+            let p = *sprite.get_pixel(
+                (x * sw / 32).clamp(0, sw - 1) as u32,
+                (z * sh / 32).clamp(0, sh - 1) as u32,
+            );
+            let c = if p[3] >= 128 { p } else { modal };
+            for y in 0..=top {
+                let cc = if y == top { c } else { shade(c, 0.8) };
+                m.set(x as u32, y as u32, z as u32, Some(cc));
+            }
+        }
+    }
+    m
+}
+
 /// Stairs: six solid steps ascending toward the far
 /// side (z=0), tops textured from the sprite. Down
 /// stairs use the same structure darkened -- the
@@ -8502,7 +8550,7 @@ fn terrain_stairs(sprite: &RgbaImage, down: bool) -> PropModel {
                 );
                 let mut c = if p[3] >= 128 { p } else { modal };
                 if down {
-                    c = shade(c, 0.55);
+                    c = shade(c, 0.7);
                 }
                 for y in 0..top {
                     let cc = if y >= top - 2 { c } else { shade(c, 0.6) };
