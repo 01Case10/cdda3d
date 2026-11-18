@@ -1738,3 +1738,38 @@ fence panels from the multitile CENTER variant via terrain_fg_image, sprite-face
 doors with swung open panels, window frames, ground/liquid relief slabs, stairs, silhouette
 fallback). Sample sheet docs/prop-views/terrain_samples_v4.png. State: ~/workspace/terrain-drive/state.txt.
 Batch review follows (two-pass rule); engine snapshot-path wiring is the follow-on.
+
+## Addendum 2026-11-18: terrain drive complete + snapshot-path wiring
+
+Terrain drive COMPLETE: all 1,074 terrain ids batch-reviewed from all angles and fixed
+(vegetation f04b0fe, fences aaefa3a, doors+windows 55ad55f, walls a34e9ed, ground+liquids
+2e1384e, stairs+others 165b35a; sheets docs/prop-views/{veg,fence,door,wall,ground,other}_batch_*.png).
+End-to-end v2 table: 1,422 models (351 furniture + 1,071 terrain; the 3 open-air ids exempt).
+Flagged for Joey's verdicts in the batch presentations: bamboo_dead_winter sparseness, burnt-tree
+totems, rope-fence drape, dark chainfence posts, wall pseudo-3D "T" shading, puddles as full dirt
+slabs, t_water_pump, monkey bars/slides (no fitting builder), thin water tanks as fat boxes,
+t_column as plain box, hay feeder, railroad crossing signal.
+
+Snapshot-path wiring (this step): the models now seat on real wire data, not only in the
+fixture scene. The voxelizer records a seating kind per terrain model in the v2 `models`
+table ("kind": ground|fence|standing; furniture omits it, absence = standing) because only
+the router knows which builder produced a model. Engine `Material.model_kind` parses it
+(unknown kind = load error); `PropModelData::rotated`/`union_from` moved out of scene_prep's
+private copies. `snapshot_world::stamp_terrain` resolves each wire tile's def id -> game id
+and seats by kind: Ground replaces the coarse floor slab at the level base in a volume only
+as deep as the model (full-depth would shadow the tile's furniture volume); Fence composes
+per same-def neighbour mask (W=1 N=2 E=4 S=8) on the slab top, mask 0 keeps the coarse block;
+Standing stamps as-is on the slab top. Open-air tiles whose floor resolves via `roof_result`
+seat the roof material's model as Ground. All candidates validate up front (oversize fails
+the batch atomically). Gate terrain_snapshot_gate (proto sample fixtures): 147 volumes over a
+grass/fence/tree/wall/floor/roof submap + atomic oversize rejection. Suites proto+mesher+
+voxelizer+engine 251/251; full UltiCa v2 emission verified (kinds on all 1,071 terrain
+models, none on furniture).
+
+Seams flagged for Joey: (1) Standing models taller than the level's remaining band (96-cell
+walls, 84-cell doors) stamp at the slab-top origin and extend into the level above — the
+fixture path's tree convention, kept; a per-kind origin refinement is a design call.
+(2) Furniture on modelled ground floats: furniture origin is the slab top (+32) while ground
+models top out at +10/+16. (3) A tall standing model and the next level's ground volume on
+the same column can overlap in z-range; first-inserted wins lookups (benign: the upper
+floor's cells inside a solid wall are hidden anyway).

@@ -12,7 +12,7 @@ fn main() {
     let entry = ts.entries.get(&id).expect("entry");
     let sprite = terrain_fg_image(&ts, entry).expect("fg");
     println!("sprite {}x{}", sprite.width(), sprite.height());
-    let m = props::terrain_model_for(&id, &sprite).expect("model");
+    let (m, _kind) = props::terrain_model_for(&id, &sprite).expect("model");
     println!("model size {:?}", m.size);
     for y in (0..m.size[1]).step_by(6) {
         let mut n = 0;

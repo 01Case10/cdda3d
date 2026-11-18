@@ -276,7 +276,7 @@ fn main() {
             println!("{id}: no sprite");
             continue;
         };
-        let Some(base) = voxelizer::props::terrain_model_for(id, &sprite) else {
+        let Some((base, _kind)) = voxelizer::props::terrain_model_for(id, &sprite) else {
             println!("{id}: no terrain model");
             continue;
         };

@@ -27,16 +27,24 @@
 //! map (see that module for the fine-grid terms). `build_columns`
 //! itself is unchanged and never writes a furniture block —
 //! that absence IS the 9.0 suppression contract (below).
+//!
+//! Terrain wiring (2026-11-18) adds the terrain counterpart:
+//! [`stamp_terrain`] seats the terrain materials' own prop
+//! models (the voxelizer's terrain drive) in the same fine
+//! layer, resolved by game id through the TileDefs — the
+//! snapshot-path counterpart of `scene_prep`'s fixture-scene
+//! terrain extension, which scans a built map for fake tile
+//! ids instead.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use hardcases::{floor_at, Column, DefTable, Floor};
 use mesher::block::{Block, Pass};
 use mesher::chunk::ChunkMap;
-use mesher::fine::{FineLayer, ModelCells, StampError, StampReport, FINE};
+use mesher::fine::{FineLayer, FineVolume, ModelCells, StampError, StampReport, FINE};
 use mesher::scale::WorldScale;
 
-use crate::materials::PropModelData;
+use crate::materials::{ModelKind, PropModelData};
 use crate::textures::PropColorSet;
 
 /// One vertical column of terrain def ids, bottom first:
@@ -393,4 +401,257 @@ pub fn restamp_tile<'m>(
     resolve: &dyn Fn(u32) -> Option<&'m dyn ModelCells>,
 ) -> Result<StampReport, StampError> {
     stamp_furniture(map, layer, std::slice::from_ref(placement), scale, resolve)
+}
+
+// ---------------------------------------------------------------------
+// Terrain models on the snapshot path (terrain wiring,
+// 2026-11-18)
+// ---------------------------------------------------------------------
+
+/// Stamp the terrain models for a set of snapshot columns
+/// into `layer` over the coarse world `map` (built by
+/// [`build_columns`] from the same columns).
+///
+/// Each tile whose def emits a block resolves through the
+/// TileDefs to its game id, and `resolve` supplies the
+/// material's prop model + seating kind (the voxelizer
+/// records the kind in the v2 `models` table — only it
+/// knows which builder produced the model). Seating:
+///
+/// - [`ModelKind::Ground`]: the model IS the tile's floor.
+///   It stamps at the level base in a volume only as deep
+///   as the model, and the coarse floor slab
+///   `build_columns` stamped for the tile is aired — the
+///   model replaces it. (A full-depth volume at the base
+///   would shadow the tile's furniture volume, whose
+///   slab-top z-range overlaps it; the shallow volume
+///   leaves the band above the model to the coarse grid.)
+/// - [`ModelKind::Fence`]: the model is a half-segment.
+///   One composed model per same-def neighbour mask (bits
+///   W=1, N=2, E=4, S=8; turns W0 N1 E2 S3 — the fixture
+///   path's convention) is built from rotated copies and
+///   stamped at the slab-top origin, like furniture. A
+///   fence tile with no same-def neighbour (mask 0) keeps
+///   its coarse block and counts as skipped.
+/// - [`ModelKind::Standing`]: stamped as-is at the
+///   slab-top origin, like furniture. A model taller than
+///   the level's remaining height (a 96-cell wall) extends
+///   into the level above's band — the fixture path's
+///   convention for trees, kept here.
+///
+/// Open-air tiles follow `build_columns`' floor rule:
+/// where `floor_at` resolves `Floor::RoofOf`, the roof
+/// material's model is a floor slab by construction, so
+/// it seats as Ground at that level whatever kind it
+/// carries.
+///
+/// Restamp semantics: a Standing/Fence stamp first drops
+/// the tile's volume in the slab-top range (the furniture
+/// rule — terrain and furniture share a tile's standing
+/// slot at a level; last stamp wins). A Ground stamp
+/// replaces only the volume at its own base origin, so it
+/// never drops a furniture volume.
+///
+/// Errors: any candidate model that exceeds the tile
+/// fails the whole batch with [`StampError::ExceedsTile`]
+/// BEFORE anything is stamped (all models are validated
+/// up front), leaving `layer` and `map` unchanged.
+pub fn stamp_terrain<'m>(
+    map: &mut ChunkMap,
+    layer: &mut FineLayer,
+    table: &DefTable,
+    columns: &[ColumnSpec],
+    scale: WorldScale,
+    resolve: &dyn Fn(&str) -> Option<(&'m PropModelData, ModelKind)>,
+    block_for: &dyn Fn([u8; 3]) -> Block,
+) -> Result<StampReport, StampError> {
+    use std::collections::HashMap;
+    // (x, y, level index) -> def id, for fence neighbour
+    // masks (same def = same material = connects).
+    let mut def_at: HashMap<(i32, i32, usize), u32> = HashMap::new();
+    for c in columns {
+        for (i, &ter) in c.terrain.iter().enumerate() {
+            def_at.insert((c.x, c.y, i), ter);
+        }
+    }
+    // Resolve and validate every candidate first: a build
+    // error must not half-stamp a batch.
+    struct Job {
+        x: i32,
+        y: i32,
+        level: u32,
+        def: u32,
+        kind: ModelKind,
+        /// Same-def neighbour mask (Fence only).
+        mask: u8,
+    }
+    let mut jobs: Vec<Job> = Vec::new();
+    let mut skipped = 0usize;
+    for c in columns {
+        let column = Column {
+            z_min: c.z_min,
+            terrain: c.terrain.clone(),
+        };
+        for (i, &ter) in c.terrain.iter().enumerate() {
+            let z = c.z_min + i as i32;
+            let (def, roof_floor) = if hardcases::openair::emits_block(table, ter) {
+                (ter, false)
+            } else {
+                match floor_at(table, &column, z) {
+                    Floor::RoofOf(_, roof_id) => (roof_id, true),
+                    // Solid is unreachable (emits_block was
+                    // false); None = no floor at this level.
+                    _ => continue,
+                }
+            };
+            let Some(string_id) = table.def(def).and_then(|d| d.string_id.as_deref()) else {
+                skipped += 1;
+                continue;
+            };
+            let Some((model, kind)) = resolve(string_id) else {
+                skipped += 1;
+                continue;
+            };
+            let kind = if roof_floor { ModelKind::Ground } else { kind };
+            let size = model.size;
+            if size[0] > FINE as u32 || size[2] > FINE as u32 || size[1] > layer.depth_z as u32 {
+                return Err(StampError::ExceedsTile { size });
+            }
+            let mask = if kind == ModelKind::Fence {
+                let mut m = 0u8;
+                if def_at.get(&(c.x - 1, c.y, i)) == Some(&def) {
+                    m |= 1; // W
+                }
+                if def_at.get(&(c.x, c.y - 1, i)) == Some(&def) {
+                    m |= 2; // N
+                }
+                if def_at.get(&(c.x + 1, c.y, i)) == Some(&def) {
+                    m |= 4; // E
+                }
+                if def_at.get(&(c.x, c.y + 1, i)) == Some(&def) {
+                    m |= 8; // S
+                }
+                if m == 0 {
+                    skipped += 1;
+                    continue;
+                }
+                m
+            } else {
+                0
+            };
+            jobs.push(Job {
+                x: c.x,
+                y: c.y,
+                level: i as u32,
+                def,
+                kind,
+                mask,
+            });
+        }
+    }
+    let mut report = StampReport {
+        skipped,
+        ..StampReport::default()
+    };
+    let mut touched: BTreeSet<[i32; 2]> = BTreeSet::new();
+    let mut composed: HashMap<(u32, u8), PropModelData> = HashMap::new();
+    for job in &jobs {
+        let tile = (job.x, job.y);
+        let string_id = table
+            .def(job.def)
+            .and_then(|d| d.string_id.as_deref())
+            .expect("job defs resolved during validation");
+        let (model, _) = resolve(string_id).expect("job models resolved during validation");
+        match job.kind {
+            ModelKind::Ground => {
+                let z0 = scale.level_base_block(job.level) as i32 * FINE;
+                let [w, h, d] = model.size;
+                let mut volume = FineVolume::new(tile, z0, h as i32);
+                let mut cells = 0usize;
+                for my in 0..h {
+                    for mz in 0..d {
+                        for mx in 0..w {
+                            if let Some(rgb) = model.get(mx, my, mz) {
+                                volume.set(
+                                    mx as i32,
+                                    (FINE - d as i32) + mz as i32,
+                                    my as i32,
+                                    Some(block_for(rgb)),
+                                );
+                                cells += 1;
+                            }
+                        }
+                    }
+                }
+                report.stamped_cells += cells;
+                report.volumes += 1;
+                report.memory_bytes += volume.memory_bytes();
+                layer.insert(volume);
+                // The model replaces the coarse floor
+                // slab build_columns stamped for the tile.
+                let base = scale.level_base_block(job.level) as i32;
+                let slab = (scale.floor_slab_blocks.min(scale.blocks_per_z_level)).max(1) as i32;
+                for bz in base..base + slab {
+                    map.set_global_block(job.x, job.y, bz, Block::AIR);
+                }
+            }
+            ModelKind::Fence | ModelKind::Standing => {
+                let z0 = fine_z_origin(scale, job.level);
+                // Restamp: drop the tile's old standing
+                // volume at this level (shared with
+                // furniture, see the doc comment).
+                layer.remove_tile_in_z_range(tile, z0, z0 + layer.depth_z);
+                let effective;
+                let model_ref = if job.kind == ModelKind::Fence {
+                    effective = composed
+                        .entry((job.def, job.mask))
+                        .or_insert_with(|| {
+                            let mut c = PropModelData {
+                                size: model.size,
+                                palette: model.palette.clone(),
+                                voxels: vec![PropModelData::EMPTY; model.voxels.len()],
+                            };
+                            for (bit, turns) in [(1u8, 0u8), (2, 1), (4, 2), (8, 3)] {
+                                if job.mask & bit != 0 {
+                                    c.union_from(&model.rotated(turns));
+                                }
+                            }
+                            c
+                        });
+                    &*effective
+                } else {
+                    model
+                };
+                let adapter = PropModelCells::new(model_ref, block_for);
+                let r = mesher::fine::stamp_model_rotated(layer, tile, z0, &adapter, 0)?;
+                report.stamped_cells += r.stamped_cells;
+                report.volumes += r.volumes;
+                report.memory_bytes += r.memory_bytes;
+            }
+        }
+        touched.insert(ChunkMap::chunk_coord_of(job.x, job.y));
+    }
+    for coord in touched {
+        map.refresh_chunk_fine(coord, layer);
+    }
+    Ok(report)
+}
+
+/// [`stamp_terrain`] fed from the wire messages directly:
+/// the TileDefs and Snapshot the fork sends at connect.
+/// This is [`build_snapshot_world`]'s terrain-model half —
+/// call it on the map that function built, with the same
+/// scale.
+pub fn stamp_snapshot_terrain<'m>(
+    map: &mut ChunkMap,
+    layer: &mut FineLayer,
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+    scale: WorldScale,
+    resolve: &dyn Fn(&str) -> Option<(&'m PropModelData, ModelKind)>,
+    block_for: &dyn Fn([u8; 3]) -> Block,
+) -> Result<StampReport, StampError> {
+    let table = DefTable::from_tiledefs(defs);
+    let columns = columns_from_snapshot(snapshot);
+    stamp_terrain(map, layer, &table, &columns, scale, resolve, block_for)
 }

@@ -272,7 +272,11 @@ pub fn composite_entry(ts: &Tileset, entry: &TileEntry) -> Option<RgbaImage> {
 /// index space — not reachable for real sprites (a 32x64 sprite
 /// has at most 2048 pixels), but the encoding must never wrap
 /// an index into the EMPTY marker.
-fn encode_prop_model(material_index: usize, model: &PropModel) -> Option<serde_json::Value> {
+fn encode_prop_model(
+    material_index: usize,
+    model: &PropModel,
+    kind: Option<crate::props::TerrainModelKind>,
+) -> Option<serde_json::Value> {
     use std::collections::HashMap;
     let mut palette: Vec<[u8; 3]> = Vec::new();
     let mut index_of: HashMap<[u8; 3], u16> = HashMap::new();
@@ -298,12 +302,21 @@ fn encode_prop_model(material_index: usize, model: &PropModel) -> Option<serde_j
         };
         hex.push_str(&format!("{idx:04x}"));
     }
-    Some(serde_json::json!({
+    let mut entry = serde_json::json!({
         "material_index": material_index,
         "size": model.size,
         "palette": palette,
         "voxels": hex,
-    }))
+    });
+    // Terrain wiring (2026-11-18): terrain entries record
+    // how the engine seats the model on the snapshot path
+    // (ground / fence / standing). Furniture entries omit
+    // the field -- absence means standing, the pre-wiring
+    // behaviour, so older readers are unaffected.
+    if let Some(kind) = kind {
+        entry["kind"] = serde_json::json!(kind.as_str());
+    }
+    Some(entry)
 }
 
 /// Run the full pipeline into `out_dir`.
@@ -333,7 +346,8 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     // whose sprite segments, in material order —
     // (material_index, model). Filled during the material loop
     // when `cfg.emit_v2`; written after it.
-    let mut models: Vec<(usize, PropModel)> = Vec::new();
+    let mut models: Vec<(usize, PropModel, Option<crate::props::TerrainModelKind>)> =
+        Vec::new();
     // Stage F part 2 (v2 only): the first poolable family per
     // ground class (grass/dirt/water), for the §10.1 shore set —
     // the shore textures are generated from the Stage C/E
@@ -616,9 +630,10 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                 // takes the terrain builders (fence, trees --
                 // ids whose block rendering is a textured
                 // cube). Each declines ids it does not serve.
-                let model = if is_furniture {
-                    model_for(id, img)
-                } else {
+                let model: Option<(PropModel, Option<crate::props::TerrainModelKind>)> =
+                    if is_furniture {
+                        model_for(id, img).map(|m| (m, None))
+                    } else {
                     // Terrain builders read the FG sprite
                     // alone: the composite bakes the bg
                     // (grass under a tree) into the
@@ -636,10 +651,11 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                     } else {
                         terrain_fg_image(ts, &entry)
                     };
-                    crate::props::terrain_model_for(id, fg.as_ref().unwrap_or(img))
-                };
-                if let Some(model) = model {
-                    models.push((mat_idx, model));
+                        crate::props::terrain_model_for(id, fg.as_ref().unwrap_or(img))
+                            .map(|(m, k)| (m, Some(k)))
+                    };
+                if let Some((model, kind)) = model {
+                    models.push((mat_idx, model, kind));
                 }
             }
         }
@@ -757,7 +773,7 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
         if !models.is_empty() {
             let entries: Vec<serde_json::Value> = models
                 .iter()
-                .filter_map(|(mat_idx, m)| encode_prop_model(*mat_idx, m))
+                .filter_map(|(mat_idx, m, kind)| encode_prop_model(*mat_idx, m, *kind))
                 .collect();
             if !entries.is_empty() {
                 v2["models"] = serde_json::Value::Array(entries);

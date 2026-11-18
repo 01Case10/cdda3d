@@ -382,60 +382,6 @@ pub(crate) fn stamp_props_into(
     Ok(layer)
 }
 
-/// Rotate a full-frame (32x32 footprint) prop model by
-/// `turns` quarter turns, matching the fine stamper's
-/// rotation exactly: one turn maps cell (x, z) to
-/// (31 - z, x). Palette is preserved (rotation only
-/// permutes cells).
-fn rot_model(m: &materials::PropModelData, turns: u8) -> materials::PropModelData {
-    let mut cur = m.clone();
-    for _ in 0..turns % 4 {
-        let [w, h, d] = cur.size;
-        let mut nxt = materials::PropModelData {
-            size: [d, h, w],
-            palette: cur.palette.clone(),
-            voxels: vec![materials::PropModelData::EMPTY; cur.voxels.len()],
-        };
-        for y in 0..h {
-            for z in 0..d {
-                for x in 0..w {
-                    let v = cur.voxels[((y * d + z) * w + x) as usize];
-                    if v != materials::PropModelData::EMPTY {
-                        nxt.voxels[((y * w + x) * d + (d - 1 - z)) as usize] = v;
-                    }
-                }
-            }
-        }
-        cur = nxt;
-    }
-    cur
-}
-
-/// Union `src`'s cells into `dst` (same size; empty dst
-/// cells only), merging palettes by colour.
-fn union_model(dst: &mut materials::PropModelData, src: &materials::PropModelData) {
-    let [w, h, d] = src.size;
-    for y in 0..h {
-        for z in 0..d {
-            for x in 0..w {
-                if let Some(c) = src.get(x, y, z) {
-                    let di = ((y * d + z) * w + x) as usize;
-                    if dst.voxels[di] == materials::PropModelData::EMPTY {
-                        let idx = match dst.palette.iter().position(|p| *p == c) {
-                            Some(i) => i as u16,
-                            None => {
-                                dst.palette.push(c);
-                                (dst.palette.len() - 1) as u16
-                            }
-                        };
-                        dst.voxels[di] = idx;
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// Terrain models: extend a prop scene with placements
 /// for the map's modelled TERRAIN tiles -- trees (the
 /// foliage tile's material model, stamped as-is) and
@@ -549,7 +495,7 @@ pub(crate) fn extend_prop_scene_with_terrain(
                         };
                         for (bit, turns) in [(1u8, 0u8), (2, 1), (4, 2), (8, 3)] {
                             if mask & bit != 0 {
-                                union_model(&mut composed, &rot_model(&half, turns));
+                                composed.union_from(&half.rotated(turns));
                             }
                         }
                         let id = next_id;

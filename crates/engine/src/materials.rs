@@ -9,6 +9,10 @@
 //! digits per voxel — the voxel's palette index — in the
 //! voxelizer's layout (index `(y * d + z) * w + x`: y-major, then
 //! z, then x); index `0xFFFF` is the reserved EMPTY marker.
+//! Terrain entries additionally carry `kind` ("ground" /
+//! "fence" / "standing", [`ModelKind`]): how the snapshot
+//! path seats the model in its tile. Furniture entries
+//! omit it; absence loads as `Standing`.
 //! Model axes, for the future world stamper: model x is the
 //! sprite's left-to-right (east on the tile), model y is up
 //! (y = 0 is the object's bottom), model z is depth with
@@ -37,6 +41,26 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+
+/// How a material's prop model seats in its tile on the
+/// snapshot path (terrain wiring, 2026-11-18), recorded by
+/// the voxelizer in the v2 `models` table for terrain
+/// materials. Furniture models and models from files
+/// written before kinds were recorded are `Standing`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModelKind {
+    /// The model IS the tile's floor: it replaces the
+    /// coarse floor slab and stamps at the level base.
+    Ground,
+    /// A fence half-segment: composed per same-material
+    /// neighbour mask from rotated copies, stamped on the
+    /// floor slab.
+    Fence,
+    /// Stamped as-is on the floor slab, like a furniture
+    /// prop.
+    #[default]
+    Standing,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Material {
@@ -68,6 +92,10 @@ pub struct Material {
     /// `models` table, and for furniture whose sprite doesn't
     /// segment — those keep the extruded-sprite rendering.
     pub model: Option<PropModelData>,
+    /// Terrain wiring: how [`Material::model`] seats on
+    /// the snapshot path. `Standing` for furniture and for
+    /// models whose table entry carries no `kind`.
+    pub model_kind: ModelKind,
     /// Stage F part 2: this material's shoreline variants
     /// (materials.json v2 `shores` table): 8-neighbor water mask
     /// (bit order canonical in `mesher::connect`) -> shore layer
@@ -113,6 +141,62 @@ impl PropModelData {
             None
         } else {
             self.palette.get(idx as usize).copied()
+        }
+    }
+
+    /// Rotate the model by `turns` quarter turns inside
+    /// its footprint, matching the fine stamper's rotation
+    /// exactly: one turn maps cell (x, z) to (d - 1 - z, x)
+    /// (for a full-frame 32x32 model, the same mapping
+    /// `mesher::fine::stamp_model_rotated` applies). The
+    /// palette is preserved; rotation only permutes cells.
+    pub fn rotated(&self, turns: u8) -> PropModelData {
+        let mut cur = self.clone();
+        for _ in 0..turns % 4 {
+            let [w, h, d] = cur.size;
+            let mut nxt = PropModelData {
+                size: [d, h, w],
+                palette: cur.palette.clone(),
+                voxels: vec![PropModelData::EMPTY; cur.voxels.len()],
+            };
+            for y in 0..h {
+                for z in 0..d {
+                    for x in 0..w {
+                        let v = cur.voxels[((y * d + z) * w + x) as usize];
+                        if v != PropModelData::EMPTY {
+                            nxt.voxels[((y * w + x) * d + (d - 1 - z)) as usize] = v;
+                        }
+                    }
+                }
+            }
+            cur = nxt;
+        }
+        cur
+    }
+
+    /// Union `src`'s cells into `self` (same size; empty
+    /// `self` cells only), merging palettes by colour.
+    pub fn union_from(&mut self, src: &PropModelData) {
+        debug_assert_eq!(self.size, src.size, "union needs equal sizes");
+        let [w, h, d] = src.size;
+        for y in 0..h {
+            for z in 0..d {
+                for x in 0..w {
+                    if let Some(c) = src.get(x, y, z) {
+                        let di = ((y * d + z) * w + x) as usize;
+                        if self.voxels[di] == PropModelData::EMPTY {
+                            let idx = match self.palette.iter().position(|p| *p == c) {
+                                Some(i) => i as u16,
+                                None => {
+                                    self.palette.push(c);
+                                    (self.palette.len() - 1) as u16
+                                }
+                            };
+                            self.voxels[di] = idx;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -277,7 +361,8 @@ impl MaterialTable {
         // Anything else (notably a newer version) is a hard error —
         // silently misreading a future format would shade wrong.
         let mut macro_by_index: BTreeMap<usize, MacroEntry> = BTreeMap::new();
-        let mut model_by_index: BTreeMap<usize, PropModelData> = BTreeMap::new();
+        let mut model_by_index: BTreeMap<usize, (PropModelData, ModelKind)> =
+            BTreeMap::new();
         let mut shore_by_index: BTreeMap<usize, BTreeMap<u8, usize>> = BTreeMap::new();
         let mat_array: Vec<serde_json::Value> = if mats.is_array() {
             mats.as_array().cloned().unwrap_or_default()
@@ -307,7 +392,22 @@ impl MaterialTable {
             if let Some(arr) = mats["models"].as_array() {
                 for e in arr {
                     let mi = e["material_index"].as_u64().unwrap_or(0) as usize;
-                    model_by_index.insert(mi, PropModelData::parse(e)?);
+                    // Terrain entries record a seating
+                    // kind; furniture omits it (Standing).
+                    // An unknown string is a corrupt or
+                    // newer-format entry: fail the load,
+                    // like every other models-table error.
+                    let kind = match e["kind"].as_str() {
+                        None | Some("standing") => ModelKind::Standing,
+                        Some("ground") => ModelKind::Ground,
+                        Some("fence") => ModelKind::Fence,
+                        Some(other) => {
+                            return Err(format!(
+                                "materials.json models entry: unknown kind {other:?}"
+                            ));
+                        }
+                    };
+                    model_by_index.insert(mi, (PropModelData::parse(e)?, kind));
                 }
             }
             // Stage F part 2: the `shores` table is optional —
@@ -357,7 +457,13 @@ impl MaterialTable {
                 multitile: m["multitile"].as_bool().unwrap_or(false),
                 subtile_layers,
                 macro_: macro_by_index.get(&get("material_index")).copied(),
-                model: model_by_index.get(&get("material_index")).cloned(),
+                model: model_by_index
+                    .get(&get("material_index"))
+                    .map(|(m, _)| m.clone()),
+                model_kind: model_by_index
+                    .get(&get("material_index"))
+                    .map(|(_, k)| *k)
+                    .unwrap_or_default(),
                 shore_layers: shore_by_index
                     .get(&get("material_index"))
                     .cloned()
@@ -523,6 +629,66 @@ mod tests {
         assert_eq!(m.get(2, 0, 0), None, "out of bounds is empty");
         assert_eq!(m.solid_count(), 3);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loads_v2_model_kinds() {
+        let dir = std::env::temp_dir().join(format!("engine_mat_kind_{}", std::process::id()));
+        let model = |kind: Option<&str>| match kind {
+            Some(k) => format!(
+                r#"{{"material_index":0,"size":[1,1,1],"palette":[[9,9,9]],"voxels":"0000","kind":"{k}"}}"#
+            ),
+            None => {
+                r#"{"material_index":0,"size":[1,1,1],"palette":[[9,9,9]],"voxels":"0000"}"#
+                    .to_string()
+            }
+        };
+        for (kind, want) in [
+            (Some("ground"), ModelKind::Ground),
+            (Some("fence"), ModelKind::Fence),
+            (Some("standing"), ModelKind::Standing),
+            (None, ModelKind::Standing),
+        ] {
+            let json = format!(
+                r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{}]}}"#,
+                model(kind)
+            );
+            write_fixture(&dir, &json, false);
+            let t = MaterialTable::load(&dir).unwrap();
+            assert_eq!(t.get("t_grass").unwrap().model_kind, want, "kind {kind:?}");
+        }
+        // Unknown kind fails the load.
+        let json = format!(
+            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{}]}}"#,
+            model(Some("hover"))
+        );
+        write_fixture(&dir, &json, false);
+        let err = MaterialTable::load(&dir).unwrap_err();
+        assert!(err.contains("unknown kind"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn model_rotation_and_union_compose_a_fence_corner() {
+        // A 2x1x2 "panel" along x at z = 1; one turn puts it
+        // along z at x = 0 (the (d-1-z, x) mapping); the
+        // union of both is the corner.
+        let panel = PropModelData {
+            size: [2, 1, 2],
+            palette: vec![[7, 7, 7]],
+            voxels: vec![PropModelData::EMPTY, PropModelData::EMPTY, 0, 0],
+        };
+        // (y=0, z=0): EMPTY EMPTY; (y=0, z=1): 0 0.
+        assert_eq!(panel.get(0, 0, 1), Some([7, 7, 7]));
+        let turned = panel.rotated(1);
+        assert_eq!(turned.size, [2, 1, 2]);
+        assert_eq!(turned.get(0, 0, 0), Some([7, 7, 7]), "panel now along z");
+        assert_eq!(turned.get(0, 0, 1), Some([7, 7, 7]));
+        assert_eq!(turned.get(1, 0, 0), None);
+        let mut cross = panel.clone();
+        cross.union_from(&turned);
+        assert_eq!(cross.solid_count(), 3, "corner = both panels, centre shared once");
+        assert_eq!(panel.rotated(4).voxels, panel.voxels, "4 turns = identity");
     }
 
     #[test]

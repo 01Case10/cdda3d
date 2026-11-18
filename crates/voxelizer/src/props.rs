@@ -7214,15 +7214,52 @@ mod tests {
 // the same v2 models table as furniture; the engine stamps
 // them at terrain tiles in place of the block.
 
-pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
+/// How the engine seats a terrain model in its tile on
+/// the snapshot path (terrain wiring, 2026-11-18). The
+/// voxelizer knows which builder produced a model, so the
+/// kind is recorded in the v2 `models` table (terrain
+/// entries only) and the engine never re-derives it from
+/// the id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerrainModelKind {
+    /// The model IS the tile's floor (ground, liquids,
+    /// roofs, pits, track beds): it replaces the coarse
+    /// floor slab and stamps at the level base.
+    Ground,
+    /// A fence half-segment ([32, 28, 32], panel on the
+    /// tile's centre plane): the engine composes one model
+    /// per same-material neighbour mask from rotated
+    /// copies and stamps it on the floor slab.
+    Fence,
+    /// Everything else (trees, walls, doors, windows,
+    /// stairs, tents, silhouettes): stamped as-is on the
+    /// floor slab, like a furniture prop.
+    Standing,
+}
+
+impl TerrainModelKind {
+    /// The `models` table string for this kind.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TerrainModelKind::Ground => "ground",
+            TerrainModelKind::Fence => "fence",
+            TerrainModelKind::Standing => "standing",
+        }
+    }
+}
+
+pub fn terrain_model_for(
+    id: &str,
+    sprite: &RgbaImage,
+) -> Option<(PropModel, TerrainModelKind)> {
     if !id.starts_with("t_") {
         return None;
     }
     match id {
-        "t_tree" => return Some(terrain_tree(sprite)),
-        "t_chainfence" => return Some(terrain_chainfence(sprite)),
+        "t_tree" => return Some((terrain_tree(sprite), TerrainModelKind::Standing)),
+        "t_chainfence" => return Some((terrain_chainfence(sprite), TerrainModelKind::Fence)),
         _ if id.starts_with("t_chainfence_season") => {
-            return Some(terrain_chainfence(sprite))
+            return Some((terrain_chainfence(sprite), TerrainModelKind::Fence))
         }
         _ => {}
     }
@@ -7238,7 +7275,7 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         if s.contains("fencegate") && !s.contains("privacy") {
             // A gate in a fence line is a fence segment,
             // not a door: panel builder at fence height.
-            return Some(terrain_fence_panel(sprite));
+            return Some((terrain_fence_panel(sprite), TerrainModelKind::Fence));
         }
         let open = s.contains("open") || s.ends_with("_o") || s.contains("_o_");
         let style = if s.ends_with("frame") {
@@ -7258,7 +7295,7 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         } else {
             DoorStyle::Closed
         };
-        return Some(terrain_door(sprite, style));
+        return Some((terrain_door(sprite, style), TerrainModelKind::Standing));
     }
     if s.contains("tree")
         || s.contains("shrub")
@@ -7272,16 +7309,16 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         || s.contains("pine")
     {
         if s.starts_with("bamboo") {
-            return Some(bamboo_model(sprite));
+            return Some((bamboo_model(sprite), TerrainModelKind::Standing));
         }
         if s.contains("fungal") {
             // A fungal young tree is a solid pale
             // spire (bulbous head, narrow waist, flared
             // base) -- per-layer discs, not branches.
-            return Some(disc_model(sprite, 76, false));
+            return Some((disc_model(sprite, 76, false), TerrainModelKind::Standing));
         }
         if s.contains("fern") {
-            return Some(fern_model(sprite));
+            return Some((fern_model(sprite), TerrainModelKind::Standing));
         }
         let base = if s.contains("tree") || s.contains("pine") {
             76
@@ -7292,7 +7329,7 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         } else {
             52
         };
-        return Some(vegetation_model(sprite, base));
+        return Some((vegetation_model(sprite, base), TerrainModelKind::Standing));
     }
     if s.contains("fence")
         || s.contains("splitrail")
@@ -7301,24 +7338,24 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         || s.contains("chaingate")
         || s.contains("chickenwire_gate")
     {
-        return Some(terrain_fence_panel(sprite));
+        return Some((terrain_fence_panel(sprite), TerrainModelKind::Fence));
     }
     if s.contains("window") {
         // Empty windows and bare frames have no pane:
         // the builder's glass plane would fill the
         // opening with the sprite's interior colour.
         let pane = !(s.contains("empty") || s.ends_with("frame"));
-        return Some(terrain_window(sprite, pane));
+        return Some((terrain_window(sprite, pane), TerrainModelKind::Standing));
     }
     if s.contains("wall") {
         let h = if s.contains("half") { 48 } else { 96 };
-        return Some(terrain_box(sprite, h));
+        return Some((terrain_box(sprite, h), TerrainModelKind::Standing));
     }
     if s.contains("tarptent") || s.contains("improvised_shelter") {
-        return Some(terrain_tent(sprite));
+        return Some((terrain_tent(sprite), TerrainModelKind::Standing));
     }
     if s.contains("stairs") || s.contains("ladder") || s.starts_with("ramp") {
-        return Some(terrain_stairs(sprite, s.contains("down")));
+        return Some((terrain_stairs(sprite, s.contains("down")), TerrainModelKind::Standing));
     }
     // "water" objects are not liquid terrain: a water
     // cooler, a hand pump and a solid water cube are
@@ -7367,9 +7404,9 @@ pub fn terrain_model_for(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
         || s.contains("chasm");
     if ground {
         let mound = s.contains("mound");
-        return Some(terrain_ground(sprite, liquid, mound));
+        return Some((terrain_ground(sprite, liquid, mound), TerrainModelKind::Ground));
     }
-    terrain_silhouette(sprite)
+    terrain_silhouette(sprite).map(|m| (m, TerrainModelKind::Standing))
 }
 
 /// Sparse-stroke vegetation (bamboo and loose

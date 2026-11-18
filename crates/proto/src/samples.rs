@@ -291,6 +291,8 @@ pub fn sample_snapshot() -> SnapshotT {
 //   id 1, type_def 0, sprite_id "player" (voxel_real_adapter.cpp).
 // ---------------------------------------------------------------------
 
+pub const TER_TREE: u32 = 12;
+pub const TER_CHAINFENCE: u32 = 13;
 pub const TER_GRASS: u32 = 6;
 pub const TER_ROOF_SHINGLE: u32 = 7;
 pub const TER_OPEN_AIR: u32 = 8;
@@ -462,6 +464,102 @@ pub fn sample_roofed_house_snapshot() -> SnapshotT {
 /// [`sample_roofed_tiledefs`].
 pub fn sample_implicit_roof_snapshot() -> SnapshotT {
     roofed_snapshot(false)
+}
+
+/// TileDefs for the terrain-model wiring gate: a grass
+/// field's worth of terrain kinds — ground (grass, floor),
+/// standing (tree, wall), a fence — plus the floor's
+/// `roof_result`, so the level above seats the roof
+/// material's model from open air.
+pub fn sample_terrain_tiledefs() -> TileDefsT {
+    let def = |id: u32, string_id: &str, roof: Option<&str>| TileDefT {
+        id,
+        string_id: Some(string_id.into()),
+        name: Some(string_id.into()),
+        kind: TileKind::Terrain,
+        flags: None,
+        hot_flags: 0,
+        connect_groups: None,
+        connects_to_groups: None,
+        rotate_to_groups: None,
+        open_result: None,
+        close_result: None,
+        bash_result: None,
+        looks_like: None,
+        fg_ref: -1,
+        bg_ref: -1,
+        roof_result: roof.map(|s| s.to_string()),
+    };
+    TileDefsT {
+        connect_groups: Some(vec![]),
+        protocol_version: PROTOCOL_VERSION,
+        defs: Some(vec![
+            def(TER_OPEN_AIR, "t_open_air", None),
+            def(TER_GRASS, "t_grass", None),
+            def(TER_TREE, "t_tree", None),
+            def(TER_CHAINFENCE, "t_chainfence", None),
+            def(TER_WALL, "t_wall", None),
+            def(TER_FLOOR, "t_floor", Some("t_shingle_flat_roof")),
+            def(TER_ROOF_SHINGLE, "t_shingle_flat_roof", None),
+        ]),
+    }
+}
+
+fn terrain_block(z: i32, terrain: Vec<u32>) -> SubmapBlockT {
+    SubmapBlockT {
+        origin: Some(v3(0, 0, z)),
+        terrain: Some(terrain),
+        furniture: Some(vec![0; TILES]),
+        trap: Some(vec![0; TILES]),
+        fields: Some(vec![]),
+        field_index: Some(vec![-1i32; TILES]),
+        displayed_field: Some(vec![
+            crate::DisplayedFieldT {
+                field_type: 0,
+                intensity: 0
+            };
+            TILES
+        ]),
+        top_item: Some(vec![0; TILES]),
+        item_count: Some(vec![0; TILES]),
+        lit: Some(vec![LitLevel::LIT; TILES]),
+        seen: Some(vec![255; TILES]),
+        has_graffiti: Some(vec![false; TILES]),
+    }
+}
+
+/// Snapshot for the terrain-model wiring gate: one 12x12
+/// submap at z 0 — grass, a chain-link fence run along
+/// y = 5 with a south leg at (6, 6), one isolated fence
+/// tile at (9, 9), a tree at (2, 2), a wall at (8, 2) and
+/// a 2x2 floor patch at (3..4, 8..9) — under a z +1 level
+/// of plain open air (the floor patch's roof arrives via
+/// `roof_result`).
+pub fn sample_terrain_snapshot() -> SnapshotT {
+    let mut t0 = vec![TER_GRASS; TILES];
+    t0[idx(4, 5)] = TER_CHAINFENCE;
+    t0[idx(5, 5)] = TER_CHAINFENCE;
+    t0[idx(6, 5)] = TER_CHAINFENCE;
+    t0[idx(6, 6)] = TER_CHAINFENCE;
+    t0[idx(9, 9)] = TER_CHAINFENCE;
+    t0[idx(2, 2)] = TER_TREE;
+    t0[idx(8, 2)] = TER_WALL;
+    for (x, y) in [(3, 8), (4, 8), (3, 9), (4, 9)] {
+        t0[idx(x, y)] = TER_FLOOR;
+    }
+    SnapshotT {
+        view_origin: Some(v3(6, 6, 0)),
+        view_radius: 12,
+        blocks: Some(vec![
+            terrain_block(0, t0),
+            terrain_block(1, vec![TER_OPEN_AIR; TILES]),
+        ]),
+        memory_blocks: None,
+        entities: None,
+        vehicles: None,
+        seq: 1,
+        epoch: 1,
+    }
 }
 
 pub fn sample_delta() -> DeltaT {

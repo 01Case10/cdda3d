@@ -54,7 +54,24 @@ fn terrain_coverage() {
         };
         total += 1;
         match props::terrain_model_for(id, &sprite) {
-            Some(m) if m.voxels.iter().any(|v| v.is_some()) => {}
+            Some((m, kind)) if m.voxels.iter().any(|v| v.is_some()) => {
+                // Terrain wiring (2026-11-18): the kind the
+                // engine seats by is part of the contract --
+                // pin the three families' representatives.
+                let want = match id.as_str() {
+                    "t_grass" | "t_floor" | "t_water_dp" | "t_shingle_flat_roof" => {
+                        Some(props::TerrainModelKind::Ground)
+                    }
+                    "t_chainfence" | "t_chickenwire_fence" => Some(props::TerrainModelKind::Fence),
+                    "t_tree" | "t_wall" | "t_door_c" => {
+                        Some(props::TerrainModelKind::Standing)
+                    }
+                    _ => None,
+                };
+                if let Some(want) = want {
+                    assert_eq!(kind, want, "{id}: wrong terrain model kind");
+                }
+            }
             _ => missing.push((*id).clone()),
         }
     }
