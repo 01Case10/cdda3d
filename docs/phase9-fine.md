@@ -138,3 +138,27 @@ stays the standing deferred measurement — raster remains
 the default renderer until it exists, and `--fine-props`
 stays default-OFF pending Joey's sign-off on the lab
 capture (9.10).
+
+**Stage H landing (2026-11-23, Joey's 8c-A).** The candidate
+above is now built, as a geometric pass over the stamped
+geometry (still invented lighting — no game truth changes):
+`mesher::fine::face_occlusion` darkens a fine face by the
+opaque cells around the air cell in front of it (4 in-plane
+neighbours + the cell straight ahead; 0.11 per occluder,
+floor 0.56; a face in the open is exactly 1.0, so unoccluded
+scenes mesh byte-identically). The raster fine mesher applies
+it per face; the RT path (`engine::rt::fine_occlusion_rewrite`,
+applied after the lit rewrite in the capture path) averages
+it per cell (`cell_occlusion`) and steps the categorical
+`lit` down 1 level below 0.85 mean, 2 below 0.70, never
+touching Memorized/Blank cells. What it fixes from the list
+above: a prop's faces tucked against walls, under overhangs,
+or inside prop clusters are now darker than its open faces,
+and cells enclosed by other prop geometry darken too. What
+it still does NOT do: coarse floor/wall cells behind a prop
+keep their tile light (the leak-through direction) — the
+baker's occlusion sampling remains coarse, and that stays a
+named limit. Gates: mesher `fine_occlusion_gate`, engine
+`fine_occlusion_rt_gate`. The tuning constants (0.11, 0.56,
+0.85/0.70) are first-pass values chosen by the assistant;
+Joey accepted the tuning risk when he picked this option.

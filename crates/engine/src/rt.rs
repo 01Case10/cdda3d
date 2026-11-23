@@ -448,6 +448,44 @@ pub fn render_rt_frame(
     })
 }
 
+/// Geometric occlusion on the RT path (Stage H, Joey's
+/// 8c-A, 2026-11-23; the raster twin is the per-face factor
+/// in `mesher::fine::mesh_chunk_fine`). RT `lit` is the
+/// game's categorical scale, so the continuous
+/// `cell_occlusion` factor becomes a step-down: a cell
+/// whose exposed faces average below 0.85 loses one lit
+/// level, below 0.70 two levels, never below LIT_DARK.
+/// Only game-lit cells (lit <= LIT_BRIGHT) are stepped —
+/// Memorized and Blank presentations are pinned by the
+/// Phase 7 contract and pass through untouched. Invented
+/// lighting, like the raster form: it darkens cells
+/// enclosed by or tucked behind prop volumes, which the
+/// per-tile game light cannot express.
+pub fn fine_occlusion_rewrite(
+    world: &VoxelWorld,
+    coarse: &mesher::chunk::ChunkMap,
+    layer: &mesher::fine::FineLayer,
+) -> VoxelWorld {
+    let sampler = mesher::fine::FineSampler::new(coarse, layer);
+    let mut out = VoxelWorld::new();
+    for (pos, cell) in world.iter() {
+        let mut cell = *cell;
+        if cell.lit <= treebuild::world::LIT_BRIGHT {
+            let occ = mesher::fine::cell_occlusion(&sampler, pos[0], pos[1], pos[2]);
+            let step = if occ < 0.70 {
+                2
+            } else if occ < 0.85 {
+                1
+            } else {
+                0
+            };
+            cell.lit = cell.lit.saturating_sub(step);
+        }
+        out.set(*pos, cell);
+    }
+    out
+}
+
 /// The Phase 7 visibility contract as a post-pass over an
 /// already-built world (the body of [`world_for_levels_lit_sv`],
 /// reusable over the fine world): `Hidden` tiles' cells are
@@ -609,6 +647,10 @@ fn render_rt_frame_props(
     if let Some(lit) = &args.lighting {
         coarse_world = lit_rewrite(&coarse_world, lit, false);
         fine_world = lit_rewrite(&fine_world, lit, true);
+        // Geometric fine-prop occlusion (8c-A): after the
+        // game's per-tile light is applied, step down fine
+        // cells the stamped geometry encloses.
+        fine_world = fine_occlusion_rewrite(&fine_world, &filtered, &layer);
     }
     let assignments = match &args.textures {
         Some(dir) => prepare_fake_variants(&mut coarse_world, dir)?,

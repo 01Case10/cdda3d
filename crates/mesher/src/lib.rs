@@ -21,8 +21,8 @@ pub mod scale;
 pub use block::{block_for_tile, tile_shape, Block, Pass, TileShape, AIR_ID};
 pub use chunk::{Chunk, ChunkMap, CHUNK_H, CHUNK_W};
 pub use fine::{
-    mesh_chunk_fine, stamp_model, FineLayer, FineRun, FineSampler, FineVolume, ModelCells,
-    StampError, StampReport, FINE,
+    cell_occlusion, face_occlusion, mesh_chunk_fine, stamp_model, FineLayer, FineRun,
+    FineSampler, FineVolume, ModelCells, StampError, StampReport, FINE,
 };
 pub use grid::{ClosureSampler, VoxelGrid, VoxelSampler};
 pub use mesh::{covered_face_cells, Mesh, PassMeshes};

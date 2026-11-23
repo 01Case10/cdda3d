@@ -594,6 +594,77 @@ impl<'a> FineSampler<'a> {
     }
 }
 
+/// Geometric occlusion for fine props (Stage H, Joey's
+/// 8c-A, 2026-11-23 — see `docs/phase9-fine.md` §1, where
+/// this was the named candidate). The game's light truth
+/// is per-tile, so this is INVENTED lighting: a plausible
+/// darkening computed from the stamped geometry itself,
+/// nothing else. For a visible face of the stamped cell at
+/// `(fx, fy, fz)` looking along `dir`, let `a` be the air
+/// cell in front of the face. The occluders are the opaque
+/// cells beside `a` in the face plane (4: for a side face
+/// those are the cells above, below, and to both sides of
+/// `a` — so a face under a prop overhang or on the floor
+/// picks up its shelf/floor contact; for a top face, the
+/// cells around `a` at its own height) plus the cell
+/// straight ahead of the face at `a + dir` (a wall one
+/// cell away closes the pocket). Each occluder costs 0.11
+/// of light, floored at 0.56: a face in the open keeps
+/// 1.0 exactly (unoccluded scenes mesh byte-identically
+/// to the pre-pass mesher), a face in a pocket between
+/// prop and wall drops toward 0.67, a face boxed in on
+/// all sides to the 0.56 floor. Opacity here is
+/// `Pass::Opaque` only — glass and cutout do not occlude.
+pub fn face_occlusion(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dir: [i32; 3]) -> f32 {
+    let a = [fx + dir[0], fy + dir[1], fz + dir[2]];
+    let opaque = |p: [i32; 3]| {
+        let b = sampler.block_at_fine(p[0], p[1], p[2]);
+        !b.is_air() && b.pass == Pass::Opaque
+    };
+    let mut count = 0u32;
+    for axis in 0..3 {
+        if dir[axis] != 0 {
+            continue;
+        }
+        for s in [-1, 1] {
+            let mut p = a;
+            p[axis] += s;
+            if opaque(p) {
+                count += 1;
+            }
+        }
+    }
+    if opaque([a[0] + dir[0], a[1] + dir[1], a[2] + dir[2]]) {
+        count += 1;
+    }
+    (1.0 - 0.11 * count as f32).max(0.56)
+}
+
+/// A stamped cell's overall occlusion: the mean of
+/// [`face_occlusion`] over its exposed faces (a face is
+/// exposed when the neighbouring cell is not opaque). A
+/// fully enclosed cell (no exposed face) takes the floor
+/// value 0.56. The RT path uses this to step a fine cell's
+/// categorical `lit` down; the raster fine mesher uses
+/// the per-face form directly.
+pub fn cell_occlusion(sampler: &FineSampler, fx: i32, fy: i32, fz: i32) -> f32 {
+    let mut sum = 0.0f32;
+    let mut n = 0u32;
+    for dir in FACE_DIRS {
+        let b = sampler.block_at_fine(fx + dir[0], fy + dir[1], fz + dir[2]);
+        if !b.is_air() && b.pass == Pass::Opaque {
+            continue; // face not exposed
+        }
+        sum += face_occlusion(sampler, fx, fy, fz, dir);
+        n += 1;
+    }
+    if n == 0 {
+        0.56
+    } else {
+        sum / n as f32
+    }
+}
+
 impl ChunkMap {
     /// Recompute chunk column `coord`'s `has_fine` flag from
     /// `layer` (flagged iff any volume's tile lies in it).
@@ -790,6 +861,24 @@ pub fn mesh_chunk_fine(
                             });
                             let corners = grid_corners.map(|g| to_world(g, scale));
                             let normal = normal_to_world(*dir);
+                            // Geometric occlusion (Stage H,
+                            // 8c-A): darken the face by the
+                            // stamped geometry around it. A
+                            // face in the open keeps factor
+                            // 1.0 — its colour is the cell's
+                            // own, byte-identical to the
+                            // pre-pass mesher.
+                            let occ = face_occlusion(&sampler, fx, fy, fz, *dir);
+                            let color = if occ >= 1.0 {
+                                cell.color
+                            } else {
+                                [
+                                    cell.color[0] * occ,
+                                    cell.color[1] * occ,
+                                    cell.color[2] * occ,
+                                    cell.color[3],
+                                ]
+                            };
                             match layer_for_dir(cell, di) {
                                 Some(tex_layer) => {
                                     let quad_min =
@@ -802,10 +891,10 @@ pub fn mesh_chunk_fine(
                                         tex_layer,
                                     );
                                     mesh.push_quad_textured(
-                                        corners, normal, cell.color, uvs, tex_layer,
+                                        corners, normal, color, uvs, tex_layer,
                                     );
                                 }
-                                None => mesh.push_quad(corners, normal, cell.color),
+                                None => mesh.push_quad(corners, normal, color),
                             }
                         }
                     }

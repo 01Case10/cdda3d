@@ -1845,3 +1845,20 @@ and a cap-plane FNV pin (0xb01988571e19d8cf, measured pre-fix — the cap is
 byte-identical); verified failing with the strap pass disabled. prop_coverage_gate's
 pre-drive count for f_standing_tank updated 23224 -> 23716 (+492 strap cells) as a
 deliberate, annotated change. Presented to Joey 2026-11-23 (flat 4-angle sheet).
+
+## Addendum 2026-11-23 (5): fine-aware lighting occlusion landed (8c-A)
+
+Joey's call 2026-11-23 (option A — geometric pass, invented lighting, tuning risk
+accepted). `mesher::fine::face_occlusion`: for a visible fine face, count opaque
+cells around the air cell in front of it (4 in-plane neighbours + the cell straight
+ahead; Pass::Opaque only), factor = 1 - 0.11 x count, floor 0.56; an open face is
+exactly 1.0, so unoccluded scenes mesh byte-identically. Raster: `mesh_chunk_fine`
+multiplies each fine face's colour by its factor (floor contact shades a prop's
+base row 0.89). RT: `engine::rt::fine_occlusion_rewrite` runs after the lit
+rewrite in the capture path — `cell_occlusion` (mean over exposed faces) steps the
+categorical lit down 1 level below 0.85, 2 below 0.70; Memorized/Blank untouched.
+Still a named limit (docs/phase9-fine.md §1 updated): coarse floor/wall cells
+BEHIND a prop keep their tile light — leak-through is not fixed, only the prop's
+own enclosed/tucked faces darken. Constants are assistant first-pass values.
+Gates: mesher fine_occlusion_gate (3 tests incl. mesher-level colour asserts),
+engine fine_occlusion_rt_gate; suites mesher+engine green (exit 0, 31 binaries).
