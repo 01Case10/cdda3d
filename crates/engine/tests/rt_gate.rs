@@ -24,19 +24,63 @@ fn args(renderer: RendererKind, cutaway_z: i32, out: &str) -> CaptureArgs {
     }
 }
 
-/// The raster capture's background is its clear color; geometry is
-/// any pixel that differs from the image's most common color.
-fn raster_silhouette(img: &image::RgbaImage) -> Vec<bool> {
-    let mut counts: std::collections::HashMap<[u8; 4], usize> = std::collections::HashMap::new();
-    for p in img.pixels() {
-        *counts.entry(p.0).or_default() += 1;
+fn srgb_encode(c: f32) -> u8 {
+    let c = c.clamp(0.0, 1.0);
+    let s = if c <= 0.003_130_8 {
+        12.92 * c
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    };
+    (s * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// The raster capture's background is the sky pass's gradient —
+/// geometry is any pixel that differs from the sky colour the
+/// frame's own sky function paints along that pixel's ray.
+///
+/// Reworked for Phase 10 (ratified gate rework, 2026-11-23):
+/// the old definition — "differs from the image's most common
+/// colour" — identified the pre-§5 FLAT clear colour. A
+/// gradient's most common colour is one band of it, so every
+/// other band counted as geometry and the IoU against the RT
+/// depth silhouette collapsed (0.389). The expected sky is
+/// computed per pixel with the freeze CPU mirror
+/// (`lighting::sky_color_cpu`, the same mirror gate 10.3a
+/// validates the sky pass against at the same ±2 tolerance);
+/// these captures run at the neutral sky (§6 default).
+fn raster_silhouette(img: &image::RgbaImage, args: &CaptureArgs) -> Vec<bool> {
+    let (w, h) = img.dimensions();
+    let mut camera = engine::camera::OrbitCamera::new(glam::Vec3::new(
+        args.camera_target.0,
+        1.0,
+        -args.camera_target.1,
+    ));
+    camera.yaw_deg = args.yaw_deg;
+    camera.pitch_deg = args.pitch_deg;
+    camera.distance = args.distance;
+    camera.clamp();
+    let inv = camera.view_projection(w as f32 / h as f32).inverse();
+    let eye = camera.eye();
+    let uniforms = lighting::SkyUniforms::neutral();
+    let mut out = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let ndc = glam::Vec2::new(
+                ((x as f32 + 0.5) / w as f32) * 2.0 - 1.0,
+                1.0 - ((y as f32 + 0.5) / h as f32) * 2.0,
+            );
+            let far4 = inv * glam::Vec4::new(ndc.x, ndc.y, 1.0, 1.0);
+            let far = far4.truncate() / far4.w;
+            let rd = (far - eye).normalize();
+            let expect = lighting::sky_color_cpu(rd.y, rd.to_array(), &uniforms);
+            let got = img.get_pixel(x, y).0;
+            let is_sky = (0..3).all(|c| {
+                (got[c] as i32 - srgb_encode(expect[c]) as i32).abs() <= 2
+            });
+            out.push(!is_sky);
+        }
     }
-    let bg = counts
-        .iter()
-        .max_by_key(|(_, c)| *c)
-        .map(|(c, _)| *c)
-        .unwrap_or([0, 0, 0, 0]);
-    img.pixels().map(|p| p.0 != bg).collect()
+    out
 }
 
 fn iou(a: &[bool], b: &[bool]) -> f32 {
@@ -121,7 +165,7 @@ fn gate_2c_4_and_2c_6_render_parity() {
     };
     assert_eq!(raster.size, (320, 180));
     let raster_img = image::open(&raster_path).unwrap().to_rgba8();
-    let raster_sil = raster_silhouette(&raster_img);
+    let raster_sil = raster_silhouette(&raster_img, &args(RendererKind::Raster, 1, "unused.png"));
 
     let rt_args = args(RendererKind::Rt, 1, "unused.png");
     let rt = capture_rt_standalone(&rt_args).expect("RT capture");
@@ -177,7 +221,8 @@ fn gate_2c_4_and_2c_6_render_parity() {
     let _raster_cut = run_capture(&args(RendererKind::Raster, 0, raster_cut_path.to_str().unwrap()))
         .expect("raster cutaway capture");
     let raster_cut_img = image::open(&raster_cut_path).unwrap().to_rgba8();
-    let raster_cut_sil = raster_silhouette(&raster_cut_img);
+    let raster_cut_sil =
+        raster_silhouette(&raster_cut_img, &args(RendererKind::Raster, 0, "unused.png"));
     let raster_full_hits = raster_sil.iter().filter(|s| **s).count();
     let raster_cut_hits = raster_cut_sil.iter().filter(|s| **s).count();
     assert!(
