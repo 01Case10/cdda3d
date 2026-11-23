@@ -1862,3 +1862,11 @@ BEHIND a prop keep their tile light — leak-through is not fixed, only the prop
 own enclosed/tucked faces darken. Constants are assistant first-pass values.
 Gates: mesher fine_occlusion_gate (3 tests incl. mesher-level colour asserts),
 engine fine_occlusion_rt_gate; suites mesher+engine green (exit 0, 31 binaries).
+
+## Addendum 2026-11-23 (6): sign-offs — egg sacks and tank straps accepted
+
+Joey's verdict 2026-11-23 on the presented 4-angle sheets ("That looks fine"):
+egg-sack fix A is accepted — item 6 CLOSED, step B (surface fix) not done. The
+tank strap bands (8a-A) are accepted. The 5b-8 batch is fully closed: 5a b1cd3aa,
+5b b530a77, 6 816a786, 7 closed no-work, 8a 60c7b75, 8c 1f9a80c; 8b (ultica_run1
+regen) remains deferred to the terrain-fixes batch close-out by its own terms.
