@@ -4199,6 +4199,249 @@ fn manual_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
     }
 }
 
+/// Terrain item 3 hand-builds (2026-11-23): manual primitive models for
+/// terrain ids whose silhouette fallback is a disc or a fat box. Palettes
+/// are the sprites' measured modal tones (hand-build-prep-2026-11-23.md).
+/// All seat Standing. The slide's incline + ladder are Joey-approved
+/// invention (no sprite shows them); everything else is sprite-derived.
+fn terrain_manual_model(id: &str) -> Option<PropModel> {
+    match id {
+        "t_water_pump" => Some(terrain_water_pump()),
+        "t_vat" => Some(terrain_vat()),
+        _ if id.starts_with("t_monkey_bars") => Some(terrain_monkey_bars()),
+        _ if id.starts_with("t_slide") => Some(terrain_slide()),
+        "t_column" => Some(terrain_column(true)),
+        "t_little_column" => Some(terrain_column(false)),
+        "t_railroad_crossing_signal" | "t_railroad_crossing_signal_season_winter" => {
+            Some(terrain_signal(true, false))
+        }
+        "t_crossbuck_metal" | "t_crossbuck_metal_season_winter" => {
+            Some(terrain_signal(false, false))
+        }
+        "t_crossbuck_wood" | "t_crossbuck_wood_season_winter" => {
+            Some(terrain_signal(false, true))
+        }
+        _ => None,
+    }
+}
+
+/// 3a: cast-iron hand pump (sprite f_water_pump: dark greens (62,107,79) /
+/// (48,84,60) / (99,147,118)). Flanged base, standpipe, head; the gooseneck
+/// spout hooks to the front-left and the handle bar extends front-right, in
+/// the sprite's own plane. The sprite's grey SE mass is drop shadow, omitted.
+fn terrain_water_pump() -> PropModel {
+    let mut m = PropModel::new([32, 36, 32]);
+    let green = rgb(62, 107, 79);
+    let green_dk = rgb(48, 84, 60);
+    let green_lt = rgb(99, 147, 118);
+    let dark = rgb(25, 49, 32);
+    cyl_y(&mut m, 16, 16, 5.5, 0, 0, green_dk);
+    cyl_y(&mut m, 16, 16, 4.2, 1, 2, green_dk);
+    cyl_y(&mut m, 16, 16, 1.8, 3, 23, green);
+    cyl_y(&mut m, 16, 16, 2.4, 12, 13, green_dk);
+    // Head block + cap.
+    box_fill(&mut m, 13, 19, 24, 29, 13, 19, green);
+    cyl_y(&mut m, 16, 16, 2.6, 30, 31, green_lt);
+    // Gooseneck spout: up from the head, over to the left, tip down (front).
+    beam(&mut m, 14, 29, 20, 9, 33, 21, green);
+    beam(&mut m, 9, 33, 21, 8, 29, 21, green_dk);
+    // Handle bar to the right with its end knob.
+    beam(&mut m, 18, 27, 16, 27, 28, 16, green_dk);
+    box_fill(&mut m, 26, 28, 26, 28, 15, 17, dark);
+    m
+}
+
+/// 3b: t_vat (Joey's call: this is the "thin tank"). A vertical glass vat,
+/// ~12 cells wide on its 64px canvas: white plinth, pale-blue glass body,
+/// white cap housing with the red gauge mark on its front, red strip down
+/// the right edge. Drop shadow omitted. Furniture tanks are NOT touched.
+fn terrain_vat() -> PropModel {
+    let mut m = PropModel::new([32, 44, 32]);
+    let white = rgb(219, 219, 219);
+    let white_dk = rgb(186, 186, 186);
+    let glass = rgb(147, 178, 183);
+    let glass_dk = rgb(102, 133, 137);
+    let red = rgb(170, 19, 23);
+    cyl_y(&mut m, 16, 16, 9.0, 0, 1, white_dk);
+    cyl_y(&mut m, 16, 16, 8.0, 2, 3, white);
+    cyl_y(&mut m, 16, 16, 7.0, 4, 33, glass);
+    cyl_y(&mut m, 16, 16, 7.0, 4, 6, glass_dk);
+    // Bubble flecks on the front of the glass.
+    for (x, y, z) in [(13, 14, 22), (18, 20, 22), (15, 27, 23), (19, 11, 21)] {
+        m.set(x, y, z, Some(white));
+    }
+    // Red strip down the right edge of the body.
+    box_fill(&mut m, 23, 23, 7, 32, 15, 17, red);
+    // Cap housing + top disc.
+    cyl_y(&mut m, 16, 16, 8.0, 34, 40, white);
+    cyl_y(&mut m, 16, 16, 7.0, 41, 41, white_dk);
+    // Red gauge mark on the cap front (the sprite's shallow "smile").
+    box_fill(&mut m, 14, 18, 37, 37, 24, 24, red);
+    m.set(13, 38, 24, Some(red));
+    m.set(19, 38, 24, Some(red));
+    m
+}
+
+/// 3c: monkey bars, one multitile segment (Joey's call: corner posts at
+/// all four corners, double-posting at joins accepted). Round-section
+/// posts, side rails + end rails at height, rungs across, ladder bars on
+/// the end frames, open underneath. Greys from the center sprite.
+fn terrain_monkey_bars() -> PropModel {
+    let mut m = PropModel::new([32, 34, 32]);
+    let grey = rgb(83, 93, 98);
+    let grey_dk = rgb(59, 66, 70);
+    let grey_lt = rgb(158, 164, 166);
+    for (x, z) in [(4, 4), (27, 4), (4, 27), (27, 27)] {
+        cyl_y(&mut m, x, z, 1.6, 0, 31, grey);
+    }
+    // Side rails (N-S) and end rails (E-W) at rail height.
+    tube_z(&mut m, 3, 28, 4, 32, 1.2, grey_dk);
+    tube_z(&mut m, 3, 28, 27, 32, 1.2, grey_dk);
+    tube_x(&mut m, 4, 27, 32, 4, 1.2, grey_dk);
+    tube_x(&mut m, 4, 27, 32, 27, 1.2, grey_dk);
+    // Rungs across between the side rails.
+    for z in [7, 11, 15, 19, 23] {
+        tube_x(&mut m, 5, 26, 32, z, 1.0, grey_lt);
+    }
+    // Ladder bars on both end frames (the unconnected sprite's rungs).
+    for y in [10, 20] {
+        tube_x(&mut m, 5, 26, y, 4, 1.0, grey);
+        tube_x(&mut m, 5, 26, y, 27, 1.0, grey);
+    }
+    m
+}
+
+/// 3c: playground slide (Joey-approved invention: incline + ladder, which
+/// no sprite shows). Ladder at the high NORTH end (low z), platform, then
+/// a lipped chute descending monotonically to the south edge; support
+/// legs under the chute. Width and greys from the center sprite
+/// (bed (120,120,120), lip (149,149,149), shade (98,98,98)).
+fn terrain_slide() -> PropModel {
+    let mut m = PropModel::new([32, 36, 32]);
+    let bed_c = rgb(120, 120, 120);
+    let lip_c = rgb(149, 149, 149);
+    let dark = rgb(98, 98, 98);
+    let frame = rgb(76, 76, 76);
+    // Ladder uprights + rungs at the north end.
+    box_fill(&mut m, 11, 12, 0, 32, 2, 3, frame);
+    box_fill(&mut m, 19, 20, 0, 32, 2, 3, frame);
+    for y in [6, 12, 18, 24, 30] {
+        tube_x(&mut m, 12, 19, y, 3, 1.0, lip_c);
+    }
+    // Top platform.
+    box_fill(&mut m, 10, 21, 31, 32, 2, 8, dark);
+    // Inclined chute: bed 11..20 with raised lips at x=10 and x=21,
+    // descending from y=29 at z=9 to y=8 at z=30, then a flat exit.
+    for zi in 0..=21i32 {
+        let z = (9 + zi) as u32;
+        let top = 29 - zi;
+        box_fill(&mut m, 11, 20, (top - 1) as u32, top as u32, z, z, bed_c);
+        box_fill(&mut m, 10, 10, top as u32, (top + 2) as u32, z, z, lip_c);
+        box_fill(&mut m, 21, 21, top as u32, (top + 2) as u32, z, z, dark);
+    }
+    box_fill(&mut m, 11, 20, 6, 7, 31, 31, bed_c);
+    // Support legs under the chute.
+    box_fill(&mut m, 11, 12, 0, 20, 16, 17, frame);
+    box_fill(&mut m, 19, 20, 0, 20, 16, 17, frame);
+    box_fill(&mut m, 11, 12, 0, 10, 26, 27, frame);
+    box_fill(&mut m, 19, 20, 0, 10, 26, 27, frame);
+    m
+}
+
+/// 3d: round columns. t_column: fluted green stone (dark (36,58,36),
+/// mid (97,106,97), pale (148,172,151)); t_little_column: smooth grey
+/// stone. One builder, per-id palette; the sprite's room backdrop and
+/// drop shadow are omitted.
+fn terrain_column(fluted: bool) -> PropModel {
+    let (mut m, main, dark, light, cap) = if fluted {
+        (
+            PropModel::new([32, 52, 32]),
+            rgb(97, 106, 97),
+            rgb(36, 58, 36),
+            rgb(148, 172, 151),
+            rgb(124, 127, 112),
+        )
+    } else {
+        (
+            PropModel::new([32, 44, 32]),
+            rgb(157, 157, 156),
+            rgb(103, 95, 82),
+            rgb(178, 179, 178),
+            rgb(126, 123, 109),
+        )
+    };
+    let h = m.size[1];
+    let (r_shaft, r_cap) = if fluted { (7.0f32, 8.0f32) } else { (6.0f32, 7.0f32) };
+    cyl_y(&mut m, 16, 16, r_cap, 0, 3, dark);
+    cyl_y(&mut m, 16, 16, r_shaft, 4, h - 6, main);
+    // Fluting / shading on the shaft's outer ring, all the way around.
+    for y in 4..=(h - 6) {
+        for x in 0..32i32 {
+            for z in 0..32i32 {
+                let (dx, dz) = (x - 16, z - 16);
+                let d2 = dx * dx + dz * dz;
+                if d2 > 30 && (d2 as f32) <= r_shaft * r_shaft {
+                    let s = if dz.abs() >= dx.abs() { x } else { z };
+                    let c = if fluted {
+                        if (s / 2) % 2 == 0 { dark } else { light }
+                    } else if z >= 22 && (12..=13).contains(&x) {
+                        light // smooth shaft: the sprite's left highlight
+                    } else if z >= 22 && (20..=21).contains(&x) {
+                        dark // and its right-hand shading
+                    } else {
+                        main
+                    };
+                    m.set(x as u32, y, z as u32, Some(c));
+                }
+            }
+        }
+    }
+    // Capital flare + flat circular cap.
+    cyl_y(&mut m, 16, 16, r_cap, h - 5, h - 3, light);
+    cyl_y(&mut m, 16, 16, r_cap, h - 2, h - 1, cap);
+    m
+}
+
+/// 3d: railroad crossing post. The signal variant carries the twin red
+/// lamp housings (lenses front and back); crossbucks are the same post
+/// and X with no lamps. No equipment box: no sprite shows one.
+fn terrain_signal(lamps: bool, wood: bool) -> PropModel {
+    let mut m = PropModel::new([32, 52, 32]);
+    let post = if wood { rgb(116, 94, 63) } else { rgb(98, 98, 98) };
+    let blade_lt = if wood { rgb(183, 134, 74) } else { rgb(196, 196, 196) };
+    let blade_dk = if wood { rgb(132, 105, 62) } else { rgb(44, 45, 50) };
+    let red = rgb(170, 19, 23);
+    let black = rgb(30, 30, 34);
+    cyl_y(&mut m, 16, 16, 3.0, 0, 1, black);
+    cyl_y(&mut m, 16, 16, 1.3, 2, 44, post);
+    if lamps {
+        // Lamp bar + twin housings + red lenses, front and back.
+        box_fill(&mut m, 9, 23, 33, 34, 15, 17, black);
+        box_fill(&mut m, 10, 13, 31, 35, 14, 18, black);
+        box_fill(&mut m, 19, 22, 31, 35, 14, 18, black);
+        box_fill(&mut m, 11, 12, 32, 33, 19, 19, red);
+        box_fill(&mut m, 20, 21, 32, 33, 19, 19, red);
+        box_fill(&mut m, 11, 12, 32, 33, 13, 13, red);
+        box_fill(&mut m, 20, 21, 32, 33, 13, 13, red);
+    }
+    // Crossbuck X: two diagonal blades in the front plane, 3 thick,
+    // segmented light / red / dark as the sprites paint them. The X is
+    // ~square (13 wide x 13 tall, centre y=44): a wider, shallower X
+    // rendered as a bowtie in the first strip review.
+    for x in 10..=22i32 {
+        let seg = match (x / 4) % 3 {
+            0 => blade_lt,
+            1 => red,
+            _ => blade_dk,
+        };
+        let ya = 38 + (x - 10);
+        let yb = 50 - (x - 10);
+        box_fill(&mut m, x as u32, x as u32, ya as u32, (ya + 1) as u32, 15, 17, seg);
+        box_fill(&mut m, x as u32, x as u32, yb as u32, (yb + 1) as u32, 15, 17, seg);
+    }
+    m
+}
+
 /// Floor lamp: round base, slim pole, a cylindrical
 /// paper shade with a dark grille cap and the warm bulb
 /// showing at its top (sprite tones: shade (183,183,183),
@@ -7534,6 +7777,13 @@ pub fn terrain_model_for(
     if ground {
         let mound = s.contains("mound");
         return Some((terrain_ground(sprite, liquid, mound), TerrainModelKind::Ground));
+    }
+    // Terrain item 3 (2026-11-23, Joey: hand-build all): manual primitive
+    // models for the pump / vat / playground / column / signal families,
+    // dispatched before the silhouette fallback. Sprite studies and the
+    // per-family decisions are in hand-build-prep-2026-11-23.md.
+    if let Some(m) = terrain_manual_model(id) {
+        return Some((m, TerrainModelKind::Standing));
     }
     terrain_silhouette(sprite).map(|m| (m, TerrainModelKind::Standing))
 }
