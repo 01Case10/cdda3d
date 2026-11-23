@@ -1885,3 +1885,10 @@ t_bamboo_long, t_bamboo_tall in the new gate `bamboo_dead_is_dense_and_live_is_u
 (terrain_coverage_gate), measured pre-fix; the same gate counts >= 6 culm
 components at y=20 for both dead ids (was exactly 2). Voxelizer suite green.
 Presented to Joey 2026-11-23 (4-angle sheet incl. live bamboo for comparison).
+
+## Addendum 2026-11-23 (8): bamboo sign-off
+
+Joey signed off on the densified dead bamboo 2026-11-23 ("I sign off on this",
+on the 4-angle sheet). Terrain item 1 CLOSED. Remaining terrain batch: item 2
+puddles (in progress, side thread, puddle-fix branch), item 3 hand-builds (prep
+in progress, side thread), then item 4 ultica_run1 regen as close-out (8b-A).
