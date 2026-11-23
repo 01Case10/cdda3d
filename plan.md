@@ -1808,3 +1808,22 @@ Also recorded 2026-11-23, no code: gasper side stripes CLOSED on Joey's call (op
 keep the sprite's longitudinal stripes; the blotch mockup stays unapplied, faithfulness
 rule intact). `assets/ultica_run1` regeneration deferred on Joey's call (option A) to
 the close-out of the terrain-fixes batch (after bamboo/puddle/hand-build sign-offs).
+
+## Addendum 2026-11-23 (3): egg sacks — Joey's route C, step 0 + fix A
+
+Step 0 (measured on the pre-fix models, both pins): the side SURFACE is not flat
+(201-208 distinct colours on the side faces, modal share ~10%, luminance std ~27-30,
+left-face min-x std 5-6 — comparable to the accepted boulder) and the depth-per-row
+profile is not straight (longest equal-extent run 2-3 rows). The flatness is the
+OUTLINE: the side top outline sat at the model's full height for the front 12-14 z
+cells in a dead-straight run — a rectangular top-front corner, because every column
+reaches the front plane at its full sprite height. Fix A (Joey's C route): a
+profile-rounding pass at the end of `egg_pile_model` cuts that corner with a quarter
+ellipse in the (y, z) plane (centre 0.55/0.55, radii 0.45) by shifting upper columns
+back — never emptying one, so the approved front silhouette is unchanged. Post-fix:
+the front-most top sits 6-10 cells below the maximum and descends to it; the
+mid-depth plateau that remains is the sprite's own flat top row (faithful). Gate:
+`egg_sack_side_profile_is_rounded_not_rectangular` in prop_coverage_gate — verified
+failing pre-fix (front run 11), passing after; full voxelizer suite green. Presented
+to Joey 2026-11-23 (flat orthographic 4-angle sheet); step B (surface fix) only if
+he says it still reads flat.

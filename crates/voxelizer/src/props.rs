@@ -2895,6 +2895,60 @@ fn egg_pile_model(sprite: &RgbaImage, seg: &Segmentation) -> Option<PropModel> {
             }
         }
     }
+    // Profile rounding (Joey's 6-C route, 2026-11-23).
+    // Step-0 measurement on the pre-fix models: the side
+    // SURFACE is not flat (201-208 distinct colours on the
+    // side faces, modal share ~10%, left-face min-x std
+    // 5-6) and the depth-per-row profile is not straight
+    // (longest equal-extent run 2-3 rows) — but the side
+    // OUTLINE's top-front corner is a rectangle: the side
+    // top outline sits at the model's full height for the
+    // front 12-14 z cells in a dead-straight run, because
+    // every column reaches the front plane at its full
+    // sprite height. Fix A (outline): cut that corner with
+    // a quarter ellipse in the (y, z) profile plane —
+    // cells past the ellipse in the top-front region are
+    // removed. A column is never emptied, so the front
+    // view's silhouette (the sprite, approved) is
+    // unchanged; its top rows simply step back, as a
+    // mound's do.
+    {
+        let (cy, cz, ry, rz) = (0.55f32, 0.55f32, 0.45f32, 0.45f32);
+        for y in 0..fh {
+            let ny = y as f32 / (fh - 1).max(1) as f32;
+            if ny <= cy {
+                continue;
+            }
+            // Deepest z this height may reach under the
+            // ellipse (the front plane for low rows).
+            let frac = 1.0 - ((ny - cy) / ry).powi(2);
+            if frac < 0.0 {
+                continue;
+            }
+            let z_max = (cz + rz * frac.sqrt()) * (d - 1) as f32;
+            let z_max = (z_max.round() as u32).min(d - 1);
+            for x in 0..w {
+                let cells: Vec<(u32, image::Rgba<u8>)> = (0..d)
+                    .filter_map(|z| m.get(x, y, z).map(|c| (z, c)))
+                    .collect();
+                let Some(&(front_z, _)) = cells.last() else {
+                    continue;
+                };
+                if front_z <= z_max {
+                    continue;
+                }
+                let shift = front_z - z_max;
+                for &(z, _) in &cells {
+                    m.set(x, y, z, None);
+                }
+                for &(z, c) in &cells {
+                    if z >= shift {
+                        m.set(x, y, z - shift, Some(c));
+                    }
+                }
+            }
+        }
+    }
     Some(m)
 }
 

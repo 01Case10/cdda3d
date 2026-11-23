@@ -647,3 +647,78 @@ fn full_furniture_coverage() {
         assert!(model_for(id, &sprite).is_some(), "{id} must be modeled");
     }
 }
+
+#[test]
+fn egg_sack_side_profile_is_rounded_not_rectangular() {
+    // Joey's 6-C (2026-11-23): step-0 measurement found the
+    // egg sacks' side flatness in the OUTLINE — the side top
+    // outline sat at full height for the front 12-14 z cells
+    // in a straight run (a rectangular top-front corner),
+    // while the side surface itself was varied (200+
+    // colours, modal share ~10%). The profile-rounding pass
+    // in egg_pile_model cuts that corner with a quarter
+    // ellipse. Claims: (1) the rectangular top-front corner
+    // is gone: the run of z cells at the model's maximum
+    // top height TOUCHING the front plane is <= 2 (was
+    // 12-14 — the plateau reached the front edge) and the
+    // front-most top sits well below the maximum (the
+    // mid-depth plateau that remains is the sprite's own
+    // flat top row, which is faithful);
+    // (2) the front silhouette is untouched — every sprite
+    // structure column still has a model cell (columns are
+    // shifted back, never emptied).
+    for id in ["f_egg_sacke", "f_egg_sackws"] {
+        let sprite = load_sprite(id);
+        let m = model_for(id, &sprite).expect("egg sack models");
+        let [w, h, d] = m.size;
+        let tops: Vec<i32> = (0..d)
+            .map(|z| {
+                (0..h)
+                    .rev()
+                    .find(|&y| (0..w).any(|x| m.get(x, y, z).is_some()))
+                    .map(|y| y as i32)
+                    .unwrap_or(-1)
+            })
+            .collect();
+        let max_top = *tops.iter().max().unwrap();
+        let mut front_run = 0;
+        for &t in tops.iter().rev() {
+            if t == max_top {
+                front_run += 1;
+            } else {
+                break;
+            }
+        }
+        assert!(
+            front_run <= 2,
+            "{id}: side top outline still reaches the front at max height for {front_run} z cells (was 12-14 pre-fix)"
+        );
+        assert!(
+            max_top - tops[(d - 1) as usize] >= 4,
+            "{id}: front-most top {} too close to max top {max_top} — corner not cut",
+            tops[(d - 1) as usize]
+        );
+        // Front silhouette: the model's (x, y) occupancy
+        // covers the sprite's structure pixels in the
+        // segmentation's front rows (the rows the model was
+        // built from; model y maps to sprite row bot - y).
+        let seg = segment_for(id, &sprite)
+            .or_else(|| seamless_segment(&sprite))
+            .expect("egg sack segments");
+        let bot = seg.front_rows.end - 1;
+        for y in 0..h {
+            let r = bot as i32 - y as i32;
+            if r < 0 {
+                break;
+            }
+            for x in 0..w.min(sprite.width()) {
+                if structure(*sprite.get_pixel(x, r as u32)) {
+                    assert!(
+                        (0..d).any(|z| m.get(x, y, z).is_some()),
+                        "{id}: front column ({x},{y}) emptied by the rounding"
+                    );
+                }
+            }
+        }
+    }
+}
