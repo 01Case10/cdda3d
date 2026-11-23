@@ -2,11 +2,19 @@
 // fork's voxel_ipc server so the Rust client and protocol tests can run
 // without building the game.
 //
-//   stub-server <unix-socket-path>
+//   stub-server <unix-socket-path> [--env-script]
 //
 // Protocol: sends Hello; on HelloAck sends TileDefs + the fake-house
-// Snapshot; echoes Input back verbatim; answers Ping with Pong; exits
-// cleanly on Shutdown (or when the client disconnects).
+// Snapshot (which piggybacks the current environment, Phase 10) + one
+// standalone EnvironmentUpdate; echoes Input back verbatim; answers
+// Ping with Pong; exits cleanly on Shutdown (or when the client
+// disconnects).
+//
+// With --env-script, each Input additionally advances the scripted
+// environment sequence (house::BuildEnvironmentStep: noon-clear ->
+// storm -> midnight -> wrap) and sends the new EnvironmentUpdate after
+// the echo, so engine-side Phase 10 gates can consume a changing
+// environment deterministically.
 //
 // Framing: u32 LE length + FlatBuffers Envelope payload, max 32 MiB — the
 // same rules as crates/proto/src/framing.rs. Every inbound buffer is run
@@ -111,11 +119,17 @@ bool VerifyEnvelope(const std::vector<uint8_t>& buf) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::fprintf(stderr, "usage: stub-server <unix-socket-path>\n");
+    if (argc < 2 || argc > 3) {
+        std::fprintf(stderr, "usage: stub-server <unix-socket-path> [--env-script]\n");
         return 2;
     }
     const char* path = argv[1];
+    bool env_script = argc == 3 && std::strcmp(argv[2], "--env-script") == 0;
+    if (argc == 3 && !env_script) {
+        std::fprintf(stderr, "stub: unknown option %s\n", argv[2]);
+        return 2;
+    }
+    int env_step = 0;
     ::unlink(path);
     int listener = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (listener < 0) { std::perror("socket"); return 1; }
@@ -158,7 +172,12 @@ int main(int argc, char** argv) {
     if (!SendNative<TileDefs>(fd, Message_TileDefs, defs)) return 1;
     auto snap = house::BuildSnapshot();
     if (!SendNative<Snapshot>(fd, Message_Snapshot, snap)) return 1;
-    std::fprintf(stderr, "stub: sent tiledefs + snapshot\n");
+    // Phase 10: one standalone EnvironmentUpdate after the snapshot
+    // (the same canonical environment the snapshot piggybacks), so a
+    // client sees the standalone message shape too.
+    auto env0 = house::BuildEnvironment();
+    if (!SendNative<EnvironmentUpdate>(fd, Message_EnvironmentUpdate, env0)) return 1;
+    std::fprintf(stderr, "stub: sent tiledefs + snapshot + environment\n");
 
     // Main loop.
     while (true) {
@@ -180,6 +199,14 @@ int main(int argc, char** argv) {
                 // assertion by the client.
                 std::unique_ptr<InputT> copy(in->UnPack());
                 if (!SendNative<Input>(fd, Message_Input, *copy)) return 1;
+                if (env_script) {
+                    ++env_step;
+                    auto e = house::BuildEnvironmentStep(env_step);
+                    e.seq = static_cast<uint64_t>(10 + env_step);
+                    std::fprintf(stderr, "stub: env script step %d weather=%s tod=%.0f\n",
+                                 env_step, e.weather_id.c_str(), e.time_of_day_sec);
+                    if (!SendNative<EnvironmentUpdate>(fd, Message_EnvironmentUpdate, e)) return 1;
+                }
                 break;
             }
             case Message_Ping: {

@@ -1,0 +1,410 @@
+// CDDA Voxel Frontend IPC protocol — Phase 1 (see plan.md §6).
+//
+// One length-prefixed frame on the wire = one Envelope (u32 LE length prefix
+// is added by the framing layer in crates/proto, it is NOT part of this
+// schema). All messages travel inside the Envelope union so either side can
+// dispatch on a single root type.
+//
+// Versioning rules live in docs/protocol.md. Short version: PROTOCOL_VERSION
+// (in crates/proto and the C++ stub) bumps on any breaking change; additive
+// fields / union members are non-breaking and old readers must ignore fields
+// they do not know (FlatBuffers does this by construction).
+
+namespace cdda.ipc;
+
+// ---------------------------------------------------------------------------
+// Small value types
+// ---------------------------------------------------------------------------
+
+struct Vec3i {
+  x: int;
+  y: int;
+  z: int;
+}
+
+/// What a TileDef describes (plan §5 Phase 3 TileDefs export).
+enum TileKind : ubyte {
+  Terrain = 0,
+  Furniture = 1,
+  Trap = 2,
+  Field = 3,
+  Monster = 4,
+  Item = 5,
+  VehiclePart = 6,
+}
+
+/// The game's own visibility-cache enum (src/lightmap.h), exported verbatim.
+/// It is an enum, NOT a 0-255 light value. Wire size is one byte.
+enum LitLevel : ubyte {
+  DARK = 0,
+  LOW = 1,
+  BRIGHT_ONLY = 2,
+  LIT = 3,
+  BRIGHT = 4,
+  MEMORIZED = 5,
+  BLANK = 6,
+}
+
+/// Creature facing (src/creature.h FacingDirection). Horizontal flip only —
+/// there are NO other values and no 8-way creature sprites.
+enum Facing : ubyte {
+  NONE = 0,
+  LEFT = 1,
+  RIGHT = 2,
+}
+
+// ---------------------------------------------------------------------------
+// Handshake
+// ---------------------------------------------------------------------------
+
+table Hello {
+  protocol_version: uint32;
+  game_version: string;
+  tileset_id: string;
+  /// Base tile pixel size of the tileset (32 for UltiCa).
+  tile_pixel_size: uint32;
+  z_min: int32;
+  z_max: int32;
+}
+
+table HelloAck {
+  protocol_version: uint32;
+  engine_version: string;
+  screen_width: uint32;
+  screen_height: uint32;
+  dpi: float;
+  /// Free-form capability tags, e.g. "ui-shm-v1". Unknown tags are ignored.
+  capabilities: [string];
+}
+
+// ---------------------------------------------------------------------------
+// Tile definitions (sent once at connect)
+// ---------------------------------------------------------------------------
+
+table TileDef {
+  id: uint32;
+  string_id: string;
+  name: string;
+  kind: TileKind;
+  /// String flags exactly as authored in the game data.
+  flags: [string];
+  /// Resolved ter_furn_flag bitset for engine-fast checks (the engine never
+  /// parses JSON flag strings itself).
+  hot_flags: uint64;
+  /// Indices into TileDefs.connect_groups (the connect_group registry table,
+  /// exported once — per-def data is indices, never group name strings).
+  connect_groups: [uint16];
+  connects_to_groups: [uint16];
+  rotate_to_groups: [uint16];
+  /// String ids after the game's own transforms; absent/empty = none.
+  /// (Senders use absent: the C++ object API packs "" as absent anyway.)
+  open_result: string;
+  close_result: string;
+  bash_result: string;
+  looks_like: string;
+  /// Indices into the composed tile_config.json tile entries; -1 = none.
+  fg_ref: int32 = -1;
+  bg_ref: int32 = -1;
+  /// String id of the terrain that is the floor above this terrain
+  /// (ter_t::roof — "what will be the floor above this terrain").
+  /// Absent/empty = this terrain roofs nothing. Added 2026-11-15
+  /// (Phase 8): without it the engine cannot resolve what floor an
+  /// open-air tile shows (gate 8.4b) and would have to guess.
+  /// Appended last: additive/non-breaking, old readers ignore it.
+  roof_result: string;
+}
+
+table TileDefs {
+  defs: [TileDef];
+  connect_groups: [string];
+  protocol_version: uint32;
+}
+
+// ---------------------------------------------------------------------------
+// World state
+// ---------------------------------------------------------------------------
+
+/// One field on one tile. A tile holds SEVERAL fields at once (smoke + fire
+/// + ...), each with its own intensity — this is a sparse list, never a
+/// single field id per tile.
+table FieldOnTile {
+  /// Index into the owning SubmapBlock's 12x12 tile arrays (row-major).
+  tile_index: uint16;
+  /// Field type def id (a TileDef of kind Field).
+  type: uint32;
+  intensity: ubyte;
+}
+
+/// The field the game itself would draw for a tile (cheap path), with its
+/// intensity. field_type = 0 means "no displayed field".
+struct DisplayedField {
+  field_type: uint32;
+  intensity: ubyte;
+}
+
+/// One 12x12 submap column slice (one z-level). Per-tile arrays are 144
+/// entries, row-major (index = y * 12 + x), unless documented otherwise.
+table SubmapBlock {
+  /// Absolute tile coordinates of the block's corner (x, y) and its z-level.
+  origin: Vec3i;
+  terrain: [uint32];
+  furniture: [uint32];
+  trap: [uint32];
+  /// Sparse: only tiles that have fields. Several entries may share a
+  /// tile_index.
+  fields: [FieldOnTile];
+  /// Per tile: index of this tile's first entry in `fields`, or -1 = none.
+  /// Entries for a tile are contiguous in `fields`.
+  field_index: [int32];
+  /// Per tile: the field type the game itself would display.
+  displayed_field: [DisplayedField];
+  /// Per tile: def id of the uppermost item (get_uppermost_item), 0 = none.
+  top_item: [uint32];
+  /// Per tile: item stack size; >1 means a pile.
+  item_count: [uint16];
+  /// Per tile: lit_level enum (DARK..BLANK), one byte each.
+  lit: [LitLevel];
+  /// Per tile: quantized seen/visibility value, 0 = never seen, 255 = full.
+  seen: [ubyte];
+  /// Per tile: graffiti present.
+  has_graffiti: [bool];
+}
+
+table Entity {
+  id: uint64;
+  /// Monster/character type def id (TileDef kind Monster) where applicable.
+  type_def: uint32;
+  sprite_id: string;
+  pos: Vec3i;
+  facing: Facing;
+  /// Overlay ids in the game's own order (get_overlay_ids). Do NOT re-sort.
+  overlays: [string];
+  /// Hit points as 0-255 fraction of max.
+  hp_frac: ubyte;
+  /// Bit flags: friendly, hostile, sleeping, ... (bits assigned by the fork).
+  flags: uint32;
+}
+
+table VehiclePartState {
+  vpart: uint32;
+  /// Absolute tile position, computed game-side from pre-rotated mounts.
+  abs_pos: Vec3i;
+  mount: Vec3i;
+  hp_frac: ubyte;
+  /// Bit flags: open, broken, roof, ...
+  flags: uint32;
+}
+
+table Vehicle {
+  id: uint64;
+  name: string;
+  /// Continuous facing in degrees (vehicle::face.dir()). Never quantized.
+  face_deg: float;
+  parts: [VehiclePartState];
+}
+
+table Snapshot {
+  view_origin: Vec3i;
+  view_radius: uint32;
+  blocks: [SubmapBlock];
+  /// Remembered-but-not-visible tiles: terrain/furniture only, lit =
+  /// MEMORIZED, never live entities/items/fields.
+  memory_blocks: [SubmapBlock];
+  entities: [Entity];
+  vehicles: [Vehicle];
+  seq: uint64;
+  epoch: uint64;
+}
+
+/// A single tile's new state inside a Delta (absolute position).
+table TileChange {
+  pos: Vec3i;
+  terrain: uint32;
+  furniture: uint32;
+  trap: uint32;
+  /// All fields now on this tile (replaces the tile's previous field list).
+  fields: [FieldOnTile];
+  top_item: uint32;
+  item_count: uint16;
+  lit: LitLevel;
+  seen: ubyte;
+  has_graffiti: bool;
+  /// The field the game itself would display after this change
+  /// (field::displayed_field_type + its intensity). Added 2026-11-15:
+  /// without it the engine cannot update the displayed field from a
+  /// Delta alone and would have to re-derive the game's rule.
+  /// field_type = 0 means "no displayed field". Additive/non-breaking:
+  /// old readers ignore it, old data reads as 0/0.
+  displayed_field: DisplayedField;
+}
+
+table Delta {
+  seq: uint64;
+  epoch: uint64;
+  tile_changes: [TileChange];
+  entity_updates: [Entity];
+  entity_removed: [uint64];
+  vehicle_updates: [Vehicle];
+  vehicle_removed: [uint64];
+}
+
+/// Standalone light/visibility refresh (folded into Delta when small).
+table LightUpdate {
+  seq: uint64;
+  epoch: uint64;
+  origin: Vec3i;
+  lit: [LitLevel];
+  seen: [ubyte];
+}
+
+// ---------------------------------------------------------------------------
+// Effects
+// ---------------------------------------------------------------------------
+
+enum EffectKind : ubyte {
+  Animation = 0,
+  Projectile = 1,
+  Sound = 2,
+  HitFlash = 3,
+  Explosion = 4,
+  Other = 5,
+}
+
+table EffectEvent {
+  kind: EffectKind;
+  /// Tileset/animation id or sound id, depending on kind.
+  effect_id: string;
+  from_pos: Vec3i;
+  to_pos: Vec3i;
+  duration_ms: uint32;
+}
+
+table Effects {
+  seq: uint64;
+  events: [EffectEvent];
+}
+
+// ---------------------------------------------------------------------------
+// UI compositing
+// ---------------------------------------------------------------------------
+
+enum UiMode : ubyte {
+  /// Game expects map/world input; engine camera controls are active.
+  MapInput = 0,
+  /// A menu/UI has focus; clicks stay in UI space, camera drags are ignored.
+  UiInput = 1,
+}
+
+/// Notification that a new UI frame is ready in shared memory.
+table UiFrame {
+  /// Which of the two shared-memory buffers holds this frame.
+  buffer_index: ubyte;
+  width: uint32;
+  height: uint32;
+  stride: uint32;
+  seq: uint64;
+  dirty_x: int32;
+  dirty_y: int32;
+  dirty_w: int32;
+  dirty_h: int32;
+  mode: UiMode;
+  /// The terrain window's rect in UI pixels (reported by the game, never
+  /// assumed — it depends on terminal size and panel layout). -1 = unknown.
+  terrain_rect_x: int32 = -1;
+  terrain_rect_y: int32 = -1;
+  terrain_rect_w: int32 = -1;
+  terrain_rect_h: int32 = -1;
+}
+
+// ---------------------------------------------------------------------------
+// Engine -> game
+// ---------------------------------------------------------------------------
+
+enum InputKind : ubyte {
+  Key = 0,
+  Text = 1,
+  MouseButton = 2,
+  MouseMove = 3,
+  Wheel = 4,
+  Focus = 5,
+}
+
+table Input {
+  kind: InputKind;
+  /// Platform-independent key code for Key events (fork injector maps it
+  /// into the game's input path).
+  key_code: int32;
+  /// Text payload for Text events.
+  text: string;
+  /// Mouse position in UI/display-buffer pixel space.
+  mouse_x: int32;
+  mouse_y: int32;
+  /// Mouse button index for MouseButton events (-1 = none).
+  button: int32 = -1;
+  pressed: bool;
+  /// Wheel delta (lines, signed) for Wheel events.
+  wheel_delta: int32;
+  /// Modifier bitmask: 1=shift, 2=ctrl, 4=alt, 8=meta.
+  modifiers: uint32;
+  /// Focus state for Focus events.
+  focused: bool;
+}
+
+table Resize {
+  width: uint32;
+  height: uint32;
+  dpi: float;
+}
+
+table PickResult {
+  request_id: uint64;
+  hit: bool;
+  pos: Vec3i;
+}
+
+// ---------------------------------------------------------------------------
+// Liveness / lifecycle
+// ---------------------------------------------------------------------------
+
+table Ping {
+  nonce: uint64;
+  sent_ms: uint64;
+}
+
+table Pong {
+  nonce: uint64;
+  sent_ms: uint64;
+}
+
+table Shutdown {
+  reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Envelope: one frame = one of these
+// ---------------------------------------------------------------------------
+
+union Message {
+  Hello,
+  HelloAck,
+  TileDefs,
+  Snapshot,
+  Delta,
+  LightUpdate,
+  Effects,
+  UiFrame,
+  Input,
+  Resize,
+  PickResult,
+  Ping,
+  Pong,
+  Shutdown,
+}
+
+table Envelope {
+  message: Message;
+}
+
+root_type Envelope;
+file_identifier "CDDA";
+file_extension "cdda";

@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -47,6 +48,7 @@ struct ViewSpec {
 struct ExportStats {
     uint64_t snapshots = 0;
     uint64_t deltas = 0;
+    uint64_t env_updates = 0; // EnvironmentUpdate stamps (any channel)
     uint64_t tiles_diffed = 0;
     uint64_t tiles_changed = 0;
     double last_snapshot_ms = 0.0;
@@ -75,6 +77,17 @@ class Exporter
             return !has_snapshot_ || force_resync_;
         }
 
+        // --- environment (Phase 10, docs/phase10-sky-gi.md §2.3) ---
+        // Standalone EnvironmentUpdate when one is due at this send
+        // boundary: weather_id changed, lightning_active flipped, or
+        // game time advanced >= kEnvIntervalTurns since the last send.
+        // Snapshots always carry the current environment (piggyback),
+        // and build_delta() attaches it when the same rule fires, so
+        // in the frontend flow this returns a value only on boundaries
+        // where no snapshot/delta was built. Sending (any channel)
+        // re-arms the rule.
+        std::optional<cdda::ipc::EnvironmentUpdateT> build_environment_update();
+
         // --- dirty hooks (called by the one-line hooks in map.cpp/map.h) ---
         void mark_dirty_submap( int sx, int sy, int z );
         void mark_dirty_tile( int x, int y, int z );
@@ -96,8 +109,8 @@ class Exporter
         // Deterministic hash over the EXPORTED tile/entity/vehicle data
         // only (plan Phase 3 exit criteria / Principle 4 field list):
         // per block origin + terrain/furniture/trap/fields/top_item/
-        // item_count/lit/seen/graffiti, then entities, then vehicles.
-        // Excludes seq/epoch/timing by construction.
+        // item_count/lit/seen/graffiti/sky_exposed, then entities,
+        // then vehicles. Excludes seq/epoch/timing by construction.
         static uint64_t hash_snapshot( const cdda::ipc::SnapshotT &snap );
         static uint64_t hash_tile_arrays( const std::map<BlockKey, std::array<TileVal, kTilesPerBlock>> &blocks );
 
@@ -109,6 +122,18 @@ class Exporter
         static cdda::ipc::EntityT ent_to_wire( const EntVal &e );
         static cdda::ipc::VehicleT veh_to_wire( const VehVal &v );
 
+        // Environment send-rule state (Phase 10 §2.3 / gate 10.1b).
+        // NOTE on the interval: gate 10.1b pins the observable rule —
+        // 9 quiet game-minutes emit none, the 10th emits one — so the
+        // time-based threshold is 10 game-minutes = 100 turns (1 turn
+        // = 6 s). §2.3's prose says ">= 1 minute"; the gate is the
+        // acceptance criterion and wins. Flagged in the slice report.
+        static constexpr int64_t kEnvIntervalTurns = 100;
+        bool env_due( const EnvVal &env ) const;
+        // Stamp env into a wire EnvironmentUpdate (seq/epoch), record
+        // it as the last-sent environment, and return it.
+        cdda::ipc::EnvironmentUpdateT stamp_env( const EnvVal &env );
+
         IGameAdapter &adapter_;
         uint64_t seq_ = 0;
         uint64_t epoch_ = 0;
@@ -116,6 +141,10 @@ class Exporter
         bool force_resync_ = false;
         bool entities_dirty_ = true;
         bool vehicles_dirty_ = true;
+        bool has_sent_env_ = false;
+        EnvVal last_env_{};
+        int64_t last_env_turn_ = 0;
+        uint64_t env_seq_ = 0;
         ViewSpec last_view_{};
         std::set<BlockKey> dirty_;
         std::map<BlockKey, std::array<TileVal, kTilesPerBlock>> cache_;

@@ -168,6 +168,12 @@ table SubmapBlock {
   seen: [ubyte];
   /// Per tile: graffiti present.
   has_graffiti: [bool];
+  /// Per tile: sky-exposed (Phase 10, decision 4A) — the game's own
+  /// test, map::is_outside(p) && !map::is_roofed(p), resolved
+  /// game-side. Drives the per-tile sky factor for sky GI.
+  /// Appended last: additive/non-breaking, old readers ignore it,
+  /// old data reads as absent (= not exposed).
+  outside: [bool];
 }
 
 table Entity {
@@ -203,6 +209,42 @@ table Vehicle {
   parts: [VehiclePartState];
 }
 
+/// Game time + weather at the player (Phase 10, docs/phase10-sky-gi.md
+/// §2.2). Weather crosses the wire as string id + resolved numeric
+/// fields, never as a closed enum alone: weather types are JSON-defined
+/// and mod-extensible, and a modded type the engine has never heard of
+/// must still light correctly from the numerics.
+table EnvironmentUpdate {
+  seq: uint64;
+  epoch: uint64;
+  /// Game time: total turns since calendar::turn_zero, plus the
+  /// derived values the engine should not have to re-derive.
+  turn: int64;
+  time_of_day_sec: float;      // 0..86400, fractional
+  sunrise_sec: float;          // today, game-local
+  sunset_sec: float;
+  season: ubyte;               // season_type: 0 spring .. 3 winter
+  sun_light: float;            // incident_sunlight(wtype, turn)
+  moon_light: float;           // incident_moonlight(wtype, turn)
+  sun_azimuth_deg: float;      // sun_azimuth_altitude(turn).first — from South, west-positive
+  sun_altitude_deg: float;     // sun_azimuth_altitude(turn).second — negative below horizon
+  moon_phase: ubyte;           // get_moon_phase(turn), 0..MOON_PHASE_MAX
+  /// Weather at the player (weather_manager state).
+  weather_id: string;          // e.g. "weather_rain"
+  light_multiplier: float;     // weather_type fields, resolved game-side
+  light_modifier: float;
+  sun_multiplier: float;
+  precip_class: ubyte;         // 0 none, 1 very_light, 2 light, 3 heavy
+  rains: bool;
+  sight_penalty: float;        // -> fog density input
+  tint_rgb: [float];           // weather_type tint_color, 3 entries or absent
+  tint_strength: float;
+  temperature_c: float;
+  windspeed_mph: float;
+  wind_dir_deg: float;
+  lightning_active: bool;
+}
+
 table Snapshot {
   view_origin: Vec3i;
   view_radius: uint32;
@@ -214,6 +256,10 @@ table Snapshot {
   vehicles: [Vehicle];
   seq: uint64;
   epoch: uint64;
+  /// Current environment, piggybacked so a fresh client is never
+  /// environment-blind before the first EnvironmentUpdate (Phase 10
+  /// §2.2). Appended last: additive/non-breaking.
+  environment: EnvironmentUpdate;
 }
 
 /// A single tile's new state inside a Delta (absolute position).
@@ -236,6 +282,10 @@ table TileChange {
   /// field_type = 0 means "no displayed field". Additive/non-breaking:
   /// old readers ignore it, old data reads as 0/0.
   displayed_field: DisplayedField;
+  /// Sky-exposed after this change (Phase 10; same game-side test as
+  /// SubmapBlock.outside). Appended last: additive/non-breaking, old
+  /// data reads as false.
+  outside: bool;
 }
 
 table Delta {
@@ -246,6 +296,9 @@ table Delta {
   entity_removed: [uint64];
   vehicle_updates: [Vehicle];
   vehicle_removed: [uint64];
+  /// Environment when it changed at this send boundary (Phase 10
+  /// §2.3); usually absent. Appended last: additive/non-breaking.
+  environment: EnvironmentUpdate;
 }
 
 /// Standalone light/visibility refresh (folded into Delta when small).
@@ -399,6 +452,10 @@ union Message {
   Ping,
   Pong,
   Shutdown,
+  // Phase 10: appended LAST on purpose — union member ids are
+  // positional, so appending is the only non-breaking placement.
+  // Old readers see an unknown member and ignore the message.
+  EnvironmentUpdate,
 }
 
 table Envelope {

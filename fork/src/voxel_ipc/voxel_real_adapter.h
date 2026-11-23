@@ -37,6 +37,7 @@ class RealAdapter : public IGameAdapter
         std::vector<EntVal> entities() override;
         std::vector<VehVal> vehicles() override;
         std::vector<MemVal> memory_tiles() override;
+        EnvVal environment() override;
         std::string game_version() const override;
         std::string tileset_id() const override;
 

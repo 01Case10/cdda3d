@@ -114,11 +114,13 @@ SubmapBlockT Exporter::block_to_wire( const BlockKey &k,
     b.lit.resize( kTilesPerBlock );
     b.seen.resize( kTilesPerBlock );
     b.has_graffiti.resize( kTilesPerBlock );
+    b.outside.resize( kTilesPerBlock );
     for( int i = 0; i < kTilesPerBlock; ++i ) {
         const TileVal &t = tiles[i];
         b.terrain[i] = t.terrain;
         b.furniture[i] = t.furniture;
         b.trap[i] = t.trap;
+        b.outside[i] = t.sky_exposed;
         if( !t.fields.empty() ) {
             b.field_index[i] = static_cast<int32_t>( b.fields.size() );
             for( const FieldVal &f : t.fields ) {
@@ -245,6 +247,9 @@ SnapshotT Exporter::build_snapshot( const ViewSpec &view )
     }
     snap.seq = ++seq_;
     snap.epoch = epoch_;
+    // Phase 10 piggyback: a Snapshot ALWAYS carries the current
+    // environment, and sending it re-arms the send rule (§2.3).
+    snap.environment = std::make_unique<EnvironmentUpdateT>( stamp_env( adapter_.environment() ) );
     has_snapshot_ = true;
     dirty_.clear();
     entities_dirty_ = vehicles_dirty_ = false;
@@ -289,6 +294,7 @@ DeltaT Exporter::build_delta()
                 tc->lit = static_cast<LitLevel>( static_cast<uint8_t>( fresh[i].lit ) );
                 tc->seen = fresh[i].seen;
                 tc->has_graffiti = fresh[i].graffiti;
+                tc->outside = fresh[i].sky_exposed;
                 d.tile_changes.push_back( std::move( tc ) );
             }
         }
@@ -332,12 +338,68 @@ DeltaT Exporter::build_delta()
         }
         vehicles_dirty_ = false;
     }
+    // Phase 10 piggyback: when an environment update is due at this
+    // boundary it rides the Delta (§2.2/§2.3); otherwise absent.
+    const EnvVal env = adapter_.environment();
+    if( env_due( env ) ) {
+        d.environment = std::make_unique<EnvironmentUpdateT>( stamp_env( env ) );
+    }
     d.seq = ++seq_;
     d.epoch = epoch_;
     stats_.deltas++;
     stats_.last_delta_ms =
         std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - t0 ).count();
     return d;
+}
+
+bool Exporter::env_due( const EnvVal &env ) const
+{
+    if( !has_sent_env_ ) { return true; }
+    if( env.weather_id != last_env_.weather_id ) { return true; }
+    if( env.lightning_active != last_env_.lightning_active ) { return true; }
+    return env.turn - last_env_turn_ >= kEnvIntervalTurns;
+}
+
+EnvironmentUpdateT Exporter::stamp_env( const EnvVal &env )
+{
+    EnvironmentUpdateT w;
+    w.seq = ++env_seq_;
+    w.epoch = epoch_;
+    w.turn = env.turn;
+    w.time_of_day_sec = env.time_of_day_sec;
+    w.sunrise_sec = env.sunrise_sec;
+    w.sunset_sec = env.sunset_sec;
+    w.season = env.season;
+    w.sun_light = env.sun_light;
+    w.moon_light = env.moon_light;
+    w.sun_azimuth_deg = env.sun_azimuth_deg;
+    w.sun_altitude_deg = env.sun_altitude_deg;
+    w.moon_phase = env.moon_phase;
+    w.weather_id = env.weather_id;
+    w.light_multiplier = env.light_multiplier;
+    w.light_modifier = env.light_modifier;
+    w.sun_multiplier = env.sun_multiplier;
+    w.precip_class = env.precip_class;
+    w.rains = env.rains;
+    w.sight_penalty = env.sight_penalty;
+    if( env.tint_rgb ) { w.tint_rgb = { ( *env.tint_rgb )[0], ( *env.tint_rgb )[1], ( *env.tint_rgb )[2] }; }
+    w.tint_strength = env.tint_strength;
+    w.temperature_c = env.temperature_c;
+    w.windspeed_mph = env.windspeed_mph;
+    w.wind_dir_deg = env.wind_dir_deg;
+    w.lightning_active = env.lightning_active;
+    last_env_ = env;
+    last_env_turn_ = env.turn;
+    has_sent_env_ = true;
+    stats_.env_updates++;
+    return w;
+}
+
+std::optional<EnvironmentUpdateT> Exporter::build_environment_update()
+{
+    const EnvVal env = adapter_.environment();
+    if( !env_due( env ) ) { return std::nullopt; }
+    return stamp_env( env );
 }
 
 void Exporter::mark_dirty_submap( int sx, int sy, int z ) { dirty_.insert( BlockKey{ sx, sy, z } ); }
@@ -382,6 +444,7 @@ uint64_t Exporter::hash_tile_arrays( const std::map<BlockKey, std::array<TileVal
             fnv( h, static_cast<uint8_t>( t.lit ) );
             fnv( h, t.seen );
             fnv( h, t.graffiti ? 1 : 0 );
+            fnv( h, t.sky_exposed ? 1 : 0 );
         }
     }
     return h;
@@ -404,6 +467,7 @@ uint64_t Exporter::hash_snapshot( const SnapshotT &snap )
             fnv( h, static_cast<uint8_t>( b.lit[i] ) );
             fnv( h, b.seen[i] );
             fnv( h, b.has_graffiti[i] ? 1 : 0 );
+            fnv( h, i < static_cast<int>( b.outside.size() ) && b.outside[i] ? 1 : 0 );
         }
         for( const auto &fp : b.fields ) {
             fnv( h, fp->tile_index );
