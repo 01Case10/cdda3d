@@ -407,6 +407,19 @@ impl SkyScene {
         u.set_cave_factor(self.cave_factor);
         u
     }
+
+    /// The frame's uniform block in **grid space** (east,
+    /// south, up) — the RT renderer's consumption form, the
+    /// counterpart of [`Self::uniforms`] (mesher space, raster).
+    /// Same single `from_sky_state` evaluation, converted via
+    /// `to_grid_space` per the `render_rt_frame_sky` contract.
+    pub fn uniforms_grid_space(&self) -> lighting::SkyUniforms {
+        let state = self.sky_state();
+        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
+            .to_grid_space();
+        u.set_cave_factor(self.cave_factor);
+        u
+    }
 }
 
 /// Billboard input for one frame (Phase 2h.2): a sprite atlas
@@ -1255,7 +1268,20 @@ fn render_frame_inner(
         // depth (fields depth-fade, billboard depth test, post
         // DoF) — convert the tracer's linear depth buffer into the
         // projected-depth texture those passes consume (2g.1).
-        let frame = crate::rt::render_rt_frame(device, queue, args)?;
+        // Phase 10 (10.6): a seated sky reaches the tracer
+        // through the grid-space entry point — before 10.6
+        // this branch called the no-sky entry, so an RT frame
+        // through the live loop always rendered under the
+        // renderer's built-in neutral sky whatever `args.sky`
+        // said (the 10.4 gates called the sky entry directly
+        // and never saw it). No seated sky keeps the exact
+        // pre-10.6 call, so the §6 default is byte-unchanged.
+        let frame = match &args.sky {
+            Some(s) => {
+                crate::rt::render_rt_frame_sky(device, queue, args, &s.uniforms_grid_space())?
+            }
+            None => crate::rt::render_rt_frame(device, queue, args)?,
+        };
         let (width, height) = frame.size;
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("frame-rt-color"),

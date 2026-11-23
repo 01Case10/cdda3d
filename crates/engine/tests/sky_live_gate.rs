@@ -229,6 +229,301 @@ fn cave_factor_seats_from_camera_target() {
 }
 
 // ---------------------------------------------------------------------
+// Gate 10.6 visual capture set (§8)
+// ---------------------------------------------------------------------
+
+/// GPU helper, the sky_raster_gate convention: a skip is LOUD
+/// and proves nothing.
+fn gpu() -> Option<(wgpu::Device, wgpu::Queue)> {
+    pollster::block_on(async {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .await?;
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("sky-live-gate-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    memory_hints: Default::default(),
+                },
+                None,
+            )
+            .await
+            .ok()?;
+        Some((device, queue))
+    })
+}
+
+fn mean_luminance(img: &image::RgbaImage) -> f32 {
+    let mut sum = 0f64;
+    for px in img.pixels() {
+        sum += 0.2126 * px[0] as f64 + 0.7152 * px[1] as f64 + 0.0722 * px[2] as f64;
+    }
+    (sum / (img.width() * img.height()) as f64) as f32
+}
+
+fn distinct_colors(img: &image::RgbaImage) -> usize {
+    img.pixels()
+        .map(|p| [p[0], p[1], p[2]])
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+}
+
+/// Regression (10.6): an RT frame rendered through
+/// `render_frame` — the live loop's entry — must use the
+/// seated sky. Before the fix this branch called the no-sky
+/// RT entry, so every RT frame rendered under the built-in
+/// neutral sky whatever `CaptureArgs::sky` said (the 10.4
+/// gates called the sky entry point directly and never saw
+/// it): midnight and noon frames came out byte-identical.
+#[test]
+fn rt_frame_through_render_frame_uses_seated_sky() {
+    let Some((device, queue)) = gpu() else {
+        eprintln!("rt_frame_through_render_frame_uses_seated_sky: NOT RUN — no wgpu adapter");
+        return;
+    };
+    use engine::capture::{CaptureArgs, RendererKind};
+    let render = |sky: SkyScene| {
+        let args = CaptureArgs {
+            snapshot: "stub-house".to_string(),
+            renderer: RendererKind::Rt,
+            size: (320, 180),
+            camera_target: (6.0, 6.0),
+            yaw_deg: 45.0,
+            pitch_deg: 45.0,
+            distance: 28.0,
+            cutaway_z: 1,
+            lighting: Some(LightingScene::fake_house(12.0, WeatherKind::Clear)),
+            sky: Some(sky),
+            ..CaptureArgs::default()
+        };
+        let outcome = engine::frame::render_frame(&device, &queue, &args).expect("render_frame");
+        let (img, _) =
+            engine::frame::readback_rgba(&device, &queue, &outcome.texture, outcome.size)
+                .expect("readback");
+        img
+    };
+    let midnight = render(SkyScene::named("midnight-clear").unwrap());
+    let noon = render(SkyScene::named("noon-clear").unwrap());
+    let hash = |img: &image::RgbaImage| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash_slice(img.as_raw(), &mut h);
+        std::hash::Hasher::finish(&h)
+    };
+    assert_ne!(
+        hash(&midnight),
+        hash(&noon),
+        "RT through render_frame ignores the seated sky (midnight == noon)"
+    );
+    assert!(
+        mean_luminance(&noon) > mean_luminance(&midnight),
+        "noon should outbrighten midnight through the live path: {} vs {}",
+        mean_luminance(&noon),
+        mean_luminance(&midnight)
+    );
+}
+
+/// The §8 visual set: stub house + sample scene x
+/// {midnight, dawn, noon, dusk} x {Clear, Rain, Fog,
+/// Thunderstorm} x {raster, RT}, written as PNGs + contact
+/// sheets under `target/sky-gate-10.6/` for Joey's sign-off.
+/// A green run here is NOT the sign-off — it proves the set
+/// exists, is non-blank, and orders sanely (noon-clear
+/// brightest of the clears, midnight darkest, noon
+/// thunderstorm dimmer than noon clear). The sample scene
+/// renders sky-only (no light fixture exists for it — the
+/// same configuration its other gates use); the stub house
+/// carries the coherent bake (its Phase 7 environment is
+/// derived from the resolved sky scene, so bake and sky
+/// cannot drift).
+#[test]
+fn gate_10_6_visual_capture_set() {
+    let Some((device, queue)) = gpu() else {
+        eprintln!(
+            "================================================================\n\
+             gate 10.6 visual set: NOT RUN — no wgpu adapter.\n\
+             This run proves NOTHING about the capture set.\n\
+             ================================================================"
+        );
+        return;
+    };
+    use engine::capture::{CaptureArgs, RendererKind};
+    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/sky-gate-10.6");
+    std::fs::create_dir_all(&out_dir).expect("create output dir");
+
+    let times = ["midnight", "dawn", "noon", "dusk"];
+    let weathers = ["clear", "rain", "fog", "thunderstorm"];
+    let mut index = String::from(
+        "Gate 10.6 visual capture set (slice 10.6, design §8).\n\
+         Contact sheets: rows = midnight, dawn, noon, dusk (top to bottom);\n\
+         columns = clear, rain, fog, thunderstorm (left to right).\n\
+         Acceptance is Joey's sign-off on the sheets, not this gate.\n",
+    );
+    for (scene_name, snapshot) in [("house", "stub-house"), ("sample", "sample-scene")] {
+        for renderer in [RendererKind::Raster, RendererKind::Rt] {
+            let rname = match renderer {
+                RendererKind::Raster => "raster",
+                RendererKind::Rt => "rt",
+            };
+            let mut sheet = image::RgbaImage::new(320 * 4, 180 * 4);
+            let mut hashes = std::collections::HashMap::new();
+            let mut frames: std::collections::HashMap<String, u64> =
+                std::collections::HashMap::new();
+            let mut clear_lums = std::collections::HashMap::new();
+            let mut noon_lums = std::collections::HashMap::new();
+            for (ti, tname) in times.iter().enumerate() {
+                for (wi, wname) in weathers.iter().enumerate() {
+                    let sky_name = format!("{tname}-{wname}");
+                    let sky = SkyScene::named(&sky_name).expect("matrix name");
+                    let mut args = CaptureArgs {
+                        snapshot: snapshot.to_string(),
+                        renderer,
+                        size: (320, 180),
+                        sky: Some(sky.clone()),
+                        ..CaptureArgs::default()
+                    };
+                    if snapshot == "stub-house" {
+                        args.camera_target = (6.0, 6.0);
+                        args.yaw_deg = 45.0;
+                        args.pitch_deg = 45.0;
+                        args.distance = 28.0;
+                        args.cutaway_z = 1;
+                        // Coherent bake: the Phase 7 environment
+                        // of the resolved sky scene itself.
+                        let hour = sky.game_env.time_of_day_sec / 3600.0;
+                        let kind = lighting::classify_weather(&sky.game_env);
+                        args.lighting = Some(LightingScene::fake_house(hour, kind));
+                    } else {
+                        args.camera_target = (6.5, 6.0);
+                        args.yaw_deg = 45.0;
+                        args.pitch_deg = 50.0;
+                        args.distance = 15.0;
+                        args.cutaway_z = 0;
+                    }
+                    let outcome = engine::frame::render_frame(&device, &queue, &args)
+                        .expect("render_frame");
+                    let (img, _) = engine::frame::readback_rgba(
+                        &device,
+                        &queue,
+                        &outcome.texture,
+                        outcome.size,
+                    )
+                    .expect("readback");
+                    assert!(
+                        distinct_colors(&img) >= 8,
+                        "{scene_name}/{rname}/{sky_name}: near-blank frame"
+                    );
+                    let lum = mean_luminance(&img);
+                    if *wname == "clear" {
+                        clear_lums.insert(*tname, lum);
+                    }
+                    if *tname == "noon" {
+                        noon_lums.insert(*wname, lum);
+                    }
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    std::hash::Hash::hash_slice(img.as_raw(), &mut hasher);
+                    let h = std::hash::Hasher::finish(&hasher);
+                    hashes.insert(h, sky_name.clone());
+                    frames.insert(sky_name.clone(), h);
+                    let file = format!("{scene_name}-{rname}-{sky_name}.png");
+                    img.save(out_dir.join(&file)).expect("save png");
+                    image::imageops::replace(
+                        &mut sheet,
+                        &img,
+                        (wi * 320) as i64,
+                        (ti * 180) as i64,
+                    );
+                }
+            }
+            // Distinctness: every sky changes the frame, with
+            // one designed exception. In RT, dawn-<w> and
+            // dusk-<w> (same weather) are byte-identical BY
+            // DESIGN (§5.3 overcast collapse): at the fake
+            // day's 06:30/17:30 the sun's premultiplied
+            // luminance measures ~0.11, under the 0.18
+            // collapse threshold, so the directional term
+            // folds into the hemisphere term and the frame no
+            // longer depends on the sun's azimuth — the only
+            // field dawn and dusk differ in (east vs west;
+            // colours and intensities are symmetric). Pinned
+            // here as designed behaviour; the raster path has
+            // no collapse and stays pairwise-distinct.
+            if renderer == RendererKind::Rt {
+                // The clear pair is the mechanism-clean case:
+                // at cloud cover 0.05 the sky's time-phase
+                // cloud drift rounds away, leaving the §5.3
+                // collapse as the only dawn/dusk difference —
+                // none. (The wet pairs keep a drift-phase
+                // difference in the sky background itself.)
+                assert_eq!(
+                    frames["dawn-clear"],
+                    frames["dusk-clear"],
+                    "{scene_name}/rt: dawn-clear vs dusk-clear should \
+                     collapse identically (§5.3, sun luminance ~0.11 < 0.18)"
+                );
+            }
+            {
+                // Distinct hash count: 16 for raster; RT loses
+                // at least the dawn/dusk-clear collapse.
+                if renderer == RendererKind::Rt {
+                    assert!(
+                        hashes.len() >= 12,
+                        "{scene_name}/{rname}: only {} distinct frames of 16",
+                        hashes.len()
+                    );
+                } else {
+                    assert_eq!(
+                        hashes.len(),
+                        16,
+                        "{scene_name}/{rname}: expected 16 distinct frames"
+                    );
+                }
+                println!(
+                    "10.6 {scene_name}/{rname}: {} distinct frames of 16",
+                    hashes.len()
+                );
+            }
+            // Sanity ordering, clear column: noon brightest,
+            // midnight darkest.
+            assert!(
+                clear_lums["noon"] > clear_lums["dawn"]
+                    && clear_lums["noon"] > clear_lums["dusk"]
+                    && clear_lums["noon"] > clear_lums["midnight"],
+                "{scene_name}/{rname}: noon-clear not brightest: {clear_lums:?}"
+            );
+            assert!(
+                clear_lums["midnight"] < clear_lums["dawn"]
+                    && clear_lums["midnight"] < clear_lums["dusk"]
+                    && clear_lums["midnight"] < clear_lums["noon"],
+                "{scene_name}/{rname}: midnight-clear not darkest: {clear_lums:?}"
+            );
+            // Overcast dims noon.
+            assert!(
+                noon_lums["thunderstorm"] < noon_lums["clear"],
+                "{scene_name}/{rname}: noon thunderstorm not dimmer than clear: {noon_lums:?}"
+            );
+            let sheet_name = format!("sheet-{scene_name}-{rname}.png");
+            sheet.save(out_dir.join(&sheet_name)).expect("save sheet");
+            index.push_str(&format!(
+                "\n{scene_name}/{rname}: clear luminance {clear_lums:?}; noon luminance {noon_lums:?}\n"
+            ));
+            println!("10.6 {scene_name}/{rname}: clear {clear_lums:?} noon {noon_lums:?}");
+        }
+    }
+    std::fs::write(out_dir.join("index.txt"), index).expect("write index");
+}
+
+// ---------------------------------------------------------------------
 // SkyScene seating from the wire
 // ---------------------------------------------------------------------
 
