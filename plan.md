@@ -1870,3 +1870,18 @@ egg-sack fix A is accepted — item 6 CLOSED, step B (surface fix) not done. The
 tank strap bands (8a-A) are accepted. The 5b-8 batch is fully closed: 5a b1cd3aa,
 5b b530a77, 6 816a786, 7 closed no-work, 8a 60c7b75, 8c 1f9a80c; 8b (ultica_run1
 regen) remains deferred to the terrain-fixes batch close-out by its own terms.
+
+## Addendum 2026-11-23 (7): bamboo densify landed (terrain item 1)
+
+Joey's call: dead bamboo densifies to match the sprite. Measured root cause (both
+plan suspects): the dead sprites (32x64) carry 7 culms (column clusters at a 0.30
+opacity threshold, no gap-merging: widths 2-4 px, gaps 2-3 px); the shared builder's
+0.45 threshold plus gap-merge <= 2 fused them into 2 clusters, each drawn as one
+fat 3x3 culm. Fix, scoped to the dead family only (`bamboo_model(sprite, dense)`,
+dense = id starts with bamboo_dead): threshold 0.30, gap-merge 0, thin
+cross-sections (single cell for 1-2 px clusters, plus for wider). Live bamboo is
+untouched by construction — and pinned: whole-model FNV hashes for t_bamboo,
+t_bamboo_long, t_bamboo_tall in the new gate `bamboo_dead_is_dense_and_live_is_unchanged`
+(terrain_coverage_gate), measured pre-fix; the same gate counts >= 6 culm
+components at y=20 for both dead ids (was exactly 2). Voxelizer suite green.
+Presented to Joey 2026-11-23 (4-angle sheet incl. live bamboo for comparison).

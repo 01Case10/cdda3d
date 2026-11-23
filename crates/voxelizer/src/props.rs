@@ -7434,7 +7434,11 @@ pub fn terrain_model_for(
         || s.contains("pine")
     {
         if s.starts_with("bamboo") {
-            return Some((bamboo_model(sprite), TerrainModelKind::Standing));
+            // Dead bamboo densifies (terrain item 1,
+            // 2026-11-23): its sprite's ~7 thin culms fused
+            // into 2 under the shared clustering.
+            let dense = s.starts_with("bamboo_dead");
+            return Some((bamboo_model(sprite, dense), TerrainModelKind::Standing));
         }
         if s.contains("fungal") {
             // A fungal young tree is a solid pale
@@ -7684,7 +7688,7 @@ fn thicket_model(sprite: &RgbaImage, h: i32) -> PropModel {
 /// the culms become thicket tufts. Sprites with no
 /// culm columns at all (the base bamboo is pure leaf
 /// strokes over grass) fall back to the thicket.
-fn bamboo_model(sprite: &RgbaImage) -> PropModel {
+fn bamboo_model(sprite: &RgbaImage, dense: bool) -> PropModel {
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
     let (mut top, mut bottom) = (sh, -1);
     for r in 0..sh {
@@ -7699,15 +7703,23 @@ fn bamboo_model(sprite: &RgbaImage) -> PropModel {
     let frac = (bottom - top + 1) as f32 / sh as f32;
     let h = ((48.0 * frac) as i32).max(10);
     let rows = (bottom - top + 1).max(1);
-    // Culm columns: opaque over >= 55% of the height.
+    // Culm columns: opaque over a threshold share of the
+    // height. The dense (dead) family clusters at 0.30
+    // with NO gap-merging: measured on the dead sprites,
+    // 0.45 + merging fused the sprite's 7 culms (2-4 px
+    // wide, 2-3 px apart) into 2 clusters, while 0.30
+    // unmerged recovers all 7. The live family keeps the
+    // original 0.45 / gap-<=2 rule exactly.
+    let thresh = if dense { 0.30 } else { 0.45 };
+    let gap_max = if dense { 0 } else { 2 };
     let mut culm_col = vec![false; sw as usize];
     for x in 0..sw {
         let n = (top..=bottom)
             .filter(|&r| sprite.get_pixel(x as u32, r as u32)[3] >= 128)
             .count();
-        culm_col[x as usize] = (n as f32) >= 0.45 * (rows as f32);
+        culm_col[x as usize] = (n as f32) >= thresh * (rows as f32);
     }
-    // Cluster culm columns (gaps of <= 2 merged).
+    // Cluster culm columns (gaps of <= gap_max merged).
     let mut clusters: Vec<Vec<i32>> = Vec::new();
     let mut x = 0;
     while x < sw {
@@ -7715,7 +7727,7 @@ fn bamboo_model(sprite: &RgbaImage) -> PropModel {
             let mut cl = vec![x];
             let mut xx = x + 1;
             let mut gap = 0;
-            while xx < sw && gap <= 2 {
+            while xx < sw && gap <= gap_max {
                 if culm_col[xx as usize] {
                     cl.push(xx);
                     gap = 0;
@@ -7774,6 +7786,16 @@ fn bamboo_model(sprite: &RgbaImage) -> PropModel {
             .min()
             .unwrap_or(top);
         let top_y = (sh - 1 - ctop) * h / sh;
+        // Cross-section: live culms are the full 3x3 disc;
+        // dead culms are thin — a single cell for a 1-2 px
+        // cluster, a plus for wider ones (terrain item 1).
+        let r2 = if !dense {
+            2
+        } else if cl.len() <= 2 {
+            0
+        } else {
+            1
+        };
         for y in 0..=top_y.min(h - 1) {
             let r = (h - 1 - y) * sh / h;
             let mut c = *sprite.get_pixel(cx_px as u32, r as u32);
@@ -7782,7 +7804,7 @@ fn bamboo_model(sprite: &RgbaImage) -> PropModel {
             }
             for dz in -1..=1i32 {
                 for dx in -1..=1i32 {
-                    if dx * dx + dz * dz > 2 {
+                    if dx * dx + dz * dz > r2 {
                         continue;
                     }
                     let (vx, vz) = (cx + dx, 16 + z_off + dz);
