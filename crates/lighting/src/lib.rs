@@ -34,6 +34,7 @@ pub mod png;
 pub mod proto_adapter;
 pub mod render;
 pub mod sky;
+pub mod sky_uniforms;
 pub mod smoothing;
 pub mod updates;
 
@@ -52,6 +53,10 @@ pub use mapping::{
 pub use sky::{
     classify_weather, fallback_sun_angles, max_elev_for_season, moon_light_for_phase, sky_state,
     sun_direction, GameEnvironment, PrecipKind, PrecipState, SkyClock, SkyState,
+};
+pub use sky_uniforms::{
+    sky_color_cpu, SkyUniforms, CAVE_GROUND, CAVE_HORIZON, CAVE_ZENITH, LEGACY_GROUND,
+    LEGACY_HORIZON, LEGACY_SUN_DIR_GRID, LEGACY_ZENITH, SKY_WGSL,
 };
 pub use smoothing::{
     air_side_sample, face_light, smoothed_tile_sample, top_face_vertex_light, vertex_light,
