@@ -300,19 +300,43 @@ fn water_shading_brightens_puddle_raster() {
     let water = render(ModelSurface::Water, "raster_water.png");
     let plain = render(ModelSurface::None, "raster_plain.png");
 
-    let mean = |img: &image::RgbaImage| -> f64 {
-        let mut sum = 0f64;
-        let mut n = 0usize;
-        for p in img.pixels() {
-            sum += 0.299 * p.0[0] as f64 + 0.587 * p.0[1] as f64 + 0.114 * p.0[2] as f64;
-            n += 1;
-        }
-        sum / n as f64
+    // Brightening is measured over the puddle region, not
+    // the frame (ratified rework, 2026-11-23). The original
+    // assertion — frame mean water > plain + 3.0 — was
+    // written before this gate had ever run on an adapter
+    // machine (the camera-uniform layout bug blocked every
+    // raster pipeline creation; see the Wave 2 merge
+    // record). Measured on lavapipe once it finally ran:
+    // the water treatment brightens the puddle tops by ~+55
+    // luminance per pixel, but the puddle is 1,530 of
+    // 129,600 frame pixels (1.2%), so the frame mean moves
+    // only +0.7 and the threshold was unreachable by
+    // construction. The region is exact: the two renders
+    // differ ONLY where the water treatment engaged (same
+    // geometry, same sky — the scenes differ solely in the
+    // surface marker), so region = pixels that differ.
+    let lum = |p: &image::Rgba<u8>| {
+        0.299 * p.0[0] as f64 + 0.587 * p.0[1] as f64 + 0.114 * p.0[2] as f64
     };
-    let (mw, mp) = (mean(&water), mean(&plain));
+    let (mut sum_w, mut sum_p, mut region) = (0f64, 0f64, 0usize);
+    for (a, b) in water.pixels().zip(plain.pixels()) {
+        if a.0 != b.0 {
+            sum_w += lum(a);
+            sum_p += lum(b);
+            region += 1;
+        }
+    }
     assert!(
-        mw > mp + 3.0,
-        "water shading must brighten the frame (water {mw:.1} vs plain {mp:.1})"
+        region >= 1_000,
+        "the water treatment must engage a real puddle area ({region} px differ)"
+    );
+    let (mw, mp) = (sum_w / region as f64, sum_p / region as f64);
+    println!(
+        "puddle water: region {region} px, mean luminance water {mw:.1} vs plain {mp:.1}"
+    );
+    assert!(
+        mw > mp + 10.0,
+        "water shading must brighten the puddle (water {mw:.1} vs plain {mp:.1} over {region} px)"
     );
     // The geometry is identical: the silhouette (pixels
     // differing from the corner background) must match
