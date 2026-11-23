@@ -1827,3 +1827,21 @@ mid-depth plateau that remains is the sprite's own flat top row (faithful). Gate
 failing pre-fix (front run 11), passing after; full voxelizer suite green. Presented
 to Joey 2026-11-23 (flat orthographic 4-angle sheet); step B (surface fix) only if
 he says it still reads flat.
+
+## Addendum 2026-11-23 (4): tank straps — Stage H ribbing item closed (8a-A)
+
+Joey's call 2026-11-23 (option A): smooth barrel + strap bands, cap face as-is.
+Measured first: the current EndOn builder's barrel paint is ALREADY a single flat
+colour (205 grey, uniform along the length; 4 distinct side colours total, all
+neck/stand) — the ribbing in the G.3 rework sheet was the stepped disc's shading in
+the render, not banding in the paint, so there was nothing to remove. The missing
+mockup element was the straps: `endon_model` now adds two raised strap bands
+(`tank_strap_z`: {c-1, c} for c in {l/3, 2l/3}, never the cap plane) — a one-cell-
+proud shell ring in the barrel darkened x0.73 (`TankEndFit.strap`), with anchor legs
+at the ring's flank extremes running to the ground, drawn before the neck so the
+neck wins where they meet. Gates: views_gate's exhaustive tank shape test gained
+the strap term (recomputed from the spec) plus band-top/smooth-top colour asserts
+and a cap-plane FNV pin (0xb01988571e19d8cf, measured pre-fix — the cap is
+byte-identical); verified failing with the strap pass disabled. prop_coverage_gate's
+pre-drive count for f_standing_tank updated 23224 -> 23716 (+492 strap cells) as a
+deliberate, annotated change. Presented to Joey 2026-11-23 (flat 4-angle sheet).

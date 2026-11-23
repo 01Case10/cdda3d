@@ -6772,6 +6772,10 @@ pub struct TankEndFit {
     pub fitting_x: Range<u32>,
     /// Barrel material: the cap region's de-shaded primary.
     pub barrel: Rgba<u8>,
+    /// Strap material: the barrel darkened (x0.73) — the
+    /// mockup's strap bands are the barrel's own tone,
+    /// darker (Stage H, Joey's 8a-A, 2026-11-23).
+    pub strap: Rgba<u8>,
     /// Neck material: modal color of the sprite's neck band.
     pub neck_color: Rgba<u8>,
     /// Stand material: modal color of the sprite's base rows.
@@ -6901,9 +6905,32 @@ pub fn endon_tank_fit(id: &str, sprite: &RgbaImage) -> Option<TankEndFit> {
         fitting,
         fitting_x: fx0..fx1 + 1,
         barrel: Rgba([r, g, b, 255]),
+        strap: Rgba([
+            (r as f32 * 0.73) as u8,
+            (g as f32 * 0.73) as u8,
+            (b as f32 * 0.73) as u8,
+            255,
+        ]),
         neck_color,
         base,
     })
+}
+
+/// Strap band z planes for a barrel of `length` cells
+/// (Stage H, Joey's 8a-A, 2026-11-23; the mockup's two
+/// straps): bands centred at length/3 and 2*length/3, each
+/// two cells thick ({c-1, c}), never on the cap plane
+/// (z = length-1) — the cap face stays exactly as fitted.
+pub fn tank_strap_z(length: u32) -> Vec<u32> {
+    let mut v = Vec::new();
+    for c in [length / 3, 2 * length / 3] {
+        for z in [c.saturating_sub(1), c] {
+            if z < length.saturating_sub(1) && !v.contains(&z) {
+                v.push(z);
+            }
+        }
+    }
+    v
 }
 
 fn endon_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
@@ -6961,6 +6988,50 @@ fn endon_model(id: &str, sprite: &RgbaImage) -> Option<PropModel> {
                     fit.barrel
                 };
                 m.set(x, y, z, Some(c));
+            }
+        }
+    }
+    // Strap bands (Stage H, Joey's 8a-A, 2026-11-23): the
+    // mockup's barrel is smooth with two strap bands; the
+    // model's barrel paint is already a single flat colour
+    // (measured: uniform along the length), so the straps
+    // are the missing element. Each band is a raised ring
+    // one cell proud of the disc (radius r+1.3 shell) at the
+    // tank_strap_z planes, plus anchor legs at the ring's
+    // flank extremes running to the ground (the mockup's
+    // straps continue past the barrel's underside to the
+    // floor). Drawn before the neck, so the neck wins where
+    // they meet.
+    for z in tank_strap_z(l) {
+        let mut ring_xs: Vec<u32> = Vec::new();
+        for y in fit.leg_h..height {
+            for x in 0..w {
+                let dx = x as f32 - fit.center_x;
+                let dy = y as f32 - cy;
+                let dist2 = dx * dx + dy * dy;
+                if dist2 > r * r && dist2 <= (r + 1.3) * (r + 1.3) {
+                    m.set(x, y, z, Some(fit.strap));
+                    ring_xs.push(x);
+                }
+            }
+        }
+        // Anchor legs: at the ring's extreme columns, fill
+        // from the ground up to the lowest ring cell.
+        if let (Some(&xl), Some(&xr)) = (ring_xs.iter().min(), ring_xs.iter().max()) {
+            for x in [xl, xr] {
+                let lowest = (fit.leg_h..height).find(|&y| {
+                    let dx = x as f32 - fit.center_x;
+                    let dy = y as f32 - cy;
+                    let dist2 = dx * dx + dy * dy;
+                    dist2 > r * r && dist2 <= (r + 1.3) * (r + 1.3)
+                });
+                if let Some(yl) = lowest {
+                    for y in 0..yl {
+                        if m.get(x, y, z).is_none() {
+                            m.set(x, y, z, Some(fit.strap));
+                        }
+                    }
+                }
             }
         }
     }

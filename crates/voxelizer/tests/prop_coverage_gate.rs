@@ -161,7 +161,10 @@ const REGRESSION: &[(&str, usize)] = &[
     ("f_spinwheel", 28512),
     ("f_spinwheel_cordage", 28512),
     ("f_spinwheel_leather", 28512),
-    ("f_standing_tank", 23224),
+    // f_standing_tank: 23224 -> 23716 on 2026-11-23 — the
+    // +492 cells are the Stage H strap bands, a deliberate
+    // Joey-ordered model change (8a-A), not a regression.
+    ("f_standing_tank", 23716),
     ("f_straw_bed", 7392),
     ("f_table", 2944),
     ("f_tablesaw", 9688),

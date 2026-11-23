@@ -155,6 +155,52 @@ fn tank_is_a_horizontal_cylinder() {
         dx * dx + dy * dy <= r * r
     };
     let disc_bottom = |x: u32| (0..mh).find(|&y| in_disc(x, y));
+    // Strap bands (Stage H, Joey's 8a-A, 2026-11-23),
+    // recomputed from the documented spec: bands at
+    // {c-1, c} for c in {l/3, 2l/3}, never the cap plane;
+    // a band cell is in the raised shell (r < dist <=
+    // r+1.3, y >= leg_h) or in an anchor leg (the shell's
+    // extreme columns, ground to the lowest shell cell).
+    let strap_z: Vec<u32> = {
+        let mut v = Vec::new();
+        for c in [ml / 3, 2 * ml / 3] {
+            for z in [c.saturating_sub(1), c] {
+                if z < ml - 1 && !v.contains(&z) {
+                    v.push(z);
+                }
+            }
+        }
+        v
+    };
+    let in_shell = |x: u32, y: u32| -> bool {
+        if y < fit.leg_h {
+            return false;
+        }
+        let dx = x as f32 - fit.center_x;
+        let dy = y as f32 - cy;
+        let dist2 = dx * dx + dy * dy;
+        dist2 > r * r && dist2 <= (r + 1.3) * (r + 1.3)
+    };
+    let shell_xs: Vec<u32> = (0..mw)
+        .filter(|&x| (fit.leg_h..mh).any(|y| in_shell(x, y)))
+        .collect();
+    let (leg_xl, leg_xr) = (
+        *shell_xs.iter().min().expect("shell has cells"),
+        *shell_xs.iter().max().expect("shell has cells"),
+    );
+    let in_strap = |x: u32, y: u32, z: u32| -> bool {
+        if !strap_z.contains(&z) {
+            return false;
+        }
+        if in_shell(x, y) {
+            return true;
+        }
+        if x == leg_xl || x == leg_xr {
+            let lowest = (fit.leg_h..mh).find(|&yy| in_shell(x, yy));
+            return lowest.map_or(false, |yl| y < yl);
+        }
+        false
+    };
     for z in 0..ml {
         for y in 0..mh {
             for x in 0..mw {
@@ -166,14 +212,15 @@ fn tank_is_a_horizontal_cylinder() {
                 let in_stand = fit.stand_z.iter().any(|zr| zr.contains(&z))
                     && fit.stand_x.contains(&x)
                     && disc_bottom(x).map_or(false, |yb| y < yb);
-                let expect = in_disc(x, y) || in_neck || in_stand;
+                let expect = in_disc(x, y) || in_neck || in_stand || in_strap(x, y, z);
                 assert_eq!(
                     m.get(x, y, z).is_some(),
                     expect,
-                    "tank shape at {x},{y},{z} (disc {} neck {} stand {})",
+                    "tank shape at {x},{y},{z} (disc {} neck {} stand {} strap {})",
                     in_disc(x, y),
                     in_neck,
-                    in_stand
+                    in_stand,
+                    in_strap(x, y, z)
                 );
             }
         }
@@ -212,6 +259,46 @@ fn tank_is_a_horizontal_cylinder() {
     // Barrel interior is the cap material; the back face too.
     assert_eq!(m.get(mid_x, cy as u32, ml / 2), Some(fit.barrel));
     assert_eq!(m.get(mid_x, cy as u32, 0), Some(fit.barrel));
+    // Strap bands (8a-A): the barrel's top at a band plane
+    // is strap material, raised one cell proud of the disc;
+    // at a non-band plane the top is the smooth barrel.
+    let top_at = |z: u32| (0..mh).rev().find(|&y| m.get(mid_x, y, z).is_some());
+    for &z in strap_z.iter().filter(|z| !fit.neck_z.contains(z)) {
+        let y = top_at(z).expect("band column filled");
+        assert_eq!(m.get(mid_x, y, z), Some(fit.strap), "band top at z={z}");
+        assert!(
+            !in_disc(mid_x, y),
+            "band top at z={z} is proud of the disc (y={y})"
+        );
+    }
+    let plain_z = (0..ml - 1)
+        .find(|z| !strap_z.contains(z) && !fit.neck_z.contains(z))
+        .expect("a plain barrel plane exists");
+    let y = top_at(plain_z).expect("barrel column filled");
+    assert_eq!(m.get(mid_x, y, plain_z), Some(fit.barrel), "smooth barrel top");
+    assert!(in_disc(mid_x, y), "plain top is the disc itself");
+    // The cap face is byte-identical to the pre-strap
+    // model (FNV-1a over the cap plane, measured on the
+    // pre-fix tree 2026-11-23).
+    let mut hash: u64 = 0xcbf29ce484222325;
+    let mut feed = |bs: &[u8]| {
+        for &b in bs {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    };
+    for y in 0..mh {
+        for x in 0..mw {
+            match m.get(x, y, ml - 1) {
+                Some(c) => {
+                    feed(&[1]);
+                    feed(&c.0);
+                }
+                None => feed(&[0]),
+            }
+        }
+    }
+    assert_eq!(hash, 0xb01988571e19d8cf, "cap face unchanged by the straps");
 }
 
 #[test]
