@@ -1791,3 +1791,20 @@ after; suites proto+mesher+voxelizer+engine all green. Seam (2) — furniture fl
 over modelled ground — is NOT fixed by this: furniture stamps through the separate
 `stamp_furniture` path at the slab-top origin, unchanged. Seam (3) is moot for tall
 Standing models (no more z-overlap with the level above from them).
+
+## Addendum 2026-11-23 (2): seam (2) fixed — furniture seats on the measured ground top (fix 5b)
+
+Joey's call 2026-11-23 (option B — measure, don't publish): `stamp_furniture` now looks
+for the tile's Ground volume at its level (the shallow volume seated at the level base;
+a full-depth base volume is a tall Standing model under fix 5a, not ground) and seats
+the furniture at that volume's top (base + depth: 10 for a floor, 16 for a mound)
+instead of the slab-top origin 32. No Ground volume -> slab-top origin unchanged (the
+coarse slab is really there). No v2 format change. Requires terrain stamped before
+furniture on the combined path. Gate: new `furniture_seats_on_measured_ground_top` in
+terrain_snapshot_gate (grass and floor tiles seat at 10, a groundless tile at 32) —
+verified failing on the pre-fix code, passing after; phase9_stamp_gate unmoved.
+
+Also recorded 2026-11-23, no code: gasper side stripes CLOSED on Joey's call (option A —
+keep the sprite's longitudinal stripes; the blotch mockup stays unapplied, faithfulness
+rule intact). `assets/ultica_run1` regeneration deferred on Joey's call (option A) to
+the close-out of the terrain-fixes batch (after bamboo/puddle/hand-build sign-offs).

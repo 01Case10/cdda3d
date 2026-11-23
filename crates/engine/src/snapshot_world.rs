@@ -322,7 +322,10 @@ pub fn prop_block_for<'a>(
 /// For each placement whose `furn_id` resolves to a model
 /// (via `resolve`), the model is stamped at the tile's fine
 /// volume with origin [`fine_z_origin`] (floor-slab top, plan
-/// 9.0) through `mesher::fine::stamp_model_rotated` with the
+/// 9.0) — or, when the tile's ground is a stamped Ground
+/// model, on that model's measured top (fix 5b, 2026-11-23;
+/// see the seating code) — through
+/// `mesher::fine::stamp_model_rotated` with the
 /// placement's `quarter_turns` facing (9.7; 0 = the pre-9.7
 /// unrotated stamp), and the owning chunk's `has_fine` flag
 /// is recomputed from the layer.
@@ -368,7 +371,27 @@ pub fn stamp_furniture<'m>(
     let mut touched: BTreeSet<[i32; 2]> = BTreeSet::new();
     for p in placements {
         let tile = (p.x, p.y);
-        let z0 = fine_z_origin(scale, p.level);
+        // Fix 5b (2026-11-23, Joey's option B — measure,
+        // don't publish): if the tile's ground at this level
+        // is a stamped Ground model, seat the furniture on
+        // that model's measured top instead of the slab-top
+        // origin. A Ground model airs the coarse slab and
+        // tops out at its own height (10, or 16 for a mound),
+        // so slab-top seating (32) left furniture floating
+        // over the modelled floor. A Ground volume is the
+        // SHALLOW volume seated at the level base (depth <
+        // the level depth) — a full-depth base volume is a
+        // tall Standing model (fix 5a), not ground. No such
+        // volume: the coarse slab is really there, and the
+        // slab-top origin stands. This requires terrain to
+        // be stamped before furniture on the combined path.
+        let base = scale.level_base_block(p.level) as i32 * FINE;
+        let ground_top = layer
+            .volumes_for_tile(tile)
+            .iter()
+            .find(|v| v.z0 == base && v.depth_z < layer.depth_z)
+            .map(|v| v.z0 + v.depth_z);
+        let z0 = ground_top.unwrap_or_else(|| fine_z_origin(scale, p.level));
         // Restamp: drop the tile's old volume at this level.
         layer.remove_tile_in_z_range(tile, z0, z0 + layer.depth_z);
         match resolve(p.furn_id) {

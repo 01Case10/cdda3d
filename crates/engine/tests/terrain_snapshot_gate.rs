@@ -23,9 +23,12 @@
 //! (those are the voxelizer coverage gate's business).
 
 use engine::materials::{ModelKind, PropModelData};
-use engine::snapshot_world::{build_snapshot_world, stamp_snapshot_terrain};
+use engine::snapshot_world::{
+    build_snapshot_world, stamp_furniture, stamp_snapshot_terrain, FurniturePlacement,
+    PropModelCells,
+};
 use mesher::chunk::ChunkMap;
-use mesher::fine::FineLayer;
+use mesher::fine::{FineLayer, ModelCells};
 use mesher::scale::WorldScale;
 use mesher::{Block, Pass};
 use proto::samples::{
@@ -289,6 +292,52 @@ fn snapshot_terrain_models_seat_by_kind() {
     assert!(layer.volumes_for_tile((9, 9)).is_empty());
     assert_eq!(slab_id(&map, 9, 9, 0), TER_CHAINFENCE);
     println!("terrain wire gate: ground/fence/standing/roof seating by material id");
+}
+
+/// Fix 5b (2026-11-23, Joey's option B): furniture stamped
+/// onto a tile whose ground is a Ground model seats on the
+/// ground model's measured top (its shallow base volume's
+/// height: 10 for the fixture grass/floor), not on the
+/// slab-top origin 32 — the slab is aired for Ground tiles,
+/// so slab-top seating left furniture floating 22 cells
+/// over the modelled floor. A tile with no Ground model
+/// keeps the slab-top origin.
+#[test]
+fn furniture_seats_on_measured_ground_top() {
+    let defs = sample_terrain_tiledefs();
+    let snap = sample_terrain_snapshot();
+    let fx = Fixture::new();
+    let scale = WorldScale::default();
+    let mut map = build_snapshot_world(&defs, &snap, scale, &coarse_block);
+    let mut layer = FineLayer::new(96);
+    let resolve = |id: &str| fx.resolve(id);
+    stamp_snapshot_terrain(&mut map, &mut layer, &defs, &snap, scale, &resolve, &colour_block)
+        .unwrap();
+
+    // One-voxel furniture model (local (5, 0, 5), trunk brown).
+    let mut furn = PropModelData {
+        size: [32, 4, 32],
+        palette: vec![[90, 60, 30]],
+        voxels: vec![PropModelData::EMPTY; 32 * 4 * 32],
+    };
+    furn.voxels[(0 * 32 + 5) * 32 + 5] = 0;
+    let adapter = PropModelCells::new(&furn, &colour_block);
+    let fres = |_: u32| -> Option<&dyn ModelCells> { Some(&adapter) };
+    let placements = [
+        // Grass tile: Ground model, top at 10.
+        FurniturePlacement { x: 0, y: 0, level: 0, furn_id: 1, quarter_turns: 0 },
+        // Floor tile: Ground model, top at 10.
+        FurniturePlacement { x: 3, y: 8, level: 0, furn_id: 1, quarter_turns: 0 },
+        // Isolated fence tile: no Ground model — slab top.
+        FurniturePlacement { x: 9, y: 9, level: 0, furn_id: 1, quarter_turns: 0 },
+    ];
+    stamp_furniture(&mut map, &mut layer, &placements, scale, &fres).unwrap();
+
+    assert_eq!(fine_at(&layer, 0, 0, 5, 5, 10), Some(104), "furniture on grass top");
+    assert_eq!(fine_at(&layer, 0, 0, 5, 5, 32), None, "not floating at slab top");
+    assert_eq!(fine_at(&layer, 3, 8, 5, 5, 10), Some(104), "furniture on floor top");
+    assert_eq!(fine_at(&layer, 9, 9, 5, 5, 32), Some(104), "fallback: slab top");
+    println!("terrain wire gate: furniture seats on measured ground top (fix 5b)");
 }
 
 #[test]
