@@ -418,13 +418,20 @@ pub fn render_rt_frame(
 }
 
 /// Phase 10 (10.4): [`render_rt_frame`] with the shared sky
-/// uniforms (from `lighting::SkyUniforms::from_sky_state`) driving
-/// the RT sky background + GI. The frame-level plumbing that
-/// evaluates a `SkyState` once per frame and hands it here is
-/// §6/10.6 integration work (the 10.3 slice owns `frame.rs` /
-/// `CaptureArgs`); this entry point is the RT consumption surface
-/// it will call. `None` in the inner path = the renderer's
-/// default `SkyUniforms::neutral()`.
+/// uniforms driving the RT sky background + GI. The block must
+/// already be in **grid space** (east, south, up): pass either
+/// `lighting::SkyUniforms::neutral()` as-is (already grid-space;
+/// do NOT convert it) or
+/// `lighting::SkyUniforms::from_sky_state(...).to_grid_space()`
+/// — `from_sky_state` emits SkyState space (east, north, up),
+/// and the conversion belongs to the caller because this entry
+/// point cannot distinguish a neutral block from a converted
+/// one. The frame-level plumbing that evaluates a `SkyState`
+/// once per frame and hands it here is §6/10.6 integration work
+/// (the 10.3 slice owns `frame.rs` / `CaptureArgs`); this entry
+/// point is the RT consumption surface it will call. `None` in
+/// the inner path = the renderer's default
+/// `SkyUniforms::neutral()`.
 pub fn render_rt_frame_sky(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -859,7 +866,9 @@ pub fn capture_rt_with_device(
 }
 
 /// Phase 10 (10.4): [`capture_rt_with_device`] with explicit sky
-/// uniforms (`None` = the renderer's neutral default).
+/// uniforms (`None` = the renderer's neutral default). A given
+/// block must already be in grid space — see
+/// [`render_rt_frame_sky`] for the conversion contract.
 pub fn capture_rt_with_device_sky(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

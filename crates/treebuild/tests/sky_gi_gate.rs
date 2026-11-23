@@ -150,7 +150,9 @@ fn pixel_rd(camera: &RtCamera, size: (u32, u32), x: u32, y: u32) -> Vec3 {
 /// sunrise 06:00, sunset 18:00 — the §3.2 fallback path).
 fn uniforms_at(time_of_day_sec: f32, moon_phase: u8) -> SkyUniforms {
     let env = GameEnvironment::fake_day(time_of_day_sec, 21_600.0, 64_800.0, 1, moon_phase);
-    SkyUniforms::from_sky_state(&sky_state(&env), time_of_day_sec)
+    // RT consumes grid space (east, south, up); from_sky_state
+    // emits SkyState space (east, north, up) — convert.
+    SkyUniforms::from_sky_state(&sky_state(&env), time_of_day_sec).to_grid_space()
 }
 
 // ---------------------------------------------------------- channel
@@ -319,9 +321,19 @@ fn measure_shadow(
     let _ = (wx, wy);
     ground_lums.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let median = ground_lums[ground_lums.len() / 2];
-    let (mut sx, mut sy, mut sn) = (0f32, 0f32, 0usize);
-    let (mut xmin, mut xmax) = (f32::MAX, f32::MIN);
     let mut min_ratio = 1.0f32;
+    // Dark-ground mask first. A shadow is an *area*: isolated
+    // dark pixels are not shadow — the renderer produces
+    // single-pixel seam artifacts at cell boundaries (a 1-px line
+    // at grid y = 8 in the noon north-camera capture, lum 0.164 in
+    // a 0.567 field) and the ground-top tolerance admits a 1-px
+    // sliver of the slab's side face at its top edge. Counting raw
+    // dark pixels let those artifacts drag the centroid (noon read
+    // (16.0, 6.6) with a full-width x extent while the actual
+    // shadow strip sat at y ~ 12). A pixel counts as shadow only
+    // if at least 5 of its 3x3 neighbourhood are also dark ground:
+    // lines and specks score <= 4, a real shadow's interior >= 6.
+    let mut dark = vec![false; (w * size.1) as usize];
     for y in 0..size.1 {
         for x in 0..size.0 {
             let p = (y * w + x) as usize;
@@ -334,15 +346,36 @@ fn measure_shadow(
             }
             let l = lum(i);
             min_ratio = min_ratio.min(l / median);
-            if l < 0.72 * median {
-                let rd = pixel_rd(camera, size, x, y);
-                let hitp = camera.eye + rd * depth[p];
-                sx += hitp.x;
-                sy += hitp.y;
-                xmin = xmin.min(hitp.x);
-                xmax = xmax.max(hitp.x);
-                sn += 1;
+            dark[p] = l < 0.72 * median;
+        }
+    }
+    let (mut sx, mut sy, mut sn) = (0f32, 0f32, 0usize);
+    let (mut xmin, mut xmax) = (f32::MAX, f32::MIN);
+    for y in 0..size.1 {
+        for x in 0..size.0 {
+            let p = (y * w + x) as usize;
+            if !dark[p] {
+                continue;
             }
+            let mut neighbours = 0usize;
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    let (nx, ny) = (x as i32 + dx, y as i32 + dy);
+                    if nx >= 0 && ny >= 0 && nx < w as i32 && ny < size.1 as i32 {
+                        neighbours += dark[(ny * w as i32 + nx) as usize] as usize;
+                    }
+                }
+            }
+            if neighbours < 5 {
+                continue;
+            }
+            let rd = pixel_rd(camera, size, x, y);
+            let hitp = camera.eye + rd * depth[p];
+            sx += hitp.x;
+            sy += hitp.y;
+            xmin = xmin.min(hitp.x);
+            xmax = xmax.max(hitp.x);
+            sn += 1;
         }
     }
     let grid_centroid = if sn > 0 {
@@ -373,9 +406,17 @@ fn gate_10_4b_shadow_direction_length_and_overcast() {
     println!("10.4b adapter: {}", gpu.name);
     let built = build_tree(&shadow_world(), BuildConfig::default()).unwrap();
     let (renderer, mut scene) = RtRenderer::with_scene(&gpu.device, &gpu.queue, &built);
+    // The camera sits NORTH of the wall (grid -y): the noon
+    // shadow falls north, away from the southern sun, and from a
+    // southern camera that ground is hidden behind the 5-high
+    // wall itself (the sightline over its north top edge only
+    // reaches ground level at y ~ -1) — a southern camera
+    // measured 0 noon shadow px even with the sun correctly
+    // placed. From the north, both the dawn (-x) and noon (-y)
+    // shadows land on ground in front of the wall.
     let camera = RtCamera {
-        eye: Vec3::new(16.0, 38.0, 14.0),
-        target: Vec3::new(16.0, 14.0, 0.0),
+        eye: Vec3::new(16.0, -10.0, 14.0),
+        target: Vec3::new(16.0, 16.0, 0.0),
         fov_y_deg: 60.0,
         aspect: 4.0 / 3.0,
     };
@@ -399,7 +440,7 @@ fn gate_10_4b_shadow_direction_length_and_overcast() {
     storm_env.lightning_active = true;
     storm_env.light_modifier = -40.0;
     storm_env.sun_light = 30.0;
-    let storm_u = SkyUniforms::from_sky_state(&sky_state(&storm_env), 43_200.0);
+    let storm_u = SkyUniforms::from_sky_state(&sky_state(&storm_env), 43_200.0).to_grid_space();
     let storm = render(&mut scene, &storm_u);
 
     println!(
@@ -432,17 +473,18 @@ fn gate_10_4b_shadow_direction_length_and_overcast() {
         dawn.grid_x_extent.1
     );
     // Noon (alt 65 deg, azimuth 0): the shadow is SHORT and falls
-    // +y, opposite the high southern sun — a different direction
-    // AND a different length than dawn's, in the sun's favour.
+    // -y (north, in grid space where +y is south), opposite the
+    // high southern sun — a different direction AND a different
+    // length than dawn's, in the sun's favour.
     assert!(noon.shadow_px > 50, "noon must still cast a shadow ({} px)", noon.shadow_px);
     assert!(
-        noon.grid_centroid.1 > 17.0,
-        "noon shadow centroid must sit +y of the wall centre (grid y {:.1})",
+        noon.grid_centroid.1 < 14.0,
+        "noon shadow centroid must sit -y (north) of the wall centre (grid y {:.1})",
         noon.grid_centroid.1
     );
     assert!(
         noon.grid_centroid.0 > dawn.grid_centroid.0 + 3.0,
-        "the shadow must swing from dawn's -x fall to noon's +y fall (centroid x {:.1} -> {:.1})",
+        "the shadow must swing from dawn's -x fall to noon's -y fall (centroid x {:.1} -> {:.1})",
         dawn.grid_centroid.0,
         noon.grid_centroid.0
     );
@@ -454,3 +496,5 @@ fn gate_10_4b_shadow_direction_length_and_overcast() {
         storm.min_ground_ratio
     );
 }
+
+

@@ -40,7 +40,9 @@ fn gpu() -> Option<(wgpu::Device, wgpu::Queue, String)> {
 
 fn uniforms_at(time_of_day_sec: f32, moon_phase: u8) -> SkyUniforms {
     let env = GameEnvironment::fake_day(time_of_day_sec, 21_600.0, 64_800.0, 1, moon_phase);
-    SkyUniforms::from_sky_state(&sky_state(&env), time_of_day_sec)
+    // RT consumes grid space (east, south, up); from_sky_state
+    // emits SkyState space (east, north, up) — convert.
+    SkyUniforms::from_sky_state(&sky_state(&env), time_of_day_sec).to_grid_space()
 }
 
 fn house_args(lit: LightingScene, cutaway_z: i32) -> CaptureArgs {

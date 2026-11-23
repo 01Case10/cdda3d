@@ -24,15 +24,21 @@
 //! traversal and render WGSL. There is no second copy of the sky
 //! function in this crate.
 //!
-//! Coordinate-space note (a freeze-doc correction, recorded
-//! here because this is where it bites): `SkyState` directions
-//! are (east, north, up), which is *already* this renderer's grid
-//! space — the lighting-space legacy sun (0.3, −0.4, 0.8) is
-//! exactly [`sun_dir_grid`]. So a `SkyUniforms` built by
-//! `SkyUniforms::from_sky_state` is uploaded **verbatim**: running
-//! its dirs through [`world_to_grid`] (which converts *mesher*
-//! Y-up world vectors) would put the noon sun below the horizon.
-//! `sky_color`'s up component in grid space is `rd.z`.
+//! Coordinate-space note (corrected 10.4 fix — the original
+//! slice got this wrong): `SkyState` directions are (east,
+//! north, up), but this renderer's grid space is (east, *south*,
+//! up) — the two differ in the sign of Y. A `SkyUniforms` built
+//! by `SkyUniforms::from_sky_state` must therefore be converted
+//! with `SkyUniforms::to_grid_space` (negate sun/moon Y) before
+//! upload; uploaded verbatim, the noon sun (SkyState Y negative,
+//! toward the south) is read as sitting toward the north.
+//! [`world_to_grid`] is NOT the right conversion either: it
+//! converts *mesher* Y-up world vectors (east, up, north) and
+//! applied to a SkyState-space dir it puts the noon sun below
+//! the horizon. [`SkyUniforms::neutral`] is already grid-space
+//! (it carries the legacy grid sun dir, cf. [`sun_dir_grid`])
+//! and must NOT be converted. `sky_color`'s up component in
+//! grid space is `rd.z`.
 
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
@@ -1298,11 +1304,13 @@ pub struct RtScene {
 
 impl RtScene {
     /// Phase 10 (10.4): upload the shared sky uniforms for
-    /// subsequent renders. The uniforms are consumed **verbatim,
-    /// in grid space**: a block built by
-    /// `SkyUniforms::from_sky_state` is already grid-space (see
-    /// the module doc's coordinate note — do NOT run its dirs
-    /// through `world_to_grid`). Scenes start at
+    /// subsequent renders. This takes the block **as given, in
+    /// grid space** — it cannot distinguish a neutral block from
+    /// a converted one, so the conversion belongs to the caller:
+    /// pass either [`SkyUniforms::neutral`] as-is (already
+    /// grid-space; do NOT convert it) or
+    /// `SkyUniforms::from_sky_state(...).to_grid_space()`. See
+    /// the module doc's coordinate note. Scenes start at
     /// [`SkyUniforms::neutral`].
     pub fn set_sky(&self, queue: &wgpu::Queue, sky: &SkyUniforms) {
         let rows = sky.as_rows();
