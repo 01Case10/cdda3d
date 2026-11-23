@@ -1908,3 +1908,14 @@ square before presentation. JOEY SIGN-OFF GRANTED 2026-11-23 in the hand-build
 thread ("They look fine. I sign off") on the 4-angle strips for all families.
 Terrain item 3 CLOSED. Remaining terrain batch: item 2 puddles (rework in its
 thread — water-shader route approved there), then item 4 ultica_run1 regen.
+
+## Addendum 2026-11-23 (10): hand-build branch merged to main
+
+Branch hand-build fast-forward merged to main 2026-11-23 on Joey's word in the
+hand-build thread (main 3b965e7 -> b060e59; the Phase 10 thread's uncommitted
+plan.md row was stashed around the merge and restored intact). Post-merge
+verification in the main tree: hand_build_gate 6/6, terrain_coverage_gate 2/2,
+gate_tests 13/13 (gate_5_1 passes in its real home, as expected). Still NOT
+pushed — the stack moves via Joey's PC bundle route; a fresh bundle is needed
+to bring the remote current. Remaining terrain batch: item 2 puddles (water-
+shader rework in its thread), then item 4 ultica_run1 regen as close-out.
