@@ -27,6 +27,12 @@ pub const FLAG_TRANSPARENT: u32 = 1 << 0;
 pub const FLAG_CUTOUT: u32 = 1 << 1;
 pub const FLAG_EMISSIVE: u32 = 1 << 2;
 pub const FLAG_MEMORIZED: u32 = 1 << 3;
+/// Water surface (terrain item 2 follow-up, 2026-11-23):
+/// the cell is a marked water-surface cell (its block
+/// carries `mesher::block::WATER_ALPHA`); the RT shader
+/// gives its up faces the water treatment. The WGSL
+/// tests bit 4 (16u) -- keep in sync.
+pub const FLAG_WATER: u32 = 1 << 4;
 
 /// One occupied voxel.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,11 +143,14 @@ impl VoxelWorld {
                             Pass::Cutout => flags |= FLAG_CUTOUT,
                             Pass::Opaque => {}
                         }
+                        if b.is_water_surface() {
+                            flags |= FLAG_WATER;
+                        }
                         out.set(
                             [origin[0] + x, origin[1] + y, origin[2] + z],
                             VoxelCell {
                                 color: [b.color[0], b.color[1], b.color[2]],
-                                alpha: b.color[3],
+                                alpha: if flags & FLAG_WATER != 0 { 1.0 } else { b.color[3] },
                                 material_id: b.id,
                                 lit: LIT_LIT,
                                 flags,
@@ -188,11 +197,14 @@ impl VoxelWorld {
                                 Pass::Cutout => flags |= FLAG_CUTOUT,
                                 Pass::Opaque => {}
                             }
+                            if b.is_water_surface() {
+                                flags |= FLAG_WATER;
+                            }
                             out.set(
                                 [tile.0 * FINE + lx, tile.1 * FINE + ly, fz],
                                 VoxelCell {
                                     color: [b.color[0], b.color[1], b.color[2]],
-                                    alpha: b.color[3],
+                                    alpha: if flags & FLAG_WATER != 0 { 1.0 } else { b.color[3] },
                                     material_id: b.id,
                                     lit: LIT_LIT,
                                     flags,

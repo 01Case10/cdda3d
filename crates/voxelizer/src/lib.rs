@@ -276,6 +276,7 @@ fn encode_prop_model(
     material_index: usize,
     model: &PropModel,
     kind: Option<crate::props::TerrainModelKind>,
+    surface: Option<crate::props::TerrainSurface>,
 ) -> Option<serde_json::Value> {
     use std::collections::HashMap;
     let mut palette: Vec<[u8; 3]> = Vec::new();
@@ -316,6 +317,14 @@ fn encode_prop_model(
     if let Some(kind) = kind {
         entry["kind"] = serde_json::json!(kind.as_str());
     }
+    // Surface treatment (terrain item 2 follow-up,
+    // 2026-11-23): a terrain model whose surface is
+    // shaded specially by the engine (puddles: water)
+    // records it the same additive way; absence means
+    // no treatment.
+    if let Some(surface) = surface {
+        entry["surface"] = serde_json::json!(surface.as_str());
+    }
     Some(entry)
 }
 
@@ -346,8 +355,12 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     // whose sprite segments, in material order —
     // (material_index, model). Filled during the material loop
     // when `cfg.emit_v2`; written after it.
-    let mut models: Vec<(usize, PropModel, Option<crate::props::TerrainModelKind>)> =
-        Vec::new();
+    let mut models: Vec<(
+        usize,
+        PropModel,
+        Option<crate::props::TerrainModelKind>,
+        Option<crate::props::TerrainSurface>,
+    )> = Vec::new();
     // Stage F part 2 (v2 only): the first poolable family per
     // ground class (grass/dirt/water), for the §10.1 shore set —
     // the shore textures are generated from the Stage C/E
@@ -630,10 +643,13 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                 // takes the terrain builders (fence, trees --
                 // ids whose block rendering is a textured
                 // cube). Each declines ids it does not serve.
-                let model: Option<(PropModel, Option<crate::props::TerrainModelKind>)> =
-                    if is_furniture {
-                        model_for(id, img).map(|m| (m, None))
-                    } else {
+                let model: Option<(
+                    PropModel,
+                    Option<crate::props::TerrainModelKind>,
+                    Option<crate::props::TerrainSurface>,
+                )> = if is_furniture {
+                    model_for(id, img).map(|m| (m, None, None))
+                } else {
                     // Terrain builders read the FG sprite
                     // alone: the composite bakes the bg
                     // (grass under a tree) into the
@@ -651,11 +667,28 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
                     } else {
                         terrain_fg_image(ts, &entry)
                     };
-                        crate::props::terrain_model_for(id, fg.as_ref().unwrap_or(img))
-                            .map(|(m, k)| (m, Some(k)))
+                        // Puddles (terrain item 2) are an
+                        // overlay on their entry's bg
+                        // ground: the builder needs the
+                        // underlay sprite as well as the
+                        // FG. Other terrain reads FG alone.
+                        let underlay = if id.starts_with("t_puddle") {
+                            entry
+                                .bg
+                                .as_ref()
+                                .and_then(|r| load_sprite_image(ts, &entry, r))
+                        } else {
+                            None
+                        };
+                        crate::props::terrain_model_for(
+                            id,
+                            fg.as_ref().unwrap_or(img),
+                            underlay.as_ref(),
+                        )
+                        .map(|(m, k, s)| (m, Some(k), s))
                     };
-                if let Some((model, kind)) = model {
-                    models.push((mat_idx, model, kind));
+                if let Some((model, kind, surface)) = model {
+                    models.push((mat_idx, model, kind, surface));
                 }
             }
         }
@@ -773,7 +806,9 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
         if !models.is_empty() {
             let entries: Vec<serde_json::Value> = models
                 .iter()
-                .filter_map(|(mat_idx, m, kind)| encode_prop_model(*mat_idx, m, *kind))
+                .filter_map(|(mat_idx, m, kind, surface)| {
+                    encode_prop_model(*mat_idx, m, *kind, *surface)
+                })
                 .collect();
             if !entries.is_empty() {
                 v2["models"] = serde_json::Value::Array(entries);

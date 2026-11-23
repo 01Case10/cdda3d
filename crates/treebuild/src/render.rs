@@ -737,7 +737,24 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     if point_occluded(center + t2) { occ = occ + 1.0; }
     if point_occluded(center - t2) { occ = occ + 1.0; }
     let ao = 1.0 - 0.10 * occ;
-    return albedo * (light * lit_factor(e.lit) * ao);
+    // Water surface (terrain item 2 follow-up,
+    // 2026-11-23): FLAG_WATER cells (bit 4, from the
+    // block's WATER_ALPHA marker) with an up face shade
+    // as water -- a fresnel sheen toward sky colour is
+    // mixed into the albedo before lighting, and a
+    // Blinn specular from the sun is added after.
+    // Mirrors the raster treatment in engine::render;
+    // constants are shared by hand, keep in sync.
+    var spec_add = 0.0;
+    if (e.flags & 16u) != 0u && n.z > 0.5 {
+        let v = -rd;
+        let fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        albedo = mix(albedo, vec3<f32>(0.55, 0.65, 0.75), fres * 0.45);
+        let hv = normalize(u.sun_dir + v);
+        spec_add = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
+    }
+    return albedo * (light * lit_factor(e.lit) * ao)
+        + vec3<f32>(spec_add, spec_add, spec_add) * lit_factor(e.lit);
 }
 
 fn sky(rd: vec3<f32>) -> vec3<f32> {

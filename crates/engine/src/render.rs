@@ -12,7 +12,7 @@
 //! sentinel layer take exactly the pre-2f flat shading path.
 
 use bytemuck::{Pod, Zeroable};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use mesher::block::Pass;
 use mesher::mesh::{Mesh, PassMeshes, FLAT_LAYER};
 
@@ -77,6 +77,10 @@ impl Vertex {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
+    /// Camera eye in world space (water specular /
+    /// fresnel, terrain item 2 follow-up).
+    camera_pos: [f32; 3],
+    _pad: f32,
 }
 
 const SHADER: &str = r#"
@@ -87,7 +91,7 @@ const SHADER: &str = r#"
 // BLEND_HALF); keep the three in sync.
 const BLEND_HALF: f32 = 0.5;
 
-struct Uniforms { view_proj: mat4x4<f32> };
+struct Uniforms { view_proj: mat4x4<f32>, camera_pos: vec3<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var tex_array: texture_2d_array<f32>;
 @group(1) @binding(1) var tex_samp: sampler;
@@ -108,6 +112,7 @@ struct VsOut {
     @location(1) color: vec4<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) @interpolate(flat) layer: u32,
+    @location(4) world_pos: vec3<f32>,
 };
 
 @vertex
@@ -118,6 +123,7 @@ fn vs_main(input: VsIn) -> VsOut {
     out.color = input.color;
     out.uv = input.uv;
     out.layer = input.layer;
+    out.world_pos = input.position;
     return out;
 }
 
@@ -212,6 +218,28 @@ fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
         texel_nbr,
         is_blend && macro_params.debug_height == 0u && nbr_wins,
     );
+    // Water surface (terrain item 2 follow-up,
+    // 2026-11-23): a vertex colour alpha in the marker
+    // range (mesher::block::WATER_ALPHA, stamped on a
+    // water model's top cells) on an up-facing fragment
+    // shades as water -- the albedo (flat colour or
+    // texel) keeps the plain diffuse term, then a
+    // Blinn specular highlight from the same fixed
+    // light and a fresnel sky sheen are added. The
+    // water read is view-dependent, which no baked
+    // colour can fake. Output alpha is 1.0: the marker
+    // is not opacity.
+    if input.color.a > 0.30 && input.color.a < 0.40 && n.y > 0.5 {
+        let base = select(texel.rgb, input.color.rgb, flat);
+        let v = normalize(u.camera_pos - input.world_pos);
+        let hv = normalize(l + v);
+        let spec = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
+        let fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        var col = base * shade;
+        col = mix(col, vec3<f32>(0.55, 0.65, 0.75), fres * 0.45);
+        col = col + vec3<f32>(spec, spec, spec);
+        return vec4<f32>(col, 1.0);
+    }
     if flat {
         // Exactly the pre-2f flat shading math (gate 2f.4).
         return vec4<f32>(input.color.rgb * shade, input.color.a);
@@ -739,9 +767,11 @@ impl Renderer {
         out
     }
 
-    pub fn set_view_projection(&self, queue: &wgpu::Queue, view_proj: Mat4) {
+    pub fn set_view_projection(&self, queue: &wgpu::Queue, view_proj: Mat4, eye: Vec3) {
         let uniforms = Uniforms {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_pos: eye.to_array(),
+            _pad: 0.0,
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }

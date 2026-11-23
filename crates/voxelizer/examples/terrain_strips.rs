@@ -276,7 +276,17 @@ fn main() {
             println!("{id}: no sprite");
             continue;
         };
-        let Some((base, _kind)) = voxelizer::props::terrain_model_for(id, &sprite) else {
+        let underlay = if id.starts_with("t_puddle") {
+            entry
+                .bg
+                .as_ref()
+                .and_then(|r| voxelizer::load_sprite_image(&ts, entry, r))
+        } else {
+            None
+        };
+        let Some((base, _kind, _surface)) =
+            voxelizer::props::terrain_model_for(id, &sprite, underlay.as_ref())
+        else {
             println!("{id}: no terrain model");
             continue;
         };

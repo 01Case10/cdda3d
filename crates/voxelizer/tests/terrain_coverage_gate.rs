@@ -53,8 +53,18 @@ fn terrain_coverage() {
             continue;
         };
         total += 1;
-        match props::terrain_model_for(id, &sprite) {
-            Some((m, kind)) if m.voxels.iter().any(|v| v.is_some()) => {
+        // Mirror the emission: puddles also get
+        // their bg underlay (terrain item 2).
+        let underlay = if id.starts_with("t_puddle") {
+            entry
+                .bg
+                .as_ref()
+                .and_then(|r| load_sprite_image(&ts, entry, r))
+        } else {
+            None
+        };
+        match props::terrain_model_for(id, &sprite, underlay.as_ref()) {
+            Some((m, kind, _surface)) if m.voxels.iter().any(|v| v.is_some()) => {
                 // Terrain wiring (2026-11-18): the kind the
                 // engine seats by is part of the contract --
                 // pin the three families' representatives.

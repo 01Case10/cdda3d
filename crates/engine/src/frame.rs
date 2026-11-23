@@ -1205,7 +1205,7 @@ fn render_frame_inner(
 
     let camera = capture_camera(args);
     let aspect = width as f32 / height as f32;
-    renderer.set_view_projection(queue, camera.view_projection(aspect));
+    renderer.set_view_projection(queue, camera.view_projection(aspect), camera.eye());
     renderer.draw(device, queue, &gpu_meshes, &color_view, &depth_view);
     stats.passes.push(FramePass::World);
 
