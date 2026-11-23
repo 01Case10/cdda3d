@@ -290,6 +290,37 @@ impl SkyUniforms {
             ],
         }
     }
+
+    /// Convert the sun/moon directions FROM [`SkyUniforms::from_sky_state`]
+    /// output space (SkyState space: +X east, +Y north, +Z up) TO grid
+    /// space (+X east, +Y south, +Z up) — the RT renderer's space:
+    /// negate the north component of `sun_dir`/`moon_dir` (`.xyz` only;
+    /// the `.w` scalar gates are untouched).
+    ///
+    /// [`SkyUniforms::neutral`] is already in grid space and must NOT
+    /// be converted — it carries the legacy grid-space sun dir by
+    /// construction.
+    pub fn to_grid_space(mut self) -> Self {
+        self.sun_dir[1] = -self.sun_dir[1];
+        self.moon_dir[1] = -self.moon_dir[1];
+        self
+    }
+
+    /// Convert the sun/moon directions FROM [`SkyUniforms::from_sky_state`]
+    /// output space (SkyState space: +X east, +Y north, +Z up) TO
+    /// mesher world space (+X east, +Y up, +Z north) — the raster
+    /// renderer's space: swap the north and up components of
+    /// `sun_dir`/`moon_dir` (`.xyz` only; the `.w` scalar gates are
+    /// untouched).
+    ///
+    /// [`SkyUniforms::neutral`] is already in grid space and must NOT
+    /// be converted — it carries the legacy grid-space sun dir by
+    /// construction.
+    pub fn to_mesher_world_space(mut self) -> Self {
+        self.sun_dir.swap(1, 2);
+        self.moon_dir.swap(1, 2);
+        self
+    }
 }
 
 fn normalize3(v: [f32; 3]) -> [f32; 3] {

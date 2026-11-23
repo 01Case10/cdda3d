@@ -219,6 +219,63 @@ fn gate_freeze_cloud_cover_collapses_disc() {
 }
 
 // ---------------------------------------------------------------------------
+// c2) Direction space conversions (10.3/10.4 fix: from_sky_state emits
+// SkyState space (east, north, up); each renderer converts)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_space_conversions_pin_noon_values() {
+    // GameEnvironment::neutral(): azimuth 0 (sun in the south),
+    // altitude 65°. SkyState space sun dir = (0, -cos65, +sin65).
+    let state = sky_state(&GameEnvironment::neutral());
+    let cos = 65f32.to_radians().cos();
+    let sin = 65f32.to_radians().sin();
+    assert!(
+        approx(state.sun_dir, [0.0, -cos, sin], 1e-6),
+        "SkyState noon sun dir: {:?}",
+        state.sun_dir
+    );
+    let u = SkyUniforms::from_sky_state(&state, 0.0);
+    // Grid space (east, south, up): negate the north component.
+    let g = u.to_grid_space();
+    assert!(
+        approx(g.sun_dir3(), [0.0, cos, sin], 1e-6),
+        "grid-space noon sun dir: {:?}",
+        g.sun_dir3()
+    );
+    // Moon is the antipode proxy: (-0, -cos, -sin) in grid space.
+    assert!(
+        approx(g.moon_dir3(), [0.0, -cos, -sin], 1e-6),
+        "grid-space noon moon dir: {:?}",
+        g.moon_dir3()
+    );
+    // Mesher world space (east, up, north): swap north/up.
+    let m = u.to_mesher_world_space();
+    assert!(
+        approx(m.sun_dir3(), [0.0, sin, -cos], 1e-6),
+        "mesher-space noon sun dir: {:?}",
+        m.sun_dir3()
+    );
+    assert!(
+        approx(m.moon_dir3(), [0.0, -sin, cos], 1e-6),
+        "mesher-space noon moon dir: {:?}",
+        m.moon_dir3()
+    );
+    // Conversions touch only .xyz of the two dir rows: every .w
+    // scalar gate and every other row is untouched.
+    for conv in [g, m] {
+        assert_eq!(conv.sun_dir[3], u.sun_dir[3]);
+        assert_eq!(conv.moon_dir[3], u.moon_dir[3]);
+        assert_eq!(conv.sun_color, u.sun_color);
+        assert_eq!(conv.moon_color, u.moon_color);
+        assert_eq!(conv.zenith, u.zenith);
+        assert_eq!(conv.horizon, u.horizon);
+        assert_eq!(conv.ground_col, u.ground_col);
+        assert_eq!(conv.fog_color, u.fog_color);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // d) Cave blend (decision 3C)
 // ---------------------------------------------------------------------------
 

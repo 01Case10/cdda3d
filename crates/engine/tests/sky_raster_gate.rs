@@ -273,6 +273,58 @@ fn neutral_gi_calibration_matches_legacy_shade() {
     );
 }
 
+/// Direction-space contract (10.3 fix, CPU, runs everywhere):
+/// `SkyScene::uniforms()` feeds the RASTER renderer, whose world
+/// space is mesher space (east, up, north). `from_sky_state`
+/// emits SkyState space (east, north, up), so `uniforms()` must
+/// convert via `to_mesher_world_space`. At noon (neutral env:
+/// azimuth 0 = sun in the south, altitude 65°) the mesher-space
+/// sun dir is (0, +sin65°, −cos65°): UP component strongly
+/// positive, NORTH component negative (sun in the south).
+/// Unconverted, the up component reads −cos65° — the sun below
+/// the horizon — which is the bug this gate pins.
+#[test]
+fn gate_sky_scene_uniforms_are_mesher_space() {
+    let u = SkyScene::new(GameEnvironment::neutral()).uniforms();
+    let sin = 65f32.to_radians().sin();
+    let cos = 65f32.to_radians().cos();
+    println!(
+        "mesher-space contract: sun_dir {:?} (want up {:.4} > 0.8, north {:.4} < 0)",
+        u.sun_dir3(),
+        sin,
+        -cos
+    );
+    assert!(
+        u.sun_dir[1] > 0.8 && (u.sun_dir[1] - sin).abs() < 1e-6,
+        "sun up component (mesher y) must be +sin65 \u{2248} {:.4}, got {} \
+         (unconverted SkyState space would give {:.4})",
+        sin,
+        u.sun_dir[1],
+        -cos,
+    );
+    assert!(
+        u.sun_dir[2] < 0.0 && (u.sun_dir[2] + cos).abs() < 1e-6,
+        "sun north component (mesher z) must be -cos65 \u{2248} {:.4}, got {}",
+        -cos,
+        u.sun_dir[2],
+    );
+    // Moon is the antipode proxy: (0, −sin65°, +cos65°).
+    assert!(
+        (u.moon_dir[1] + sin).abs() < 1e-6 && (u.moon_dir[2] - cos).abs() < 1e-6,
+        "moon dir must be the converted antipode (0, {:.4}, {:.4}), got {:?}",
+        -sin,
+        cos,
+        u.moon_dir3(),
+    );
+    // The neutral()/calibrated default path is NOT converted:
+    // render_frame's no-sky default binds raw neutral() (checked
+    // via gi_uniforms_for in the calibration gate above); here we
+    // only assert neutral() itself still carries its frozen
+    // grid-space legacy dir.
+    let n = SkyUniforms::neutral();
+    assert!(n.sun_dir[2] > 0.8, "neutral() must stay as frozen");
+}
+
 // ---------------------------------------------------------------------
 // 10.3a — sky-only raster render vs the CPU mirror
 // ---------------------------------------------------------------------

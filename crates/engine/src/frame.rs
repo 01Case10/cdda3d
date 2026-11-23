@@ -272,12 +272,20 @@ impl SkyScene {
 
     /// The frame's uniform block: the one conversion
     /// (`SkyUniforms::from_sky_state`) plus this scene's cave
-    /// factor. Directions are in SkyState world space; the RT
-    /// path converts them to grid space at upload (the freeze
-    /// contract in `lighting::sky_uniforms`).
+    /// factor. `from_sky_state` emits directions in SkyState
+    /// space (east, north, up); the raster renderer consumes
+    /// mesher world space (east, up, north), so the dirs are
+    /// converted here via `to_mesher_world_space` (10.3 fix —
+    /// unconverted, the noon sun's up component read −cos(alt),
+    /// below the horizon). This conversion applies ONLY to the
+    /// `from_sky_state` output: the no-sky default path binds
+    /// raw `SkyUniforms::neutral()` (already grid-space legacy)
+    /// and the calibrated GI form, neither of which passes
+    /// through here.
     pub fn uniforms(&self) -> lighting::SkyUniforms {
         let state = self.sky_state();
-        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec);
+        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
+            .to_mesher_world_space();
         u.set_cave_factor(self.cave_factor);
         u
     }

@@ -993,18 +993,34 @@ pub fn apply_sky_exposure_alpha(
     }
 }
 
-/// Phase 10 slice 10.3: per-vertex refinement of the stamped
+/// Phase 10 slice 10.3: per-quad refinement of the stamped
 /// sky factor, run AFTER the bake (which preserves alpha).
 /// The block stamp keys the factor to the block's OWN tile; a
 /// wall block on the perimeter is exposed, but its INNER face
 /// fronts a sheltered air tile and must not take sky GI. This
 /// pass mirrors `lighting::bake_pass_meshes`' own air-side
-/// sampling exactly: side faces take the factor of the air tile
+/// sampling rule: side faces take the factor of the air tile
 /// in front of the face, top/bottom faces of their own tile.
 /// The transparent mesh is skipped (material alpha owns that
 /// channel). Vertices of fine prop meshes are included — the
 /// rule is position-based, like the bake itself (the 9.6
 /// caveat applies unchanged).
+///
+/// Sampling is per QUAD, at the quad's face centre — NOT per
+/// vertex at the vertex position (10.3 GPU-gate fix). A greedy-
+/// merged quad's corner vertices sit exactly on tile
+/// boundaries, and `floor()` of a boundary coordinate lands in
+/// the NEIGHBOURING tile: the fake house's merged interior
+/// floor quad picked up factor 1 at three of its four corners
+/// (from the wall/exterior tiles past its edges) and
+/// interpolated noon sky GI across the whole lamp room,
+/// failing gate 10.3b on a real adapter (interior mean |diff|
+/// 10.55 vs the ≤2 bound). The face centre is strictly inside
+/// the quad's own tiles, and every block of a merged quad
+/// shares one stamped factor (the merge key is the whole
+/// `Block`), so one centre sample per quad is unambiguous.
+/// Mesh vertices are per-quad (4 fresh verts per `push_quad`),
+/// so the assignment never fights another quad over a vertex.
 pub fn refine_sky_factor_alpha(
     meshes: &mut PassMeshes,
     lit: &crate::frame::LightingScene,
@@ -1019,11 +1035,20 @@ pub fn refine_sky_factor_alpha(
         if pass == mesher::block::Pass::Transparent.index() {
             continue;
         }
-        for i in 0..mesh.positions.len() {
-            let p = mesh.positions[i];
-            let n = mesh.normals[i];
-            // World -> grid (the bake's own conversion).
-            let gp = [p[0] / bs, -p[2] / bs, p[1] / bs];
+        // Collect first (immutable borrows), then assign.
+        let mut assignments: Vec<(usize, f32)> = Vec::new();
+        for quad in mesh.indices.chunks_exact(6) {
+            let verts: Vec<usize> = quad[..4].iter().map(|&i| i as usize).collect();
+            let n = mesh.normals[verts[0]];
+            // Face centre, world -> grid (the bake's conversion).
+            let mut c = [0.0f32; 3];
+            for &i in &verts {
+                let p = mesh.positions[i];
+                c[0] += p[0] / 4.0;
+                c[1] += p[1] / 4.0;
+                c[2] += p[2] / 4.0;
+            }
+            let gc = [c[0] / bs, -c[2] / bs, c[1] / bs];
             let gn = [n[0], -n[2], n[1]];
             let di = lighting::FACE_DIRS
                 .iter()
@@ -1032,9 +1057,9 @@ pub fn refine_sky_factor_alpha(
             let d = lighting::FACE_DIRS[di];
             let axis = (0..3).find(|&a| d[a] != 0).unwrap();
             let sp = [
-                gp[0] - gn[0] * 0.5,
-                gp[1] - gn[1] * 0.5,
-                gp[2] - gn[2] * 0.5,
+                gc[0] - gn[0] * 0.5,
+                gc[1] - gn[1] * 0.5,
+                gc[2] - gn[2] * 0.5,
             ];
             let solid_tile = [
                 sp[0].floor() as i32,
@@ -1046,7 +1071,13 @@ pub fn refine_sky_factor_alpha(
             } else {
                 [solid_tile[0] + d[0], solid_tile[1] + d[1], solid_tile[2]]
             };
-            mesh.colors[i][3] = exposure.factor(sample_tile);
+            let f = exposure.factor(sample_tile);
+            for &i in &verts {
+                assignments.push((i, f));
+            }
+        }
+        for (i, f) in assignments {
+            mesh.colors[i][3] = f;
         }
     }
 }
