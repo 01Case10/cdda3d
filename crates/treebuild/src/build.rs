@@ -19,7 +19,9 @@ use std::fmt;
 use bytemuck::{Pod, Zeroable};
 use Sparse_Voxel_64Tree::{GpuNode64, Sparse64Tree};
 
-use crate::world::{VoxelCell, VoxelWorld, FLAG_MEMORIZED, LIT_BLANK, LIT_MEMORIZED};
+use crate::world::{
+    VoxelCell, VoxelWorld, FLAG_MEMORIZED, FLAG_SKY_EXPOSED, LIT_BLANK, LIT_MEMORIZED,
+};
 
 /// Per-flattened-node material data, parallel to `BuiltTree::flat`.
 /// 16 bytes, GPU storage-buffer friendly.
@@ -45,6 +47,9 @@ impl SideEntry {
         let mut flags = cell.flags;
         if cell.lit == LIT_MEMORIZED {
             flags |= FLAG_MEMORIZED;
+        }
+        if cell.sky_exposed {
+            flags |= FLAG_SKY_EXPOSED;
         }
         SideEntry {
             material_id: cell.material_id,

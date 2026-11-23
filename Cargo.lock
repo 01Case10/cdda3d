@@ -2276,6 +2276,7 @@ dependencies = [
  "Sparse-Voxel-64Tree",
  "bytemuck",
  "glam",
+ "lighting",
  "mesher",
  "pollster",
  "proptest",

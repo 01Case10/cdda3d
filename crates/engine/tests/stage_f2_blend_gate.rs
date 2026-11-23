@@ -24,11 +24,15 @@
 //!   one. The unblended control is the same scene rendered with
 //!   no blend assignments — i.e. exactly today's renderer.
 
+mod common;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use common::{blend_centroids, classify, Centroid, Class};
 use engine::blend::{blend_weight, neighbor_wins, BlendAssignment, BLEND_HALF_BAND_TILES};
+use engine::capture::RendererKind;
 use engine::camera::OrbitCamera;
 use engine::materials::MaterialTable;
 use engine::render::{create_depth_view, Renderer, CAPTURE_FORMAT};
@@ -570,31 +574,36 @@ fn render_rt(
     img
 }
 
-fn grass_like(p: &Rgba<u8>) -> bool {
-    let [r, g, b, _] = p.0;
-    g > r && g > b
-}
-
-fn dirt_like(p: &Rgba<u8>) -> bool {
-    let [r, g, b, _] = p.0;
-    r > g && g > b && (r as i32 - b as i32) >= 20
+/// Grass/dirt pixel classification via the shared
+/// chromaticity classifier (`tests/common`): the old
+/// channel-ordering rules (`grass_like`: g > r && g > b;
+/// `dirt_like`: r > g > b with (r − b) ≥ 20) assumed scalar
+/// light preserves channel ordering — §5.3's coloured
+/// hemisphere ambient broke that assumption on
+/// low-saturation dirt (the pond gate's RT dirt count went
+/// 982 → 0). This gate's sun-lit ground tops happened to
+/// keep the old rules working, but the classifier is shared
+/// so the two gates cannot drift apart again. The measured
+/// derivation lives in the common module.
+fn is_class(centroids: &[Centroid], class: Class, p: &Rgba<u8>) -> bool {
+    classify(p, centroids) == class
 }
 
 /// The screen column of the grass|dirt border in the CONTROL
-/// image: the first column (from the left) whose dirt-like count
-/// beats its grass-like count. Self-calibrating — the assertions
+/// image: the first column (from the left) whose dirt count
+/// beats its grass count. Self-calibrating — the assertions
 /// then measure intrusion relative to the border as rendered,
 /// not to a guessed projection.
-fn border_column(control: &RgbaImage) -> usize {
+fn border_column(control: &RgbaImage, centroids: &[Centroid]) -> usize {
     let (w, h) = control.dimensions();
     (0..w as usize)
         .find(|&c| {
             let (mut g, mut d) = (0usize, 0usize);
             for y in 0..h as usize {
                 let p = control.get_pixel(c as u32, y as u32);
-                if grass_like(p) {
+                if is_class(centroids, Class::Grass, p) {
                     g += 1;
-                } else if dirt_like(p) {
+                } else if is_class(centroids, Class::Dirt, p) {
                     d += 1;
                 }
             }
@@ -603,12 +612,17 @@ fn border_column(control: &RgbaImage) -> usize {
         .expect("control image must show a grass|dirt border")
 }
 
-fn count_in(img: &RgbaImage, cols: std::ops::Range<usize>, f: fn(&Rgba<u8>) -> bool) -> usize {
+fn count_in(
+    img: &RgbaImage,
+    cols: std::ops::Range<usize>,
+    centroids: &[Centroid],
+    class: Class,
+) -> usize {
     let h = img.height() as usize;
     let mut n = 0;
     for c in cols {
         for y in 0..h {
-            if f(img.get_pixel(c as u32, y as u32)) {
+            if is_class(centroids, class, img.get_pixel(c as u32, y as u32)) {
                 n += 1;
             }
         }
@@ -695,15 +709,23 @@ fn f2_blend_capture_both_renderers() {
         ("raster", &raster_blended, &raster_control),
         ("rt", &rt_blended, &rt_control),
     ] {
+        let renderer = if name == "rt" {
+            RendererKind::Rt
+        } else {
+            RendererKind::Raster
+        };
+        let centroids = blend_centroids(renderer, DIRT_RGB, GRASS_RGB);
         let w = SIZE.0 as usize;
-        let border = border_column(control);
+        let border = border_column(control, &centroids);
         // Interpenetration: each material's colors appear on the
         // other material's side of the border (a margin of 2px
         // absorbs the border line itself).
-        let dirt_on_grass = count_in(blended, 0..border.saturating_sub(2), dirt_like);
-        let grass_on_dirt = count_in(blended, border + 2..w, grass_like);
-        let control_dirt_on_grass = count_in(control, 0..border.saturating_sub(2), dirt_like);
-        let control_grass_on_dirt = count_in(control, border + 2..w, grass_like);
+        let dirt_on_grass = count_in(blended, 0..border.saturating_sub(2), &centroids, Class::Dirt);
+        let grass_on_dirt = count_in(blended, border + 2..w, &centroids, Class::Grass);
+        let control_dirt_on_grass =
+            count_in(control, 0..border.saturating_sub(2), &centroids, Class::Dirt);
+        let control_grass_on_dirt =
+            count_in(control, border + 2..w, &centroids, Class::Grass);
         // Confinement: no MATERIAL change outside the border
         // band (the two border tiles, generously). RT (no
         // mesher) must be exactly identical there; the raster

@@ -30,6 +30,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod common;
+
+use common::{count_class, pond_centroids, Class};
 use engine::capture::{run_capture, CaptureArgs, CaptureError, RendererKind};
 use engine::materials::MaterialTable;
 use engine::textures::{build_texture_spec, build_texture_spec_variants};
@@ -532,26 +535,30 @@ fn capture(args: &CaptureArgs) -> Option<RgbaImage> {
     }
 }
 
-/// Dirt-like pixels: r > g > b with a clear red-blue spread —
-/// multiplicative face shading preserves channel ordering, so
-/// this survives both renderers' lighting where an exact RGB
-/// match would not.
-fn dirt_like(img: &RgbaImage) -> usize {
-    img.pixels()
-        .filter(|p| {
-            let [r, g, b, _] = p.0;
-            r > g && g > b && (r as i32 - b as i32) >= 20
-        })
-        .count()
+/// Dirt/water pixel counts via the shared chromaticity
+/// classifier (`tests/common`): the old channel-ordering
+/// rules (`dirt_like`: r > g > b with (r − b) ≥ 20;
+/// `water_like`: b > g > r) assumed scalar light preserves
+/// channel ordering — §5.3's coloured hemisphere ambient
+/// broke that on low-saturation dirt (RT dirt 982 → 0). The
+/// classifier's measured derivation lives in the common
+/// module. Assertions below are unchanged from the old
+/// gate: the rework recovers the counts, it does not lower
+/// the bar.
+fn dirt_like(img: &RgbaImage, renderer: RendererKind) -> usize {
+    count_class(
+        img,
+        &pond_centroids(renderer, DIRT_RGB, WATER_RGB, GRASS_RGB),
+        Class::Dirt,
+    )
 }
 
-fn water_like(img: &RgbaImage) -> usize {
-    img.pixels()
-        .filter(|p| {
-            let [r, g, b, _] = p.0;
-            b > g && g > r
-        })
-        .count()
+fn water_like(img: &RgbaImage, renderer: RendererKind) -> usize {
+    count_class(
+        img,
+        &pond_centroids(renderer, DIRT_RGB, WATER_RGB, GRASS_RGB),
+        Class::Water,
+    )
 }
 
 #[test]
@@ -584,8 +591,11 @@ fn f2_pond_capture_both_renderers() {
         };
         let plain_img = capture(&args(&plain_dir, &outdir.join(format!("{name}_plain.png"))))
             .expect("shore capture ran, so the adapter exists");
-        let (shore_dirt, plain_dirt) = (dirt_like(&shore_img), dirt_like(&plain_img));
-        let shore_water = water_like(&shore_img);
+        let (shore_dirt, plain_dirt) = (
+            dirt_like(&shore_img, renderer),
+            dirt_like(&plain_img, renderer),
+        );
+        let shore_water = water_like(&shore_img, renderer);
         println!(
             "{name}: shore capture dirt-like {shore_dirt}, water-like {shore_water}; \
              plain capture dirt-like {plain_dirt}"

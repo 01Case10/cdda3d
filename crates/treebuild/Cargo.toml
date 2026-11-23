@@ -7,6 +7,7 @@ description = "CDDA Voxel Frontend Phase 2c: world -> Sparse-Voxel-64Tree builde
 
 [dependencies]
 mesher = { path = "../mesher" }
+lighting = { path = "../lighting" }
 Sparse-Voxel-64Tree = "=0.1.0"
 glam = "0.29"
 wgpu = "24"

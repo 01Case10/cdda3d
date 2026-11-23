@@ -22,12 +22,16 @@
 //! space**: +X east, +Y north, +Z up. [`SkyUniforms::from_sky_state`]
 //! emits those directions **unchanged** — it does not convert
 //! spaces. Each renderer consumes the uniforms in its own space, so
-//! the *caller* converts the sun/moon directions when uploading:
-//! the raster renderer is already world-space (no conversion); the
-//! RT renderer is grid space (+X east, +Y south, +Z up) and must run
-//! the dirs through `treebuild::world_to_grid` — the same transform
-//! that produced the legacy RT sun dir: world (0.3, 0.8, 0.4) → grid
-//! (0.3, −0.4, 0.8). [`SkyUniforms::neutral`] carries the *grid-space*
+//! the *caller* converts the sun/moon directions when uploading,
+//! using the helpers on this type: the RT renderer is grid space
+//! (+X east, +Y south, +Z up) and takes
+//! [`SkyUniforms::to_grid_space`]; the raster renderer is mesher
+//! world space (+X east, +Y up, +Z north) and takes
+//! [`SkyUniforms::to_mesher_world_space`]. (Do NOT use
+//! `treebuild::world_to_grid` for this: it converts *mesher-world*
+//! vectors — basis (east, up, north) — and applied to a
+//! SkyState-space (east, north, up) direction it puts the noon sun
+//! below the horizon.) [`SkyUniforms::neutral`] carries the *grid-space*
 //! legacy dir because neutral exists to reproduce the legacy RT
 //! `sky()` byte-for-byte; world-space callers at neutral should use
 //! the world legacy dir (0.3, 0.8, 0.4) normalized — the gradient is
@@ -291,31 +295,34 @@ impl SkyUniforms {
         }
     }
 
-    /// Convert the sun/moon directions FROM [`SkyUniforms::from_sky_state`]
-    /// output space (SkyState space: +X east, +Y north, +Z up) TO grid
-    /// space (+X east, +Y south, +Z up) — the RT renderer's space:
-    /// negate the north component of `sun_dir`/`moon_dir` (`.xyz` only;
-    /// the `.w` scalar gates are untouched).
+    /// Convert the sun/moon directions **from**
+    /// [`SkyUniforms::from_sky_state`] output space (SkyState
+    /// space: +X east, +Y north, +Z up) to treebuild grid space
+    /// (+X east, +Y south, +Z up): negate the Y (north→south)
+    /// component of `sun_dir`/`moon_dir`. Only the `.xyz`
+    /// directions change; the `.w` gates and every colour row pass
+    /// through untouched.
     ///
-    /// [`SkyUniforms::neutral`] is already in grid space and must NOT
-    /// be converted — it carries the legacy grid-space sun dir by
-    /// construction.
+    /// This converts FROM the `from_sky_state` output space only.
+    /// [`SkyUniforms::neutral`] is already in grid space (it
+    /// carries the legacy grid sun dir) and must NOT be converted.
     pub fn to_grid_space(mut self) -> Self {
         self.sun_dir[1] = -self.sun_dir[1];
         self.moon_dir[1] = -self.moon_dir[1];
         self
     }
 
-    /// Convert the sun/moon directions FROM [`SkyUniforms::from_sky_state`]
-    /// output space (SkyState space: +X east, +Y north, +Z up) TO
-    /// mesher world space (+X east, +Y up, +Z north) — the raster
-    /// renderer's space: swap the north and up components of
-    /// `sun_dir`/`moon_dir` (`.xyz` only; the `.w` scalar gates are
-    /// untouched).
+    /// Convert the sun/moon directions **from**
+    /// [`SkyUniforms::from_sky_state`] output space (SkyState
+    /// space: +X east, +Y north, +Z up) to mesher world space
+    /// (+X east, +Y up, +Z north): swap the Y/Z (north↔up)
+    /// components of `sun_dir`/`moon_dir`. Only the `.xyz`
+    /// directions change; the `.w` gates and every colour row pass
+    /// through untouched.
     ///
-    /// [`SkyUniforms::neutral`] is already in grid space and must NOT
-    /// be converted — it carries the legacy grid-space sun dir by
-    /// construction.
+    /// This converts FROM the `from_sky_state` output space only.
+    /// [`SkyUniforms::neutral`] is already in grid space (it
+    /// carries the legacy grid sun dir) and must NOT be converted.
     pub fn to_mesher_world_space(mut self) -> Self {
         self.sun_dir.swap(1, 2);
         self.moon_dir.swap(1, 2);

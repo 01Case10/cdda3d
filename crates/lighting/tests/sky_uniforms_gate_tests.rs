@@ -167,6 +167,58 @@ fn gate_freeze_from_state_neutral_env_is_daytime() {
 }
 
 #[test]
+fn gate_space_conversion_from_sky_state_output() {
+    // Noon, live path: GameEnvironment::neutral carries azimuth 0
+    // (sun due south) at altitude 65°, so the SkyState sun dir in
+    // SkyState space (east, north, up) is (0, -cos65, +sin65) —
+    // negative Y because the sun is toward the *south*.
+    let u = SkyUniforms::from_sky_state(&sky_state(&GameEnvironment::neutral()), 0.0);
+    let cos65 = 65f32.to_radians().cos();
+    let sin65 = 65f32.to_radians().sin();
+    assert!(
+        approx(u.sun_dir3(), [0.0, -cos65, sin65], 1e-6),
+        "precondition, SkyState-space noon sun: {:?}",
+        u.sun_dir3()
+    );
+    // Grid space (east, south, up): south is +Y there.
+    let grid = u.to_grid_space();
+    assert!(
+        approx(grid.sun_dir3(), [0.0, cos65, sin65], 1e-6),
+        "grid-space noon sun must sit south/up: {:?}",
+        grid.sun_dir3()
+    );
+    assert!(
+        approx(grid.moon_dir3(), [0.0, -cos65, -sin65], 1e-6),
+        "grid-space moon (antipode): {:?}",
+        grid.moon_dir3()
+    );
+    // Mesher world space (east, up, north): swap Y/Z.
+    let world = u.to_mesher_world_space();
+    assert!(
+        approx(world.sun_dir3(), [0.0, sin65, -cos65], 1e-6),
+        "mesher-world noon sun must sit up/south: {:?}",
+        world.sun_dir3()
+    );
+    assert!(
+        approx(world.moon_dir3(), [0.0, -sin65, cos65], 1e-6),
+        "mesher-world moon (antipode): {:?}",
+        world.moon_dir3()
+    );
+    // The .w gates are not directions and must pass through both
+    // conversions untouched.
+    for converted in [grid, world] {
+        assert_eq!(converted.sun_dir[3], u.sun_dir[3]);
+        assert_eq!(converted.moon_dir[3], u.moon_dir[3]);
+        assert_eq!(converted.sun_color, u.sun_color);
+        assert_eq!(converted.moon_color, u.moon_color);
+        assert_eq!(converted.zenith, u.zenith);
+        assert_eq!(converted.horizon, u.horizon);
+        assert_eq!(converted.ground_col, u.ground_col);
+        assert_eq!(converted.fog_color, u.fog_color);
+    }
+}
+
+#[test]
 fn gate_freeze_from_state_midnight_moon_and_stars() {
     // Midnight, summer, full moon (phase 4) on the fake-data path.
     let env = GameEnvironment::fake_day(0.0, 21_600.0, 64_800.0, 1, 4);
