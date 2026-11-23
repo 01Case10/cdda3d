@@ -434,10 +434,19 @@ pub fn restamp_tile<'m>(
 ///   fence tile with no same-def neighbour (mask 0) keeps
 ///   its coarse block and counts as skipped.
 /// - [`ModelKind::Standing`]: stamped as-is at the
-///   slab-top origin, like furniture. A model taller than
-///   the level's remaining height (a 96-cell wall) extends
-///   into the level above's band — the fixture path's
-///   convention for trees, kept here.
+///   slab-top origin, like furniture — unless the model is
+///   taller than the band above the slab (level depth minus
+///   the slab: 64 cells at the default scale), in which
+///   case it seats at the level base instead (fix 5a,
+///   2026-11-23, Joey's call). A 96-cell wall then fills
+///   its own level exactly (0..96) instead of extending
+///   32 cells into the level above, and an 84-cell door
+///   ends at 84, not 116. The coarse slab is NOT aired:
+///   stamped fine cells win over the coarse grid, and the
+///   slab fills the gaps of sparse tall models (a door
+///   panel) instead of leaving a pit. Shorter Standing
+///   models (the fixture tree, 40) keep the slab-top
+///   origin unchanged.
 ///
 /// Open-air tiles follow `build_columns`' floor rule:
 /// where `floor_at` resolves `Floor::RoofOf`, the roof
@@ -446,9 +455,11 @@ pub fn restamp_tile<'m>(
 /// carries.
 ///
 /// Restamp semantics: a Standing/Fence stamp first drops
-/// the tile's volume in the slab-top range (the furniture
+/// the tile's volume in its seating range (the furniture
 /// rule — terrain and furniture share a tile's standing
-/// slot at a level; last stamp wins). A Ground stamp
+/// slot at a level; last stamp wins). The two Standing
+/// seating ranges (slab-top and level-base) overlap, so a
+/// restamp drops the other seating's volume too. A Ground stamp
 /// replaces only the volume at its own base origin, so it
 /// never drops a furniture volume.
 ///
@@ -596,7 +607,20 @@ pub fn stamp_terrain<'m>(
                 }
             }
             ModelKind::Fence | ModelKind::Standing => {
-                let z0 = fine_z_origin(scale, job.level);
+                // Fix 5a (2026-11-23): a Standing model
+                // taller than the band above the slab seats
+                // at the level base, so it fills its own
+                // level instead of extending into the level
+                // above. Fences always seat at the slab top.
+                let band_above_slab =
+                    layer.depth_z - scale.floor_slab_blocks as i32 * FINE;
+                let z0 = if job.kind == ModelKind::Standing
+                    && model.size[1] as i32 > band_above_slab
+                {
+                    scale.level_base_block(job.level) as i32 * FINE
+                } else {
+                    fine_z_origin(scale, job.level)
+                };
                 // Restamp: drop the tile's old standing
                 // volume at this level (shared with
                 // furniture, see the doc comment).

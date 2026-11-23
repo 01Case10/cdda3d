@@ -12,7 +12,11 @@
 //! for it — Ground models replace the coarse floor slab at
 //! the level base, Fence half-segments compose per
 //! same-def neighbour mask on the slab top, Standing models
-//! stamp as-is on the slab top, and an open-air tile whose
+//! stamp as-is on the slab top — except Standing models
+//! taller than the band above the slab, which seat at the
+//! level base so they fill their own level instead of
+//! extending into the level above (fix 5a, 2026-11-23) —
+//! and an open-air tile whose
 //! floor resolves through `roof_result` seats the roof
 //! material's model as ground. Synthetic models and defs:
 //! the wiring is what is under test, not the builders
@@ -258,12 +262,17 @@ fn snapshot_terrain_models_seat_by_kind() {
     assert_eq!(fine_at(&layer, 2, 2, 16, 16, 31), None);
     assert_eq!(fine_at(&layer, 2, 2, 16, 16, 32), Some(104), "trunk base");
     assert_eq!(fine_at(&layer, 2, 2, 16, 16, 32 + 35), Some(105), "canopy");
-    // The wall (96 high) seats at the slab top too, so its
-    // top marker lands in the level above's band — the
-    // recorded slab-top convention.
-    assert_eq!(slab_id(&map, 8, 2, 0), TER_WALL);
-    assert_eq!(fine_at(&layer, 8, 2, 0, 0, 32), Some(107), "wall base");
-    assert_eq!(fine_at(&layer, 8, 2, 0, 0, 32 + 95), Some(107), "wall top");
+    // The wall (96 high) is taller than the band above the
+    // slab (96 - 32 = 64), so it seats at the level base
+    // (fix 5a, 2026-11-23): it fills its own level exactly
+    // and nothing extends into the level above. The coarse
+    // slab is kept — fine cells win where the model stamps,
+    // and the slab fills the gaps of sparse tall models
+    // (doors) instead of leaving a pit.
+    assert_eq!(slab_id(&map, 8, 2, 0), TER_WALL, "wall slab kept");
+    assert_eq!(fine_at(&layer, 8, 2, 0, 0, 0), Some(107), "wall base");
+    assert_eq!(fine_at(&layer, 8, 2, 0, 0, 95), Some(107), "wall top");
+    assert_eq!(fine_at(&layer, 8, 2, 0, 0, 96), None, "no overflow above");
 
     // Fences: composed per same-def neighbour mask.
     // Middle of the run (mask W|E): the centre-plane panel.

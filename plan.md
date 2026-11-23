@@ -1773,3 +1773,21 @@ fixture path's tree convention, kept; a per-kind origin refinement is a design c
 models top out at +10/+16. (3) A tall standing model and the next level's ground volume on
 the same column can overlap in z-range; first-inserted wins lookups (benign: the upper
 floor's cells inside a solid wall are hidden anyway).
+
+## Addendum 2026-11-23: seam (1) fixed — tall Standing models seat at the level base (fix 5a)
+
+Joey's call 2026-11-23 (option A1): in `snapshot_world::stamp_terrain`, a Standing model
+taller than the band above the slab (level depth 96 - slab 32 = 64 cells at the default
+scale) now seats at the level base instead of the slab-top origin. A 96-cell wall fills
+its own level exactly (0..96, was 32..128); an 84-cell door ends at 84 (was 116). The
+coarse slab is NOT aired — stamped fine cells win over the coarse grid, and the slab
+fills the gaps of sparse tall models (door panels) instead of leaving a pit. Shorter
+Standing models (fixture tree, 40) keep the slab-top origin. Side effect, flagged to
+Joey: real trees (80 tall) also exceed the band, so they seat at the base too — the
+model itself is unchanged (his keep-tall decision), but its top now ends at 80 instead
+of poking into the level above. Gate: terrain_snapshot_gate updated — the new wall
+assertions (base at fine 0, top at 95, nothing at 96) FAIL on the pre-fix code and pass
+after; suites proto+mesher+voxelizer+engine all green. Seam (2) — furniture floating
+over modelled ground — is NOT fixed by this: furniture stamps through the separate
+`stamp_furniture` path at the slab-top origin, unchanged. Seam (3) is moot for tall
+Standing models (no more z-overlap with the level above from them).
