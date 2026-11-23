@@ -14,15 +14,42 @@
 //! - `query_main`: casts caller-supplied rays and writes structured
 //!   hits to a buffer — the GPU half of gate 2c.3's parity check and
 //!   the engine's picking path.
+//!
+//! Phase 10 (10.4, docs/phase10-sky-gi.md §4/§5.3): the sky
+//! background and the sky GI terms come from the frozen shared
+//! contract in `lighting` — [`SkyUniforms`] (128 B, uploaded to a
+//! dedicated uniform buffer at group 1 binding 12, render
+//! pipeline only; the query pipeline's layout is untouched) and
+//! the [`SKY_WGSL`] string, embedded verbatim between the
+//! traversal and render WGSL. There is no second copy of the sky
+//! function in this crate.
+//!
+//! Coordinate-space note (a freeze-doc correction, recorded
+//! here because this is where it bites): `SkyState` directions
+//! are (east, north, up), which is *already* this renderer's grid
+//! space — the lighting-space legacy sun (0.3, −0.4, 0.8) is
+//! exactly [`sun_dir_grid`]. So a `SkyUniforms` built by
+//! `SkyUniforms::from_sky_state` is uploaded **verbatim**: running
+//! its dirs through [`world_to_grid`] (which converts *mesher*
+//! Y-up world vectors) would put the noon sun below the horizon.
+//! `sky_color`'s up component in grid space is `rd.z`.
 
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
+use lighting::{SkyUniforms, SKY_WGSL};
 use Sparse_Voxel_64Tree::Tree64GpuManager;
 use wgpu::util::DeviceExt;
 
 use crate::build::BuiltTree;
 use crate::cpu::TraceMode;
 use crate::lod;
+
+/// Phase 10 (§5.3 overcast collapse): when the dominant
+/// directional source's premultiplied luminance is below this,
+/// the directional term collapses into the hemisphere term and
+/// no shadow ray is cast. Mirrored as a literal in the render
+/// WGSL (`SKY_COLLAPSE_LUMINANCE` there); keep the two in sync.
+pub const SKY_COLLAPSE_LUMINANCE: f32 = 0.18;
 
 /// Direction *toward* the sun in grid space: the raster shader's
 /// world-space light dir (0.3, 0.8, 0.4) run through `world_to_grid`.
@@ -502,6 +529,13 @@ fn point_occluded(p: vec3<f32>) -> bool {
 "#;
 
 const RENDER_WGSL: &str = r#"
+// Phase 10 (10.4): the shared sky uniforms (lighting::SkyUniforms,
+// 128 bytes) — a dedicated buffer so the traversal Uniforms layout
+// (shared with the query pipeline) stays untouched. The
+// SkyUniforms struct itself comes from lighting::SKY_WGSL,
+// embedded verbatim ahead of this string.
+@group(1) @binding(12) var<uniform> sky_u: SkyUniforms;
+
 @group(1) @binding(2) var color_out: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(3) var<storage, read_write> depth_out: array<f32>;
 @group(1) @binding(4) var tex_array: texture_2d_array<f32>;
@@ -692,6 +726,16 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         return lod_color(lod);
     }
     var albedo = tex_albedo(e, h.normal, hitp, h.voxel_min, node.color, lod);
+    if u.macro_debug_height != 0u {
+        // Stage F debug view: tex_albedo already swapped macro
+        // top faces to the height layer; return it unlit, like
+        // the debug_lod view above, so the view stays the
+        // grayscale height data it exists to inspect. The §5.3
+        // hemisphere light is coloured and would tint it (the
+        // legacy scalar light could not); gate stage_f measures
+        // the debug view's grayscale-ness.
+        return albedo;
+    }
     if (e.flags & 8u) != 0u {
         // Memorized: remembered, not currently seen — desaturate.
         let lum = dot(albedo, vec3<f32>(0.299, 0.587, 0.114));
@@ -702,22 +746,48 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         return albedo * 1.6;
     }
     let n = h.normal;
-    var light = 0.35;
-    let ndl = max(dot(n, u.sun_dir), 0.0);
-    if ndl > 0.0 {
-        var shadowed = false;
+    // Phase 10 (10.4, §5.3): sky GI from the shared SkyUniforms,
+    // replacing the hardcoded `0.35 + 0.85 * ndl` model.
+    //
+    // Hemisphere ambient: mix(ground, zenith, n.z * 0.5 + 0.5)
+    // (grid space: +z is up) * ambient_scale (packed in zenith.w).
+    // The hemisphere term is NOT scaled by the per-tile sky
+    // factor: it is the ambient floor lamp-lit interiors rely on
+    // (§3.4 — interiors lit by lamps look as they do today; the
+    // lit_factor ceiling below still caps the total). The
+    // directional terms ARE scaled by it (§3.4, decision 4A;
+    // side-table flag bit 16, FLAG_SKY_EXPOSED).
+    let sky_factor = select(0.0, 1.0, (e.flags & 16u) != 0u);
+    let hemi = mix(sky_u.ground_col.xyz, sky_u.zenith.xyz, n.z * 0.5 + 0.5);
+    var light = hemi * sky_u.zenith.w;
+    // Directional: sun + moon, colours pre-multiplied by
+    // intensity in the uniforms. ONE shadow ray, toward the
+    // dominant source (greater premultiplied luminance); the
+    // weaker source is unshadowed (v1 limit). Two-tree: props
+    // occlude too (same coarse-bias note as Phase 9).
+    let sun_c = sky_u.sun_color.xyz;
+    let moon_c = sky_u.moon_color.xyz;
+    let sun_i = dot(sun_c, vec3<f32>(0.299, 0.587, 0.114));
+    let moon_i = dot(moon_c, vec3<f32>(0.299, 0.587, 0.114));
+    let dom_i = max(sun_i, moon_i);
+    // Overcast collapse threshold: mirror of
+    // crate::render::SKY_COLLAPSE_LUMINANCE (0.18).
+    if dom_i < 0.18 {
+        // Overcast collapse (§5.3): the directional energy folds
+        // into the hemisphere term; no shadow ray is cast.
+        light = light + hemi * dom_i;
+    } else {
+        let moon_dom = moon_i > sun_i;
+        var dom_vis = 1.0;
         if u.shadows != 0u {
-            // Two-tree: props occlude the sun too. The offset is
-            // in coarse units; a fine surface's own cells sit
-            // within 1/32 of it, so self-shadowing acne on props
-            // is possible at grazing angles — the coarse bias is
-            // the v1 behaviour (docs/phase9-fine.md).
-            let sh = trace_two(hitp + n * 0.01, u.sun_dir, true);
-            shadowed = sh.hit;
+            let dom_dir = select(sky_u.sun_dir.xyz, sky_u.moon_dir.xyz, moon_dom);
+            let sh = trace_two(hitp + n * 0.01, dom_dir, true);
+            dom_vis = select(1.0, 0.0, sh.hit);
         }
-        if !shadowed {
-            light = light + 0.85 * ndl;
-        }
+        let sun_vis = select(dom_vis, 1.0, moon_dom);
+        let moon_vis = select(1.0, dom_vis, moon_dom);
+        light = light + (sun_c * max(dot(n, sky_u.sun_dir.xyz), 0.0) * sun_vis
+            + moon_c * max(dot(n, sky_u.moon_dir.xyz), 0.0) * moon_vis) * sky_factor;
     }
     // Cheap occupancy AO: the four cells just outside the face,
     // diagonally adjacent along its tangents.
@@ -737,17 +807,31 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     if point_occluded(center + t2) { occ = occ + 1.0; }
     if point_occluded(center - t2) { occ = occ + 1.0; }
     let ao = 1.0 - 0.10 * occ;
-    return albedo * (light * lit_factor(e.lit) * ao);
+    // The lit_factor ceiling multiply stays LAST (§3.4 ceiling
+    // rule: sky GI never reveals what the game marks dark/unseen).
+    var col = albedo * light * (lit_factor(e.lit) * ao);
+    if (e.flags & 8u) != 0u {
+        // Memorized, second stage: the albedo desaturation above
+        // sufficed when the light was a scalar, but the §5.3
+        // hemisphere light is coloured and its chroma
+        // re-saturates the product (gate 2h.3 measured memorized
+        // saturation 0.592 vs visible 0.542 — no collapse). Like
+        // the raster path, desaturate the shaded colour too
+        // (0.30 keep, the pinned presentation).
+        let clum = dot(col, vec3<f32>(0.299, 0.587, 0.114));
+        col = mix(vec3<f32>(clum), col, 0.30);
+    }
+    return col;
 }
 
 fn sky(rd: vec3<f32>) -> vec3<f32> {
-    let horizon = vec3<f32>(0.08, 0.10, 0.14);
-    let zenith = vec3<f32>(0.30, 0.48, 0.78);
-    let ground = vec3<f32>(0.05, 0.06, 0.08);
-    if rd.z > 0.0 {
-        return mix(horizon, zenith, pow(clamp(rd.z, 0.0, 1.0), 0.6));
-    }
-    return mix(horizon, ground, clamp(-rd.z * 3.0, 0.0, 1.0));
+    // Phase 10 (10.4, §4): the shared sky function from
+    // lighting::SKY_WGSL — one source for both renderers. Grid
+    // space: the up component is rd.z. At SkyUniforms::neutral()
+    // this returns exactly the pre-10.4 hardcoded gradient (the
+    // freeze gate proves it for the CPU mirror; gate 10.3a's RT
+    // half proves it for this GPU path).
+    return sky_color(rd, rd.z, sky_u);
 }
 
 @compute @workgroup_size(8, 8)
@@ -839,7 +923,7 @@ fn query_main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// diagnostics and source-level test assertions.
 pub fn wgsl_sources() -> (String, String) {
     (
-        format!("{TRAVERSAL_WGSL}\n{RENDER_WGSL}"),
+        format!("{TRAVERSAL_WGSL}\n{SKY_WGSL}\n{RENDER_WGSL}"),
         format!("{TRAVERSAL_WGSL}\n{QUERY_WGSL}"),
     )
 }
@@ -1185,6 +1269,12 @@ pub struct RtScene {
     pub manager: Tree64GpuManager,
     side_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
+    /// Phase 10 (10.4): the shared sky uniforms buffer (128 B),
+    /// bound at group 1 binding 12 in the render pipeline.
+    /// Starts at [`SkyUniforms::neutral`] — the §6 neutral block,
+    /// under which the sky background reproduces the pre-10.4
+    /// gradient exactly.
+    sky_uniform_buffer: wgpu::Buffer,
     /// Bound textures; starts as the dummy set (all flat color)
     /// until `attach_textures` replaces it.
     pub textures: TextureSet,
@@ -1207,6 +1297,22 @@ pub struct RtScene {
 }
 
 impl RtScene {
+    /// Phase 10 (10.4): upload the shared sky uniforms for
+    /// subsequent renders. The uniforms are consumed **verbatim,
+    /// in grid space**: a block built by
+    /// `SkyUniforms::from_sky_state` is already grid-space (see
+    /// the module doc's coordinate note — do NOT run its dirs
+    /// through `world_to_grid`). Scenes start at
+    /// [`SkyUniforms::neutral`].
+    pub fn set_sky(&self, queue: &wgpu::Queue, sky: &SkyUniforms) {
+        let rows = sky.as_rows();
+        queue.write_buffer(
+            &self.sky_uniform_buffer,
+            0,
+            bytemuck::cast_slice(rows.as_slice()),
+        );
+    }
+
     /// Replace the scene's texture set with a real one built from
     /// `spec` (see `TextureSpec`). Materials the spec doesn't cover
     /// keep flat-color shading.
@@ -1327,6 +1433,10 @@ impl RtRenderer {
                 uniform_layout_entry(10),
                 // Stage F part 2: per-material blend entries.
                 side_layout_entry(11),
+                // Phase 10 (10.4): shared sky uniforms — render
+                // pipeline only (the query layout below is
+                // unchanged, so its buffer layout stays stable).
+                uniform_layout_entry(12),
             ],
         });
         let query_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1352,7 +1462,9 @@ impl RtRenderer {
         });
         let render_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rt-render-shader"),
-            source: wgpu::ShaderSource::Wgsl(format!("{TRAVERSAL_WGSL}\n{RENDER_WGSL}").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                format!("{TRAVERSAL_WGSL}\n{SKY_WGSL}\n{RENDER_WGSL}").into(),
+            ),
         });
         let query_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rt-query-shader"),
@@ -1443,6 +1555,7 @@ impl RtRenderer {
                 _pad: 0,
             }),
         );
+        let sky_rows = SkyUniforms::neutral().as_rows();
         let scene = RtScene {
             side_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("rt-side-table"),
@@ -1454,6 +1567,11 @@ impl RtRenderer {
                 size: std::mem::size_of::<Uniforms>() as u64,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
+            }),
+            sky_uniform_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("rt-sky-uniforms"),
+                contents: bytemuck::cast_slice(sky_rows.as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
             node_count: built.node_count(),
             depth: built.depth,
@@ -1657,6 +1775,10 @@ impl RtRenderer {
                 wgpu::BindGroupEntry {
                     binding: 11,
                     resource: scene.textures.blends_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: scene.sky_uniform_buffer.as_entire_binding(),
                 },
             ],
         });

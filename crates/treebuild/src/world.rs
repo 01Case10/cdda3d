@@ -27,6 +27,10 @@ pub const FLAG_TRANSPARENT: u32 = 1 << 0;
 pub const FLAG_CUTOUT: u32 = 1 << 1;
 pub const FLAG_EMISSIVE: u32 = 1 << 2;
 pub const FLAG_MEMORIZED: u32 = 1 << 3;
+/// Phase 10 (10.4, §3.4): the cell's tile is exposed to the sky
+/// (`s = 1`); the RT shade scales its directional sun/moon terms
+/// by this factor. Roofed / underground cells carry 0.
+pub const FLAG_SKY_EXPOSED: u32 = 1 << 4;
 
 /// One occupied voxel.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,6 +47,13 @@ pub struct VoxelCell {
     pub lit: u8,
     /// FLAG_* bits.
     pub flags: u32,
+    /// Phase 10 (10.4, §3.4): per-tile sky exposure for the RT
+    /// directional GI terms. Defaults to `true`: fake/unlit data
+    /// has no game truth about roofed-ness, and pre-10.4 the
+    /// directional term was global — the lit engine path
+    /// (`engine::rt::world_for_levels_lit`) clears it for roofed
+    /// cells via its column-scan feed.
+    pub sky_exposed: bool,
 }
 
 impl VoxelCell {
@@ -53,6 +64,7 @@ impl VoxelCell {
             material_id,
             lit: LIT_LIT,
             flags: 0,
+            sky_exposed: true,
         }
     }
 
@@ -145,6 +157,7 @@ impl VoxelWorld {
                                 material_id: b.id,
                                 lit: LIT_LIT,
                                 flags,
+                                sky_exposed: true,
                             },
                         );
                     }
@@ -196,6 +209,7 @@ impl VoxelWorld {
                                     material_id: b.id,
                                     lit: LIT_LIT,
                                     flags,
+                                    sky_exposed: true,
                                 },
                             );
                         }

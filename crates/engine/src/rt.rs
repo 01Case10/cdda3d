@@ -216,6 +216,57 @@ pub fn world_for_levels_sv(
     VoxelWorld::from_chunk_map(&filtered)
 }
 
+/// Phase 10 (10.4, §3.4): the RT sky-exposure feed — a column
+/// scan over a *reference* world (the uncut scene, so a cutaway
+/// that hides the roof for the view does not make the room below
+/// it sky-exposed: exposure is a property of the world, not of
+/// the view). A cell is sky-exposed iff no opaque cell sits above
+/// it in its (x, y) column; transparent cells (glass, water) do
+/// not block the sky.
+///
+/// This is the §3.4 option-(b) engine-derived feed. Option (a) —
+/// the game's own `is_outside && !is_roofed`, exported per tile
+/// in the protocol's `outside[]` since 10.1 — cannot reach this
+/// path today: `lighting::proto_adapter` drops `outside[]`
+/// (`lighting::TileLight` has no outside field, and the lighting
+/// crate is frozen for Wave 2), so `LightingScene` carries no
+/// exposure grid. Wiring (a) through is 10.6 work; until then
+/// this scan is the feed, and it agrees with (a) on the fake
+/// house (roofed footprint interior: not exposed; roof and open
+/// ground: exposed).
+pub struct SkyExposure {
+    top_opaque: std::collections::HashMap<(i32, i32), i32>,
+}
+
+impl SkyExposure {
+    pub fn new(reference: &VoxelWorld) -> Self {
+        let mut top_opaque: std::collections::HashMap<(i32, i32), i32> = Default::default();
+        for (pos, cell) in reference.iter() {
+            if cell.flags & treebuild::world::FLAG_TRANSPARENT == 0 && cell.alpha >= 1.0 {
+                let e = top_opaque.entry((pos[0], pos[1])).or_insert(i32::MIN);
+                *e = (*e).max(pos[2]);
+            }
+        }
+        Self { top_opaque }
+    }
+
+    /// Exposed iff no opaque reference cell is strictly above
+    /// (`x`, `y`, `z`) in its column.
+    pub fn exposed(&self, x: i32, y: i32, z: i32) -> bool {
+        z >= self.top_opaque.get(&(x, y)).copied().unwrap_or(i32::MIN)
+    }
+
+    /// Stamp the feed onto every cell of `world` (coarse coords).
+    pub fn apply(&self, world: &mut VoxelWorld) {
+        let cells: Vec<([i32; 3], treebuild::world::VoxelCell)> =
+            world.iter().map(|(p, c)| (*p, *c)).collect();
+        for (pos, mut cell) in cells {
+            cell.sky_exposed = self.exposed(pos[0], pos[1], pos[2]);
+            world.set(pos, cell);
+        }
+    }
+}
+
 /// Phase 2h.3: the lit form of [`world_for_levels`] — the Phase 7
 /// wiring contract (docs/phase7-lighting.md §12, RT half) applied
 /// before the tree build:
@@ -263,7 +314,11 @@ pub fn world_for_levels_lit_sv(
     vehicles: Option<&crate::frame::VehicleScene>,
     sample: bool,
 ) -> VoxelWorld {
-    let base = world_for_levels_sv(visible_levels, vehicles, sample);
+    let mut base = world_for_levels_sv(visible_levels, vehicles, sample);
+    // Phase 10 (10.4): sky exposure from the UNCUT scene (all
+    // levels), so the cutaway view cannot un-roof a room.
+    let reference = world_for_levels_sv(&capture_visible_levels(10), vehicles, sample);
+    SkyExposure::new(&reference).apply(&mut base);
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
     let mut out = VoxelWorld::new();
@@ -359,6 +414,32 @@ pub fn render_rt_frame(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<RtFrameOut, CaptureError> {
+    render_rt_frame_inner(device, queue, args, None)
+}
+
+/// Phase 10 (10.4): [`render_rt_frame`] with the shared sky
+/// uniforms (from `lighting::SkyUniforms::from_sky_state`) driving
+/// the RT sky background + GI. The frame-level plumbing that
+/// evaluates a `SkyState` once per frame and hands it here is
+/// §6/10.6 integration work (the 10.3 slice owns `frame.rs` /
+/// `CaptureArgs`); this entry point is the RT consumption surface
+/// it will call. `None` in the inner path = the renderer's
+/// default `SkyUniforms::neutral()`.
+pub fn render_rt_frame_sky(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: &lighting::SkyUniforms,
+) -> Result<RtFrameOut, CaptureError> {
+    render_rt_frame_inner(device, queue, args, Some(sky))
+}
+
+fn render_rt_frame_inner(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
     // Phase 9 (9.5): the effective prop scene — an explicit
     // `props` scene wins regardless of the flag; with only
     // `--fine-props` set, the snapshot's fixture scene is used
@@ -371,7 +452,7 @@ pub fn render_rt_frame(
             None
         };
     if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
-        return render_rt_frame_props(device, queue, args, props);
+        return render_rt_frame_props(device, queue, args, props, sky);
     }
     let t0 = Instant::now();
     // Phase 2h.3: with a lighting scene, the world is built
@@ -412,6 +493,9 @@ pub fn render_rt_frame(
         .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) = RtRenderer::with_scene(device, queue, &built);
+    if let Some(sky) = sky {
+        scene.set_sky(queue, sky);
+    }
     let texture_stats = match &args.textures {
         Some(dir) => Some(attach_fake_textures(
             device,
@@ -494,7 +578,12 @@ pub fn fine_occlusion_rewrite(
 /// the world is in fine coordinates (`mesher::fine::FINE` cells
 /// per block): a fine cell takes its CONTAINING tile's light —
 /// the 9.6 v1 rule (docs/phase9-fine.md §1).
-fn lit_rewrite(world: &VoxelWorld, lit: &crate::frame::LightingScene, fine: bool) -> VoxelWorld {
+fn lit_rewrite(
+    world: &VoxelWorld,
+    lit: &crate::frame::LightingScene,
+    fine: bool,
+    exposure: &SkyExposure,
+) -> VoxelWorld {
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
     let mut out = VoxelWorld::new();
@@ -508,11 +597,22 @@ fn lit_rewrite(world: &VoxelWorld, lit: &crate::frame::LightingScene, fine: bool
         } else {
             [pos[0], pos[1], lit.min_game_z + pos[2] / per]
         };
+        // Phase 10 (10.4): sky exposure for this cell — fine
+        // cells take their containing coarse column's exposure.
+        let mut cell = *cell;
+        cell.sky_exposed = if fine {
+            exposure.exposed(
+                pos[0].div_euclid(mesher::fine::FINE),
+                pos[1].div_euclid(mesher::fine::FINE),
+                pos[2].div_euclid(mesher::fine::FINE),
+            )
+        } else {
+            exposure.exposed(pos[0], pos[1], pos[2])
+        };
         let vis = mask.visibility(tile[0], tile[1], tile[2]);
         if !lighting::include_in_tree(vis) {
             continue; // BLANK: never enters the tree
         }
-        let mut cell = *cell;
         let tile_light = lit.grid.get(tile[0], tile[1], tile[2]);
         match vis {
             lighting::Visibility::Memorized => {
@@ -575,6 +675,7 @@ fn render_rt_frame_props(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
     props: &crate::frame::PropScene,
+    sky: Option<&lighting::SkyUniforms>,
 ) -> Result<RtFrameOut, CaptureError> {
     let t0 = Instant::now();
     let levels = capture_visible_levels(args.cutaway_z);
@@ -645,8 +746,11 @@ fn render_rt_frame_props(
     let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
     let mut fine_world = VoxelWorld::from_fine_layer(&layer);
     if let Some(lit) = &args.lighting {
-        coarse_world = lit_rewrite(&coarse_world, lit, false);
-        fine_world = lit_rewrite(&fine_world, lit, true);
+        // Phase 10 (10.4): exposure reference is the UNCUT map
+        // (`map`, before cutaway filtering and prop stamping).
+        let exposure = SkyExposure::new(&VoxelWorld::from_chunk_map(&map));
+        coarse_world = lit_rewrite(&coarse_world, lit, false, &exposure);
+        fine_world = lit_rewrite(&fine_world, lit, true, &exposure);
         // Geometric fine-prop occlusion (8c-A): after the
         // game's per-tile light is applied, step down fine
         // cells the stamped geometry encloses.
@@ -713,6 +817,9 @@ fn render_rt_frame_props(
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) =
         RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
+    if let Some(sky) = sky {
+        scene.set_sky(queue, sky);
+    }
     if let Some(spec) = &attach_spec {
         scene
             .attach_textures(device, queue, spec)
@@ -748,7 +855,21 @@ pub fn capture_rt_with_device(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<RtCapture, CaptureError> {
-    let frame = render_rt_frame(device, queue, args)?;
+    capture_rt_with_device_sky(device, queue, args, None)
+}
+
+/// Phase 10 (10.4): [`capture_rt_with_device`] with explicit sky
+/// uniforms (`None` = the renderer's neutral default).
+pub fn capture_rt_with_device_sky(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+) -> Result<RtCapture, CaptureError> {
+    let frame = match sky {
+        Some(sky) => render_rt_frame_sky(device, queue, args, sky)?,
+        None => render_rt_frame(device, queue, args)?,
+    };
     let (width, height) = frame.size;
 
     let pixels = read_texture_rgba(device, queue, &frame.color, (width, height))?;
