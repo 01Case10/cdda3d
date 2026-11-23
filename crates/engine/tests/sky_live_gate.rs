@@ -109,6 +109,96 @@ fn rt_exposure_honours_wire_over_geometry() {
 }
 
 // ---------------------------------------------------------------------
+// Fake weather environments + the named sky matrix
+// ---------------------------------------------------------------------
+
+#[test]
+fn fake_weather_classifies_to_intended_kind() {
+    // The 10.2b pattern: a fake environment is only useful if
+    // its numerics round-trip through the classifier to the
+    // kind it claims to be.
+    for (kind, id) in [
+        (WeatherKind::Clear, "sunny"),
+        (WeatherKind::Rain, "weather_rain"),
+        (WeatherKind::Fog, "weather_fog"),
+        (WeatherKind::Thunderstorm, "weather_thunderstorm"),
+    ] {
+        let env = lighting::GameEnvironment::fake_weather(
+            43_200.0, 21_600.0, 64_800.0, 1, 4, kind,
+        );
+        assert_eq!(lighting::classify_weather(&env), kind, "{id} classifies");
+        assert_eq!(env.weather_id, id);
+        // The seated scene derives the same presentation:
+        // cloud cover strictly increases clear < fog < rain <
+        // thunderstorm, and the wet kinds precipitate.
+        let state = SkyScene::fake_weather(12.0, 4, kind).sky_state();
+        let expected_cover = match kind {
+            WeatherKind::Clear => 0.05,
+            WeatherKind::Fog => 0.70,
+            WeatherKind::Rain => 0.80,
+            WeatherKind::Thunderstorm => 1.0,
+            _ => unreachable!(),
+        };
+        assert_eq!(state.cloud_cover, expected_cover, "{id} cloud cover");
+        assert_eq!(
+            state.precip.kind == lighting::PrecipKind::None,
+            kind == WeatherKind::Clear || kind == WeatherKind::Fog,
+            "{id} precip presence"
+        );
+    }
+}
+
+#[test]
+fn named_sky_matrix_resolves() {
+    // One resolver for the --sky CLI names and this gate's
+    // capture matrix, so the two cannot drift.
+    let hours = [
+        ("midnight", 0.0),
+        ("dawn", 6.5),
+        ("noon", 12.0),
+        ("dusk", 17.5),
+    ];
+    let kinds = [
+        ("clear", WeatherKind::Clear),
+        ("rain", WeatherKind::Rain),
+        ("fog", WeatherKind::Fog),
+        ("thunderstorm", WeatherKind::Thunderstorm),
+    ];
+    for (tname, hour) in hours {
+        for (wname, kind) in kinds {
+            let name = format!("{tname}-{wname}");
+            let scene = SkyScene::named(&name)
+                .unwrap_or_else(|| panic!("{name} resolves"));
+            assert_eq!(
+                lighting::classify_weather(&scene.game_env),
+                kind,
+                "{name} weather"
+            );
+            assert_eq!(
+                scene.game_env.time_of_day_sec,
+                hour * 3600.0,
+                "{name} hour"
+            );
+        }
+    }
+    assert!(SkyScene::named("neutral").is_some());
+    assert!(SkyScene::named("noon").is_none(), "bare time is not a name");
+    assert!(SkyScene::named("bogus-clear").is_none());
+    // The pre-10.6 names keep their exact scenes (capture
+    // reproducibility): noon-clear IS fake_day(12, 4).
+    assert_eq!(
+        SkyScene::named("noon-clear").unwrap().uniforms(),
+        SkyScene::fake_day(12.0, 4).uniforms(),
+        "noon-clear unchanged"
+    );
+    assert_eq!(
+        SkyScene::named("neutral").unwrap().uniforms(),
+        SkyScene::neutral_env().uniforms(),
+        "neutral unchanged"
+    );
+}
+
+// ---------------------------------------------------------------------
 // SkyScene seating from the wire
 // ---------------------------------------------------------------------
 

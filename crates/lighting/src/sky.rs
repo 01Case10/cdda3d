@@ -161,6 +161,74 @@ impl GameEnvironment {
         env
     }
 
+    /// Fake-data scene constructor for the §8 capture matrix
+    /// (slice 10.6): [`Self::fake_day`]'s clear numerics with the
+    /// weather fields folded the way the game exports them —
+    /// `sun_light` re-derived through the type's own
+    /// `light_multiplier`/`light_modifier` folding, so the
+    /// numbers are self-consistent wire values, and each kind's
+    /// numerics round-trip through [`classify_weather`] back to
+    /// the kind (gate: `fake_weather_classifies_to_intended_kind`).
+    /// Kinds outside the §8 matrix (Cloudy, HeavyRain, Snow)
+    /// fall back to the clear numerics.
+    pub fn fake_weather(
+        time_of_day_sec: f32,
+        sunrise_sec: f32,
+        sunset_sec: f32,
+        season: u8,
+        moon_phase: u8,
+        kind: WeatherKind,
+    ) -> Self {
+        let mut env = Self::fake_day(
+            time_of_day_sec,
+            sunrise_sec,
+            sunset_sec,
+            season,
+            moon_phase,
+        );
+        let clear_sun = env.sun_light;
+        match kind {
+            WeatherKind::Rain => {
+                env.weather_id = "weather_rain".to_string();
+                env.light_multiplier = 0.75;
+                env.light_modifier = -10.0;
+                env.sun_multiplier = 0.7;
+                env.precip_class = 2;
+                env.rains = true;
+                env.sight_penalty = 1.1;
+            }
+            WeatherKind::Fog => {
+                env.weather_id = "weather_fog".to_string();
+                env.light_multiplier = 0.9;
+                env.light_modifier = -5.0;
+                env.sun_multiplier = 0.8;
+                // Vanilla fog's own value (the classifier's
+                // pinned threshold comment, gate 10.2b).
+                env.sight_penalty = 1.7;
+            }
+            WeatherKind::Thunderstorm => {
+                env.weather_id = "weather_thunderstorm".to_string();
+                env.light_multiplier = 0.6;
+                // The thunder band (classifier comment: -40/-45
+                // vs rainstorm's -35).
+                env.light_modifier = -40.0;
+                env.sun_multiplier = 0.3;
+                env.precip_class = 3;
+                env.rains = true;
+                env.sight_penalty = 1.2;
+                env.lightning_active = true;
+            }
+            _ => {}
+        }
+        if kind != WeatherKind::Clear {
+            // The game's folding (the `sun_light` field doc):
+            // what a game would have exported for this type.
+            env.sun_light =
+                (clear_sun * env.light_multiplier + env.light_modifier).max(0.0);
+        }
+        env
+    }
+
     /// Clamp every numeric field into the vanilla range (§10 risk:
     /// a modded weather type with extreme numerics can look
     /// different, it cannot produce NaN or negative light). Angle

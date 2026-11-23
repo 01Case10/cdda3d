@@ -148,22 +148,17 @@ fn apply_scene_flags(
         }
     }
     // Phase 10 (§6): named sky environments for captures, so the
-    // gate capture set is deterministic. (The live windowed path
-    // takes its environment from the client state in 10.6; these
-    // names are the fake-data scripts.)
+    // gate capture set is deterministic. The names resolve
+    // through `SkyScene::named` — the same resolver the gate
+    // matrix uses (slice 10.6), so the CLI and the gates cannot
+    // drift. (The live windowed path takes its environment from
+    // the client state; these names are the fake-data scripts.)
     if let Some(s) = value_after(args, "--sky") {
-        cap.sky = Some(match s.as_str() {
-            "neutral" => engine::frame::SkyScene::neutral_env(),
-            "noon-clear" => engine::frame::SkyScene::fake_day(12.0, 4),
-            "midnight-clear" => engine::frame::SkyScene::fake_day(0.0, 4),
-            "dawn-clear" => engine::frame::SkyScene::fake_day(6.5, 4),
-            "dusk-clear" => engine::frame::SkyScene::fake_day(17.5, 4),
-            _ => {
-                return Err(format!(
-                    "bad --sky '{s}' (neutral|noon-clear|midnight-clear|dawn-clear|dusk-clear)"
-                ))
-            }
-        });
+        cap.sky = Some(engine::frame::SkyScene::named(&s).ok_or_else(|| {
+            format!(
+                "bad --sky '{s}' (neutral|{{midnight,dawn,noon,dusk}}-{{clear,rain,fog,thunderstorm}})"
+            )
+        })?);
     }
     if args.iter().any(|a| a == "--ui-stub") {
         let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;

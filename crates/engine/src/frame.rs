@@ -296,6 +296,53 @@ impl SkyScene {
         ))
     }
 
+    /// Fake-data scene in a §8-matrix weather (slice 10.6):
+    /// [`Self::fake_day`]'s day with the weather numerics of
+    /// `lighting::GameEnvironment::fake_weather`.
+    pub fn fake_weather(hour: f32, moon_phase: u8, kind: lighting::WeatherKind) -> Self {
+        Self::new(lighting::GameEnvironment::fake_weather(
+            hour * 3600.0,
+            21_600.0,
+            64_800.0,
+            1,
+            moon_phase,
+            kind,
+        ))
+    }
+
+    /// The named fake-sky matrix: `"neutral"` plus
+    /// `"{midnight,dawn,noon,dusk}-{clear,rain,fog,thunderstorm}"`
+    /// (the §8 gate set). One resolver shared by the `--sky`
+    /// capture flag and the gates, so the CLI names and the
+    /// gate matrix cannot drift. The pre-10.6 clear names keep
+    /// their exact scenes (`noon-clear` IS `fake_day(12, 4)`,
+    /// `neutral` IS `neutral_env()`).
+    pub fn named(name: &str) -> Option<Self> {
+        if name == "neutral" {
+            return Some(Self::neutral_env());
+        }
+        let (time, weather) = name.split_once('-')?;
+        let hour = match time {
+            "midnight" => 0.0,
+            "dawn" => 6.5,
+            "noon" => 12.0,
+            "dusk" => 17.5,
+            _ => return None,
+        };
+        let kind = match weather {
+            "clear" => lighting::WeatherKind::Clear,
+            "rain" => lighting::WeatherKind::Rain,
+            "fog" => lighting::WeatherKind::Fog,
+            "thunderstorm" => lighting::WeatherKind::Thunderstorm,
+            _ => return None,
+        };
+        Some(if kind == lighting::WeatherKind::Clear {
+            Self::fake_day(hour, 4)
+        } else {
+            Self::fake_weather(hour, 4, kind)
+        })
+    }
+
     /// Seat a scene from one wire `EnvironmentUpdate` (slice
     /// 10.6 — the joint the live loop consumes: the client
     /// converts each update through the lighting proto adapter
