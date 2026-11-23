@@ -126,17 +126,39 @@ pub struct LightingScene {
 }
 
 impl LightingScene {
+    /// A scene seated from a wire-built light grid (slice
+    /// 10.6): the grid carries the game's per-tile `outside`
+    /// verdicts, and the raster sky exposure is derived from
+    /// them — the same feed the RT path reads off the same
+    /// grid, so the two renderers cannot disagree about which
+    /// tiles the sky reaches.
+    pub fn from_grid(
+        grid: lighting::LightGrid,
+        env: lighting::Environment,
+        min_game_z: i32,
+    ) -> Self {
+        let sky_exposure = Some(SkyExposure::from_grid(&grid));
+        Self {
+            grid,
+            env,
+            min_game_z,
+            bake_mode: BakeMode::PerVertex,
+            sky_exposure,
+        }
+    }
+
     /// The fake house under the Phase 7 night-interior light grid
     /// (exterior `DARK`, lamp falloff inside, walls occluding),
-    /// evaluated at `hour` in `weather`.
+    /// evaluated at `hour` in `weather`. The fixture grid
+    /// authors the stub-house `outside` rule, so the derived
+    /// exposure is the hand-authored `SkyExposure::fake_house`
+    /// set by construction.
     pub fn fake_house(hour: f32, weather: lighting::WeatherKind) -> Self {
-        Self {
-            grid: lighting::fixtures::fake_house_night_light(),
-            env: lighting::Environment::new(hour, weather),
-            min_game_z: crate::world::HOUSE_MIN_GAME_Z,
-            bake_mode: BakeMode::PerVertex,
-            sky_exposure: Some(SkyExposure::fake_house()),
-        }
+        Self::from_grid(
+            lighting::fixtures::fake_house_night_light(),
+            lighting::Environment::new(hour, weather),
+            crate::world::HOUSE_MIN_GAME_Z,
+        )
     }
 
     /// [`LightingScene::fake_house`] with specific tiles forced
@@ -187,6 +209,22 @@ impl SkyExposure {
         } else {
             1.0
         }
+    }
+
+    /// The exposure set from a light grid's wire `outside`
+    /// data (slice 10.6): every stored tile the game marks not
+    /// sky-exposed is sheltered. Tiles the grid does not store
+    /// are absent from the set and so read factor 1 — the same
+    /// no-data shape as `sky_exposure: None` (absence never
+    /// shelters).
+    pub fn from_grid(grid: &lighting::LightGrid) -> Self {
+        let mut sheltered = std::collections::HashSet::new();
+        for (pos, t) in grid.iter_tiles() {
+            if !t.outside {
+                sheltered.insert(pos);
+            }
+        }
+        Self { sheltered }
     }
 
     /// The fake house's exposure, authored with the same
@@ -258,6 +296,86 @@ impl SkyScene {
         ))
     }
 
+    /// Fake-data scene in a §8-matrix weather (slice 10.6):
+    /// [`Self::fake_day`]'s day with the weather numerics of
+    /// `lighting::GameEnvironment::fake_weather`.
+    pub fn fake_weather(hour: f32, moon_phase: u8, kind: lighting::WeatherKind) -> Self {
+        Self::new(lighting::GameEnvironment::fake_weather(
+            hour * 3600.0,
+            21_600.0,
+            64_800.0,
+            1,
+            moon_phase,
+            kind,
+        ))
+    }
+
+    /// The named fake-sky matrix: `"neutral"` plus
+    /// `"{midnight,dawn,noon,dusk}-{clear,rain,fog,thunderstorm}"`
+    /// (the §8 gate set). One resolver shared by the `--sky`
+    /// capture flag and the gates, so the CLI names and the
+    /// gate matrix cannot drift. The pre-10.6 clear names keep
+    /// their exact scenes (`noon-clear` IS `fake_day(12, 4)`,
+    /// `neutral` IS `neutral_env()`).
+    pub fn named(name: &str) -> Option<Self> {
+        if name == "neutral" {
+            return Some(Self::neutral_env());
+        }
+        let (time, weather) = name.split_once('-')?;
+        let hour = match time {
+            "midnight" => 0.0,
+            "dawn" => 6.5,
+            "noon" => 12.0,
+            "dusk" => 17.5,
+            _ => return None,
+        };
+        let kind = match weather {
+            "clear" => lighting::WeatherKind::Clear,
+            "rain" => lighting::WeatherKind::Rain,
+            "fog" => lighting::WeatherKind::Fog,
+            "thunderstorm" => lighting::WeatherKind::Thunderstorm,
+            _ => return None,
+        };
+        Some(if kind == lighting::WeatherKind::Clear {
+            Self::fake_day(hour, 4)
+        } else {
+            Self::fake_weather(hour, 4, kind)
+        })
+    }
+
+    /// Seat a scene from one wire `EnvironmentUpdate` (slice
+    /// 10.6 — the joint the live loop consumes: the client
+    /// converts each update through the lighting proto adapter
+    /// and either seats a fresh scene or `push`es into the
+    /// running one).
+    pub fn from_wire(u: &proto::EnvironmentUpdateT) -> Self {
+        Self::new(lighting::proto_adapter::game_environment_from_update(u))
+    }
+
+    /// Seat a scene from a `Snapshot`'s piggybacked environment
+    /// (§2.2), when the snapshot carries one.
+    pub fn from_snapshot(snap: &proto::SnapshotT) -> Option<Self> {
+        lighting::proto_adapter::game_environment_from_snapshot(snap).map(Self::new)
+    }
+
+    /// The §4 cave-factor seating rule for the live loop: the
+    /// dark cave gradient (decision 3C, §9) engages only when
+    /// the camera target tile is below ground (game z < 0) AND
+    /// the sky does not reach it (its §3.4 factor is 0). A
+    /// sheltered surface interior keeps the surface sky — the
+    /// gradient is a cave treatment, not a roof treatment —
+    /// and so does an exposed underground tile (a shaft the
+    /// game marks outside). Captures leave the factor as
+    /// authored (0); the windowed loop reseats it per frame
+    /// from the camera target.
+    pub fn cave_factor_for(exposure: &SkyExposure, target: [i32; 3]) -> f32 {
+        if target[2] < 0 && exposure.factor(target) == 0.0 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
     /// Record a newer environment sample (the §2.3 cadence).
     pub fn push(&mut self, env: lighting::GameEnvironment) {
         self.clock.push(env.clone());
@@ -286,6 +404,19 @@ impl SkyScene {
         let state = self.sky_state();
         let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
             .to_mesher_world_space();
+        u.set_cave_factor(self.cave_factor);
+        u
+    }
+
+    /// The frame's uniform block in **grid space** (east,
+    /// south, up) — the RT renderer's consumption form, the
+    /// counterpart of [`Self::uniforms`] (mesher space, raster).
+    /// Same single `from_sky_state` evaluation, converted via
+    /// `to_grid_space` per the `render_rt_frame_sky` contract.
+    pub fn uniforms_grid_space(&self) -> lighting::SkyUniforms {
+        let state = self.sky_state();
+        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
+            .to_grid_space();
         u.set_cave_factor(self.cave_factor);
         u
     }
@@ -1137,7 +1268,20 @@ fn render_frame_inner(
         // depth (fields depth-fade, billboard depth test, post
         // DoF) — convert the tracer's linear depth buffer into the
         // projected-depth texture those passes consume (2g.1).
-        let frame = crate::rt::render_rt_frame(device, queue, args)?;
+        // Phase 10 (10.6): a seated sky reaches the tracer
+        // through the grid-space entry point — before 10.6
+        // this branch called the no-sky entry, so an RT frame
+        // through the live loop always rendered under the
+        // renderer's built-in neutral sky whatever `args.sky`
+        // said (the 10.4 gates called the sky entry directly
+        // and never saw it). No seated sky keeps the exact
+        // pre-10.6 call, so the §6 default is byte-unchanged.
+        let frame = match &args.sky {
+            Some(s) => {
+                crate::rt::render_rt_frame_sky(device, queue, args, &s.uniforms_grid_space())?
+            }
+            None => crate::rt::render_rt_frame(device, queue, args)?,
+        };
         let (width, height) = frame.size;
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("frame-rt-color"),

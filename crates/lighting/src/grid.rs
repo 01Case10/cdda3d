@@ -179,5 +179,6 @@ pub fn tile_from_proto(lit: LitLevel, seen: u8, occluding: bool) -> TileLight {
         seen,
         tint: [1.0, 1.0, 1.0],
         occluding,
+        outside: false,
     }
 }

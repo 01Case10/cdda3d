@@ -174,15 +174,28 @@ pub fn apply_light_update(
     apply_patch(grid, &patch)
 }
 
-/// Apply a wire `DeltaT`'s tile-change lit/seen fields.
+/// Apply a wire `DeltaT`'s tile-change lit/seen fields, plus the
+/// Phase 10 `outside` flag (slice 10.6): a change to any of the
+/// three marks the tile changed — an outside flip changes the
+/// tile's sky-GI bake exactly as a lit change does, so it dirties
+/// the same chunk set.
 pub fn apply_delta(grid: &mut LightGrid, delta: &proto::DeltaT) -> BTreeSet<[i32; 2]> {
-    let mut changes = Vec::new();
+    let mut changed = Vec::new();
     if let Some(tcs) = &delta.tile_changes {
         for tc in tcs {
             if let Some(p) = &tc.pos {
-                changes.push(([p.x, p.y, p.z], tc.lit, tc.seen));
+                let pos = [p.x, p.y, p.z];
+                let old = grid.get(pos[0], pos[1], pos[2]);
+                if old.lit != tc.lit || old.seen != tc.seen || old.outside != tc.outside {
+                    let mut t = old;
+                    t.lit = tc.lit;
+                    t.seen = tc.seen;
+                    t.outside = tc.outside;
+                    grid.set(pos[0], pos[1], pos[2], t);
+                    changed.push(pos);
+                }
             }
         }
     }
-    apply_tile_changes(grid, &changes)
+    dirty_chunks_for_tiles(&changed)
 }

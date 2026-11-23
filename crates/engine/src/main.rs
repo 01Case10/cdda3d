@@ -148,22 +148,17 @@ fn apply_scene_flags(
         }
     }
     // Phase 10 (§6): named sky environments for captures, so the
-    // gate capture set is deterministic. (The live windowed path
-    // takes its environment from the client state in 10.6; these
-    // names are the fake-data scripts.)
+    // gate capture set is deterministic. The names resolve
+    // through `SkyScene::named` — the same resolver the gate
+    // matrix uses (slice 10.6), so the CLI and the gates cannot
+    // drift. (The live windowed path takes its environment from
+    // the client state; these names are the fake-data scripts.)
     if let Some(s) = value_after(args, "--sky") {
-        cap.sky = Some(match s.as_str() {
-            "neutral" => engine::frame::SkyScene::neutral_env(),
-            "noon-clear" => engine::frame::SkyScene::fake_day(12.0, 4),
-            "midnight-clear" => engine::frame::SkyScene::fake_day(0.0, 4),
-            "dawn-clear" => engine::frame::SkyScene::fake_day(6.5, 4),
-            "dusk-clear" => engine::frame::SkyScene::fake_day(17.5, 4),
-            _ => {
-                return Err(format!(
-                    "bad --sky '{s}' (neutral|noon-clear|midnight-clear|dawn-clear|dusk-clear)"
-                ))
-            }
-        });
+        cap.sky = Some(engine::frame::SkyScene::named(&s).ok_or_else(|| {
+            format!(
+                "bad --sky '{s}' (neutral|{{midnight,dawn,noon,dusk}}-{{clear,rain,fog,thunderstorm}})"
+            )
+        })?);
     }
     if args.iter().any(|a| a == "--ui-stub") {
         let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;
@@ -377,6 +372,17 @@ impl App {
             textures: cfg.textures_dir,
             effects: cfg.effects,
             billboards: cfg.billboards,
+            // Phase 10 (10.6): the windowed app runs under a
+            // seated sky — `--light-hour`'s fake day (the same
+            // hour the bake below uses), else the §6 neutral
+            // environment. Before 10.6 the sky stayed None (raw
+            // neutral uniforms) while `--light-hour` moved only
+            // the bake, so the window showed a noon sky over a
+            // midnight bake.
+            sky: Some(match cfg.light_hour {
+                Some(h) => engine::frame::SkyScene::fake_day(h, 4),
+                None => engine::frame::SkyScene::neutral_env(),
+            }),
             lighting: cfg
                 .light_hour
                 .map(|h| engine::frame::LightingScene::fake_house(h, lighting::WeatherKind::Clear)),
@@ -452,6 +458,21 @@ impl App {
             .unwrap_or(a.cutaway_z);
         if let Some(gpu) = &self.gpu {
             a.size = gpu.size;
+        }
+        // Phase 10 (10.6, §4): reseat the sky's cave factor
+        // from the camera target tile — x/y from the camera,
+        // z from the cutaway's player level, exposure from the
+        // lighting scene's wire-derived set.
+        if let (Some(sky), Some(lit)) = (&mut a.sky, &a.lighting) {
+            if let Some(exposure) = &lit.sky_exposure {
+                let target = [
+                    a.camera_target.0.floor() as i32,
+                    a.camera_target.1.floor() as i32,
+                    self.cutaway.player_z,
+                ];
+                sky.cave_factor =
+                    engine::frame::SkyScene::cave_factor_for(exposure, target);
+            }
         }
         let t = self.started.elapsed().as_secs_f32();
         a.fx_time = t;
