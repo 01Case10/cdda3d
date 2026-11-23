@@ -56,6 +56,10 @@ struct Vehicle;
 struct VehicleBuilder;
 struct VehicleT;
 
+struct EnvironmentUpdate;
+struct EnvironmentUpdateBuilder;
+struct EnvironmentUpdateT;
+
 struct Snapshot;
 struct SnapshotBuilder;
 struct SnapshotT;
@@ -372,11 +376,12 @@ enum Message : uint8_t {
   Message_Ping = 12,
   Message_Pong = 13,
   Message_Shutdown = 14,
+  Message_EnvironmentUpdate = 15,
   Message_MIN = Message_NONE,
-  Message_MAX = Message_Shutdown
+  Message_MAX = Message_EnvironmentUpdate
 };
 
-inline const Message (&EnumValuesMessage())[15] {
+inline const Message (&EnumValuesMessage())[16] {
   static const Message values[] = {
     Message_NONE,
     Message_Hello,
@@ -392,13 +397,14 @@ inline const Message (&EnumValuesMessage())[15] {
     Message_PickResult,
     Message_Ping,
     Message_Pong,
-    Message_Shutdown
+    Message_Shutdown,
+    Message_EnvironmentUpdate
   };
   return values;
 }
 
 inline const char * const *EnumNamesMessage() {
-  static const char * const names[16] = {
+  static const char * const names[17] = {
     "NONE",
     "Hello",
     "HelloAck",
@@ -414,13 +420,14 @@ inline const char * const *EnumNamesMessage() {
     "Ping",
     "Pong",
     "Shutdown",
+    "EnvironmentUpdate",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameMessage(Message e) {
-  if (::flatbuffers::IsOutRange(e, Message_NONE, Message_Shutdown)) return "";
+  if (::flatbuffers::IsOutRange(e, Message_NONE, Message_EnvironmentUpdate)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesMessage()[index];
 }
@@ -485,6 +492,10 @@ template<> struct MessageTraits<cdda::ipc::Shutdown> {
   static const Message enum_value = Message_Shutdown;
 };
 
+template<> struct MessageTraits<cdda::ipc::EnvironmentUpdate> {
+  static const Message enum_value = Message_EnvironmentUpdate;
+};
+
 template<typename T> struct MessageUnionTraits {
   static const Message enum_value = Message_NONE;
 };
@@ -543,6 +554,10 @@ template<> struct MessageUnionTraits<cdda::ipc::PongT> {
 
 template<> struct MessageUnionTraits<cdda::ipc::ShutdownT> {
   static const Message enum_value = Message_Shutdown;
+};
+
+template<> struct MessageUnionTraits<cdda::ipc::EnvironmentUpdateT> {
+  static const Message enum_value = Message_EnvironmentUpdate;
 };
 
 struct MessageUnion {
@@ -686,6 +701,14 @@ struct MessageUnion {
   const cdda::ipc::ShutdownT *AsShutdown() const {
     return type == Message_Shutdown ?
       reinterpret_cast<const cdda::ipc::ShutdownT *>(value) : nullptr;
+  }
+  cdda::ipc::EnvironmentUpdateT *AsEnvironmentUpdate() {
+    return type == Message_EnvironmentUpdate ?
+      reinterpret_cast<cdda::ipc::EnvironmentUpdateT *>(value) : nullptr;
+  }
+  const cdda::ipc::EnvironmentUpdateT *AsEnvironmentUpdate() const {
+    return type == Message_EnvironmentUpdate ?
+      reinterpret_cast<const cdda::ipc::EnvironmentUpdateT *>(value) : nullptr;
   }
 };
 
@@ -1497,6 +1520,7 @@ struct SubmapBlockT : public ::flatbuffers::NativeTable {
   std::vector<cdda::ipc::LitLevel> lit{};
   std::vector<uint8_t> seen{};
   std::vector<bool> has_graffiti{};
+  std::vector<bool> outside{};
   SubmapBlockT() = default;
   SubmapBlockT(const SubmapBlockT &o);
   SubmapBlockT(SubmapBlockT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -1520,7 +1544,8 @@ struct SubmapBlock FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ITEM_COUNT = 20,
     VT_LIT = 22,
     VT_SEEN = 24,
-    VT_HAS_GRAFFITI = 26
+    VT_HAS_GRAFFITI = 26,
+    VT_OUTSIDE = 28
   };
   /// Absolute tile coordinates of the block's corner (x, y) and its z-level.
   const cdda::ipc::Vec3i *origin() const {
@@ -1569,6 +1594,14 @@ struct SubmapBlock FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::Vector<uint8_t> *has_graffiti() const {
     return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_HAS_GRAFFITI);
   }
+  /// Per tile: sky-exposed (Phase 10, decision 4A) — the game's own
+  /// test, map::is_outside(p) && !map::is_roofed(p), resolved
+  /// game-side. Drives the per-tile sky factor for sky GI.
+  /// Appended last: additive/non-breaking, old readers ignore it,
+  /// old data reads as absent (= not exposed).
+  const ::flatbuffers::Vector<uint8_t> *outside() const {
+    return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_OUTSIDE);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<cdda::ipc::Vec3i>(verifier, VT_ORIGIN, 4) &&
@@ -1595,6 +1628,8 @@ struct SubmapBlock FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyVector(seen()) &&
            VerifyOffset(verifier, VT_HAS_GRAFFITI) &&
            verifier.VerifyVector(has_graffiti()) &&
+           VerifyOffset(verifier, VT_OUTSIDE) &&
+           verifier.VerifyVector(outside()) &&
            verifier.EndTable();
   }
   SubmapBlockT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1642,6 +1677,9 @@ struct SubmapBlockBuilder {
   void add_has_graffiti(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> has_graffiti) {
     fbb_.AddOffset(SubmapBlock::VT_HAS_GRAFFITI, has_graffiti);
   }
+  void add_outside(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> outside) {
+    fbb_.AddOffset(SubmapBlock::VT_OUTSIDE, outside);
+  }
   explicit SubmapBlockBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1666,8 +1704,10 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(
     ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> item_count = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> lit = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> seen = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> has_graffiti = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> has_graffiti = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> outside = 0) {
   SubmapBlockBuilder builder_(_fbb);
+  builder_.add_outside(outside);
   builder_.add_has_graffiti(has_graffiti);
   builder_.add_seen(seen);
   builder_.add_lit(lit);
@@ -1696,7 +1736,8 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlockDirect(
     const std::vector<uint16_t> *item_count = nullptr,
     const std::vector<uint8_t> *lit = nullptr,
     const std::vector<uint8_t> *seen = nullptr,
-    const std::vector<uint8_t> *has_graffiti = nullptr) {
+    const std::vector<uint8_t> *has_graffiti = nullptr,
+    const std::vector<uint8_t> *outside = nullptr) {
   auto terrain__ = terrain ? _fbb.CreateVector<uint32_t>(*terrain) : 0;
   auto furniture__ = furniture ? _fbb.CreateVector<uint32_t>(*furniture) : 0;
   auto trap__ = trap ? _fbb.CreateVector<uint32_t>(*trap) : 0;
@@ -1708,6 +1749,7 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlockDirect(
   auto lit__ = lit ? _fbb.CreateVector<uint8_t>(*lit) : 0;
   auto seen__ = seen ? _fbb.CreateVector<uint8_t>(*seen) : 0;
   auto has_graffiti__ = has_graffiti ? _fbb.CreateVector<uint8_t>(*has_graffiti) : 0;
+  auto outside__ = outside ? _fbb.CreateVector<uint8_t>(*outside) : 0;
   return cdda::ipc::CreateSubmapBlock(
       _fbb,
       origin,
@@ -1721,7 +1763,8 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlockDirect(
       item_count__,
       lit__,
       seen__,
-      has_graffiti__);
+      has_graffiti__,
+      outside__);
 }
 
 ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(::flatbuffers::FlatBufferBuilder &_fbb, const SubmapBlockT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -2101,6 +2144,390 @@ inline ::flatbuffers::Offset<Vehicle> CreateVehicleDirect(
 
 ::flatbuffers::Offset<Vehicle> CreateVehicle(::flatbuffers::FlatBufferBuilder &_fbb, const VehicleT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
+struct EnvironmentUpdateT : public ::flatbuffers::NativeTable {
+  typedef EnvironmentUpdate TableType;
+  uint64_t seq = 0;
+  uint64_t epoch = 0;
+  int64_t turn = 0;
+  float time_of_day_sec = 0.0f;
+  float sunrise_sec = 0.0f;
+  float sunset_sec = 0.0f;
+  uint8_t season = 0;
+  float sun_light = 0.0f;
+  float moon_light = 0.0f;
+  float sun_azimuth_deg = 0.0f;
+  float sun_altitude_deg = 0.0f;
+  uint8_t moon_phase = 0;
+  std::string weather_id{};
+  float light_multiplier = 0.0f;
+  float light_modifier = 0.0f;
+  float sun_multiplier = 0.0f;
+  uint8_t precip_class = 0;
+  bool rains = false;
+  float sight_penalty = 0.0f;
+  std::vector<float> tint_rgb{};
+  float tint_strength = 0.0f;
+  float temperature_c = 0.0f;
+  float windspeed_mph = 0.0f;
+  float wind_dir_deg = 0.0f;
+  bool lightning_active = false;
+};
+
+/// Game time + weather at the player (Phase 10, docs/phase10-sky-gi.md
+/// §2.2). Weather crosses the wire as string id + resolved numeric
+/// fields, never as a closed enum alone: weather types are JSON-defined
+/// and mod-extensible, and a modded type the engine has never heard of
+/// must still light correctly from the numerics.
+struct EnvironmentUpdate FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef EnvironmentUpdateT NativeTableType;
+  typedef EnvironmentUpdateBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SEQ = 4,
+    VT_EPOCH = 6,
+    VT_TURN = 8,
+    VT_TIME_OF_DAY_SEC = 10,
+    VT_SUNRISE_SEC = 12,
+    VT_SUNSET_SEC = 14,
+    VT_SEASON = 16,
+    VT_SUN_LIGHT = 18,
+    VT_MOON_LIGHT = 20,
+    VT_SUN_AZIMUTH_DEG = 22,
+    VT_SUN_ALTITUDE_DEG = 24,
+    VT_MOON_PHASE = 26,
+    VT_WEATHER_ID = 28,
+    VT_LIGHT_MULTIPLIER = 30,
+    VT_LIGHT_MODIFIER = 32,
+    VT_SUN_MULTIPLIER = 34,
+    VT_PRECIP_CLASS = 36,
+    VT_RAINS = 38,
+    VT_SIGHT_PENALTY = 40,
+    VT_TINT_RGB = 42,
+    VT_TINT_STRENGTH = 44,
+    VT_TEMPERATURE_C = 46,
+    VT_WINDSPEED_MPH = 48,
+    VT_WIND_DIR_DEG = 50,
+    VT_LIGHTNING_ACTIVE = 52
+  };
+  uint64_t seq() const {
+    return GetField<uint64_t>(VT_SEQ, 0);
+  }
+  uint64_t epoch() const {
+    return GetField<uint64_t>(VT_EPOCH, 0);
+  }
+  /// Game time: total turns since calendar::turn_zero, plus the
+  /// derived values the engine should not have to re-derive.
+  int64_t turn() const {
+    return GetField<int64_t>(VT_TURN, 0);
+  }
+  float time_of_day_sec() const {
+    return GetField<float>(VT_TIME_OF_DAY_SEC, 0.0f);
+  }
+  float sunrise_sec() const {
+    return GetField<float>(VT_SUNRISE_SEC, 0.0f);
+  }
+  float sunset_sec() const {
+    return GetField<float>(VT_SUNSET_SEC, 0.0f);
+  }
+  uint8_t season() const {
+    return GetField<uint8_t>(VT_SEASON, 0);
+  }
+  float sun_light() const {
+    return GetField<float>(VT_SUN_LIGHT, 0.0f);
+  }
+  float moon_light() const {
+    return GetField<float>(VT_MOON_LIGHT, 0.0f);
+  }
+  float sun_azimuth_deg() const {
+    return GetField<float>(VT_SUN_AZIMUTH_DEG, 0.0f);
+  }
+  float sun_altitude_deg() const {
+    return GetField<float>(VT_SUN_ALTITUDE_DEG, 0.0f);
+  }
+  uint8_t moon_phase() const {
+    return GetField<uint8_t>(VT_MOON_PHASE, 0);
+  }
+  /// Weather at the player (weather_manager state).
+  const ::flatbuffers::String *weather_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_WEATHER_ID);
+  }
+  float light_multiplier() const {
+    return GetField<float>(VT_LIGHT_MULTIPLIER, 0.0f);
+  }
+  float light_modifier() const {
+    return GetField<float>(VT_LIGHT_MODIFIER, 0.0f);
+  }
+  float sun_multiplier() const {
+    return GetField<float>(VT_SUN_MULTIPLIER, 0.0f);
+  }
+  uint8_t precip_class() const {
+    return GetField<uint8_t>(VT_PRECIP_CLASS, 0);
+  }
+  bool rains() const {
+    return GetField<uint8_t>(VT_RAINS, 0) != 0;
+  }
+  float sight_penalty() const {
+    return GetField<float>(VT_SIGHT_PENALTY, 0.0f);
+  }
+  const ::flatbuffers::Vector<float> *tint_rgb() const {
+    return GetPointer<const ::flatbuffers::Vector<float> *>(VT_TINT_RGB);
+  }
+  float tint_strength() const {
+    return GetField<float>(VT_TINT_STRENGTH, 0.0f);
+  }
+  float temperature_c() const {
+    return GetField<float>(VT_TEMPERATURE_C, 0.0f);
+  }
+  float windspeed_mph() const {
+    return GetField<float>(VT_WINDSPEED_MPH, 0.0f);
+  }
+  float wind_dir_deg() const {
+    return GetField<float>(VT_WIND_DIR_DEG, 0.0f);
+  }
+  bool lightning_active() const {
+    return GetField<uint8_t>(VT_LIGHTNING_ACTIVE, 0) != 0;
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_SEQ, 8) &&
+           VerifyField<uint64_t>(verifier, VT_EPOCH, 8) &&
+           VerifyField<int64_t>(verifier, VT_TURN, 8) &&
+           VerifyField<float>(verifier, VT_TIME_OF_DAY_SEC, 4) &&
+           VerifyField<float>(verifier, VT_SUNRISE_SEC, 4) &&
+           VerifyField<float>(verifier, VT_SUNSET_SEC, 4) &&
+           VerifyField<uint8_t>(verifier, VT_SEASON, 1) &&
+           VerifyField<float>(verifier, VT_SUN_LIGHT, 4) &&
+           VerifyField<float>(verifier, VT_MOON_LIGHT, 4) &&
+           VerifyField<float>(verifier, VT_SUN_AZIMUTH_DEG, 4) &&
+           VerifyField<float>(verifier, VT_SUN_ALTITUDE_DEG, 4) &&
+           VerifyField<uint8_t>(verifier, VT_MOON_PHASE, 1) &&
+           VerifyOffset(verifier, VT_WEATHER_ID) &&
+           verifier.VerifyString(weather_id()) &&
+           VerifyField<float>(verifier, VT_LIGHT_MULTIPLIER, 4) &&
+           VerifyField<float>(verifier, VT_LIGHT_MODIFIER, 4) &&
+           VerifyField<float>(verifier, VT_SUN_MULTIPLIER, 4) &&
+           VerifyField<uint8_t>(verifier, VT_PRECIP_CLASS, 1) &&
+           VerifyField<uint8_t>(verifier, VT_RAINS, 1) &&
+           VerifyField<float>(verifier, VT_SIGHT_PENALTY, 4) &&
+           VerifyOffset(verifier, VT_TINT_RGB) &&
+           verifier.VerifyVector(tint_rgb()) &&
+           VerifyField<float>(verifier, VT_TINT_STRENGTH, 4) &&
+           VerifyField<float>(verifier, VT_TEMPERATURE_C, 4) &&
+           VerifyField<float>(verifier, VT_WINDSPEED_MPH, 4) &&
+           VerifyField<float>(verifier, VT_WIND_DIR_DEG, 4) &&
+           VerifyField<uint8_t>(verifier, VT_LIGHTNING_ACTIVE, 1) &&
+           verifier.EndTable();
+  }
+  EnvironmentUpdateT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(EnvironmentUpdateT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<EnvironmentUpdate> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const EnvironmentUpdateT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct EnvironmentUpdateBuilder {
+  typedef EnvironmentUpdate Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_seq(uint64_t seq) {
+    fbb_.AddElement<uint64_t>(EnvironmentUpdate::VT_SEQ, seq, 0);
+  }
+  void add_epoch(uint64_t epoch) {
+    fbb_.AddElement<uint64_t>(EnvironmentUpdate::VT_EPOCH, epoch, 0);
+  }
+  void add_turn(int64_t turn) {
+    fbb_.AddElement<int64_t>(EnvironmentUpdate::VT_TURN, turn, 0);
+  }
+  void add_time_of_day_sec(float time_of_day_sec) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_TIME_OF_DAY_SEC, time_of_day_sec, 0.0f);
+  }
+  void add_sunrise_sec(float sunrise_sec) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SUNRISE_SEC, sunrise_sec, 0.0f);
+  }
+  void add_sunset_sec(float sunset_sec) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SUNSET_SEC, sunset_sec, 0.0f);
+  }
+  void add_season(uint8_t season) {
+    fbb_.AddElement<uint8_t>(EnvironmentUpdate::VT_SEASON, season, 0);
+  }
+  void add_sun_light(float sun_light) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SUN_LIGHT, sun_light, 0.0f);
+  }
+  void add_moon_light(float moon_light) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_MOON_LIGHT, moon_light, 0.0f);
+  }
+  void add_sun_azimuth_deg(float sun_azimuth_deg) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SUN_AZIMUTH_DEG, sun_azimuth_deg, 0.0f);
+  }
+  void add_sun_altitude_deg(float sun_altitude_deg) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SUN_ALTITUDE_DEG, sun_altitude_deg, 0.0f);
+  }
+  void add_moon_phase(uint8_t moon_phase) {
+    fbb_.AddElement<uint8_t>(EnvironmentUpdate::VT_MOON_PHASE, moon_phase, 0);
+  }
+  void add_weather_id(::flatbuffers::Offset<::flatbuffers::String> weather_id) {
+    fbb_.AddOffset(EnvironmentUpdate::VT_WEATHER_ID, weather_id);
+  }
+  void add_light_multiplier(float light_multiplier) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_LIGHT_MULTIPLIER, light_multiplier, 0.0f);
+  }
+  void add_light_modifier(float light_modifier) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_LIGHT_MODIFIER, light_modifier, 0.0f);
+  }
+  void add_sun_multiplier(float sun_multiplier) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SUN_MULTIPLIER, sun_multiplier, 0.0f);
+  }
+  void add_precip_class(uint8_t precip_class) {
+    fbb_.AddElement<uint8_t>(EnvironmentUpdate::VT_PRECIP_CLASS, precip_class, 0);
+  }
+  void add_rains(bool rains) {
+    fbb_.AddElement<uint8_t>(EnvironmentUpdate::VT_RAINS, static_cast<uint8_t>(rains), 0);
+  }
+  void add_sight_penalty(float sight_penalty) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_SIGHT_PENALTY, sight_penalty, 0.0f);
+  }
+  void add_tint_rgb(::flatbuffers::Offset<::flatbuffers::Vector<float>> tint_rgb) {
+    fbb_.AddOffset(EnvironmentUpdate::VT_TINT_RGB, tint_rgb);
+  }
+  void add_tint_strength(float tint_strength) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_TINT_STRENGTH, tint_strength, 0.0f);
+  }
+  void add_temperature_c(float temperature_c) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_TEMPERATURE_C, temperature_c, 0.0f);
+  }
+  void add_windspeed_mph(float windspeed_mph) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_WINDSPEED_MPH, windspeed_mph, 0.0f);
+  }
+  void add_wind_dir_deg(float wind_dir_deg) {
+    fbb_.AddElement<float>(EnvironmentUpdate::VT_WIND_DIR_DEG, wind_dir_deg, 0.0f);
+  }
+  void add_lightning_active(bool lightning_active) {
+    fbb_.AddElement<uint8_t>(EnvironmentUpdate::VT_LIGHTNING_ACTIVE, static_cast<uint8_t>(lightning_active), 0);
+  }
+  explicit EnvironmentUpdateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<EnvironmentUpdate> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<EnvironmentUpdate>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<EnvironmentUpdate> CreateEnvironmentUpdate(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t seq = 0,
+    uint64_t epoch = 0,
+    int64_t turn = 0,
+    float time_of_day_sec = 0.0f,
+    float sunrise_sec = 0.0f,
+    float sunset_sec = 0.0f,
+    uint8_t season = 0,
+    float sun_light = 0.0f,
+    float moon_light = 0.0f,
+    float sun_azimuth_deg = 0.0f,
+    float sun_altitude_deg = 0.0f,
+    uint8_t moon_phase = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> weather_id = 0,
+    float light_multiplier = 0.0f,
+    float light_modifier = 0.0f,
+    float sun_multiplier = 0.0f,
+    uint8_t precip_class = 0,
+    bool rains = false,
+    float sight_penalty = 0.0f,
+    ::flatbuffers::Offset<::flatbuffers::Vector<float>> tint_rgb = 0,
+    float tint_strength = 0.0f,
+    float temperature_c = 0.0f,
+    float windspeed_mph = 0.0f,
+    float wind_dir_deg = 0.0f,
+    bool lightning_active = false) {
+  EnvironmentUpdateBuilder builder_(_fbb);
+  builder_.add_turn(turn);
+  builder_.add_epoch(epoch);
+  builder_.add_seq(seq);
+  builder_.add_wind_dir_deg(wind_dir_deg);
+  builder_.add_windspeed_mph(windspeed_mph);
+  builder_.add_temperature_c(temperature_c);
+  builder_.add_tint_strength(tint_strength);
+  builder_.add_tint_rgb(tint_rgb);
+  builder_.add_sight_penalty(sight_penalty);
+  builder_.add_sun_multiplier(sun_multiplier);
+  builder_.add_light_modifier(light_modifier);
+  builder_.add_light_multiplier(light_multiplier);
+  builder_.add_weather_id(weather_id);
+  builder_.add_sun_altitude_deg(sun_altitude_deg);
+  builder_.add_sun_azimuth_deg(sun_azimuth_deg);
+  builder_.add_moon_light(moon_light);
+  builder_.add_sun_light(sun_light);
+  builder_.add_sunset_sec(sunset_sec);
+  builder_.add_sunrise_sec(sunrise_sec);
+  builder_.add_time_of_day_sec(time_of_day_sec);
+  builder_.add_lightning_active(lightning_active);
+  builder_.add_rains(rains);
+  builder_.add_precip_class(precip_class);
+  builder_.add_moon_phase(moon_phase);
+  builder_.add_season(season);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<EnvironmentUpdate> CreateEnvironmentUpdateDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t seq = 0,
+    uint64_t epoch = 0,
+    int64_t turn = 0,
+    float time_of_day_sec = 0.0f,
+    float sunrise_sec = 0.0f,
+    float sunset_sec = 0.0f,
+    uint8_t season = 0,
+    float sun_light = 0.0f,
+    float moon_light = 0.0f,
+    float sun_azimuth_deg = 0.0f,
+    float sun_altitude_deg = 0.0f,
+    uint8_t moon_phase = 0,
+    const char *weather_id = nullptr,
+    float light_multiplier = 0.0f,
+    float light_modifier = 0.0f,
+    float sun_multiplier = 0.0f,
+    uint8_t precip_class = 0,
+    bool rains = false,
+    float sight_penalty = 0.0f,
+    const std::vector<float> *tint_rgb = nullptr,
+    float tint_strength = 0.0f,
+    float temperature_c = 0.0f,
+    float windspeed_mph = 0.0f,
+    float wind_dir_deg = 0.0f,
+    bool lightning_active = false) {
+  auto weather_id__ = weather_id ? _fbb.CreateString(weather_id) : 0;
+  auto tint_rgb__ = tint_rgb ? _fbb.CreateVector<float>(*tint_rgb) : 0;
+  return cdda::ipc::CreateEnvironmentUpdate(
+      _fbb,
+      seq,
+      epoch,
+      turn,
+      time_of_day_sec,
+      sunrise_sec,
+      sunset_sec,
+      season,
+      sun_light,
+      moon_light,
+      sun_azimuth_deg,
+      sun_altitude_deg,
+      moon_phase,
+      weather_id__,
+      light_multiplier,
+      light_modifier,
+      sun_multiplier,
+      precip_class,
+      rains,
+      sight_penalty,
+      tint_rgb__,
+      tint_strength,
+      temperature_c,
+      windspeed_mph,
+      wind_dir_deg,
+      lightning_active);
+}
+
+::flatbuffers::Offset<EnvironmentUpdate> CreateEnvironmentUpdate(::flatbuffers::FlatBufferBuilder &_fbb, const EnvironmentUpdateT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
 struct SnapshotT : public ::flatbuffers::NativeTable {
   typedef Snapshot TableType;
   std::unique_ptr<cdda::ipc::Vec3i> view_origin{};
@@ -2111,6 +2538,7 @@ struct SnapshotT : public ::flatbuffers::NativeTable {
   std::vector<std::unique_ptr<cdda::ipc::VehicleT>> vehicles{};
   uint64_t seq = 0;
   uint64_t epoch = 0;
+  std::unique_ptr<cdda::ipc::EnvironmentUpdateT> environment{};
   SnapshotT() = default;
   SnapshotT(const SnapshotT &o);
   SnapshotT(SnapshotT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -2128,7 +2556,8 @@ struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ENTITIES = 12,
     VT_VEHICLES = 14,
     VT_SEQ = 16,
-    VT_EPOCH = 18
+    VT_EPOCH = 18,
+    VT_ENVIRONMENT = 20
   };
   const cdda::ipc::Vec3i *view_origin() const {
     return GetStruct<const cdda::ipc::Vec3i *>(VT_VIEW_ORIGIN);
@@ -2156,6 +2585,12 @@ struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint64_t epoch() const {
     return GetField<uint64_t>(VT_EPOCH, 0);
   }
+  /// Current environment, piggybacked so a fresh client is never
+  /// environment-blind before the first EnvironmentUpdate (Phase 10
+  /// §2.2). Appended last: additive/non-breaking.
+  const cdda::ipc::EnvironmentUpdate *environment() const {
+    return GetPointer<const cdda::ipc::EnvironmentUpdate *>(VT_ENVIRONMENT);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<cdda::ipc::Vec3i>(verifier, VT_VIEW_ORIGIN, 4) &&
@@ -2174,6 +2609,8 @@ struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyVectorOfTables(vehicles()) &&
            VerifyField<uint64_t>(verifier, VT_SEQ, 8) &&
            VerifyField<uint64_t>(verifier, VT_EPOCH, 8) &&
+           VerifyOffset(verifier, VT_ENVIRONMENT) &&
+           verifier.VerifyTable(environment()) &&
            verifier.EndTable();
   }
   SnapshotT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2209,6 +2646,9 @@ struct SnapshotBuilder {
   void add_epoch(uint64_t epoch) {
     fbb_.AddElement<uint64_t>(Snapshot::VT_EPOCH, epoch, 0);
   }
+  void add_environment(::flatbuffers::Offset<cdda::ipc::EnvironmentUpdate> environment) {
+    fbb_.AddOffset(Snapshot::VT_ENVIRONMENT, environment);
+  }
   explicit SnapshotBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2229,10 +2669,12 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshot(
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<cdda::ipc::Entity>>> entities = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<cdda::ipc::Vehicle>>> vehicles = 0,
     uint64_t seq = 0,
-    uint64_t epoch = 0) {
+    uint64_t epoch = 0,
+    ::flatbuffers::Offset<cdda::ipc::EnvironmentUpdate> environment = 0) {
   SnapshotBuilder builder_(_fbb);
   builder_.add_epoch(epoch);
   builder_.add_seq(seq);
+  builder_.add_environment(environment);
   builder_.add_vehicles(vehicles);
   builder_.add_entities(entities);
   builder_.add_memory_blocks(memory_blocks);
@@ -2251,7 +2693,8 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshotDirect(
     const std::vector<::flatbuffers::Offset<cdda::ipc::Entity>> *entities = nullptr,
     const std::vector<::flatbuffers::Offset<cdda::ipc::Vehicle>> *vehicles = nullptr,
     uint64_t seq = 0,
-    uint64_t epoch = 0) {
+    uint64_t epoch = 0,
+    ::flatbuffers::Offset<cdda::ipc::EnvironmentUpdate> environment = 0) {
   auto blocks__ = blocks ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::SubmapBlock>>(*blocks) : 0;
   auto memory_blocks__ = memory_blocks ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::SubmapBlock>>(*memory_blocks) : 0;
   auto entities__ = entities ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::Entity>>(*entities) : 0;
@@ -2265,7 +2708,8 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshotDirect(
       entities__,
       vehicles__,
       seq,
-      epoch);
+      epoch,
+      environment);
 }
 
 ::flatbuffers::Offset<Snapshot> CreateSnapshot(::flatbuffers::FlatBufferBuilder &_fbb, const SnapshotT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -2283,6 +2727,7 @@ struct TileChangeT : public ::flatbuffers::NativeTable {
   uint8_t seen = 0;
   bool has_graffiti = false;
   std::unique_ptr<cdda::ipc::DisplayedField> displayed_field{};
+  bool outside = false;
   TileChangeT() = default;
   TileChangeT(const TileChangeT &o);
   TileChangeT(TileChangeT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -2304,7 +2749,8 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_LIT = 18,
     VT_SEEN = 20,
     VT_HAS_GRAFFITI = 22,
-    VT_DISPLAYED_FIELD = 24
+    VT_DISPLAYED_FIELD = 24,
+    VT_OUTSIDE = 26
   };
   const cdda::ipc::Vec3i *pos() const {
     return GetStruct<const cdda::ipc::Vec3i *>(VT_POS);
@@ -2346,6 +2792,12 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const cdda::ipc::DisplayedField *displayed_field() const {
     return GetStruct<const cdda::ipc::DisplayedField *>(VT_DISPLAYED_FIELD);
   }
+  /// Sky-exposed after this change (Phase 10; same game-side test as
+  /// SubmapBlock.outside). Appended last: additive/non-breaking, old
+  /// data reads as false.
+  bool outside() const {
+    return GetField<uint8_t>(VT_OUTSIDE, 0) != 0;
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<cdda::ipc::Vec3i>(verifier, VT_POS, 4) &&
@@ -2361,6 +2813,7 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_SEEN, 1) &&
            VerifyField<uint8_t>(verifier, VT_HAS_GRAFFITI, 1) &&
            VerifyField<cdda::ipc::DisplayedField>(verifier, VT_DISPLAYED_FIELD, 4) &&
+           VerifyField<uint8_t>(verifier, VT_OUTSIDE, 1) &&
            verifier.EndTable();
   }
   TileChangeT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2405,6 +2858,9 @@ struct TileChangeBuilder {
   void add_displayed_field(const cdda::ipc::DisplayedField *displayed_field) {
     fbb_.AddStruct(TileChange::VT_DISPLAYED_FIELD, displayed_field);
   }
+  void add_outside(bool outside) {
+    fbb_.AddElement<uint8_t>(TileChange::VT_OUTSIDE, static_cast<uint8_t>(outside), 0);
+  }
   explicit TileChangeBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2428,7 +2884,8 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(
     cdda::ipc::LitLevel lit = cdda::ipc::LitLevel_DARK,
     uint8_t seen = 0,
     bool has_graffiti = false,
-    const cdda::ipc::DisplayedField *displayed_field = nullptr) {
+    const cdda::ipc::DisplayedField *displayed_field = nullptr,
+    bool outside = false) {
   TileChangeBuilder builder_(_fbb);
   builder_.add_displayed_field(displayed_field);
   builder_.add_top_item(top_item);
@@ -2438,6 +2895,7 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(
   builder_.add_terrain(terrain);
   builder_.add_pos(pos);
   builder_.add_item_count(item_count);
+  builder_.add_outside(outside);
   builder_.add_has_graffiti(has_graffiti);
   builder_.add_seen(seen);
   builder_.add_lit(lit);
@@ -2456,7 +2914,8 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChangeDirect(
     cdda::ipc::LitLevel lit = cdda::ipc::LitLevel_DARK,
     uint8_t seen = 0,
     bool has_graffiti = false,
-    const cdda::ipc::DisplayedField *displayed_field = nullptr) {
+    const cdda::ipc::DisplayedField *displayed_field = nullptr,
+    bool outside = false) {
   auto fields__ = fields ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::FieldOnTile>>(*fields) : 0;
   return cdda::ipc::CreateTileChange(
       _fbb,
@@ -2470,7 +2929,8 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChangeDirect(
       lit,
       seen,
       has_graffiti,
-      displayed_field);
+      displayed_field,
+      outside);
 }
 
 ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBufferBuilder &_fbb, const TileChangeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -2484,6 +2944,7 @@ struct DeltaT : public ::flatbuffers::NativeTable {
   std::vector<uint64_t> entity_removed{};
   std::vector<std::unique_ptr<cdda::ipc::VehicleT>> vehicle_updates{};
   std::vector<uint64_t> vehicle_removed{};
+  std::unique_ptr<cdda::ipc::EnvironmentUpdateT> environment{};
   DeltaT() = default;
   DeltaT(const DeltaT &o);
   DeltaT(DeltaT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -2500,7 +2961,8 @@ struct Delta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ENTITY_UPDATES = 10,
     VT_ENTITY_REMOVED = 12,
     VT_VEHICLE_UPDATES = 14,
-    VT_VEHICLE_REMOVED = 16
+    VT_VEHICLE_REMOVED = 16,
+    VT_ENVIRONMENT = 18
   };
   uint64_t seq() const {
     return GetField<uint64_t>(VT_SEQ, 0);
@@ -2523,6 +2985,11 @@ struct Delta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::Vector<uint64_t> *vehicle_removed() const {
     return GetPointer<const ::flatbuffers::Vector<uint64_t> *>(VT_VEHICLE_REMOVED);
   }
+  /// Environment when it changed at this send boundary (Phase 10
+  /// §2.3); usually absent. Appended last: additive/non-breaking.
+  const cdda::ipc::EnvironmentUpdate *environment() const {
+    return GetPointer<const cdda::ipc::EnvironmentUpdate *>(VT_ENVIRONMENT);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint64_t>(verifier, VT_SEQ, 8) &&
@@ -2540,6 +3007,8 @@ struct Delta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyVectorOfTables(vehicle_updates()) &&
            VerifyOffset(verifier, VT_VEHICLE_REMOVED) &&
            verifier.VerifyVector(vehicle_removed()) &&
+           VerifyOffset(verifier, VT_ENVIRONMENT) &&
+           verifier.VerifyTable(environment()) &&
            verifier.EndTable();
   }
   DeltaT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2572,6 +3041,9 @@ struct DeltaBuilder {
   void add_vehicle_removed(::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> vehicle_removed) {
     fbb_.AddOffset(Delta::VT_VEHICLE_REMOVED, vehicle_removed);
   }
+  void add_environment(::flatbuffers::Offset<cdda::ipc::EnvironmentUpdate> environment) {
+    fbb_.AddOffset(Delta::VT_ENVIRONMENT, environment);
+  }
   explicit DeltaBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2591,10 +3063,12 @@ inline ::flatbuffers::Offset<Delta> CreateDelta(
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<cdda::ipc::Entity>>> entity_updates = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> entity_removed = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<cdda::ipc::Vehicle>>> vehicle_updates = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> vehicle_removed = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> vehicle_removed = 0,
+    ::flatbuffers::Offset<cdda::ipc::EnvironmentUpdate> environment = 0) {
   DeltaBuilder builder_(_fbb);
   builder_.add_epoch(epoch);
   builder_.add_seq(seq);
+  builder_.add_environment(environment);
   builder_.add_vehicle_removed(vehicle_removed);
   builder_.add_vehicle_updates(vehicle_updates);
   builder_.add_entity_removed(entity_removed);
@@ -2611,7 +3085,8 @@ inline ::flatbuffers::Offset<Delta> CreateDeltaDirect(
     const std::vector<::flatbuffers::Offset<cdda::ipc::Entity>> *entity_updates = nullptr,
     const std::vector<uint64_t> *entity_removed = nullptr,
     const std::vector<::flatbuffers::Offset<cdda::ipc::Vehicle>> *vehicle_updates = nullptr,
-    const std::vector<uint64_t> *vehicle_removed = nullptr) {
+    const std::vector<uint64_t> *vehicle_removed = nullptr,
+    ::flatbuffers::Offset<cdda::ipc::EnvironmentUpdate> environment = 0) {
   auto tile_changes__ = tile_changes ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::TileChange>>(*tile_changes) : 0;
   auto entity_updates__ = entity_updates ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::Entity>>(*entity_updates) : 0;
   auto entity_removed__ = entity_removed ? _fbb.CreateVector<uint64_t>(*entity_removed) : 0;
@@ -2625,7 +3100,8 @@ inline ::flatbuffers::Offset<Delta> CreateDeltaDirect(
       entity_updates__,
       entity_removed__,
       vehicle_updates__,
-      vehicle_removed__);
+      vehicle_removed__,
+      environment);
 }
 
 ::flatbuffers::Offset<Delta> CreateDelta(::flatbuffers::FlatBufferBuilder &_fbb, const DeltaT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -3737,6 +4213,9 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const cdda::ipc::Shutdown *message_as_Shutdown() const {
     return message_type() == cdda::ipc::Message_Shutdown ? static_cast<const cdda::ipc::Shutdown *>(message()) : nullptr;
   }
+  const cdda::ipc::EnvironmentUpdate *message_as_EnvironmentUpdate() const {
+    return message_type() == cdda::ipc::Message_EnvironmentUpdate ? static_cast<const cdda::ipc::EnvironmentUpdate *>(message()) : nullptr;
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint8_t>(verifier, VT_MESSAGE_TYPE, 1) &&
@@ -3803,6 +4282,10 @@ template<> inline const cdda::ipc::Pong *Envelope::message_as<cdda::ipc::Pong>()
 
 template<> inline const cdda::ipc::Shutdown *Envelope::message_as<cdda::ipc::Shutdown>() const {
   return message_as_Shutdown();
+}
+
+template<> inline const cdda::ipc::EnvironmentUpdate *Envelope::message_as<cdda::ipc::EnvironmentUpdate>() const {
+  return message_as_EnvironmentUpdate();
 }
 
 struct EnvelopeBuilder {
@@ -4080,7 +4563,8 @@ inline SubmapBlockT::SubmapBlockT(const SubmapBlockT &o)
         item_count(o.item_count),
         lit(o.lit),
         seen(o.seen),
-        has_graffiti(o.has_graffiti) {
+        has_graffiti(o.has_graffiti),
+        outside(o.outside) {
   fields.reserve(o.fields.size());
   for (const auto &fields_ : o.fields) { fields.emplace_back((fields_) ? new cdda::ipc::FieldOnTileT(*fields_) : nullptr); }
 }
@@ -4098,6 +4582,7 @@ inline SubmapBlockT &SubmapBlockT::operator=(SubmapBlockT o) FLATBUFFERS_NOEXCEP
   std::swap(lit, o.lit);
   std::swap(seen, o.seen);
   std::swap(has_graffiti, o.has_graffiti);
+  std::swap(outside, o.outside);
   return *this;
 }
 
@@ -4122,6 +4607,7 @@ inline void SubmapBlock::UnPackTo(SubmapBlockT *_o, const ::flatbuffers::resolve
   { auto _e = lit(); if (_e) { _o->lit.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->lit[_i] = static_cast<cdda::ipc::LitLevel>(_e->Get(_i)); } } else { _o->lit.resize(0); } }
   { auto _e = seen(); if (_e) { _o->seen.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->seen.begin()); } }
   { auto _e = has_graffiti(); if (_e) { _o->has_graffiti.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->has_graffiti[_i] = _e->Get(_i) != 0; } } else { _o->has_graffiti.resize(0); } }
+  { auto _e = outside(); if (_e) { _o->outside.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->outside[_i] = _e->Get(_i) != 0; } } else { _o->outside.resize(0); } }
 }
 
 inline ::flatbuffers::Offset<SubmapBlock> SubmapBlock::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const SubmapBlockT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4144,6 +4630,7 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(::flatbuffers::FlatB
   auto _lit = _o->lit.size() ? _fbb.CreateVectorScalarCast<uint8_t>(::flatbuffers::data(_o->lit), _o->lit.size()) : 0;
   auto _seen = _o->seen.size() ? _fbb.CreateVector(_o->seen) : 0;
   auto _has_graffiti = _o->has_graffiti.size() ? _fbb.CreateVector(_o->has_graffiti) : 0;
+  auto _outside = _o->outside.size() ? _fbb.CreateVector(_o->outside) : 0;
   return cdda::ipc::CreateSubmapBlock(
       _fbb,
       _origin,
@@ -4157,7 +4644,8 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(::flatbuffers::FlatB
       _item_count,
       _lit,
       _seen,
-      _has_graffiti);
+      _has_graffiti,
+      _outside);
 }
 
 inline EntityT::EntityT(const EntityT &o)
@@ -4336,11 +4824,110 @@ inline ::flatbuffers::Offset<Vehicle> CreateVehicle(::flatbuffers::FlatBufferBui
       _parts);
 }
 
+inline EnvironmentUpdateT *EnvironmentUpdate::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<EnvironmentUpdateT>(new EnvironmentUpdateT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void EnvironmentUpdate::UnPackTo(EnvironmentUpdateT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = seq(); _o->seq = _e; }
+  { auto _e = epoch(); _o->epoch = _e; }
+  { auto _e = turn(); _o->turn = _e; }
+  { auto _e = time_of_day_sec(); _o->time_of_day_sec = _e; }
+  { auto _e = sunrise_sec(); _o->sunrise_sec = _e; }
+  { auto _e = sunset_sec(); _o->sunset_sec = _e; }
+  { auto _e = season(); _o->season = _e; }
+  { auto _e = sun_light(); _o->sun_light = _e; }
+  { auto _e = moon_light(); _o->moon_light = _e; }
+  { auto _e = sun_azimuth_deg(); _o->sun_azimuth_deg = _e; }
+  { auto _e = sun_altitude_deg(); _o->sun_altitude_deg = _e; }
+  { auto _e = moon_phase(); _o->moon_phase = _e; }
+  { auto _e = weather_id(); if (_e) _o->weather_id = _e->str(); }
+  { auto _e = light_multiplier(); _o->light_multiplier = _e; }
+  { auto _e = light_modifier(); _o->light_modifier = _e; }
+  { auto _e = sun_multiplier(); _o->sun_multiplier = _e; }
+  { auto _e = precip_class(); _o->precip_class = _e; }
+  { auto _e = rains(); _o->rains = _e; }
+  { auto _e = sight_penalty(); _o->sight_penalty = _e; }
+  { auto _e = tint_rgb(); if (_e) { _o->tint_rgb.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->tint_rgb[_i] = _e->Get(_i); } } else { _o->tint_rgb.resize(0); } }
+  { auto _e = tint_strength(); _o->tint_strength = _e; }
+  { auto _e = temperature_c(); _o->temperature_c = _e; }
+  { auto _e = windspeed_mph(); _o->windspeed_mph = _e; }
+  { auto _e = wind_dir_deg(); _o->wind_dir_deg = _e; }
+  { auto _e = lightning_active(); _o->lightning_active = _e; }
+}
+
+inline ::flatbuffers::Offset<EnvironmentUpdate> EnvironmentUpdate::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const EnvironmentUpdateT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateEnvironmentUpdate(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<EnvironmentUpdate> CreateEnvironmentUpdate(::flatbuffers::FlatBufferBuilder &_fbb, const EnvironmentUpdateT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const EnvironmentUpdateT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _seq = _o->seq;
+  auto _epoch = _o->epoch;
+  auto _turn = _o->turn;
+  auto _time_of_day_sec = _o->time_of_day_sec;
+  auto _sunrise_sec = _o->sunrise_sec;
+  auto _sunset_sec = _o->sunset_sec;
+  auto _season = _o->season;
+  auto _sun_light = _o->sun_light;
+  auto _moon_light = _o->moon_light;
+  auto _sun_azimuth_deg = _o->sun_azimuth_deg;
+  auto _sun_altitude_deg = _o->sun_altitude_deg;
+  auto _moon_phase = _o->moon_phase;
+  auto _weather_id = _o->weather_id.empty() ? 0 : _fbb.CreateString(_o->weather_id);
+  auto _light_multiplier = _o->light_multiplier;
+  auto _light_modifier = _o->light_modifier;
+  auto _sun_multiplier = _o->sun_multiplier;
+  auto _precip_class = _o->precip_class;
+  auto _rains = _o->rains;
+  auto _sight_penalty = _o->sight_penalty;
+  auto _tint_rgb = _o->tint_rgb.size() ? _fbb.CreateVector(_o->tint_rgb) : 0;
+  auto _tint_strength = _o->tint_strength;
+  auto _temperature_c = _o->temperature_c;
+  auto _windspeed_mph = _o->windspeed_mph;
+  auto _wind_dir_deg = _o->wind_dir_deg;
+  auto _lightning_active = _o->lightning_active;
+  return cdda::ipc::CreateEnvironmentUpdate(
+      _fbb,
+      _seq,
+      _epoch,
+      _turn,
+      _time_of_day_sec,
+      _sunrise_sec,
+      _sunset_sec,
+      _season,
+      _sun_light,
+      _moon_light,
+      _sun_azimuth_deg,
+      _sun_altitude_deg,
+      _moon_phase,
+      _weather_id,
+      _light_multiplier,
+      _light_modifier,
+      _sun_multiplier,
+      _precip_class,
+      _rains,
+      _sight_penalty,
+      _tint_rgb,
+      _tint_strength,
+      _temperature_c,
+      _windspeed_mph,
+      _wind_dir_deg,
+      _lightning_active);
+}
+
 inline SnapshotT::SnapshotT(const SnapshotT &o)
       : view_origin((o.view_origin) ? new cdda::ipc::Vec3i(*o.view_origin) : nullptr),
         view_radius(o.view_radius),
         seq(o.seq),
-        epoch(o.epoch) {
+        epoch(o.epoch),
+        environment((o.environment) ? new cdda::ipc::EnvironmentUpdateT(*o.environment) : nullptr) {
   blocks.reserve(o.blocks.size());
   for (const auto &blocks_ : o.blocks) { blocks.emplace_back((blocks_) ? new cdda::ipc::SubmapBlockT(*blocks_) : nullptr); }
   memory_blocks.reserve(o.memory_blocks.size());
@@ -4360,6 +4947,7 @@ inline SnapshotT &SnapshotT::operator=(SnapshotT o) FLATBUFFERS_NOEXCEPT {
   std::swap(vehicles, o.vehicles);
   std::swap(seq, o.seq);
   std::swap(epoch, o.epoch);
+  std::swap(environment, o.environment);
   return *this;
 }
 
@@ -4380,6 +4968,7 @@ inline void Snapshot::UnPackTo(SnapshotT *_o, const ::flatbuffers::resolver_func
   { auto _e = vehicles(); if (_e) { _o->vehicles.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { if(_o->vehicles[_i]) { _e->Get(_i)->UnPackTo(_o->vehicles[_i].get(), _resolver); } else { _o->vehicles[_i] = std::unique_ptr<cdda::ipc::VehicleT>(_e->Get(_i)->UnPack(_resolver)); }; } } else { _o->vehicles.resize(0); } }
   { auto _e = seq(); _o->seq = _e; }
   { auto _e = epoch(); _o->epoch = _e; }
+  { auto _e = environment(); if (_e) { if(_o->environment) { _e->UnPackTo(_o->environment.get(), _resolver); } else { _o->environment = std::unique_ptr<cdda::ipc::EnvironmentUpdateT>(_e->UnPack(_resolver)); } } else if (_o->environment) { _o->environment.reset(); } }
 }
 
 inline ::flatbuffers::Offset<Snapshot> Snapshot::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const SnapshotT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4398,6 +4987,7 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshot(::flatbuffers::FlatBufferB
   auto _vehicles = _o->vehicles.size() ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::Vehicle>> (_o->vehicles.size(), [](size_t i, _VectorArgs *__va) { return CreateVehicle(*__va->__fbb, __va->__o->vehicles[i].get(), __va->__rehasher); }, &_va ) : 0;
   auto _seq = _o->seq;
   auto _epoch = _o->epoch;
+  auto _environment = _o->environment ? CreateEnvironmentUpdate(_fbb, _o->environment.get(), _rehasher) : 0;
   return cdda::ipc::CreateSnapshot(
       _fbb,
       _view_origin,
@@ -4407,7 +4997,8 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshot(::flatbuffers::FlatBufferB
       _entities,
       _vehicles,
       _seq,
-      _epoch);
+      _epoch,
+      _environment);
 }
 
 inline TileChangeT::TileChangeT(const TileChangeT &o)
@@ -4420,7 +5011,8 @@ inline TileChangeT::TileChangeT(const TileChangeT &o)
         lit(o.lit),
         seen(o.seen),
         has_graffiti(o.has_graffiti),
-        displayed_field((o.displayed_field) ? new cdda::ipc::DisplayedField(*o.displayed_field) : nullptr) {
+        displayed_field((o.displayed_field) ? new cdda::ipc::DisplayedField(*o.displayed_field) : nullptr),
+        outside(o.outside) {
   fields.reserve(o.fields.size());
   for (const auto &fields_ : o.fields) { fields.emplace_back((fields_) ? new cdda::ipc::FieldOnTileT(*fields_) : nullptr); }
 }
@@ -4437,6 +5029,7 @@ inline TileChangeT &TileChangeT::operator=(TileChangeT o) FLATBUFFERS_NOEXCEPT {
   std::swap(seen, o.seen);
   std::swap(has_graffiti, o.has_graffiti);
   std::swap(displayed_field, o.displayed_field);
+  std::swap(outside, o.outside);
   return *this;
 }
 
@@ -4460,6 +5053,7 @@ inline void TileChange::UnPackTo(TileChangeT *_o, const ::flatbuffers::resolver_
   { auto _e = seen(); _o->seen = _e; }
   { auto _e = has_graffiti(); _o->has_graffiti = _e; }
   { auto _e = displayed_field(); if (_e) _o->displayed_field = std::unique_ptr<cdda::ipc::DisplayedField>(new cdda::ipc::DisplayedField(*_e)); }
+  { auto _e = outside(); _o->outside = _e; }
 }
 
 inline ::flatbuffers::Offset<TileChange> TileChange::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TileChangeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4481,6 +5075,7 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBuf
   auto _seen = _o->seen;
   auto _has_graffiti = _o->has_graffiti;
   auto _displayed_field = _o->displayed_field ? _o->displayed_field.get() : nullptr;
+  auto _outside = _o->outside;
   return cdda::ipc::CreateTileChange(
       _fbb,
       _pos,
@@ -4493,14 +5088,16 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBuf
       _lit,
       _seen,
       _has_graffiti,
-      _displayed_field);
+      _displayed_field,
+      _outside);
 }
 
 inline DeltaT::DeltaT(const DeltaT &o)
       : seq(o.seq),
         epoch(o.epoch),
         entity_removed(o.entity_removed),
-        vehicle_removed(o.vehicle_removed) {
+        vehicle_removed(o.vehicle_removed),
+        environment((o.environment) ? new cdda::ipc::EnvironmentUpdateT(*o.environment) : nullptr) {
   tile_changes.reserve(o.tile_changes.size());
   for (const auto &tile_changes_ : o.tile_changes) { tile_changes.emplace_back((tile_changes_) ? new cdda::ipc::TileChangeT(*tile_changes_) : nullptr); }
   entity_updates.reserve(o.entity_updates.size());
@@ -4517,6 +5114,7 @@ inline DeltaT &DeltaT::operator=(DeltaT o) FLATBUFFERS_NOEXCEPT {
   std::swap(entity_removed, o.entity_removed);
   std::swap(vehicle_updates, o.vehicle_updates);
   std::swap(vehicle_removed, o.vehicle_removed);
+  std::swap(environment, o.environment);
   return *this;
 }
 
@@ -4536,6 +5134,7 @@ inline void Delta::UnPackTo(DeltaT *_o, const ::flatbuffers::resolver_function_t
   { auto _e = entity_removed(); if (_e) { _o->entity_removed.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->entity_removed[_i] = _e->Get(_i); } } else { _o->entity_removed.resize(0); } }
   { auto _e = vehicle_updates(); if (_e) { _o->vehicle_updates.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { if(_o->vehicle_updates[_i]) { _e->Get(_i)->UnPackTo(_o->vehicle_updates[_i].get(), _resolver); } else { _o->vehicle_updates[_i] = std::unique_ptr<cdda::ipc::VehicleT>(_e->Get(_i)->UnPack(_resolver)); }; } } else { _o->vehicle_updates.resize(0); } }
   { auto _e = vehicle_removed(); if (_e) { _o->vehicle_removed.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->vehicle_removed[_i] = _e->Get(_i); } } else { _o->vehicle_removed.resize(0); } }
+  { auto _e = environment(); if (_e) { if(_o->environment) { _e->UnPackTo(_o->environment.get(), _resolver); } else { _o->environment = std::unique_ptr<cdda::ipc::EnvironmentUpdateT>(_e->UnPack(_resolver)); } } else if (_o->environment) { _o->environment.reset(); } }
 }
 
 inline ::flatbuffers::Offset<Delta> Delta::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const DeltaT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4553,6 +5152,7 @@ inline ::flatbuffers::Offset<Delta> CreateDelta(::flatbuffers::FlatBufferBuilder
   auto _entity_removed = _o->entity_removed.size() ? _fbb.CreateVector(_o->entity_removed) : 0;
   auto _vehicle_updates = _o->vehicle_updates.size() ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::Vehicle>> (_o->vehicle_updates.size(), [](size_t i, _VectorArgs *__va) { return CreateVehicle(*__va->__fbb, __va->__o->vehicle_updates[i].get(), __va->__rehasher); }, &_va ) : 0;
   auto _vehicle_removed = _o->vehicle_removed.size() ? _fbb.CreateVector(_o->vehicle_removed) : 0;
+  auto _environment = _o->environment ? CreateEnvironmentUpdate(_fbb, _o->environment.get(), _rehasher) : 0;
   return cdda::ipc::CreateDelta(
       _fbb,
       _seq,
@@ -4561,7 +5161,8 @@ inline ::flatbuffers::Offset<Delta> CreateDelta(::flatbuffers::FlatBufferBuilder
       _entity_updates,
       _entity_removed,
       _vehicle_updates,
-      _vehicle_removed);
+      _vehicle_removed,
+      _environment);
 }
 
 inline LightUpdateT::LightUpdateT(const LightUpdateT &o)
@@ -5084,6 +5685,10 @@ inline bool VerifyMessage(::flatbuffers::Verifier &verifier, const void *obj, Me
       auto ptr = reinterpret_cast<const cdda::ipc::Shutdown *>(obj);
       return verifier.VerifyTable(ptr);
     }
+    case Message_EnvironmentUpdate: {
+      auto ptr = reinterpret_cast<const cdda::ipc::EnvironmentUpdate *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
     default: return true;
   }
 }
@@ -5159,6 +5764,10 @@ inline void *MessageUnion::UnPack(const void *obj, Message type, const ::flatbuf
       auto ptr = reinterpret_cast<const cdda::ipc::Shutdown *>(obj);
       return ptr->UnPack(resolver);
     }
+    case Message_EnvironmentUpdate: {
+      auto ptr = reinterpret_cast<const cdda::ipc::EnvironmentUpdate *>(obj);
+      return ptr->UnPack(resolver);
+    }
     default: return nullptr;
   }
 }
@@ -5222,6 +5831,10 @@ inline ::flatbuffers::Offset<void> MessageUnion::Pack(::flatbuffers::FlatBufferB
       auto ptr = reinterpret_cast<const cdda::ipc::ShutdownT *>(value);
       return CreateShutdown(_fbb, ptr, _rehasher).Union();
     }
+    case Message_EnvironmentUpdate: {
+      auto ptr = reinterpret_cast<const cdda::ipc::EnvironmentUpdateT *>(value);
+      return CreateEnvironmentUpdate(_fbb, ptr, _rehasher).Union();
+    }
     default: return 0;
   }
 }
@@ -5282,6 +5895,10 @@ inline MessageUnion::MessageUnion(const MessageUnion &u) : type(u.type), value(n
     }
     case Message_Shutdown: {
       value = new cdda::ipc::ShutdownT(*reinterpret_cast<cdda::ipc::ShutdownT *>(u.value));
+      break;
+    }
+    case Message_EnvironmentUpdate: {
+      value = new cdda::ipc::EnvironmentUpdateT(*reinterpret_cast<cdda::ipc::EnvironmentUpdateT *>(u.value));
       break;
     }
     default:
@@ -5358,6 +5975,11 @@ inline void MessageUnion::Reset() {
     }
     case Message_Shutdown: {
       auto ptr = reinterpret_cast<cdda::ipc::ShutdownT *>(value);
+      delete ptr;
+      break;
+    }
+    case Message_EnvironmentUpdate: {
+      auto ptr = reinterpret_cast<cdda::ipc::EnvironmentUpdateT *>(value);
       delete ptr;
       break;
     }

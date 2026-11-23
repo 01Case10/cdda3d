@@ -49,6 +49,8 @@ bool Verify(const std::vector<uint8_t>& buf) {
     return VerifyEnvelopeBuffer(v);
 }
 
+void CheckEnvironmentEqual(const EnvironmentUpdateT& a, const EnvironmentUpdateT& b);
+
 void CheckSnapshotEqual(const SnapshotT& a, const SnapshotT& b) {
     CHECK(a.seq == b.seq);
     CHECK(a.epoch == b.epoch);
@@ -66,6 +68,12 @@ void CheckSnapshotEqual(const SnapshotT& a, const SnapshotT& b) {
         CHECK(x.lit == y.lit);
         CHECK(x.seen == y.seen);
         CHECK(x.has_graffiti == y.has_graffiti);
+        // Phase 10: per-tile sky exposure, same stub-house rule.
+        CHECK(x.outside == y.outside);
+        if (x.outside.size() == house::TILES) {
+            CHECK(!x.outside[house::idx(6, 6)]);  // interior: not exposed
+            CHECK(x.outside[house::idx(0, 0)]);   // corner: exposed
+        }
         CHECK(x.fields.size() == y.fields.size());
         CHECK(x.fields.size() == 3);
         for (size_t i = 0; i < x.fields.size() && i < y.fields.size(); ++i) {
@@ -100,6 +108,39 @@ void CheckSnapshotEqual(const SnapshotT& a, const SnapshotT& b) {
         CHECK(a.vehicles[0]->parts.size() == b.vehicles[0]->parts.size());
         CHECK(a.vehicles[0]->parts[0]->abs_pos->x() == 20);
     }
+    // Phase 10: the piggyback environment must be present and equal.
+    CHECK((a.environment == nullptr) == (b.environment == nullptr));
+    if (a.environment && b.environment) {
+        CheckEnvironmentEqual(*a.environment, *b.environment);
+    }
+}
+
+void CheckEnvironmentEqual(const EnvironmentUpdateT& a, const EnvironmentUpdateT& b) {
+    CHECK(a.seq == b.seq);
+    CHECK(a.epoch == b.epoch);
+    CHECK(a.turn == b.turn);
+    CHECK(a.time_of_day_sec == b.time_of_day_sec);
+    CHECK(a.sunrise_sec == b.sunrise_sec);
+    CHECK(a.sunset_sec == b.sunset_sec);
+    CHECK(a.season == b.season);
+    CHECK(a.sun_light == b.sun_light);
+    CHECK(a.moon_light == b.moon_light);
+    CHECK(a.sun_azimuth_deg == b.sun_azimuth_deg);
+    CHECK(a.sun_altitude_deg == b.sun_altitude_deg);
+    CHECK(a.moon_phase == b.moon_phase);
+    CHECK(a.weather_id == b.weather_id);
+    CHECK(a.light_multiplier == b.light_multiplier);
+    CHECK(a.light_modifier == b.light_modifier);
+    CHECK(a.sun_multiplier == b.sun_multiplier);
+    CHECK(a.precip_class == b.precip_class);
+    CHECK(a.rains == b.rains);
+    CHECK(a.sight_penalty == b.sight_penalty);
+    CHECK(a.tint_rgb == b.tint_rgb);
+    CHECK(a.tint_strength == b.tint_strength);
+    CHECK(a.temperature_c == b.temperature_c);
+    CHECK(a.windspeed_mph == b.windspeed_mph);
+    CHECK(a.wind_dir_deg == b.wind_dir_deg);
+    CHECK(a.lightning_active == b.lightning_active);
 }
 
 bool WriteFile(const std::string& path, const std::vector<uint8_t>& data) {
@@ -126,9 +167,12 @@ int main(int argc, char** argv) {
         auto snap = house::BuildSnapshot();
         auto defs = house::BuildTileDefs();
         auto hello = house::BuildHello();
+        auto env = house::BuildEnvironment();
         bool ok = WriteFile(dir + "/golden_snapshot.bin", PackEnvelope<Snapshot>(Message_Snapshot, snap)) &&
                   WriteFile(dir + "/golden_tiledefs.bin", PackEnvelope<TileDefs>(Message_TileDefs, defs)) &&
-                  WriteFile(dir + "/golden_hello.bin", PackEnvelope<Hello>(Message_Hello, hello));
+                  WriteFile(dir + "/golden_hello.bin", PackEnvelope<Hello>(Message_Hello, hello)) &&
+                  WriteFile(dir + "/golden_environment.bin",
+                            PackEnvelope<EnvironmentUpdate>(Message_EnvironmentUpdate, env));
         std::printf("CPP WRITE %s\n", ok ? "PASS" : "FAIL");
         return ok ? 0 : 1;
     }
@@ -193,6 +237,16 @@ int main(int argc, char** argv) {
         CHECK(back->protocol_version == hello.protocol_version);
         CHECK(back->tileset_id == "UltiCa");
         CHECK(back->z_min == -10 && back->z_max == 10);
+    }
+    {
+        // Phase 10 (gate 10.1a, C++ half): EnvironmentUpdate round-trip.
+        auto e = house::BuildEnvironment();
+        auto bytes = PackEnvelope<EnvironmentUpdate>(Message_EnvironmentUpdate, e);
+        CHECK(Verify(bytes));
+        const Envelope* env = GetEnvelope(bytes.data());
+        CHECK(env->message_type() == Message_EnvironmentUpdate);
+        std::unique_ptr<EnvironmentUpdateT> back(env->message_as_EnvironmentUpdate()->UnPack());
+        CheckEnvironmentEqual(*back, e);
     }
     std::printf("CPP ROUNDTRIP %s\n", g_failures ? "FAIL" : "PASS");
     return g_failures ? 1 : 0;

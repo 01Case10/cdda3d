@@ -4,11 +4,47 @@
 //! cross-language golden checks so all sides assert against the same data.
 
 use crate::{
-    DeltaT, EffectEventT, EffectKind, EffectsT, EntityT, Facing, FieldOnTileT, HelloAckT, HelloT,
-    InputKind, InputT, LightUpdateT, LitLevel, MessageT, PickResultT, PingT, PongT, ResizeT,
-    ShutdownT, SnapshotT, SubmapBlockT, TileChangeT, TileDefT, TileDefsT, TileKind, UiFrameT,
-    UiMode, VehiclePartStateT, VehicleT, PROTOCOL_VERSION,
+    DeltaT, EffectEventT, EffectKind, EffectsT, EntityT, EnvironmentUpdateT, Facing, FieldOnTileT,
+    HelloAckT, HelloT, InputKind, InputT, LightUpdateT, LitLevel, MessageT, PickResultT, PingT,
+    PongT, ResizeT, ShutdownT, SnapshotT, SubmapBlockT, TileChangeT, TileDefT, TileDefsT, TileKind,
+    UiFrameT, UiMode, VehiclePartStateT, VehicleT, PROTOCOL_VERSION,
 };
+
+/// The canonical sample environment: noon, clear, spring (Phase 10).
+/// The C++ stub builds exactly this (tools/stub-server/house.h
+/// BuildEnvironment); the fork harness's mock sequence starts here too
+/// (tools/fork-harness env_sequence, noon-clear step).
+pub fn sample_environment() -> EnvironmentUpdateT {
+    EnvironmentUpdateT {
+        seq: 1,
+        epoch: 1,
+        // Day 21, solar noon: 21 * 14400 turns/day + 7200 = 309600,
+        // and 7200 turns * 6 s = 43200 s = time_of_day_sec.
+        turn: 309_600,
+        time_of_day_sec: 43_200.0,
+        sunrise_sec: 21_600.0,
+        sunset_sec: 64_800.0,
+        season: 0, // spring
+        sun_light: 125.0,
+        moon_light: 1.0,
+        sun_azimuth_deg: 180.0,
+        sun_altitude_deg: 55.0,
+        moon_phase: 4, // MOON_FULL
+        weather_id: Some("weather_clear".into()),
+        light_multiplier: 1.0,
+        light_modifier: 0.0,
+        sun_multiplier: 1.0,
+        precip_class: 0,
+        rains: false,
+        sight_penalty: 0.0,
+        tint_rgb: None,
+        tint_strength: 0.0,
+        temperature_c: 20.0,
+        windspeed_mph: 5.0,
+        wind_dir_deg: 90.0,
+        lightning_active: false,
+    }
+}
 
 // Def ids used by the sample house (the C++ stub uses the same ids).
 pub const TER_FLOOR: u32 = 1;
@@ -199,6 +235,17 @@ pub fn sample_house_block() -> SubmapBlockT {
     let mut graffiti = vec![false; TILES];
     graffiti[idx(1, 1)] = true;
 
+    // Sky exposure (Phase 10): the shared stub-house rule, mirrored in
+    // house.h — tiles strictly inside the wall perimeter (the interior
+    // floor area, x/y in 1..=10) are indoors and not sky-exposed;
+    // everything else (walls, corners, the door/window ring) is.
+    let mut outside = vec![true; TILES];
+    for y in 1..SUBMAP - 1 {
+        for x in 1..SUBMAP - 1 {
+            outside[idx(x, y)] = false;
+        }
+    }
+
     SubmapBlockT {
         origin: Some(v3(0, 0, 0)),
         terrain: Some(terrain),
@@ -212,6 +259,7 @@ pub fn sample_house_block() -> SubmapBlockT {
         lit: Some(vec![LitLevel::LIT; TILES]),
         seen: Some(vec![255; TILES]),
         has_graffiti: Some(graffiti),
+        outside: Some(outside),
     }
 }
 
@@ -256,6 +304,9 @@ pub fn sample_snapshot() -> SnapshotT {
         vehicles: Some(vec![sample_vehicle()]),
         seq: 1,
         epoch: 1,
+        // Phase 10 piggyback: a snapshot always carries the current
+        // environment (the C++ stub's BuildSnapshot does the same).
+        environment: Some(Box::new(sample_environment())),
     }
 }
 
@@ -417,6 +468,9 @@ fn roofed_house_block(z: i32, explicit_roof: bool) -> SubmapBlockT {
         lit: Some(vec![lit; TILES]),
         seen: Some(vec![seen; TILES]),
         has_graffiti: Some(vec![false; TILES]),
+        // Phase 10 outside[] is exercised by the stub-house samples;
+        // these fixtures predate it and read as absent (= not exposed).
+        outside: None,
     }
 }
 
@@ -449,6 +503,7 @@ fn roofed_snapshot(explicit_roof: bool) -> SnapshotT {
         vehicles: None,
         seq: 1,
         epoch: 1,
+        environment: None,
     }
 }
 
@@ -525,6 +580,7 @@ fn terrain_block(z: i32, terrain: Vec<u32>) -> SubmapBlockT {
         lit: Some(vec![LitLevel::LIT; TILES]),
         seen: Some(vec![255; TILES]),
         has_graffiti: Some(vec![false; TILES]),
+        outside: None,
     }
 }
 
@@ -559,6 +615,7 @@ pub fn sample_terrain_snapshot() -> SnapshotT {
         vehicles: None,
         seq: 1,
         epoch: 1,
+        environment: None,
     }
 }
 
@@ -580,11 +637,17 @@ pub fn sample_delta() -> DeltaT {
             // Schema fix 2026-11-15: TileChange carries the displayed
             // field. This tile has no fields, so 0/0 = none.
             displayed_field: Some(crate::displayed_field(0, 0)),
+            // Phase 10: the door tile sits on the house perimeter —
+            // sky-exposed, matching the block rule in sample_house_block.
+            outside: true,
         }]),
         entity_updates: Some(vec![sample_entity()]),
         entity_removed: Some(vec![99]),
         vehicle_updates: Some(vec![sample_vehicle()]),
         vehicle_removed: Some(vec![98]),
+        // Usually absent; present only when the environment changed
+        // at this send boundary (Phase 10 §2.3).
+        environment: None,
     }
 }
 
@@ -626,6 +689,7 @@ pub fn all_sample_messages() -> Vec<MessageT> {
             ]),
             seen: Some(vec![0, 32, 64, 128, 200, 255, 0]),
         })),
+        MessageT::EnvironmentUpdate(Box::new(sample_environment())),
         MessageT::Effects(Box::new(EffectsT {
             seq: 4,
             events: Some(vec![EffectEventT {

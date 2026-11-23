@@ -11,6 +11,7 @@
 #include <cstdlib>             // std::getenv (CDDA_VOXEL_FG_REFS)
 
 #include "avatar.h"            // avatar::get_memorized_tile (avatar.h:165)
+#include "calendar.h"          // calendar::turn, sun_azimuth_altitude, get_moon_phase (Phase 10)
 #include "character.h"         // Character::get_overlay_ids (character.h:2553)
 #include "creature_tracker.h"  // creature_tracker::get_monsters_list
 #include "field.h"             // field / field_entry iteration
@@ -29,6 +30,8 @@
 #include "units.h"             // units::to_degrees
 #include "veh_type.h"          // vehicles::parts::get_all (veh_type.h)
 #include "vehicle.h"           // vehicle::bub_part_pos / face
+#include "weather.h"           // get_weather(), incident_sunlight/moonlight (Phase 10)
+#include "weather_type.h"      // weather_type resolved fields (Phase 10)
 
 namespace voxel_ipc
 {
@@ -110,6 +113,11 @@ TileVal RealAdapter::query_tile( int x, int y, int z )
         t.top_item = item_wire_id( top.typeId().str() );
     }
     t.graffiti = here_.has_graffiti_at( p );                       // map.h:1811
+    // Phase 10 sky exposure: the game's own conjunction (the same one
+    // character.cpp uses for weather exposure) — is_outside is an O(1)
+    // outside_cache read (map.h:1232), is_roofed walks upward
+    // (map.h:1238). docs/phase10-sky-gi.md §11 Q1.
+    t.sky_exposed = here_.is_outside( p ) && !here_.is_roofed( p );
     const lit_level ll = here_.apparent_light_at( p, here_.get_visibility_variables_cache() );
     t.lit = static_cast<Lit>( static_cast<uint8_t>( ll ) );         // enum order matches schema
     // seen: the visibility cache's float is not exposed per-tile by a
@@ -358,6 +366,50 @@ std::vector<MemVal> RealAdapter::memory_tiles()
         }
     }
     return out;
+}
+
+EnvVal RealAdapter::environment()
+{
+    // Phase 10 (docs/phase10-sky-gi.md §2.2/§11 Q2): every function
+    // below is a public free function verified against the pinned
+    // source on 2026-11-23. UNCOMPILED half, same status as the rest
+    // of this file: first compile happens on a build-capable machine
+    // (standing 0.1/0.2 condition).
+    const time_point now = calendar::turn;
+    const weather_manager &wm = get_weather();              // weather.h:257
+    const weather_type &wt = *wm.weather_id;                // resolved type (JSON/mod-defined)
+    EnvVal e;
+    e.turn = static_cast<int64_t>( to_turns<int>( now - calendar::turn_zero ) );
+    // Seconds into the game day, from the same (p - turn_zero) % 1_days
+    // the calendar itself uses for time-of-day (calendar.h:579). (There
+    // is no second_of_minute upstream; hour/minute_of_day exist but
+    // this is exact in one step.)
+    e.time_of_day_sec = static_cast<float>( to_seconds<int>( ( now - calendar::turn_zero ) % 1_days ) );
+    e.sunrise_sec = static_cast<float>( to_seconds<int>( sunrise( now ) - calendar::turn_zero ) % 86400 );
+    e.sunset_sec = static_cast<float>( to_seconds<int>( sunset( now ) - calendar::turn_zero ) % 86400 );
+    e.season = static_cast<uint8_t>( season_of_year( now ) ); // SPRING=0..WINTER=3 (calendar.h:24)
+    e.sun_light = incident_sunlight( wm.weather_id, now );   // weather.h:187 (weather folded in)
+    e.moon_light = incident_moonlight( wm.weather_id, now ); // weather.h:190
+    const std::pair<units::angle, units::angle> sun_pos = sun_azimuth_altitude( now ); // calendar.h:664
+    e.sun_azimuth_deg = static_cast<float>( units::to_degrees( sun_pos.first ) );
+    e.sun_altitude_deg = static_cast<float>( units::to_degrees( sun_pos.second ) );
+    e.moon_phase = static_cast<uint8_t>( get_moon_phase( now ) ); // calendar.h:621
+    e.weather_id = wm.weather_id.str();
+    e.light_multiplier = wt.light_multiplier;                // weather_type.h:103
+    e.light_modifier = static_cast<float>( wt.light_modifier ); // weather_type.h:99 (int upstream)
+    e.sun_multiplier = wt.sun_multiplier;                    // weather_type.h:105
+    e.precip_class = static_cast<uint8_t>( wt.precip );      // weather_type.h:111 (none=0..heavy=3)
+    e.rains = wt.rains;                                      // weather_type.h:113
+    e.sight_penalty = wt.sight_penalty;                      // weather_type.h:97
+    if( wt.tint_color.is_colored() ) {                       // lightmap.h:61 light_color_rgb
+        e.tint_rgb = std::array<float, 3>{ wt.tint_color.r, wt.tint_color.g, wt.tint_color.b };
+    }
+    e.tint_strength = wt.tint_strength;                      // weather_type.h:135
+    e.temperature_c = static_cast<float>( units::to_celsius( wm.temperature ) ); // units.h:444
+    e.windspeed_mph = static_cast<float>( wm.windspeed );     // weather.h:144/223 (mph upstream)
+    e.wind_dir_deg = static_cast<float>( wm.winddirection ); // weather.h:222 (degrees upstream)
+    e.lightning_active = wm.lightning_active;                // weather.h:219
+    return e;
 }
 
 std::string RealAdapter::game_version() const { return "CDDA-fork"; } // fork stamps its git describe here

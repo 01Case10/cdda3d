@@ -44,6 +44,9 @@ static TileVal wire_tile( const ipc::SubmapBlockT &b, int i,
     t.lit = static_cast<Lit>( static_cast<uint8_t>( b.lit[i] ) );
     t.seen = b.seen[i];
     t.graffiti = b.has_graffiti[i];
+    // Phase 10: outside[] is optional on the wire (pre-10.1 data reads
+    // as absent = not exposed).
+    t.sky_exposed = i < static_cast<int>( b.outside.size() ) && b.outside[i];
     return t;
 }
 
@@ -119,6 +122,7 @@ struct Mirror {
             t.top_item = tc.top_item; t.item_count = tc.item_count;
             t.lit = static_cast<Lit>( static_cast<uint8_t>( tc.lit ) );
             t.seen = tc.seen; t.graffiti = tc.has_graffiti;
+            t.sky_exposed = tc.outside;
             tiles[{tc.pos->x(), tc.pos->y(), tc.pos->z()}] = t;
         }
         for( const auto &ep : d.entity_updates ) { ents[ep->id] = from_wire( *ep ); }
@@ -642,6 +646,67 @@ int main( int argc, char **argv )
                        s.blocks.size(), snap_ms, delta_ms, exp.stats().last_dirty_submaps );
         // Gate here is "measured and attributable", per the test text.
         report( "3.18", snap_ms > 0 && delta_ms >= 0 && s.blocks.size() >= 300, buf );
+    }
+
+    // ---------- 10.1b environment send rules (Phase 10, gate 10.1b) ----------
+    {
+        World w = make_house();
+        MockAdapter ad( w );
+        Exporter exp( ad );
+        const std::vector<EnvVal> seq = env_sequence(); // noon-clear, storm, midnight
+        w.env = seq[0];
+        // Snapshot always carries the current environment.
+        ipc::SnapshotT s = exp.build_snapshot( small_view() );
+        bool snap_ok = s.environment && s.environment->weather_id == seq[0].weather_id &&
+                       s.environment->turn == seq[0].turn &&
+                       std::abs( s.environment->time_of_day_sec - seq[0].time_of_day_sec ) < 0.01f &&
+                       s.environment->epoch == s.epoch;
+        // The snapshot counts as a send: nothing is due immediately after.
+        bool quiet_after_snap = !exp.build_environment_update().has_value();
+        // 9 quiet game-minutes (10 turns each) emit none; the 10th emits
+        // exactly one; the poll after that is quiet again.
+        bool quiet9 = true;
+        for( int m = 0; m < 9; ++m ) {
+            w.env.turn += 10;
+            if( exp.build_environment_update().has_value() ) { quiet9 = false; }
+        }
+        w.env.turn += 10;
+        auto tenth = exp.build_environment_update();
+        bool tenth_ok = tenth.has_value() && tenth->turn == w.env.turn &&
+                        !exp.build_environment_update().has_value();
+        // Weather change emits exactly one update, immediately.
+        w.env = seq[1]; // storm (weather_id changes, lightning flips on)
+        w.env.turn += 1;
+        auto storm = exp.build_environment_update();
+        bool storm_ok = storm.has_value() && storm->weather_id == seq[1].weather_id &&
+                        storm->lightning_active &&
+                        !exp.build_environment_update().has_value();
+        // A lightning flip alone (same weather id) also emits exactly one.
+        w.env.lightning_active = false;
+        auto flip = exp.build_environment_update();
+        bool flip_ok = flip.has_value() && !flip->lightning_active &&
+                       !exp.build_environment_update().has_value();
+        // Delta piggyback: a due environment rides the next Delta.
+        w.env = seq[2]; // midnight
+        ipc::DeltaT d = exp.build_delta();
+        bool delta_ok = d.environment && d.environment->weather_id == seq[2].weather_id;
+        // Per-tile sky exposure reaches the wire: the house interior is
+        // not sky-exposed, the field outside is.
+        bool outside_ok = true;
+        for( const auto &bp : s.blocks ) {
+            const auto &b = *bp;
+            if( b.outside.size() != kTilesPerBlock ) { outside_ok = false; break; }
+            for( int i = 0; i < kTilesPerBlock; ++i ) {
+                const int x = b.origin->x() + ( i % kSubmapSize );
+                const int y = b.origin->y() + ( i / kSubmapSize );
+                TileVal want = ad.query_tile( x, y, b.origin->z() );
+                if( !ad.in_bubble( x, y, b.origin->z() ) ) { want.sky_exposed = false; }
+                if( b.outside[i] != want.sky_exposed ) { outside_ok = false; }
+            }
+        }
+        report( "10.1b", snap_ok && quiet_after_snap && quiet9 && tenth_ok && storm_ok &&
+                flip_ok && delta_ok && outside_ok,
+                "snapshot carries env; 9 quiet game-minutes none, 10th one; weather change and lightning flip each exactly one; delta piggybacks when due; outside[] matches adapter sky_exposed per tile" );
     }
 
     // ---------- serialization proof: real schema round-trip ----------

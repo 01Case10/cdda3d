@@ -51,6 +51,14 @@ class IGameAdapter
         // --- avatar map memory: terrain/furniture only ---
         virtual std::vector<MemVal> memory_tiles() = 0;
 
+        // --- environment (Phase 10): game time + weather at the player ---
+        // Real adapter (docs/phase10-sky-gi.md §11, source-verified):
+        //   calendar::turn, hour/minute/second_of_day, sunrise/sunset,
+        //   season_of_year, sun_azimuth_altitude, get_moon_phase,
+        //   incident_sunlight/incident_moonlight(wtype, turn),
+        //   get_weather() -> weather_manager + weather_type fields.
+        virtual EnvVal environment() = 0;
+
         virtual std::string game_version() const = 0;
         virtual std::string tileset_id() const = 0;
 };

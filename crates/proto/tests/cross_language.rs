@@ -227,6 +227,11 @@ fn t1_11_1_12_stub_handshake_snapshot_input_shutdown() {
         MessageT::Snapshot(s) => assert_eq!(*s, sample_snapshot()),
         other => panic!("expected Snapshot, got {other:?}"),
     }
+    // Phase 10: one standalone EnvironmentUpdate follows the snapshot.
+    match recv(&mut stream, &mut dec) {
+        MessageT::EnvironmentUpdate(e) => assert_eq!(*e, sample_environment()),
+        other => panic!("expected EnvironmentUpdate, got {other:?}"),
+    }
 
     // 1.12: input round-trip, order preserved across several events.
     let mut inputs = Vec::new();
@@ -259,6 +264,80 @@ fn t1_11_1_12_stub_handshake_snapshot_input_shutdown() {
     shutdown.reason = Some("test done".into());
     send(&mut stream, &MessageT::Shutdown(Box::new(shutdown)));
     let status = wait_exit(&mut stub.child, Duration::from_secs(2));
+    assert!(status.success(), "stub exit status: {status}");
+}
+
+// ------------------------------------------------- 10.1 stub env script
+#[test]
+fn t10_1_stub_env_script() {
+    if !ensure_cpp_binaries() {
+        return;
+    }
+    // Spawn the stub with --env-script (spawn_stub has no arg support,
+    // so this test spawns directly).
+    let dir = tmpdir("envscript");
+    let sock = dir.join("stub.sock");
+    let mut child = Command::new(stub_dir().join("stub-server"))
+        .args([sock.to_str().unwrap(), "--env-script"])
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn stub-server --env-script");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !sock.exists() {
+        assert!(Instant::now() < deadline, "stub socket never appeared");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut stream = UnixStream::connect(&sock).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut dec = FrameDecoder::new();
+    match recv(&mut stream, &mut dec) {
+        MessageT::Hello(_) => {}
+        other => panic!("expected Hello, got {other:?}"),
+    }
+    send(
+        &mut stream,
+        &MessageT::HelloAck(Box::new(sample_hello_ack())),
+    );
+    match recv(&mut stream, &mut dec) {
+        MessageT::TileDefs(_) => {}
+        other => panic!("expected TileDefs, got {other:?}"),
+    }
+    match recv(&mut stream, &mut dec) {
+        MessageT::Snapshot(s) => {
+            assert_eq!(s.environment.as_deref(), Some(&sample_environment()))
+        }
+        other => panic!("expected Snapshot, got {other:?}"),
+    }
+    match recv(&mut stream, &mut dec) {
+        MessageT::EnvironmentUpdate(e) => assert_eq!(*e, sample_environment()),
+        other => panic!("expected EnvironmentUpdate, got {other:?}"),
+    }
+    // Each Input advances the script: storm, then midnight.
+    let expect = [
+        ("weather_thunderstorm", 54_000.0f32, true),
+        ("weather_clear", 0.0f32, false),
+    ];
+    for (weather_id, tod, lightning) in expect {
+        send(&mut stream, &MessageT::Input(Box::new(sample_input())));
+        match recv(&mut stream, &mut dec) {
+            MessageT::Input(_) => {}
+            other => panic!("expected Input echo, got {other:?}"),
+        }
+        match recv(&mut stream, &mut dec) {
+            MessageT::EnvironmentUpdate(e) => {
+                assert_eq!(e.weather_id.as_deref(), Some(weather_id));
+                assert_eq!(e.time_of_day_sec, tod);
+                assert_eq!(e.lightning_active, lightning);
+            }
+            other => panic!("expected scripted EnvironmentUpdate, got {other:?}"),
+        }
+    }
+    let mut shutdown = ShutdownT::default();
+    shutdown.reason = Some("test done".into());
+    send(&mut stream, &MessageT::Shutdown(Box::new(shutdown)));
+    let status = wait_exit(&mut child, Duration::from_secs(2));
     assert!(status.success(), "stub exit status: {status}");
 }
 
