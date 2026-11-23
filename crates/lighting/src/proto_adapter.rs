@@ -18,10 +18,11 @@
 //! changing this module's shape.
 
 use mesher::block::{block_for_tile, tile_shape, Pass, TileShape};
-use proto::{SnapshotT, SubmapBlockT};
+use proto::{DeltaT, EnvironmentUpdateT, SnapshotT, SubmapBlockT};
 
 use crate::grid::LightGrid;
 use crate::mapping::TileLight;
+use crate::sky::GameEnvironment;
 
 /// Default occlusion predicate for a terrain/furniture id pair.
 pub fn default_occludes(terrain: u32, furniture: u32) -> bool {
@@ -89,6 +90,7 @@ fn apply_block(grid: &mut LightGrid, b: &SubmapBlockT, is_memory: bool) {
     let seen = b.seen.as_ref();
     let terrain = b.terrain.as_ref();
     let furniture = b.furniture.as_ref();
+    let outside = b.outside.as_ref();
     for ly in 0..12i32 {
         for lx in 0..12i32 {
             let i = (ly * 12 + lx) as usize;
@@ -109,11 +111,15 @@ fn apply_block(grid: &mut LightGrid, b: &SubmapBlockT, is_memory: bool) {
             } else {
                 default_occludes(ter, furn)
             };
+            // Sky exposure (Phase 10 §3.4): the schema's own
+            // convention is that absent data reads as not exposed,
+            // so a pre-10.1 block simply carries `false` here.
+            let out = outside.and_then(|v| v.get(i).copied()).unwrap_or(false);
             grid.set(
                 o[0] + lx,
                 o[1] + ly,
                 o[2],
-                TileLight::new(l, s).occluding(occ),
+                TileLight::new(l, s).occluding(occ).outside(out),
             );
         }
     }
@@ -124,4 +130,67 @@ pub fn grid_from_block(b: &SubmapBlockT) -> LightGrid {
     let mut snap = SnapshotT::default();
     snap.blocks = Some(vec![b.clone()]);
     grid_from_snapshot(&snap)
+}
+
+// ---------------------------------------------------------------------
+// Environment conversion (Phase 10 slice 10.6): the proto-adapter
+// form of EnvironmentUpdate that sky.rs's GameEnvironment doc has
+// pointed at since 10.2. Field-for-field, deliberately WITHOUT the
+// §10 range clamping — sanitizing is the SkyState derivation's job
+// (classify_weather / sky_state sanitize their input), and an
+// adapter that quietly rewrote values would break the gate-10.1a
+// semantic-equality discipline this conversion is checked under.
+// ---------------------------------------------------------------------
+
+/// Convert one wire `EnvironmentUpdate` to its engine-side mirror.
+pub fn game_environment_from_update(u: &EnvironmentUpdateT) -> GameEnvironment {
+    GameEnvironment {
+        seq: u.seq,
+        epoch: u.epoch,
+        turn: u.turn,
+        time_of_day_sec: u.time_of_day_sec,
+        sunrise_sec: u.sunrise_sec,
+        sunset_sec: u.sunset_sec,
+        season: u.season,
+        sun_light: u.sun_light,
+        moon_light: u.moon_light,
+        sun_azimuth_deg: u.sun_azimuth_deg,
+        sun_altitude_deg: u.sun_altitude_deg,
+        moon_phase: u.moon_phase,
+        weather_id: u.weather_id.clone().unwrap_or_default(),
+        light_multiplier: u.light_multiplier,
+        light_modifier: u.light_modifier,
+        sun_multiplier: u.sun_multiplier,
+        precip_class: u.precip_class,
+        rains: u.rains,
+        sight_penalty: u.sight_penalty,
+        // The wire tint is a flat [float] vector: exactly 3 entries
+        // is a colour; anything else (absent, malformed) is none.
+        tint_rgb: match u.tint_rgb.as_deref() {
+            Some([r, g, b]) => Some([*r, *g, *b]),
+            _ => None,
+        },
+        tint_strength: u.tint_strength,
+        temperature_c: u.temperature_c,
+        windspeed_mph: u.windspeed_mph,
+        wind_dir_deg: u.wind_dir_deg,
+        lightning_active: u.lightning_active,
+    }
+}
+
+/// The environment piggybacked on a `Snapshot` (§2.2: a fresh
+/// client is never environment-blind), when present.
+pub fn game_environment_from_snapshot(snap: &SnapshotT) -> Option<GameEnvironment> {
+    snap.environment
+        .as_deref()
+        .map(game_environment_from_update)
+}
+
+/// The environment piggybacked on a `Delta` (§2.3: present when
+/// it changed at that send boundary), when present.
+pub fn game_environment_from_delta(delta: &DeltaT) -> Option<GameEnvironment> {
+    delta
+        .environment
+        .as_deref()
+        .map(game_environment_from_update)
 }

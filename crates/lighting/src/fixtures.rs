@@ -84,6 +84,20 @@ pub fn fake_house_night_light() -> LightGrid {
             }
         }
     }
+    // Sky exposure (Phase 10 §3.4, authored with the same rule as
+    // the proto sample's outside[] and house.h): tiles strictly
+    // inside the wall perimeter are indoors; the perimeter ring
+    // and the whole roof level (z 1) are sky-exposed.
+    for y in 0..12 {
+        for x in 0..12 {
+            for z in 0..2 {
+                let inside = z == 0 && x >= 1 && x <= 10 && y >= 1 && y <= 10;
+                let mut t = g.get(x, y, z);
+                t.outside = !inside;
+                g.set(x, y, z, t);
+            }
+        }
+    }
     g
 }
 
