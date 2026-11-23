@@ -1892,3 +1892,19 @@ Joey signed off on the densified dead bamboo 2026-11-23 ("I sign off on this",
 on the 4-angle sheet). Terrain item 1 CLOSED. Remaining terrain batch: item 2
 puddles (in progress, side thread, puddle-fix branch), item 3 hand-builds (prep
 in progress, side thread), then item 4 ultica_run1 regen as close-out (8b-A).
+
+## Addendum 2026-11-23 (9): terrain item 3 hand-builds — built + signed off
+
+Built in worktree cdda-voxel-handbuild, branch hand-build @ 569a93e (NOT merged,
+NOT pushed): terrain_manual_model dispatch before the silhouette fallback —
+3a t_water_pump, 3b t_vat (Joey's tentative call, furniture tanks untouched),
+3c t_monkey_bars x4 (corner-post segments) + t_slide x4 (incline + ladder,
+Joey-approved invention), 3d t_column + t_little_column, t_railroad_crossing_
+signal x2 (twin red lamps front+back), t_crossbuck_metal/wood x4 (no lamps,
+no equipment box). Gate hand_build_gate 6/6, verified failing pre-fix;
+voxelizer suite 18 binaries ok (only gate_5_1, the known worktree path
+artifact). First signal strip's bowtie X was caught in self-review and rebuilt
+square before presentation. JOEY SIGN-OFF GRANTED 2026-11-23 in the hand-build
+thread ("They look fine. I sign off") on the 4-angle strips for all families.
+Terrain item 3 CLOSED. Remaining terrain batch: item 2 puddles (rework in its
+thread — water-shader route approved there), then item 4 ultica_run1 regen.
