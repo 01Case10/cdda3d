@@ -33,6 +33,7 @@ pub mod mapping;
 pub mod png;
 pub mod proto_adapter;
 pub mod render;
+pub mod sky;
 pub mod smoothing;
 pub mod updates;
 
@@ -47,6 +48,10 @@ pub use mapping::{
     apply_visibility_rgb, base_intensity, include_in_tree, is_meshed, luminance, present_color,
     presented_sample, visibility_of, LightSample, TileLight, Visibility, MEMORIZED_BRIGHTNESS,
     MEMORIZED_SATURATION_KEEP,
+};
+pub use sky::{
+    classify_weather, fallback_sun_angles, max_elev_for_season, moon_light_for_phase, sky_state,
+    sun_direction, GameEnvironment, PrecipKind, PrecipState, SkyClock, SkyState,
 };
 pub use smoothing::{
     air_side_sample, face_light, smoothed_tile_sample, top_face_vertex_light, vertex_light,
