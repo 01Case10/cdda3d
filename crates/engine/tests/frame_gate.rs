@@ -474,16 +474,27 @@ fn gate_2h3_lighting_visibility_contract() {
     mid_args.lighting = Some(LightingScene::fake_house(0.0, lighting::WeatherKind::Clear));
     let (mid, _) = render(&device, &queue, &mid_args);
 
-    let bg = noon.get_pixel(2, 2).0;
-    let is_bg = |p: [u8; 4]| (0..3).all(|c| (p[c] as i32 - bg[c] as i32).abs() <= 4);
+    // Background mask, reworked for the §5 sky (ratified
+    // gate rework, 2026-11-23): the old mask — within ±4 of
+    // the (2,2) corner colour — identified the FLAT clear
+    // colour and covered ~85% of the frame; the sky pass now
+    // paints a gradient, of which that single colour covers
+    // only ~3.5%, and the unmasked sky flooded the ratio
+    // sample (median 1.000). The pair's sky is
+    // environment-independent (identical SkyUniforms in both
+    // frames) while every lit geometry pixel scales by the
+    // bake curve, so background = pixels identical (±1 per
+    // channel) across the pair. The mask-fraction bounds are
+    // the silhouette sanity in this form: if the world
+    // stopped rendering the fraction goes to 1.0; if the sky
+    // started responding to the bake it collapses.
     let mut ratios: [Vec<f32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    let (mut bg_agree, mut bg_total) = (0usize, 0usize);
+    let (mut bg_count, mut bg_total) = (0usize, 0usize);
     for (pn, pm) in noon.pixels().zip(mid.pixels()) {
         bg_total += 1;
-        if is_bg(pn.0) == is_bg(pm.0) {
-            bg_agree += 1;
-        }
-        if is_bg(pn.0) || is_bg(pm.0) {
+        let is_bg = (0..3).all(|c| (pn.0[c] as i32 - pm.0[c] as i32).abs() <= 1);
+        if is_bg {
+            bg_count += 1;
             continue;
         }
         for c in 0..3 {
@@ -492,9 +503,11 @@ fn gate_2h3_lighting_visibility_contract() {
             }
         }
     }
+    let bg_frac = bg_count as f64 / bg_total as f64;
+    println!("2h.3 day/night: background fraction {bg_frac:.3}");
     assert!(
-        bg_agree as f64 / bg_total as f64 > 0.999,
-        "day/night silhouettes differ — the pair must differ only in lighting"
+        bg_frac > 0.5 && bg_frac < 0.98,
+        "day/night background fraction {bg_frac:.3} — the pair must differ only in lighting"
     );
     // Encoded-space expectation: linear ratio (0.532 x tint)
     // through the sRGB encode, ^(1/2.2).
