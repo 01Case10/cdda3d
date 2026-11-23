@@ -18,6 +18,11 @@
 
 use crate::mapping::LightSample;
 
+// Phase 10 (§3): the derived sky state lives in `sky`; this module
+// stays the bake-facing layer and re-exports it so existing
+// `atmosphere::` paths keep working.
+pub use crate::sky::{sky_state, GameEnvironment, SkyClock, SkyState};
+
 /// Global day/night presentation: a brightness (exposure) factor and
 /// an RGB tint for the sun/ambient term.
 #[derive(Debug, Clone, Copy, PartialEq)]
