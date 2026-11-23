@@ -247,16 +247,32 @@ fn state_subtile_selection_real_ultica_and_part_flags() {
     broken_door.broken = true;
     assert_eq!(vehicles::part_state_subtile(&broken_door), Some("broken"));
 
-    // Real UltiCa data: vp_door's entry carries open (global
-    // layer 23635) and broken (23634) subtile layers. The state
-    // spec builder must put the OPEN layer's bytes in the open
-    // variant's side slot — not the base side, not broken's.
+    // Real UltiCa data: vp_door's entry carries open and
+    // broken subtile layers. The state spec builder must put
+    // the OPEN layer's bytes in the open variant's side slot
+    // — not the base side, not broken's. The layer ids are
+    // read from the loaded table, NOT hardcoded: the asset
+    // regen renumbers global layers (the 2026-11-23
+    // ultica_run1 regen moved vp_door's open subtile from
+    // 23635 to 36805; the old hardcoded expectation silently
+    // compared against an unrelated layer that happened to
+    // be transparent).
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ultica_run1");
     if !dir.join("materials.json").exists() {
         println!("state-subtile real-data half NOT RUN — assets/ultica_run1 absent");
         return;
     }
     let table = engine::materials::MaterialTable::load(&dir).expect("ultica materials");
+    let vp_door = table.get("vp_door").expect("vp_door in ultica materials");
+    let open_layer = vp_door
+        .subtile_layers
+        .get("open")
+        .copied()
+        .expect("vp_door carries an open subtile layer");
+    assert!(
+        vp_door.subtile_layers.contains_key("broken"),
+        "vp_door carries a broken subtile layer"
+    );
     let id_map: std::collections::HashMap<u32, String> =
         [(5000u32, "vp_door".to_string())].into_iter().collect();
     let assignments = [engine::textures::StateVariantAssignment {
@@ -276,7 +292,7 @@ fn state_subtile_selection_real_ultica_and_part_flags() {
     assert_eq!(variant[2], base[2], "variant keeps base bottom");
     assert_ne!(variant[1], base[1], "open variant side differs from base side");
     // The variant side's bytes are the open subtile layer's.
-    let open_png = image::open(dir.join("blocks/layer_23635.png"))
+    let open_png = image::open(dir.join(format!("blocks/layer_{open_layer}.png")))
         .expect("open layer png")
         .to_rgba8();
     assert_eq!(
