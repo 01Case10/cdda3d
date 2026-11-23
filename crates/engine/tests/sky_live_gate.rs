@@ -199,6 +199,36 @@ fn named_sky_matrix_resolves() {
 }
 
 // ---------------------------------------------------------------------
+// Cave factor seating (§4)
+// ---------------------------------------------------------------------
+
+#[test]
+fn cave_factor_seats_from_camera_target() {
+    // The §4 rule: the dark cave gradient (decision 3C)
+    // engages only when the camera target tile is below
+    // ground AND the sky does not reach it.
+    let mut sheltered = std::collections::HashSet::new();
+    sheltered.insert([6, 6, 0]); // roofed surface interior
+    sheltered.insert([6, 6, -1]); // cave tile under it
+    let exposure = SkyExposure { sheltered };
+    // Sheltered surface interior: NOT a cave (the gradient is
+    // a cave treatment, not a roof treatment).
+    assert_eq!(SkyScene::cave_factor_for(&exposure, [6, 6, 0]), 0.0);
+    // Below ground and sheltered: full cave gradient.
+    assert_eq!(SkyScene::cave_factor_for(&exposure, [6, 6, -1]), 1.0);
+    // Below ground but sky-exposed (a shaft the game marks
+    // outside): the surface sky stays.
+    assert_eq!(SkyScene::cave_factor_for(&exposure, [6, 6, -2]), 0.0);
+    assert_eq!(SkyScene::cave_factor_for(&exposure, [0, 0, -1]), 0.0);
+    // The wire-derived set agrees on the stub house's
+    // sheltered interior at surface level.
+    let snap = proto::samples::sample_snapshot();
+    let grid = lighting::proto_adapter::grid_from_snapshot(&snap);
+    let wire_exposure = SkyExposure::from_grid(&grid);
+    assert_eq!(SkyScene::cave_factor_for(&wire_exposure, [6, 6, 0]), 0.0);
+}
+
+// ---------------------------------------------------------------------
 // SkyScene seating from the wire
 // ---------------------------------------------------------------------
 

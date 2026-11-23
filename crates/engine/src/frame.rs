@@ -358,6 +358,24 @@ impl SkyScene {
         lighting::proto_adapter::game_environment_from_snapshot(snap).map(Self::new)
     }
 
+    /// The §4 cave-factor seating rule for the live loop: the
+    /// dark cave gradient (decision 3C, §9) engages only when
+    /// the camera target tile is below ground (game z < 0) AND
+    /// the sky does not reach it (its §3.4 factor is 0). A
+    /// sheltered surface interior keeps the surface sky — the
+    /// gradient is a cave treatment, not a roof treatment —
+    /// and so does an exposed underground tile (a shaft the
+    /// game marks outside). Captures leave the factor as
+    /// authored (0); the windowed loop reseats it per frame
+    /// from the camera target.
+    pub fn cave_factor_for(exposure: &SkyExposure, target: [i32; 3]) -> f32 {
+        if target[2] < 0 && exposure.factor(target) == 0.0 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
     /// Record a newer environment sample (the §2.3 cadence).
     pub fn push(&mut self, env: lighting::GameEnvironment) {
         self.clock.push(env.clone());
