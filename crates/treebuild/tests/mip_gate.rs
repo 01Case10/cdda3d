@@ -590,13 +590,23 @@ fn gate_2e_3_two_pose_variance() {
         .map(|(_, px)| px[0])
         .collect();
     assert!(reds.len() > 1000, "close-up wall must fill the frame");
-    // The -y face's shading factor is ~0.60 (sun dot 0.42 -> light
-    // 0.71, times lit_factor 0.85), so a white texel lands at ~154
-    // and a black one at 0; a mip-averaged render would sit at a
-    // uniform ~77 instead. Sharp extremes = level 0 sampled.
+    // White-texel landing point, re-derived for the §5.3 sky GI
+    // (ratified rewrite, 2026-11-23 — the old derivation was
+    // legacy-light: sun dot 0.42 -> light 0.71 x lit_factor 0.85,
+    // white ~154, threshold >130). Under §5.3 at neutral, the
+    // -y face's red-channel light is the hemisphere mix at
+    // n=(0,-1,0) — mix(ground, zenith, 0.5) = (0.175, 0.27, 0.43),
+    // red 0.175 — plus the sun term dot(n, sun_dir_grid) =
+    // 0.4/|(0.3,-0.4,0.8)| = 0.424 at sky_factor 1: red light
+    // 0.599, x lit_factor 0.85 = 0.509, so a white texel lands
+    // at 255 x 0.509 = 129.8 (measured max on lavapipe: 130).
+    // A mip-averaged render would sit at a uniform ~65 instead.
+    // Threshold >120: below the 129.8 prediction with margin,
+    // still ~2x the averaged value the assertion exists to
+    // reject. Sharp extremes = level 0 sampled.
     let (min, max) = (*reds.iter().min().unwrap(), *reds.iter().max().unwrap());
     assert!(min < 40, "close-up: black texels must survive (min {min})");
-    assert!(max > 130, "close-up: white texels must survive (max {max})");
+    assert!(max > 120, "close-up: white texels must survive (max {max})");
     assert!(max - min > 100, "close-up contrast must stay sharp ({min}..{max})");
 }
 
