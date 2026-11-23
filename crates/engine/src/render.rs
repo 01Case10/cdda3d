@@ -721,7 +721,12 @@ impl Renderer {
             label: Some("camera-uniform-layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                // VERTEX for view_proj; FRAGMENT too since the
+                // water specular reads camera_pos in the fragment
+                // shader (latent on main: its GPU gates never ran
+                // on the VM; the Wave 2 merge is the first
+                // lavapipe pipeline creation with both readers).
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
