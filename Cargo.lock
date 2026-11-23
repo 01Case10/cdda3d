@@ -511,6 +511,7 @@ dependencies = [
  "image",
  "lighting",
  "mesher",
+ "naga",
  "pollster",
  "proto",
  "serde_json",

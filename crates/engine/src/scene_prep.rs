@@ -214,12 +214,7 @@ fn stamp_blend_tops(
                     }
                     stamps.push((
                         pos,
-                        mesher::mesh::encode_macro_blend_layer(
-                            mm[0],
-                            nbr_mm[0],
-                            dir as u32,
-                            mm[2],
-                        ),
+                        mesher::mesh::encode_macro_blend_layer(mm[0], nbr_mm[0], dir as u32, mm[2]),
                     ));
                 }
             }
@@ -310,7 +305,10 @@ pub(crate) struct PropPrep {
 ///
 /// An empty colour set (an empty prop scene) extends/creates
 /// nothing: `spec_opt` is left exactly as it was.
-pub(crate) fn prep_prop_spec(props: &crate::frame::PropScene, spec_opt: &mut Option<TextureSpec>) -> PropPrep {
+pub(crate) fn prep_prop_spec(
+    props: &crate::frame::PropScene,
+    spec_opt: &mut Option<TextureSpec>,
+) -> PropPrep {
     let colors = textures::PropColorSet::from_models(props.models.iter().map(|(_, m)| m));
     match spec_opt {
         Some(spec) => {
@@ -401,8 +399,8 @@ pub(crate) fn extend_prop_scene_with_terrain(
     props: &crate::frame::PropScene,
 ) -> Result<crate::frame::PropScene, String> {
     use std::collections::BTreeSet;
-    let table = materials::MaterialTable::load(textures_dir)
-        .map_err(|e| format!("materials: {e}"))?;
+    let table =
+        materials::MaterialTable::load(textures_dir).map_err(|e| format!("materials: {e}"))?;
     let fake = crate::rt::fake_material_ids();
     let per = scale.blocks_per_z_level as i32;
     let mut fence: BTreeSet<(i32, i32, i32)> = BTreeSet::new();
@@ -488,10 +486,7 @@ pub(crate) fn extend_prop_scene_with_terrain(
                         let mut composed = materials::PropModelData {
                             size: half.size,
                             palette: half.palette.clone(),
-                            voxels: vec![
-                                materials::PropModelData::EMPTY;
-                                half.voxels.len()
-                            ],
+                            voxels: vec![materials::PropModelData::EMPTY; half.voxels.len()],
                         };
                         for (bit, turns) in [(1u8, 0u8), (2, 1), (4, 2), (8, 3)] {
                             if mask & bit != 0 {
@@ -546,8 +541,7 @@ pub fn stamp_vehicles(
 ) -> (usize, usize) {
     let mut tiles = 0usize;
     for model in &scene.models {
-        let (occupied, _dirtied) =
-            vehicles::stamp_vehicle(map, model, world::HOUSE_MIN_GAME_Z);
+        let (occupied, _dirtied) = vehicles::stamp_vehicle(map, model, world::HOUSE_MIN_GAME_Z);
         tiles += occupied.len();
     }
     (scene.models.len(), tiles)
@@ -635,8 +629,8 @@ fn prepare_raster_fine_v(
     };
     let mut spec_opt = match textures_dir {
         Some(dir) => {
-            let table = materials::MaterialTable::load(dir)
-                .map_err(|e| format!("materials: {e}"))?;
+            let table =
+                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             Some(spec)
@@ -862,6 +856,7 @@ fn prepare_raster_lit_fine_v(
         stamp_vehicles(&mut filtered, v);
     }
     apply_visibility_mask(&mut filtered, lit);
+    apply_sky_exposure_alpha(&mut filtered, lit);
     // Skip placements whose tile lost its floor slab to the
     // mask (or to the cutaway filter): the slab block is the
     // level's bottom block at the placement tile.
@@ -885,6 +880,7 @@ fn prepare_raster_lit_fine_v(
         scale,
         world::HOUSE_MIN_GAME_Z,
     );
+    refine_sky_factor_alpha(&mut meshes, lit, scale);
     Ok((meshes, stats, spec_opt))
 }
 
@@ -923,6 +919,7 @@ fn prepare_raster_lit_v(
         stamp_vehicles(&mut filtered, v);
     }
     apply_visibility_mask(&mut filtered, lit);
+    apply_sky_exposure_alpha(&mut filtered, lit);
     if lit.bake_mode == crate::frame::BakeMode::PerBlock {
         // Per-block bake (Phase 7's second baker): every block
         // takes its own tile's presented light BEFORE meshing,
@@ -937,7 +934,8 @@ fn prepare_raster_lit_v(
             lit.env,
             world::HOUSE_MIN_GAME_Z,
         );
-        let (meshes, stats) = mesh_filtered(&baked);
+        let (mut meshes, stats) = mesh_filtered(&baked);
+        refine_sky_factor_alpha(&mut meshes, lit, scale);
         return Ok((meshes, stats, spec));
     }
     let (mut meshes, stats) = mesh_filtered(&filtered);
@@ -948,17 +946,116 @@ fn prepare_raster_lit_v(
         scale,
         world::HOUSE_MIN_GAME_Z,
     );
+    refine_sky_factor_alpha(&mut meshes, lit, scale);
     Ok((meshes, stats, spec))
+}
+
+/// Phase 10 slice 10.3 (§5.2 spike, decision 4A): stamp the
+/// per-tile sky factor into the block colour's alpha, BEFORE
+/// meshing. Alpha is unused for shading in the opaque/cutout
+/// passes (it is 1.0 there today); the transparent pass keeps
+/// its material alpha and is NOT stamped (its sky factor is the
+/// global one in v1 — the §5.2 route is scoped to the opaque
+/// pass in the plan's own text). Because the greedy mesher's
+/// merge key is the whole `Block` (colour included), a factor
+/// boundary breaks merges exactly like a colour boundary —
+/// the spike gate proves this at mesher level. Both bakers
+/// preserve alpha (`shade_rgba` keeps `albedo[3]`), so the
+/// factor survives the bake into the vertex colour, where the
+/// raster shader reads it. No exposure data on the scene =
+/// no stamping (alpha stays 1.0, GI applies globally).
+pub fn apply_sky_exposure_alpha(
+    map: &mut mesher::chunk::ChunkMap,
+    lit: &crate::frame::LightingScene,
+) {
+    let Some(exposure) = &lit.sky_exposure else {
+        return;
+    };
+    let per = map.scale.blocks_per_z_level.max(1) as i32;
+    for chunk in map.chunks.values_mut() {
+        let origin = chunk.origin();
+        for z in 0..chunk.grid.size[2] {
+            let game_z = lit.min_game_z + (z as i32) / per;
+            for y in 0..chunk.grid.size[1] {
+                for x in 0..chunk.grid.size[0] {
+                    let b = chunk.grid.get(x as i32, y as i32, z as i32);
+                    if b.is_air() || b.pass == mesher::block::Pass::Transparent {
+                        continue;
+                    }
+                    let tile = [origin[0] + x as i32, origin[1] + y as i32, game_z];
+                    let mut nb = b;
+                    nb.color[3] = exposure.factor(tile);
+                    chunk.grid.set(x, y, z, nb);
+                }
+            }
+        }
+        chunk.dirty = true;
+    }
+}
+
+/// Phase 10 slice 10.3: per-vertex refinement of the stamped
+/// sky factor, run AFTER the bake (which preserves alpha).
+/// The block stamp keys the factor to the block's OWN tile; a
+/// wall block on the perimeter is exposed, but its INNER face
+/// fronts a sheltered air tile and must not take sky GI. This
+/// pass mirrors `lighting::bake_pass_meshes`' own air-side
+/// sampling exactly: side faces take the factor of the air tile
+/// in front of the face, top/bottom faces of their own tile.
+/// The transparent mesh is skipped (material alpha owns that
+/// channel). Vertices of fine prop meshes are included — the
+/// rule is position-based, like the bake itself (the 9.6
+/// caveat applies unchanged).
+pub fn refine_sky_factor_alpha(
+    meshes: &mut PassMeshes,
+    lit: &crate::frame::LightingScene,
+    scale: mesher::scale::WorldScale,
+) {
+    let Some(exposure) = &lit.sky_exposure else {
+        return;
+    };
+    let bs = scale.block_size;
+    let per = scale.blocks_per_z_level.max(1) as i32;
+    for (pass, mesh) in meshes.meshes.iter_mut().enumerate() {
+        if pass == mesher::block::Pass::Transparent.index() {
+            continue;
+        }
+        for i in 0..mesh.positions.len() {
+            let p = mesh.positions[i];
+            let n = mesh.normals[i];
+            // World -> grid (the bake's own conversion).
+            let gp = [p[0] / bs, -p[2] / bs, p[1] / bs];
+            let gn = [n[0], -n[2], n[1]];
+            let di = lighting::FACE_DIRS
+                .iter()
+                .position(|d| d[0] as f32 == gn[0] && d[1] as f32 == gn[1] && d[2] as f32 == gn[2])
+                .unwrap_or(4);
+            let d = lighting::FACE_DIRS[di];
+            let axis = (0..3).find(|&a| d[a] != 0).unwrap();
+            let sp = [
+                gp[0] - gn[0] * 0.5,
+                gp[1] - gn[1] * 0.5,
+                gp[2] - gn[2] * 0.5,
+            ];
+            let solid_tile = [
+                sp[0].floor() as i32,
+                sp[1].floor() as i32,
+                (sp[2].floor() as i32).div_euclid(per) + lit.min_game_z,
+            ];
+            let sample_tile = if axis == 2 {
+                solid_tile
+            } else {
+                [solid_tile[0] + d[0], solid_tile[1] + d[1], solid_tile[2]]
+            };
+            mesh.colors[i][3] = exposure.factor(sample_tile);
+        }
+    }
 }
 
 /// Drop every block whose tile the shared visibility mask marks
 /// `Hidden` (Phase 7 §12 step 3: the mask applied in the filter
 /// step). Tiles are addressed in game coordinates: chunk origin
 /// (block space) + block offset, z from the block's z-level.
-pub fn apply_visibility_mask(
-    map: &mut mesher::chunk::ChunkMap,
-    lit: &crate::frame::LightingScene,
-) {
+pub fn apply_visibility_mask(map: &mut mesher::chunk::ChunkMap, lit: &crate::frame::LightingScene) {
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = map.scale.blocks_per_z_level.max(1) as i32;
     for chunk in map.chunks.values_mut() {
