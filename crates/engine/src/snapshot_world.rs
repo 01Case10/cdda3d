@@ -44,7 +44,7 @@ use mesher::chunk::ChunkMap;
 use mesher::fine::{FineLayer, FineVolume, ModelCells, StampError, StampReport, FINE};
 use mesher::scale::WorldScale;
 
-use crate::materials::{ModelKind, PropModelData};
+use crate::materials::{ModelKind, ModelSurface, PropModelData};
 use crate::textures::PropColorSet;
 
 /// One vertical column of terrain def ids, bottom first:
@@ -496,7 +496,7 @@ pub fn stamp_terrain<'m>(
     table: &DefTable,
     columns: &[ColumnSpec],
     scale: WorldScale,
-    resolve: &dyn Fn(&str) -> Option<(&'m PropModelData, ModelKind)>,
+    resolve: &dyn Fn(&str) -> Option<(&'m PropModelData, ModelKind, ModelSurface)>,
     block_for: &dyn Fn([u8; 3]) -> Block,
 ) -> Result<StampReport, StampError> {
     use std::collections::HashMap;
@@ -516,6 +516,9 @@ pub fn stamp_terrain<'m>(
         level: u32,
         def: u32,
         kind: ModelKind,
+        /// The model's surface treatment (Ground
+        /// models only today: puddle water).
+        surface: ModelSurface,
         /// Same-def neighbour mask (Fence only).
         mask: u8,
     }
@@ -542,7 +545,7 @@ pub fn stamp_terrain<'m>(
                 skipped += 1;
                 continue;
             };
-            let Some((model, kind)) = resolve(string_id) else {
+            let Some((model, kind, surface)) = resolve(string_id) else {
                 skipped += 1;
                 continue;
             };
@@ -579,6 +582,7 @@ pub fn stamp_terrain<'m>(
                 level: i as u32,
                 def,
                 kind,
+                surface,
                 mask,
             });
         }
@@ -595,7 +599,7 @@ pub fn stamp_terrain<'m>(
             .def(job.def)
             .and_then(|d| d.string_id.as_deref())
             .expect("job defs resolved during validation");
-        let (model, _) = resolve(string_id).expect("job models resolved during validation");
+        let (model, _, _) = resolve(string_id).expect("job models resolved during validation");
         match job.kind {
             ModelKind::Ground => {
                 let z0 = scale.level_base_block(job.level) as i32 * FINE;
@@ -606,11 +610,26 @@ pub fn stamp_terrain<'m>(
                     for mz in 0..d {
                         for mx in 0..w {
                             if let Some(rgb) = model.get(mx, my, mz) {
+                                let mut block = block_for(rgb);
+                                // Water surface (terrain
+                                // item 2 follow-up): the
+                                // model's top cell in each
+                                // column carries the water
+                                // alpha marker, so both
+                                // renderers shade its up
+                                // face as water. Only the
+                                // top cell -- the surface --
+                                // never the fill beneath.
+                                if job.surface == ModelSurface::Water
+                                    && model.get(mx, my + 1, mz).is_none()
+                                {
+                                    block.color[3] = mesher::block::WATER_ALPHA;
+                                }
                                 volume.set(
                                     mx as i32,
                                     (FINE - d as i32) + mz as i32,
                                     my as i32,
-                                    Some(block_for(rgb)),
+                                    Some(block),
                                 );
                                 cells += 1;
                             }
@@ -695,7 +714,7 @@ pub fn stamp_snapshot_terrain<'m>(
     defs: &proto::TileDefsT,
     snapshot: &proto::SnapshotT,
     scale: WorldScale,
-    resolve: &dyn Fn(&str) -> Option<(&'m PropModelData, ModelKind)>,
+    resolve: &dyn Fn(&str) -> Option<(&'m PropModelData, ModelKind, ModelSurface)>,
     block_for: &dyn Fn([u8; 3]) -> Block,
 ) -> Result<StampReport, StampError> {
     let table = DefTable::from_tiledefs(defs);

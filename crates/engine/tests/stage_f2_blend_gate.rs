@@ -527,6 +527,7 @@ fn render_raster(gpu: &Gpu, map: &ChunkMap, spec: &treebuild::render::TextureSpe
     renderer.set_view_projection(
         &gpu.queue,
         cam.view_projection(SIZE.0 as f32 / SIZE.1 as f32),
+        cam.eye(),
     );
     renderer.draw(&gpu.device, &gpu.queue, &gpu_meshes, &color_view, &depth_view);
     gpu.device.poll(wgpu::Maintain::Wait);

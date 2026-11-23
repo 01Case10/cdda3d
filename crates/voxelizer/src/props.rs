@@ -7605,6 +7605,32 @@ pub enum TerrainModelKind {
     Standing,
 }
 
+/// A special surface treatment for a terrain model,
+/// recorded in the v2 `models` table alongside `kind`
+/// (terrain item 2 follow-up, 2026-11-23, Joey's
+/// water-shader call): the engine shades the model's
+/// surface cells with the named treatment in both
+/// renderers instead of the plain diffuse path. Absence
+/// of the field means no treatment, so older readers
+/// are unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerrainSurface {
+    /// A water surface: specular highlight + fresnel
+    /// sky sheen on the model's top cells (the stamped
+    /// cells carry the water alpha marker, see
+    /// `mesher::block::WATER_ALPHA`).
+    Water,
+}
+
+impl TerrainSurface {
+    /// The `models` table string for this surface.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TerrainSurface::Water => "water",
+        }
+    }
+}
+
 impl TerrainModelKind {
     /// The `models` table string for this kind.
     pub fn as_str(&self) -> &'static str {
@@ -7619,15 +7645,21 @@ impl TerrainModelKind {
 pub fn terrain_model_for(
     id: &str,
     sprite: &RgbaImage,
-) -> Option<(PropModel, TerrainModelKind)> {
+    underlay: Option<&RgbaImage>,
+) -> Option<(PropModel, TerrainModelKind, Option<TerrainSurface>)> {
+    // The underlay is the entry's bg sprite (the
+    // ground a tile is drawn over). Only builders
+    // whose sprite is an overlay on that ground use
+    // it (puddles, terrain item 2); every other
+    // builder reads the FG alone, as before.
     if !id.starts_with("t_") {
         return None;
     }
     match id {
-        "t_tree" => return Some((terrain_tree(sprite), TerrainModelKind::Standing)),
-        "t_chainfence" => return Some((terrain_chainfence(sprite), TerrainModelKind::Fence)),
+        "t_tree" => return Some((terrain_tree(sprite), TerrainModelKind::Standing, None)),
+        "t_chainfence" => return Some((terrain_chainfence(sprite), TerrainModelKind::Fence, None)),
         _ if id.starts_with("t_chainfence_season") => {
-            return Some((terrain_chainfence(sprite), TerrainModelKind::Fence))
+            return Some((terrain_chainfence(sprite), TerrainModelKind::Fence, None))
         }
         _ => {}
     }
@@ -7643,7 +7675,7 @@ pub fn terrain_model_for(
         if s.contains("fencegate") && !s.contains("privacy") {
             // A gate in a fence line is a fence segment,
             // not a door: panel builder at fence height.
-            return Some((terrain_fence_panel(sprite), TerrainModelKind::Fence));
+            return Some((terrain_fence_panel(sprite), TerrainModelKind::Fence, None));
         }
         let open = s.contains("open") || s.ends_with("_o") || s.contains("_o_");
         let style = if s.ends_with("frame") {
@@ -7663,7 +7695,7 @@ pub fn terrain_model_for(
         } else {
             DoorStyle::Closed
         };
-        return Some((terrain_door(sprite, style), TerrainModelKind::Standing));
+        return Some((terrain_door(sprite, style), TerrainModelKind::Standing, None));
     }
     if s.contains("tree")
         || s.contains("shrub")
@@ -7681,16 +7713,16 @@ pub fn terrain_model_for(
             // 2026-11-23): its sprite's ~7 thin culms fused
             // into 2 under the shared clustering.
             let dense = s.starts_with("bamboo_dead");
-            return Some((bamboo_model(sprite, dense), TerrainModelKind::Standing));
+            return Some((bamboo_model(sprite, dense), TerrainModelKind::Standing, None));
         }
         if s.contains("fungal") {
             // A fungal young tree is a solid pale
             // spire (bulbous head, narrow waist, flared
             // base) -- per-layer discs, not branches.
-            return Some((disc_model(sprite, 76, false), TerrainModelKind::Standing));
+            return Some((disc_model(sprite, 76, false), TerrainModelKind::Standing, None));
         }
         if s.contains("fern") {
-            return Some((fern_model(sprite), TerrainModelKind::Standing));
+            return Some((fern_model(sprite), TerrainModelKind::Standing, None));
         }
         let base = if s.contains("tree") || s.contains("pine") {
             76
@@ -7701,7 +7733,7 @@ pub fn terrain_model_for(
         } else {
             52
         };
-        return Some((vegetation_model(sprite, base), TerrainModelKind::Standing));
+        return Some((vegetation_model(sprite, base), TerrainModelKind::Standing, None));
     }
     if s.contains("fence")
         || s.contains("splitrail")
@@ -7710,24 +7742,24 @@ pub fn terrain_model_for(
         || s.contains("chaingate")
         || s.contains("chickenwire_gate")
     {
-        return Some((terrain_fence_panel(sprite), TerrainModelKind::Fence));
+        return Some((terrain_fence_panel(sprite), TerrainModelKind::Fence, None));
     }
     if s.contains("window") {
         // Empty windows and bare frames have no pane:
         // the builder's glass plane would fill the
         // opening with the sprite's interior colour.
         let pane = !(s.contains("empty") || s.ends_with("frame"));
-        return Some((terrain_window(sprite, pane), TerrainModelKind::Standing));
+        return Some((terrain_window(sprite, pane), TerrainModelKind::Standing, None));
     }
     if s.contains("wall") {
         let h = if s.contains("half") { 48 } else { 96 };
-        return Some((terrain_box(sprite, h), TerrainModelKind::Standing));
+        return Some((terrain_box(sprite, h), TerrainModelKind::Standing, None));
     }
     if s.contains("tarptent") || s.contains("improvised_shelter") {
-        return Some((terrain_tent(sprite), TerrainModelKind::Standing));
+        return Some((terrain_tent(sprite), TerrainModelKind::Standing, None));
     }
     if s.contains("stairs") || s.contains("ladder") || s.starts_with("ramp") {
-        return Some((terrain_stairs(sprite, s.contains("down")), TerrainModelKind::Standing));
+        return Some((terrain_stairs(sprite, s.contains("down")), TerrainModelKind::Standing, None));
     }
     // "water" objects are not liquid terrain: a water
     // cooler, a hand pump and a solid water cube are
@@ -7774,18 +7806,33 @@ pub fn terrain_model_for(
         || s.contains("railroad_rubble")
         || s.contains("roof")
         || s.contains("chasm");
+    if s.starts_with("puddle") {
+        // Terrain item 2 (2026-11-23, Joey's call A):
+        // a puddle is a blob ON its bg ground, not a
+        // ground in itself. With the underlay the blob
+        // builder composes the two; without it (debug
+        // callers with only the FG) fall through to
+        // the plain ground model below.
+        if let Some(bg) = underlay {
+            return Some((
+                puddle_model(sprite, bg),
+                TerrainModelKind::Ground,
+                Some(TerrainSurface::Water),
+            ));
+        }
+    }
     if ground {
         let mound = s.contains("mound");
-        return Some((terrain_ground(sprite, liquid, mound), TerrainModelKind::Ground));
+        return Some((terrain_ground(sprite, liquid, mound), TerrainModelKind::Ground, None));
     }
     // Terrain item 3 (2026-11-23, Joey: hand-build all): manual primitive
     // models for the pump / vat / playground / column / signal families,
     // dispatched before the silhouette fallback. Sprite studies and the
     // per-family decisions are in hand-build-prep-2026-11-23.md.
     if let Some(m) = terrain_manual_model(id) {
-        return Some((m, TerrainModelKind::Standing));
+        return Some((m, TerrainModelKind::Standing, None));
     }
-    terrain_silhouette(sprite).map(|m| (m, TerrainModelKind::Standing))
+    terrain_silhouette(sprite).map(|m| (m, TerrainModelKind::Standing, None))
 }
 
 /// Sparse-stroke vegetation (bamboo and loose
@@ -8888,6 +8935,97 @@ fn terrain_window(sprite: &RgbaImage, pane: bool) -> PropModel {
                 let c = face(x * sw / 32, y);
                 for z in [15, 16] {
                     m.set(x as u32, y as u32, z as u32, Some(c));
+                }
+            }
+        }
+    }
+    m
+}
+
+/// A puddle (terrain item 2, 2026-11-23): the bg
+/// ground slab with the FG's alpha footprint flattened
+/// into ONE level water surface on top of it.
+///
+/// Pixel study (2026-11-23): the FG is a top-down
+/// mud-brown irregular oval (32x32, 892/1024 px opaque,
+/// all four corners transparent, darker wet rim along
+/// the top edge, near-uniform mud centre (90,74,55));
+/// the entry's bg is the ground it sits in (grass,
+/// snow_shallow_center in winter). The old route ran
+/// the FG through `terrain_ground` alone, whose modal
+/// fill turned the oval into a full 32x32 dirt slab.
+///
+/// Shape history: v1 raised the footprint as a shallow
+/// dome (+1 rim / +2 interior) -- Joey's verdict was
+/// "a hole in the dirt": a raised matte-brown dome
+/// reads as a dirt mound, and the sprite carries no
+/// water colour to rescue it. Joey's call: keep the
+/// sprite's colours and geometry honest -- a FLAT,
+/// level surface -- and let a water shader carry the
+/// water read (specular + fresnel in both renderers,
+/// driven by the `surface: "water"` table field this
+/// builder's route records; the engine marks the
+/// surface cells at stamp time). So: footprint columns
+/// are flattened to a single level (the highest base
+/// top inside the footprint, so the surface is never
+/// buried by the ground's own relief), the top cell of
+/// each footprint column carries the FG's own colour,
+/// and columns raised to the level are filled beneath
+/// with shaded mud. Outside the footprint the base is
+/// the bg ground slab verbatim. Front/back/left/right
+/// carry no drawn detail -- the sprite is a pure
+/// top-down ground feature.
+fn puddle_model(fg: &RgbaImage, bg: &RgbaImage) -> PropModel {
+    let base = terrain_ground(bg, false, false);
+    let mut m = PropModel::new(base.size);
+    for y in 0..base.size[1] {
+        for z in 0..32u32 {
+            for x in 0..32u32 {
+                if let Some(c) = base.get(x, y, z) {
+                    m.set(x, y, z, Some(c));
+                }
+            }
+        }
+    }
+    let base_top = |x: u32, z: u32| -> u32 {
+        (0..base.size[1])
+            .rev()
+            .find(|&y| base.get(x, y, z).is_some())
+            .unwrap_or(0)
+    };
+    let (sw, sh) = (fg.width() as i32, fg.height() as i32);
+    let sample = |x: i32, z: i32| -> Rgba<u8> {
+        *fg.get_pixel(
+            (x * sw / 32).clamp(0, sw - 1) as u32,
+            (z * sh / 32).clamp(0, sh - 1) as u32,
+        )
+    };
+    let mask = |x: i32, z: i32| -> bool {
+        x >= 0 && z >= 0 && x < 32 && z < 32 && sample(x, z)[3] >= 128
+    };
+    // The water level: the highest ground top inside
+    // the footprint.
+    let mut level = 0u32;
+    for z in 0..32i32 {
+        for x in 0..32i32 {
+            if mask(x, z) {
+                level = level.max(base_top(x as u32, z as u32));
+            }
+        }
+    }
+    for z in 0..32i32 {
+        for x in 0..32i32 {
+            if !mask(x, z) {
+                continue;
+            }
+            let c = sample(x, z);
+            for y in 0..base.size[1] {
+                if y > level {
+                    m.set(x as u32, y, z as u32, None);
+                } else if y == level {
+                    m.set(x as u32, y, z as u32, Some(c));
+                } else if m.get(x as u32, y, z as u32).is_none() {
+                    m.set(x as u32, y, z as u32, Some(shade(c, 0.72)));
                 }
             }
         }

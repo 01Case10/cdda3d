@@ -44,6 +44,7 @@ fn material(multitile: bool, subtile_layers: &[(&str, usize)]) -> Material {
         macro_: None,
         model: None,
         model_kind: engine::materials::ModelKind::Standing,
+        model_surface: engine::materials::ModelSurface::None,
         shore_layers: BTreeMap::new(),
     }
 }

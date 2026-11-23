@@ -26,7 +26,7 @@ fn model(id: &str) -> props::PropModel {
     let sprite = terrain_fg_image(&ts, entry)
         .or_else(|| composite_entry(&ts, entry))
         .expect("sprite");
-    let (m, kind) = props::terrain_model_for(id, &sprite).expect("terrain model");
+    let (m, kind, _) = props::terrain_model_for(id, &sprite, None).expect("terrain model");
     assert_eq!(kind, props::TerrainModelKind::Standing, "{id}: kind");
     m
 }

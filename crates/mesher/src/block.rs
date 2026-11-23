@@ -35,6 +35,21 @@ pub struct Block {
 
 pub const AIR_ID: u32 = 0;
 
+/// Water-surface marker (terrain item 2 follow-up,
+/// 2026-11-23): an opaque block whose colour alpha is
+/// exactly this value is a water-surface cell -- the
+/// engine stamps it on the top cells of a model whose
+/// v2 `models` entry records `surface: "water"`
+/// (puddles), and both renderers shade its up faces
+/// with the water treatment (specular + fresnel sky
+/// sheen) instead of plain diffuse. Alpha is otherwise
+/// unused for opaque blocks (flat shading writes 1.0),
+/// and the value sits far from 1.0 and from the
+/// transparent pass's range, so no existing block can
+/// collide with it. The raster shader tests the range
+/// (0.30, 0.40); keep the three in sync.
+pub const WATER_ALPHA: f32 = 0.35;
+
 impl Block {
     pub const AIR: Block = Block {
         id: AIR_ID,
@@ -45,6 +60,12 @@ impl Block {
 
     pub fn is_air(self) -> bool {
         self.id == AIR_ID
+    }
+
+    /// True for a water-surface cell (see
+    /// [`WATER_ALPHA`]).
+    pub fn is_water_surface(self) -> bool {
+        self.pass == Pass::Opaque && (self.color[3] - WATER_ALPHA).abs() < 0.01
     }
 }
 

@@ -292,11 +292,8 @@ fn gate_2g_2_windowed_remesh_preparation() {
     });
     let color_view = color.create_view(&Default::default());
     let depth_view = engine::render::create_depth_view(&device, (64, 64));
-    renderer.set_view_projection(
-        &queue,
-        engine::camera::OrbitCamera::new(glam::Vec3::new(6.0, 1.0, -6.0))
-            .view_projection(1.0),
-    );
+    let cam = engine::camera::OrbitCamera::new(glam::Vec3::new(6.0, 1.0, -6.0));
+    renderer.set_view_projection(&queue, cam.view_projection(1.0), cam.eye());
     renderer.draw(&device, &queue, &gpu_meshes, &color_view, &depth_view);
     device.poll(wgpu::Maintain::Wait);
 }

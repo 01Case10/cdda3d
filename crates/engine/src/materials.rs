@@ -47,6 +47,25 @@ use std::path::Path;
 /// the voxelizer in the v2 `models` table for terrain
 /// materials. Furniture models and models from files
 /// written before kinds were recorded are `Standing`.
+/// A special surface treatment for a material's prop
+/// model, recorded by the voxelizer in the v2 `models`
+/// table (`surface` field, terrain item 2 follow-up,
+/// 2026-11-23). Models from files written before
+/// surfaces were recorded are `None` (plain diffuse).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModelSurface {
+    /// No treatment: the model shades like everything
+    /// else.
+    #[default]
+    None,
+    /// A water surface: at stamp time the model's top
+    /// cells are marked with
+    /// `mesher::block::WATER_ALPHA`, and both renderers
+    /// give their up faces a specular highlight and a
+    /// fresnel sky sheen.
+    Water,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ModelKind {
     /// The model IS the tile's floor: it replaces the
@@ -96,6 +115,11 @@ pub struct Material {
     /// the snapshot path. `Standing` for furniture and for
     /// models whose table entry carries no `kind`.
     pub model_kind: ModelKind,
+    /// Surface treatment for [`Material::model`]
+    /// (`surface` field of its table entry). `None` for
+    /// furniture and for models whose entry carries no
+    /// `surface`.
+    pub model_surface: ModelSurface,
     /// Stage F part 2: this material's shoreline variants
     /// (materials.json v2 `shores` table): 8-neighbor water mask
     /// (bit order canonical in `mesher::connect`) -> shore layer
@@ -361,7 +385,7 @@ impl MaterialTable {
         // Anything else (notably a newer version) is a hard error —
         // silently misreading a future format would shade wrong.
         let mut macro_by_index: BTreeMap<usize, MacroEntry> = BTreeMap::new();
-        let mut model_by_index: BTreeMap<usize, (PropModelData, ModelKind)> =
+        let mut model_by_index: BTreeMap<usize, (PropModelData, ModelKind, ModelSurface)> =
             BTreeMap::new();
         let mut shore_by_index: BTreeMap<usize, BTreeMap<u8, usize>> = BTreeMap::new();
         let mat_array: Vec<serde_json::Value> = if mats.is_array() {
@@ -407,7 +431,19 @@ impl MaterialTable {
                             ));
                         }
                     };
-                    model_by_index.insert(mi, (PropModelData::parse(e)?, kind));
+                    // Surface treatment, same additive
+                    // convention: absent means none, an
+                    // unknown string fails the load.
+                    let surface = match e["surface"].as_str() {
+                        None => ModelSurface::None,
+                        Some("water") => ModelSurface::Water,
+                        Some(other) => {
+                            return Err(format!(
+                                "materials.json models entry: unknown surface {other:?}"
+                            ));
+                        }
+                    };
+                    model_by_index.insert(mi, (PropModelData::parse(e)?, kind, surface));
                 }
             }
             // Stage F part 2: the `shores` table is optional —
@@ -459,10 +495,14 @@ impl MaterialTable {
                 macro_: macro_by_index.get(&get("material_index")).copied(),
                 model: model_by_index
                     .get(&get("material_index"))
-                    .map(|(m, _)| m.clone()),
+                    .map(|(m, _, _)| m.clone()),
                 model_kind: model_by_index
                     .get(&get("material_index"))
-                    .map(|(_, k)| *k)
+                    .map(|(_, k, _)| *k)
+                    .unwrap_or_default(),
+                model_surface: model_by_index
+                    .get(&get("material_index"))
+                    .map(|(_, _, s)| *s)
                     .unwrap_or_default(),
                 shore_layers: shore_by_index
                     .get(&get("material_index"))
@@ -665,6 +705,46 @@ mod tests {
         write_fixture(&dir, &json, false);
         let err = MaterialTable::load(&dir).unwrap_err();
         assert!(err.contains("unknown kind"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loads_v2_model_surfaces() {
+        let dir =
+            std::env::temp_dir().join(format!("engine_mat_surface_{}", std::process::id()));
+        let model = |surface: Option<&str>| match surface {
+            Some(s) => format!(
+                r#"{{"material_index":0,"size":[1,1,1],"palette":[[9,9,9]],"voxels":"0000","kind":"ground","surface":"{s}"}}"#
+            ),
+            None => {
+                r#"{"material_index":0,"size":[1,1,1],"palette":[[9,9,9]],"voxels":"0000","kind":"ground"}"#
+                    .to_string()
+            }
+        };
+        for (surface, want) in [
+            (Some("water"), ModelSurface::Water),
+            (None, ModelSurface::None),
+        ] {
+            let json = format!(
+                r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{}]}}"#,
+                model(surface)
+            );
+            write_fixture(&dir, &json, false);
+            let t = MaterialTable::load(&dir).unwrap();
+            assert_eq!(
+                t.get("t_grass").unwrap().model_surface,
+                want,
+                "surface {surface:?}"
+            );
+        }
+        // Unknown surface fails the load.
+        let json = format!(
+            r#"{{"version":2,"materials":[{ONE_MAT}],"macros":[],"models":[{}]}}"#,
+            model(Some("lava"))
+        );
+        write_fixture(&dir, &json, false);
+        let err = MaterialTable::load(&dir).unwrap_err();
+        assert!(err.contains("unknown surface"), "got: {err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

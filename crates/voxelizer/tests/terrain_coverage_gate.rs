@@ -53,8 +53,18 @@ fn terrain_coverage() {
             continue;
         };
         total += 1;
-        match props::terrain_model_for(id, &sprite) {
-            Some((m, kind)) if m.voxels.iter().any(|v| v.is_some()) => {
+        // Mirror the emission: puddles also get
+        // their bg underlay (terrain item 2).
+        let underlay = if id.starts_with("t_puddle") {
+            entry
+                .bg
+                .as_ref()
+                .and_then(|r| load_sprite_image(&ts, entry, r))
+        } else {
+            None
+        };
+        match props::terrain_model_for(id, &sprite, underlay.as_ref()) {
+            Some((m, kind, _surface)) if m.voxels.iter().any(|v| v.is_some()) => {
                 // Terrain wiring (2026-11-18): the kind the
                 // engine seats by is part of the contract --
                 // pin the three families' representatives.
@@ -144,7 +154,7 @@ fn bamboo_dead_is_dense_and_live_is_unchanged() {
         n
     };
     for id in ["t_bamboo_dead", "t_bamboo_dead_season_winter"] {
-        let (m, _) = props::terrain_model_for(id, &load(id)).expect("dead bamboo model");
+        let (m, _, _) = props::terrain_model_for(id, &load(id), None).expect("dead bamboo model");
         let n = components_at(&m, 20);
         assert!(
             n >= 6,
@@ -152,7 +162,7 @@ fn bamboo_dead_is_dense_and_live_is_unchanged() {
         );
     }
     let mut hash_of = |id: &str| -> u64 {
-        let (m, _) = props::terrain_model_for(id, &load(id)).expect("live bamboo model");
+        let (m, _, _) = props::terrain_model_for(id, &load(id), None).expect("live bamboo model");
         let mut hash: u64 = 0xcbf29ce484222325;
         for v in &m.voxels {
             let bs: &[u8] = match v {

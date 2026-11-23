@@ -22,7 +22,7 @@
 //! the wiring is what is under test, not the builders
 //! (those are the voxelizer coverage gate's business).
 
-use engine::materials::{ModelKind, PropModelData};
+use engine::materials::{ModelKind, ModelSurface, PropModelData};
 use engine::snapshot_world::{
     build_snapshot_world, stamp_furniture, stamp_snapshot_terrain, FurniturePlacement,
     PropModelCells,
@@ -116,18 +116,18 @@ impl Fixture {
         }
     }
 
-    fn resolve(&self, id: &str) -> Option<(&PropModelData, ModelKind)> {
+    fn resolve(&self, id: &str) -> Option<(&PropModelData, ModelKind, ModelSurface)> {
         match id {
-            "t_grass" => Some((&self.grass, ModelKind::Ground)),
-            "t_floor" => Some((&self.floor, ModelKind::Ground)),
+            "t_grass" => Some((&self.grass, ModelKind::Ground, ModelSurface::None)),
+            "t_floor" => Some((&self.floor, ModelKind::Ground, ModelSurface::None)),
             // Deliberately Standing: a RoofOf floor seats
             // as Ground whatever kind the material carries
             // (the roof model is a floor slab by
             // construction) — the gate proves the rule.
-            "t_shingle_flat_roof" => Some((&self.roof, ModelKind::Standing)),
-            "t_tree" => Some((&self.tree, ModelKind::Standing)),
-            "t_chainfence" => Some((&self.fence, ModelKind::Fence)),
-            "t_wall" => Some((&self.wall, ModelKind::Standing)),
+            "t_shingle_flat_roof" => Some((&self.roof, ModelKind::Standing, ModelSurface::None)),
+            "t_tree" => Some((&self.tree, ModelKind::Standing, ModelSurface::None)),
+            "t_chainfence" => Some((&self.fence, ModelKind::Fence, ModelSurface::None)),
+            "t_wall" => Some((&self.wall, ModelKind::Standing, ModelSurface::None)),
             _ => None,
         }
     }
@@ -354,7 +354,7 @@ fn oversize_terrain_model_fails_before_any_stamp() {
         voxels: vec![0; 33 * 10 * 32],
     };
     let resolve = |id: &str| match id {
-        "t_grass" => Some((&wide, ModelKind::Ground)),
+        "t_grass" => Some((&wide, ModelKind::Ground, ModelSurface::None)),
         other => fx.resolve(other),
     };
     let err = stamp_snapshot_terrain(
