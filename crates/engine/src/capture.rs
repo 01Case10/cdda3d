@@ -87,6 +87,14 @@ pub struct CaptureArgs {
     /// for the visibility mask + bake. `None` = the pre-2h
     /// unlit render, byte-for-byte.
     pub lighting: Option<crate::frame::LightingScene>,
+    /// Phase 10 (§6): sky scene (game environment + clock) the
+    /// frame's `SkyUniforms` are evaluated from — the raster sky
+    /// pass + GI (slice 10.3) and the RT sky/GI (slice 10.4) both
+    /// read this one field. `None` = the §6 neutral default
+    /// (`SkyUniforms::neutral()`): legacy background stops and
+    /// legacy-equivalent GI, so pre-Phase-10 captures keep their
+    /// geometry shading byte-for-byte.
+    pub sky: Option<crate::frame::SkyScene>,
     /// Phase 2h.2: billboard scene drawn between the fields and
     /// the post. `None` = no billboard pass.
     pub billboards: Option<crate::frame::BillboardScene>,
@@ -137,6 +145,7 @@ impl Default for CaptureArgs {
             out: PathBuf::from("captures/house.png"),
             cutaway_z: 1,
             lighting: None,
+            sky: None,
             billboards: None,
             ui: None,
             vehicles: None,
@@ -248,8 +257,7 @@ async fn run_capture_async(args: &CaptureArgs) -> Result<CaptureOutcome, Capture
         .map_err(|e| CaptureError::Device(e.to_string()))?;
 
     let frame = crate::frame::render_frame(&device, &queue, args)?;
-    let (img, distinct) =
-        crate::frame::readback_rgba(&device, &queue, &frame.texture, frame.size)?;
+    let (img, distinct) = crate::frame::readback_rgba(&device, &queue, &frame.texture, frame.size)?;
     save_capture(args, &img)?;
     Ok(CaptureOutcome {
         out: args.out.clone(),

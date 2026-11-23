@@ -10,20 +10,76 @@
 //! array (group 1, bound via `Renderer::set_textures`; a dummy 1-layer
 //! white set is bound until then), while vertices with the flat
 //! sentinel layer take exactly the pre-2f flat shading path.
+//!
+//! Phase 10 slice 10.3: a fullscreen sky pass (one triangle,
+//! depth-write off, drawn first) fills the background with the
+//! shared `lighting::SKY_WGSL` `sky_color`, and the world
+//! pipelines shade with the §5.2 sky GI (hemisphere + sun + moon
+//! from the frame's `SkyUniforms`, group 2) instead of the
+//! hardcoded directional shade — see `sky_gi_factor` in the
+//! world shader and [`gi_uniforms_for`] for the neutral
+//! calibration that keeps the default frame byte-identical.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
+use lighting::{SkyUniforms, SKY_WGSL};
 use mesher::block::Pass;
 use mesher::mesh::{Mesh, PassMeshes, FLAT_LAYER};
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub const CAPTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+/// The pre-Phase-10 fixed clear colour. Since slice 10.3 the
+/// world pass no longer clears to it (the sky pass paints the
+/// background and clears to the frame's horizon colour, whose
+/// neutral value IS this colour — `lighting::LEGACY_HORIZON`);
+/// the constant stays as the renderer's initial clear colour
+/// before the first `set_sky`.
 pub const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     r: 0.08,
     g: 0.10,
     b: 0.14,
     a: 1.0,
 };
+
+/// The GI uniform block the WORLD pipelines bind, derived from
+/// the frame's sky block. For every non-neutral sky this is the
+/// frame's block verbatim (one sun everywhere, §5.1). For
+/// `SkyUniforms::neutral()` it is the *calibrated* expression of
+/// the pre-Phase-10 raster shade in §5.2 GI parameters —
+/// hemisphere constant 0.45, sun 0.55 × white along the legacy
+/// world-space light direction (0.3, 0.8, 0.4), moon zero — so
+/// `hemisphere·ambient + sun·ndl` ≡ `0.45 + 0.55·ndl` for every
+/// normal and the §6 neutral frame reproduces the legacy
+/// geometry shading exactly. (The sky PASS always binds the raw
+/// block: at neutral its gradient is the legacy RT sky stops,
+/// which is the §6 background change.)
+pub fn gi_uniforms_for(sky: &SkyUniforms) -> SkyUniforms {
+    if *sky != SkyUniforms::neutral() {
+        return *sky;
+    }
+    let l = glam::Vec3::new(0.3, 0.8, 0.4).normalize();
+    SkyUniforms {
+        sun_dir: [l.x, l.y, l.z, sky.sun_dir[3]],
+        sun_color: [0.55, 0.55, 0.55, sky.sun_color[3]],
+        moon_dir: sky.moon_dir,
+        moon_color: [0.0, 0.0, 0.0, sky.moon_color[3]],
+        zenith: [0.45, 0.45, 0.45, 1.0],
+        horizon: sky.horizon,
+        ground_col: [0.45, 0.45, 0.45, sky.ground_col[3]],
+        fog_color: sky.fog_color,
+    }
+}
+
+/// Sky-pass camera block: the inverse view-projection the
+/// fragment reconstructs ray directions from, plus the viewport
+/// size (for the per-pixel NDC from `@builtin(position)`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct SkyCam {
+    inv_view_proj: [[f32; 4]; 4],
+    viewport: [f32; 2],
+    _pad: [f32; 2],
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -83,7 +139,59 @@ struct Uniforms {
     _pad: f32,
 }
 
-const SHADER: &str = r#"
+/// The world shader source: the frozen shared sky WGSL
+/// (`lighting::SKY_WGSL` — the `SkyUniforms` struct; the world
+/// body binds it at group 2 and calls nothing from it) followed
+/// by the raster world body. One source for the struct, by
+/// direct inclusion of the lighting constant — no copy.
+/// Public for the slice-10.3 gate's naga validation (the shader
+/// compile check that runs without a wgpu adapter).
+pub fn world_shader_source() -> String {
+    format!("{SKY_WGSL}\n{WORLD_WGSL}")
+}
+
+/// The sky-pass shader source: the same shared sky WGSL (here
+/// its `sky_color` IS called) plus the fullscreen-triangle
+/// reconstruction of the ray direction from the inverse
+/// view-projection.
+pub fn sky_shader_source() -> String {
+    format!("{SKY_WGSL}\n{SKY_PASS_WGSL}")
+}
+
+const SKY_PASS_WGSL: &str = r#"
+struct SkyCam { inv_view_proj: mat4x4<f32>, viewport: vec2<f32>, _pad: vec2<f32> };
+@group(0) @binding(0) var<uniform> sky_cam: SkyCam;
+@group(1) @binding(0) var<uniform> sky: SkyUniforms;
+
+struct SkyVsOut {
+    @builtin(position) clip: vec4<f32>,
+};
+
+@vertex
+fn vs_sky(@builtin(vertex_index) vi: u32) -> SkyVsOut {
+    var out: SkyVsOut;
+    let x = f32(i32(vi & 1u) * 4 - 1);
+    let y = f32(i32(vi & 2u) * 2 - 1);
+    out.clip = vec4<f32>(x, y, 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_sky(input: SkyVsOut) -> @location(0) vec4<f32> {
+    let ndc = vec2<f32>(
+        (input.clip.x / sky_cam.viewport.x) * 2.0 - 1.0,
+        1.0 - (input.clip.y / sky_cam.viewport.y) * 2.0,
+    );
+    let far4 = sky_cam.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    let near4 = sky_cam.inv_view_proj * vec4<f32>(ndc, 0.0, 1.0);
+    let rd = normalize(far4.xyz / far4.w - near4.xyz / near4.w);
+    // World space is Y-up here: rd_up = rd.y (the freeze
+    // contract for world-space callers).
+    return vec4<f32>(sky_color(rd, rd.y, sky), 1.0);
+}
+"#;
+
+const WORLD_WGSL: &str = r#"
 // Stage F part 2 (border height-blending): half-width of the
 // blend band in tiles — the Stage D weight is 0.5 at the border
 // and 0 this far into the tile. Mirror of
@@ -98,6 +206,37 @@ struct Uniforms { view_proj: mat4x4<f32>, camera_pos: vec3<f32> };
 @group(1) @binding(2) var macro_array: texture_2d_array<f32>;
 struct MacroParams { color_count: u32, debug_height: u32 };
 @group(1) @binding(3) var<uniform> macro_params: MacroParams;
+// Phase 10 slice 10.3: the frame's sky block (frozen layout,
+// lighting::sky_uniforms) — the GI form (see gi_uniforms_for).
+@group(2) @binding(0) var<uniform> sky: SkyUniforms;
+
+// Phase 10 slice 10.3 (§5.2): the raster shading factor.
+// At sky_factor 1 this is exactly §5.2's sum — hemisphere
+// (ground->zenith by n.up) x ambient_scale, plus the
+// pre-multiplied sun/moon colours x their ndl terms — and the
+// caller multiplies it by the vertex colour, which is the
+// Phase 7 bake already fused with the albedo (the §5.2
+// formula's `albedo * (...) * baked_light` in this engine's
+// vertex format; the GI sum REPLACES the old shade factor, it
+// does not multiply on top of it — the §10 double-darkening
+// rule).
+// At sky_factor 0 (a sheltered tile: interior, underground)
+// the factor is the pre-Phase-10 shade, because a sheltered
+// surface's light IS its bake (the lamp in the room), and
+// §5.2's unscaled hemisphere term would move interior pixels
+// that gate 10.3b pins to the neutral render. The blend is
+// the raster v1 reading of §3.4's "terms scaled by s": the
+// sky's terms fade in with exposure, the bake's presentation
+// is the zero-exposure endpoint.
+fn sky_gi_factor(n: vec3<f32>, sky_factor: f32) -> vec3<f32> {
+    let l = normalize(vec3<f32>(0.3, 0.8, 0.4));
+    let legacy = 0.45 + 0.55 * max(dot(n, l), 0.0);
+    let hemi = mix(sky.ground_col.xyz, sky.zenith.xyz, n.y * 0.5 + 0.5);
+    var gi = hemi * sky.zenith.w;
+    gi += sky.sun_color.xyz * max(dot(n, sky.sun_dir.xyz), 0.0);
+    gi += sky.moon_color.xyz * max(dot(n, sky.moon_dir.xyz), 0.0);
+    return mix(vec3<f32>(legacy, legacy, legacy), gi, clamp(sky_factor, 0.0, 1.0));
+}
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -127,10 +266,14 @@ fn vs_main(input: VsIn) -> VsOut {
     return out;
 }
 
-fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
+fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
     let n = normalize(input.normal);
-    let l = normalize(vec3<f32>(0.3, 0.8, 0.4));
-    let shade = 0.45 + 0.55 * max(dot(n, l), 0.0);
+    // Phase 10 slice 10.3: the per-tile sky factor rides the
+    // vertex colour's alpha in the opaque/cutout passes (§5.2
+    // spike); the transparent pass's alpha is material alpha,
+    // so its factor is the global 1.0 in v1.
+    let sky_factor = select(input.color.a, 1.0, transparent);
+    let shade = sky_gi_factor(n, sky_factor);
     let flat = input.layer == 4294967295u;
     // Sample unconditionally (flat vertices read layer 0 and ignore
     // the result) so textureSample's implicit derivatives stay in
@@ -232,6 +375,11 @@ fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
     if input.color.a > 0.30 && input.color.a < 0.40 && n.y > 0.5 {
         let base = select(texel.rgb, input.color.rgb, flat);
         let v = normalize(u.camera_pos - input.world_pos);
+        // Merge note (Wave 2): pre-10.3 this block used the
+        // shader's fixed legacy light dir; the GI block's sun
+        // dir IS that dir at neutral (gi_uniforms_for's
+        // calibration), and follows the live sun otherwise.
+        let l = normalize(sky.sun_dir.xyz);
         let hv = normalize(l + v);
         let spec = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
         let fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
@@ -241,23 +389,42 @@ fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
         return vec4<f32>(col, 1.0);
     }
     if flat {
-        // Exactly the pre-2f flat shading math (gate 2f.4).
-        return vec4<f32>(input.color.rgb * shade, input.color.a);
+        // Flat path: the vertex colour is albedo x bake. The
+        // output alpha is the pass's own: 1.0 for opaque/cutout
+        // (the input alpha was the sky factor, consumed above),
+        // the material alpha for the transparent pass — exactly
+        // the pre-10.3 outputs at the neutral GI calibration
+        // (gate 2f.4's flat math is the calibration's definition).
+        if transparent {
+            return vec4<f32>(input.color.rgb * shade, input.color.a);
+        }
+        return vec4<f32>(input.color.rgb * shade, 1.0);
     }
     if cutout && texel.a < 0.5 {
         discard;
     }
-    return vec4<f32>(texel.rgb * shade, texel.a * input.color.a);
+    if transparent {
+        return vec4<f32>(texel.rgb * shade, texel.a * input.color.a);
+    }
+    // Textured opaque/cutout: the input alpha was the sky
+    // factor (consumed), not an opacity — the texel's own alpha
+    // is the output, as it was pre-10.3 when the factor was 1.0.
+    return vec4<f32>(texel.rgb * shade, texel.a);
 }
 
 @fragment
 fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
-    return shade_fragment(input, false);
+    return shade_fragment(input, false, false);
 }
 
 @fragment
 fn fs_cutout(input: VsOut) -> @location(0) vec4<f32> {
-    return shade_fragment(input, true);
+    return shade_fragment(input, true, false);
+}
+
+@fragment
+fn fs_transparent(input: VsOut) -> @location(0) vec4<f32> {
+    return shade_fragment(input, false, true);
 }
 "#;
 
@@ -275,6 +442,7 @@ fn create_pipeline(
     format: wgpu::TextureFormat,
     uniform_layout: &wgpu::BindGroupLayout,
     tex_layout: &wgpu::BindGroupLayout,
+    sky_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     blend: Option<wgpu::BlendState>,
     depth_write: bool,
@@ -282,7 +450,7 @@ fn create_pipeline(
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("voxel-pipeline-layout"),
-        bind_group_layouts: &[uniform_layout, tex_layout],
+        bind_group_layouts: &[uniform_layout, tex_layout, sky_layout],
         push_constant_ranges: &[],
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -400,6 +568,20 @@ pub struct Renderer {
     uniform_bind_group: wgpu::BindGroup,
     tex_layout: wgpu::BindGroupLayout,
     tex_bind_group: wgpu::BindGroup,
+    /// Phase 10 slice 10.3: the sky pass (fullscreen triangle)
+    /// and the sky uniform state. `sky_bind_group` binds the RAW
+    /// frame block (the background), `gi_bind_group` the GI form
+    /// ([`gi_uniforms_for`]) at the world pipelines' group 2.
+    sky_pipeline: wgpu::RenderPipeline,
+    sky_buffer: wgpu::Buffer,
+    sky_bind_group: wgpu::BindGroup,
+    gi_buffer: wgpu::Buffer,
+    gi_bind_group: wgpu::BindGroup,
+    sky_cam_buffer: wgpu::Buffer,
+    sky_cam_bind_group: wgpu::BindGroup,
+    /// The frame's horizon colour — the sky pass's clear colour
+    /// (§4: uncovered pixels are still right).
+    clear_color: wgpu::Color,
     /// Keeps the texture array alive behind `tex_bind_group`'s view.
     _tex_texture: wgpu::Texture,
     /// Stage F: keeps the macro array alive behind the same bind
@@ -413,9 +595,127 @@ impl Renderer {
     /// `format` is the surface format (windowed) or `CAPTURE_FORMAT`
     /// (headless) — the only difference between the two paths.
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        use wgpu::util::DeviceExt;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("voxel-shader"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(world_shader_source().into()),
+        });
+        // Phase 10 slice 10.3: sky layouts + buffers, initialized
+        // to the neutral frame (the §6 default) so a Renderer
+        // that never gets `set_sky` draws the legacy frame.
+        let sky_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky-uniform-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let neutral = SkyUniforms::neutral();
+        let sky_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sky-uniform"),
+            contents: bytemuck::bytes_of(&neutral.as_rows()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let gi_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sky-gi-uniform"),
+            contents: bytemuck::bytes_of(&gi_uniforms_for(&neutral).as_rows()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let sky_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky-uniform-bg"),
+            layout: &sky_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sky_buffer.as_entire_binding(),
+            }],
+        });
+        let gi_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky-gi-uniform-bg"),
+            layout: &sky_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: gi_buffer.as_entire_binding(),
+            }],
+        });
+        let sky_cam_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky-cam-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let sky_cam_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sky-cam-uniform"),
+            contents: bytemuck::bytes_of(&SkyCam {
+                inv_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+                viewport: [1.0, 1.0],
+                _pad: [0.0, 0.0],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let sky_cam_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky-cam-bg"),
+            layout: &sky_cam_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sky_cam_buffer.as_entire_binding(),
+            }],
+        });
+        let sky_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sky-shader"),
+            source: wgpu::ShaderSource::Wgsl(sky_shader_source().into()),
+        });
+        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sky-pipeline-layout"),
+            bind_group_layouts: &[&sky_cam_layout, &sky_layout],
+            push_constant_ranges: &[],
+        });
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky-pipeline"),
+            layout: Some(&sky_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &sky_shader,
+                entry_point: Some("vs_sky"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &sky_shader,
+                entry_point: Some("fs_sky"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                // The sky is background: it never occludes.
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview: None,
+            cache: None,
         });
         let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("camera-uniform-layout"),
@@ -492,6 +792,7 @@ impl Renderer {
             format,
             &uniform_layout,
             &tex_layout,
+            &sky_layout,
             &shader,
             None,
             true,
@@ -505,20 +806,25 @@ impl Renderer {
             format,
             &uniform_layout,
             &tex_layout,
+            &sky_layout,
             &shader,
             None,
             true,
             "fs_cutout",
         );
+        // Phase 10 slice 10.3: the transparent pipeline gets its
+        // own fragment entry (its vertex alpha is material alpha,
+        // not the sky factor — see shade_fragment).
         let transparent = create_pipeline(
             device,
             format,
             &uniform_layout,
             &tex_layout,
+            &sky_layout,
             &shader,
             Some(wgpu::BlendState::ALPHA_BLENDING),
             false,
-            "fs_main",
+            "fs_transparent",
         );
         // Dummy 1-layer texture set, bound until set_textures
         // installs a real scene set — the pipeline layout never
@@ -540,11 +846,56 @@ impl Renderer {
             uniform_bind_group,
             tex_layout,
             tex_bind_group,
+            sky_pipeline,
+            sky_buffer,
+            sky_bind_group,
+            gi_buffer,
+            gi_bind_group,
+            sky_cam_buffer,
+            sky_cam_bind_group,
+            clear_color: CLEAR_COLOR,
             _tex_texture,
             _macro_texture,
             macro_params_buffer,
             macro_debug_height: false,
         }
+    }
+
+    /// Phase 10 slice 10.3: install the frame's sky — the raw
+    /// block for the background pass, its GI form
+    /// ([`gi_uniforms_for`]) for the world pipelines, the inverse
+    /// view-projection + viewport for the sky pass's ray
+    /// reconstruction, and the horizon colour as the clear
+    /// colour. Called once per frame by `frame::render_frame`
+    /// (the §5.1 "written once per frame" rule; the two buffers
+    /// are the one block's two consumers, both derived from the
+    /// same evaluated `SkyState`).
+    pub fn set_sky(
+        &mut self,
+        queue: &wgpu::Queue,
+        uniforms: &SkyUniforms,
+        inv_view_proj: Mat4,
+        viewport: (u32, u32),
+    ) {
+        queue.write_buffer(&self.sky_buffer, 0, bytemuck::bytes_of(&uniforms.as_rows()));
+        queue.write_buffer(
+            &self.gi_buffer,
+            0,
+            bytemuck::bytes_of(&gi_uniforms_for(uniforms).as_rows()),
+        );
+        let cam = SkyCam {
+            inv_view_proj: inv_view_proj.to_cols_array_2d(),
+            viewport: [viewport.0.max(1) as f32, viewport.1.max(1) as f32],
+            _pad: [0.0, 0.0],
+        };
+        queue.write_buffer(&self.sky_cam_buffer, 0, bytemuck::bytes_of(&cam));
+        let h = uniforms.horizon3();
+        self.clear_color = wgpu::Color {
+            r: h[0] as f64,
+            g: h[1] as f64,
+            b: h[2] as f64,
+            a: 1.0,
+        };
     }
 
     /// Create a texture array plus its group-1 bind group (no data
@@ -789,14 +1140,18 @@ impl Renderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("frame-encoder"),
         });
+        // Phase 10 slice 10.3 (§4): the sky pass first — one
+        // fullscreen triangle, depth-write off, clearing colour
+        // to the frame's horizon colour and depth to 1.0; the
+        // world pass then Loads both (the sky wrote no depth).
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("voxel-pass"),
+                label: Some("sky-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: color_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -811,8 +1166,36 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            rpass.set_pipeline(&self.sky_pipeline);
+            rpass.set_bind_group(0, &self.sky_cam_bind_group, &[]);
+            rpass.set_bind_group(1, &self.sky_bind_group, &[]);
+            rpass.draw(0..3, 0..1);
+        }
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("voxel-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
             rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
             rpass.set_bind_group(1, &self.tex_bind_group, &[]);
+            rpass.set_bind_group(2, &self.gi_bind_group, &[]);
             for mesh in meshes {
                 rpass.set_pipeline(&self.pipelines[mesh.pass.index()]);
                 rpass.set_vertex_buffer(0, mesh.vertices.slice(..));

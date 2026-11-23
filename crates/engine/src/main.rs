@@ -140,14 +140,30 @@ fn apply_scene_flags(
         match &mut cap.lighting {
             Some(lit) => lit.bake_mode = mode,
             None => {
-                let mut lit = engine::frame::LightingScene::fake_house(
-                    12.0,
-                    lighting::WeatherKind::Clear,
-                );
+                let mut lit =
+                    engine::frame::LightingScene::fake_house(12.0, lighting::WeatherKind::Clear);
                 lit.bake_mode = mode;
                 cap.lighting = Some(lit);
             }
         }
+    }
+    // Phase 10 (§6): named sky environments for captures, so the
+    // gate capture set is deterministic. (The live windowed path
+    // takes its environment from the client state in 10.6; these
+    // names are the fake-data scripts.)
+    if let Some(s) = value_after(args, "--sky") {
+        cap.sky = Some(match s.as_str() {
+            "neutral" => engine::frame::SkyScene::neutral_env(),
+            "noon-clear" => engine::frame::SkyScene::fake_day(12.0, 4),
+            "midnight-clear" => engine::frame::SkyScene::fake_day(0.0, 4),
+            "dawn-clear" => engine::frame::SkyScene::fake_day(6.5, 4),
+            "dusk-clear" => engine::frame::SkyScene::fake_day(17.5, 4),
+            _ => {
+                return Err(format!(
+                    "bad --sky '{s}' (neutral|noon-clear|midnight-clear|dawn-clear|dusk-clear)"
+                ))
+            }
+        });
     }
     if args.iter().any(|a| a == "--ui-stub") {
         let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;
@@ -159,7 +175,9 @@ fn apply_scene_flags(
         cap.vehicles = Some(engine::frame::VehicleScene::fixture_car([4, 5, 0], 23.0));
     }
     if let Some(s) = value_after(args, "--transient-fixture") {
-        let now_ms: u64 = s.parse().map_err(|_| format!("bad --transient-fixture '{s}'"))?;
+        let now_ms: u64 = s
+            .parse()
+            .map_err(|_| format!("bad --transient-fixture '{s}'"))?;
         cap.transients = Some(engine::frame::TransientScene::fixture_burst(now_ms));
     }
     // Phase 9 slice 2 rollout (9.10): fine prop stamping,
@@ -487,7 +505,10 @@ impl App {
     /// a router every press starts a camera drag.
     fn handle_click_press(&mut self) {
         let Some(gpu) = &self.gpu else { return };
-        let window = ui_share::Size2 { w: gpu.size.0, h: gpu.size.1 };
+        let window = ui_share::Size2 {
+            w: gpu.size.0,
+            h: gpu.size.1,
+        };
         let Some(router) = self.router.clone() else {
             self.drag_from = Some(self.cursor);
             return;
@@ -495,8 +516,11 @@ impl App {
         // The stub UI canvas is 640x360, stretched over the window
         // (the same mode the compositor draws it with).
         let ui_size = ui_share::Size2 { w: 640, h: 360 };
-        let viewport =
-            ui_share::scaling::compute_viewport(window, ui_size, ui_share::ScalingMode::StretchNearest);
+        let viewport = ui_share::scaling::compute_viewport(
+            window,
+            ui_size,
+            ui_share::ScalingMode::StretchNearest,
+        );
         match router.route_window_click(
             self.cursor.0 as f32,
             self.cursor.1 as f32,

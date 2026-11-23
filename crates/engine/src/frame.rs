@@ -117,6 +117,12 @@ pub struct LightingScene {
     pub env: lighting::Environment,
     pub min_game_z: i32,
     pub bake_mode: BakeMode,
+    /// Phase 10 slice 10.3 (§5.2 spike, decision 4A): per-tile
+    /// sky exposure for the raster GI's `sky_factor`. `None` = no
+    /// per-tile data (the vertex alpha is left at 1.0 and the GI
+    /// applies globally — the 4B shape, reached by data absence,
+    /// never by a silent rewrite).
+    pub sky_exposure: Option<SkyExposure>,
 }
 
 impl LightingScene {
@@ -129,6 +135,7 @@ impl LightingScene {
             env: lighting::Environment::new(hour, weather),
             min_game_z: crate::world::HOUSE_MIN_GAME_Z,
             bake_mode: BakeMode::PerVertex,
+            sky_exposure: Some(SkyExposure::fake_house()),
         }
     }
 
@@ -155,6 +162,132 @@ impl LightingScene {
             );
         }
         s
+    }
+}
+
+/// Per-tile sky exposure (Phase 10 §3.4): which game tiles the
+/// sky reaches. The wire form is one bool per tile
+/// (`SubmapBlock.outside` / `TileChange.outside`, slice 10.1 —
+/// the game's `is_outside && !is_roofed` conjunction); this is
+/// the engine-side set form the raster bake consumes: tiles in
+/// `sheltered` have factor 0, every other tile factor 1. (The
+/// §3.4 factor is continuous in principle; the wire is a bool,
+/// so the raster factor is binary in v1.)
+#[derive(Debug, Clone, Default)]
+pub struct SkyExposure {
+    /// Game tiles (x, y, game z) the sky does NOT reach.
+    pub sheltered: std::collections::HashSet<[i32; 3]>,
+}
+
+impl SkyExposure {
+    /// The §5.2 factor for one game tile.
+    pub fn factor(&self, tile: [i32; 3]) -> f32 {
+        if self.sheltered.contains(&tile) {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
+    /// The fake house's exposure, authored with the same
+    /// knowledge as the Phase 7 light fixture and the proto
+    /// sample's `outside` array (proto::samples): the interior
+    /// floor tiles (x/y in 1..=10 at game z 0, inside the wall
+    /// perimeter and under the roof layer) are sheltered; wall,
+    /// roof and exterior tiles are exposed.
+    pub fn fake_house() -> Self {
+        let mut sheltered = std::collections::HashSet::new();
+        for y in 1..=10 {
+            for x in 1..=10 {
+                sheltered.insert([x, y, crate::world::HOUSE_MIN_GAME_Z]);
+            }
+        }
+        Self { sheltered }
+    }
+}
+
+/// Sky input for one frame (Phase 10 §6): a game environment
+/// plus the interpolation clock that evaluates it per frame.
+/// This is the `CaptureArgs::sky` payload BOTH renderer paths
+/// consume — the raster path (slice 10.3) evaluates it here;
+/// the RT path (slice 10.4) reads the same scene from
+/// `CaptureArgs` and evaluates it through [`SkyScene::uniforms`]
+/// so there is exactly one evaluation of a frame's sky.
+#[derive(Debug, Clone)]
+pub struct SkyScene {
+    /// The environment sample the scene was seeded with (the
+    /// clock's current sample; later samples arrive via
+    /// [`SkyScene::push`] in the live loop, slice 10.6).
+    pub game_env: lighting::GameEnvironment,
+    /// §3.3 interpolation + weather cross-fade clock.
+    pub clock: lighting::SkyClock,
+    /// Decision 3C cave factor (0 = surface sky, 1 = dark cave
+    /// gradient), applied to the evaluated uniforms. Seated from
+    /// the camera target tile by the live loop (10.6); captures
+    /// leave it 0.
+    pub cave_factor: f32,
+}
+
+impl SkyScene {
+    /// A scene from one environment sample.
+    pub fn new(game_env: lighting::GameEnvironment) -> Self {
+        let clock = lighting::SkyClock::new(game_env.clone());
+        Self {
+            game_env,
+            clock,
+            cave_factor: 0.0,
+        }
+    }
+
+    /// The §6 neutral environment (Clear noon, live-path form).
+    pub fn neutral_env() -> Self {
+        Self::new(lighting::GameEnvironment::neutral())
+    }
+
+    /// Fake-data scene (stub scenes / captures without a game):
+    /// a clear day through the §3.2 fallback sun path, sunrise
+    /// 06:00, sunset 18:00, summer, at `hour` (fractional) with
+    /// the given moon phase (0..8).
+    pub fn fake_day(hour: f32, moon_phase: u8) -> Self {
+        Self::new(lighting::GameEnvironment::fake_day(
+            hour * 3600.0,
+            21_600.0,
+            64_800.0,
+            1,
+            moon_phase,
+        ))
+    }
+
+    /// Record a newer environment sample (the §2.3 cadence).
+    pub fn push(&mut self, env: lighting::GameEnvironment) {
+        self.clock.push(env.clone());
+        self.game_env = env;
+    }
+
+    /// The frame's derived sky state at the scene's current
+    /// time of day.
+    pub fn sky_state(&self) -> lighting::SkyState {
+        self.clock.evaluate(self.game_env.time_of_day_sec)
+    }
+
+    /// The frame's uniform block: the one conversion
+    /// (`SkyUniforms::from_sky_state`) plus this scene's cave
+    /// factor. `from_sky_state` emits directions in SkyState
+    /// space (east, north, up); the raster renderer consumes
+    /// mesher world space (east, up, north), so the dirs are
+    /// converted here via `to_mesher_world_space` (10.3 fix —
+    /// unconverted, the noon sun's up component read −cos(alt),
+    /// below the horizon). This conversion applies ONLY to the
+    /// `from_sky_state` output: the no-sky default path binds
+    /// raw `SkyUniforms::neutral()` (already grid-space legacy)
+    /// and the calibrated GI form, neither of which passes
+    /// through here.
+    pub fn uniforms(&self) -> lighting::SkyUniforms {
+        let state = self.sky_state();
+        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
+            .to_mesher_world_space();
+        u.set_cave_factor(self.cave_factor);
+        u
     }
 }
 
@@ -348,7 +481,10 @@ impl VehicleScene {
     /// path once the fork seats data in the loop).
     pub fn from_store(store: &vehicles::VehicleStore) -> Self {
         Self {
-            models: store.ids().filter_map(|id| store.get(id).cloned()).collect(),
+            models: store
+                .ids()
+                .filter_map(|id| store.get(id).cloned())
+                .collect(),
         }
     }
 
@@ -661,15 +797,16 @@ pub fn stub_ui_store(
     let mut canvas = ui_share::synthetic::draw_gameplay_sidebar(w, h);
     let terrain = ui_share::synthetic::synthetic_terrain_rect(w, h);
     if opaque_terrain {
-        canvas.fill_rect(terrain.x, terrain.y, terrain.w, terrain.h, [200, 30, 30, 255]);
+        canvas.fill_rect(
+            terrain.x,
+            terrain.y,
+            terrain.w,
+            terrain.h,
+            [200, 30, 30, 255],
+        );
     }
     store
-        .write_frame_tight(
-            &canvas.pixels,
-            w,
-            h,
-            ui_share::DirtyRect::full(w, h),
-        )
+        .write_frame_tight(&canvas.pixels, w, h, ui_share::DirtyRect::full(w, h))
         .map_err(|e| e.to_string())?;
     let snap = store.read_latest().map_err(|e| e.to_string())?;
     let note = ui_share::frame::frame_notification(&snap, proto::UiMode::MapInput, Some(terrain));
@@ -735,12 +872,7 @@ pub fn fake_house_occupied() -> impl Fn(i32, i32, i32) -> bool {
             x.rem_euclid(mesher::chunk::CHUNK_W as i32),
             y.rem_euclid(mesher::chunk::CHUNK_H as i32),
         );
-        (0..per).any(|b| {
-            !chunk
-                .grid
-                .get(lx, ly, level * per + b)
-                .is_air()
-        })
+        (0..per).any(|b| !chunk.grid.get(lx, ly, level * per + b).is_air())
     }
 }
 
@@ -946,10 +1078,7 @@ pub fn render_frame(
         return render_frame_inner(device, queue, args);
     }
     let mut inner_args = args.clone();
-    inner_args.size = (
-        (args.size.0 / scale).max(1),
-        (args.size.1 / scale).max(1),
-    );
+    inner_args.size = ((args.size.0 / scale).max(1), (args.size.1 / scale).max(1));
     inner_args.render_scale = 1;
     let inner = render_frame_inner(device, queue, &inner_args)?;
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
@@ -986,6 +1115,17 @@ fn render_frame_inner(
 ) -> Result<FrameOutcome, CaptureError> {
     let defs = fx_defs(args)?;
     let mut stats = FrameStats::default();
+
+    // Phase 10 (§6): the frame's sky, evaluated ONCE here from
+    // `CaptureArgs::sky` and shared by both renderer paths (the
+    // RT branch's tracer reads the same `args.sky` scene through
+    // `SkyScene::uniforms`, slice 10.4). No sky scene = the §6
+    // neutral default (legacy stops, legacy-equivalent GI).
+    let sky_uniforms = args
+        .sky
+        .as_ref()
+        .map(|s| s.uniforms())
+        .unwrap_or_else(lighting::SkyUniforms::neutral);
 
     if args.renderer == RendererKind::Rt {
         // Phase 9 slice 3 (9.5): fine props are wired for RT —
@@ -1041,11 +1181,9 @@ fn render_frame_inner(
         queue.submit([encoder.finish()]);
         stats.passes.push(FramePass::World);
 
-        let needs_depth =
-            defs.is_some() || args.billboards.is_some() || args.transients.is_some();
+        let needs_depth = defs.is_some() || args.billboards.is_some() || args.transients.is_some();
         let depth = if needs_depth {
-            let (depth_texture, depth_view) =
-                render::create_depth_texture(device, (width, height));
+            let (depth_texture, depth_view) = render::create_depth_texture(device, (width, height));
             crate::fxwire::RtDepthConvert::new(device).draw(
                 device,
                 queue,
@@ -1205,7 +1343,11 @@ fn render_frame_inner(
 
     let camera = capture_camera(args);
     let aspect = width as f32 / height as f32;
-    renderer.set_view_projection(queue, camera.view_projection(aspect), camera.eye());
+    let view_proj = camera.view_projection(aspect);
+    renderer.set_view_projection(queue, view_proj, camera.eye());
+    // Phase 10 slice 10.3: the frame's sky (background pass +
+    // GI uniforms), evaluated once above.
+    renderer.set_sky(queue, &sky_uniforms, view_proj.inverse(), (width, height));
     renderer.draw(device, queue, &gpu_meshes, &color_view, &depth_view);
     stats.passes.push(FramePass::World);
 
@@ -1298,10 +1440,9 @@ fn composite_overlays(
                     view_formats: &[],
                 });
                 let depth_copy_view = depth_copy.create_view(&Default::default());
-                let mut encoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("frame-depth-copy-encoder"),
-                    });
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("frame-depth-copy-encoder"),
+                });
                 encoder.copy_texture_to_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: depth_texture,
@@ -1342,19 +1483,12 @@ fn composite_overlays(
 
     // -- Billboards (shadows, then sprites; world-depth tested) --
     if let Some(scene) = &args.billboards {
-        let (_, depth_view) = depth.as_ref().expect(
-            "billboards require world depth (raster depth texture or converted RT depth)",
-        );
+        let (_, depth_view) = depth
+            .as_ref()
+            .expect("billboards require world depth (raster depth texture or converted RT depth)");
         let color_view = current.create_view(&Default::default());
-        stats.billboards = draw_billboards(
-            device,
-            queue,
-            scene,
-            camera,
-            &color_view,
-            depth_view,
-            size,
-        )?;
+        stats.billboards =
+            draw_billboards(device, queue, scene, camera, &color_view, depth_view, size)?;
         stats.passes.push(FramePass::Billboards);
     }
 
@@ -1469,7 +1603,8 @@ fn draw_billboards(
         pitch_deg: camera.pitch_deg,
         distance: camera.distance,
     };
-    let mut built = billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
+    let mut built =
+        billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
     // Stand the creatures on the floor surface, not the level
     // base (see floor_surface_lift).
     let lift = floor_surface_lift();
@@ -1482,7 +1617,8 @@ fn draw_billboards(
     let aspect = size.0 as f32 / size.1.max(1) as f32;
     let view_proj = camera.view_projection(aspect);
     let eye = camera.eye();
-    let mut pass = billboard::render::BillboardPass::new(device, CAPTURE_FORMAT, render::DEPTH_FORMAT);
+    let mut pass =
+        billboard::render::BillboardPass::new(device, CAPTURE_FORMAT, render::DEPTH_FORMAT);
     let mut count = 0usize;
 
     pass.prepare_with_view_proj(
