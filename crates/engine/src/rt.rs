@@ -216,44 +216,49 @@ pub fn world_for_levels_sv(
     VoxelWorld::from_chunk_map(&filtered)
 }
 
-/// Phase 10 (10.4, §3.4): the RT sky-exposure feed — a column
-/// scan over a *reference* world (the uncut scene, so a cutaway
-/// that hides the roof for the view does not make the room below
-/// it sky-exposed: exposure is a property of the world, not of
-/// the view). A cell is sky-exposed iff no opaque cell sits above
-/// it in its (x, y) column; transparent cells (glass, water) do
-/// not block the sky.
+/// Phase 10 (§3.4): the RT sky-exposure feed — option (a),
+/// the game's own test (`is_outside && !is_roofed`), exported
+/// per tile on the wire since 10.1 and carried into the engine
+/// by the light grid's `outside` field since 10.6 wired the
+/// proto adapter through. A cell is sky-exposed iff its
+/// containing game tile is outside.
 ///
-/// This is the §3.4 option-(b) engine-derived feed. Option (a) —
-/// the game's own `is_outside && !is_roofed`, exported per tile
-/// in the protocol's `outside[]` since 10.1 — cannot reach this
-/// path today: `lighting::proto_adapter` drops `outside[]`
-/// (`lighting::TileLight` has no outside field, and the lighting
-/// crate is frozen for Wave 2), so `LightingScene` carries no
-/// exposure grid. Wiring (a) through is 10.6 work; until then
-/// this scan is the feed, and it agrees with (a) on the fake
-/// house (roofed footprint interior: not exposed; roof and open
-/// ground: exposed).
+/// Wave 2's interim feed was an engine-side column scan over
+/// a reference world (§3.4 option (b)): exposed iff no opaque
+/// cell sits above in the column. It disagreed with the game
+/// exactly where geometry and exposure part ways — perimeter
+/// wall tiles (a roof slab sits above the wall column, but
+/// the game calls the wall tile exposed) and cover the world
+/// geometry does not model (a bridge overhead). 10.6 retired
+/// the scan; this feed is the wire's only. Exposure is a
+/// property of the game world, not of the view, so no
+/// reference world is needed: a cutaway cannot un-roof a
+/// room because the grid never knew about the cutaway.
 pub struct SkyExposure {
-    top_opaque: std::collections::HashMap<(i32, i32), i32>,
+    tiles: crate::frame::SkyExposure,
+    min_game_z: i32,
+    per: i32,
 }
 
 impl SkyExposure {
-    pub fn new(reference: &VoxelWorld) -> Self {
-        let mut top_opaque: std::collections::HashMap<(i32, i32), i32> = Default::default();
-        for (pos, cell) in reference.iter() {
-            if cell.flags & treebuild::world::FLAG_TRANSPARENT == 0 && cell.alpha >= 1.0 {
-                let e = top_opaque.entry((pos[0], pos[1])).or_insert(i32::MIN);
-                *e = (*e).max(pos[2]);
-            }
+    /// The feed from a scene's light grid (whose tiles carry
+    /// the wire `outside` verdicts) at the scene's minimum
+    /// game z.
+    pub fn from_grid(grid: &lighting::LightGrid, min_game_z: i32) -> Self {
+        Self {
+            tiles: crate::frame::SkyExposure::from_grid(grid),
+            min_game_z,
+            per: mesher::scale::WorldScale::default()
+                .blocks_per_z_level
+                .max(1) as i32,
         }
-        Self { top_opaque }
     }
 
-    /// Exposed iff no opaque reference cell is strictly above
-    /// (`x`, `y`, `z`) in its column.
+    /// Exposed iff the containing game tile of block coords
+    /// (`x`, `y`, `z`) is outside.
     pub fn exposed(&self, x: i32, y: i32, z: i32) -> bool {
-        z >= self.top_opaque.get(&(x, y)).copied().unwrap_or(i32::MIN)
+        let tile = [x, y, self.min_game_z + z.div_euclid(self.per)];
+        self.tiles.factor(tile) > 0.0
     }
 
     /// Stamp the feed onto every cell of `world` (coarse coords).
@@ -315,10 +320,9 @@ pub fn world_for_levels_lit_sv(
     sample: bool,
 ) -> VoxelWorld {
     let mut base = world_for_levels_sv(visible_levels, vehicles, sample);
-    // Phase 10 (10.4): sky exposure from the UNCUT scene (all
-    // levels), so the cutaway view cannot un-roof a room.
-    let reference = world_for_levels_sv(&capture_visible_levels(10), vehicles, sample);
-    SkyExposure::new(&reference).apply(&mut base);
+    // Phase 10 (10.6): sky exposure from the scene's light
+    // grid — the wire outside[] feed (see SkyExposure).
+    SkyExposure::from_grid(&lit.grid, lit.min_game_z).apply(&mut base);
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
     let mut out = VoxelWorld::new();
@@ -753,9 +757,10 @@ fn render_rt_frame_props(
     let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
     let mut fine_world = VoxelWorld::from_fine_layer(&layer);
     if let Some(lit) = &args.lighting {
-        // Phase 10 (10.4): exposure reference is the UNCUT map
-        // (`map`, before cutaway filtering and prop stamping).
-        let exposure = SkyExposure::new(&VoxelWorld::from_chunk_map(&map));
+        // Phase 10 (10.6): exposure from the scene's light
+        // grid (the wire outside[] feed), as in
+        // world_for_levels_lit_sv.
+        let exposure = SkyExposure::from_grid(&lit.grid, lit.min_game_z);
         coarse_world = lit_rewrite(&coarse_world, lit, false, &exposure);
         fine_world = lit_rewrite(&fine_world, lit, true, &exposure);
         // Geometric fine-prop occlusion (8c-A): after the

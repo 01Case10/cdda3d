@@ -126,17 +126,39 @@ pub struct LightingScene {
 }
 
 impl LightingScene {
+    /// A scene seated from a wire-built light grid (slice
+    /// 10.6): the grid carries the game's per-tile `outside`
+    /// verdicts, and the raster sky exposure is derived from
+    /// them — the same feed the RT path reads off the same
+    /// grid, so the two renderers cannot disagree about which
+    /// tiles the sky reaches.
+    pub fn from_grid(
+        grid: lighting::LightGrid,
+        env: lighting::Environment,
+        min_game_z: i32,
+    ) -> Self {
+        let sky_exposure = Some(SkyExposure::from_grid(&grid));
+        Self {
+            grid,
+            env,
+            min_game_z,
+            bake_mode: BakeMode::PerVertex,
+            sky_exposure,
+        }
+    }
+
     /// The fake house under the Phase 7 night-interior light grid
     /// (exterior `DARK`, lamp falloff inside, walls occluding),
-    /// evaluated at `hour` in `weather`.
+    /// evaluated at `hour` in `weather`. The fixture grid
+    /// authors the stub-house `outside` rule, so the derived
+    /// exposure is the hand-authored `SkyExposure::fake_house`
+    /// set by construction.
     pub fn fake_house(hour: f32, weather: lighting::WeatherKind) -> Self {
-        Self {
-            grid: lighting::fixtures::fake_house_night_light(),
-            env: lighting::Environment::new(hour, weather),
-            min_game_z: crate::world::HOUSE_MIN_GAME_Z,
-            bake_mode: BakeMode::PerVertex,
-            sky_exposure: Some(SkyExposure::fake_house()),
-        }
+        Self::from_grid(
+            lighting::fixtures::fake_house_night_light(),
+            lighting::Environment::new(hour, weather),
+            crate::world::HOUSE_MIN_GAME_Z,
+        )
     }
 
     /// [`LightingScene::fake_house`] with specific tiles forced
@@ -187,6 +209,22 @@ impl SkyExposure {
         } else {
             1.0
         }
+    }
+
+    /// The exposure set from a light grid's wire `outside`
+    /// data (slice 10.6): every stored tile the game marks not
+    /// sky-exposed is sheltered. Tiles the grid does not store
+    /// are absent from the set and so read factor 1 — the same
+    /// no-data shape as `sky_exposure: None` (absence never
+    /// shelters).
+    pub fn from_grid(grid: &lighting::LightGrid) -> Self {
+        let mut sheltered = std::collections::HashSet::new();
+        for (pos, t) in grid.iter_tiles() {
+            if !t.outside {
+                sheltered.insert(pos);
+            }
+        }
+        Self { sheltered }
     }
 
     /// The fake house's exposure, authored with the same
@@ -256,6 +294,21 @@ impl SkyScene {
             1,
             moon_phase,
         ))
+    }
+
+    /// Seat a scene from one wire `EnvironmentUpdate` (slice
+    /// 10.6 — the joint the live loop consumes: the client
+    /// converts each update through the lighting proto adapter
+    /// and either seats a fresh scene or `push`es into the
+    /// running one).
+    pub fn from_wire(u: &proto::EnvironmentUpdateT) -> Self {
+        Self::new(lighting::proto_adapter::game_environment_from_update(u))
+    }
+
+    /// Seat a scene from a `Snapshot`'s piggybacked environment
+    /// (§2.2), when the snapshot carries one.
+    pub fn from_snapshot(snap: &proto::SnapshotT) -> Option<Self> {
+        lighting::proto_adapter::game_environment_from_snapshot(snap).map(Self::new)
     }
 
     /// Record a newer environment sample (the §2.3 cadence).
