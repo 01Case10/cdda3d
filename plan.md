@@ -2025,6 +2025,13 @@ staying dark in RT (the shadow proof).
 > the renderer transports declared emitters itself. Double-counting
 > between the two is an OPEN question for the emitter prototype
 > slice (accept-as-cap vs fork-side exclusion), not resolved here.
+> **RESOLVED 2026-11-23 (Joey): option A — accept-as-cap.** The
+> prototype measured the capped baseline (lid) as well-behaved
+> (pool ~10× in both renderers, DARK tile contained, RT shadow
+> holds; full numbers in `docs/addendum-11-light.md` §7), and
+> Joey ratified it: renderer-transported emitters stay capped by
+> the tile's lit factor; no fork-side exclusion is built. S3's
+> frac/tint production proceeds on this shape.
 > Engine work when built is small: `base_intensity()` takes frac in
 > place of `seen` as the within-visibility ordering (gate 7.1
 > re-pinned failing-first), and the proto adapter fills

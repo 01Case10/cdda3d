@@ -249,7 +249,12 @@ lighting/treebuild/engine suites green, no goldens regen'd).
   0.0686 → 0.0688 (shadow holds); DARK tile in the beam
   capped in both renderers; BLANK tile unchanged.
   Verdict so far: the lid is well-behaved; nothing measured
-  forces option (b). A-vs-B remains Joey's call.
+  forces option (b). **DECIDED 2026-11-23 (Joey): option A** —
+  the ceiling-capped baseline is the design. Declared emitters
+  are transported by the renderer and capped by the tile's lit
+  factor (the lid); the baked frac/tint arriving on the wire is
+  the game's visibility/ceiling verdict, not a second light
+  source — no fork-side exclusion (option B) is built.
 - Textured follow-up (2026-11-23, Joey's request): with
   `--textures assets/ultica_run1`, RT carries materials
   correctly (warm pool over grass texture, textured DARK
