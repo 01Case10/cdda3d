@@ -272,6 +272,16 @@ pub fn bake_pass_meshes<S: LightSampler + ?Sized>(
                 // preserved exactly as shade_rgba preserves it.
                 let m = light_multiplier(sample, vis, env);
                 mesh.colors[i] = [m[0], m[1], m[2], albedo[3]];
+                // Fine-slope-normals §14: `tex_occlusion` is
+                // deliberately NOT folded in here. The raster
+                // shader reads a textured vertex's RGB only
+                // as the emitter ceiling, so a factor folded
+                // into the multiplier would still never reach
+                // the diffuse term (and would double-apply
+                // once the shader applies the factor itself).
+                // The array passes through this bake untouched
+                // and reaches the fragment as a vertex
+                // attribute instead.
             } else {
                 mesh.colors[i] = shade_rgba(albedo, sample, vis, env);
             }

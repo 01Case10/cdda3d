@@ -1,5 +1,5 @@
 //! Per-corner occlusion gate (docs/fine-slope-normals.md
-//! §12): under the fine-path opt-in, a stamped face's Stage H
+//! §13): under the fine-path opt-in, a stamped face's Stage H
 //! occlusion factor is computed per face CORNER — the same
 //! counting rule as `face_occlusion`, but run from the air
 //! cell diagonally in front of each corner — and emitted as

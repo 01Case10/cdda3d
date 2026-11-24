@@ -652,7 +652,7 @@ pub fn face_occlusion(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dir: [i3
     occlusion_factor(occlusion_count(sampler, a, dir))
 }
 
-/// Per-corner occlusion (docs/fine-slope-normals.md §12):
+/// Per-corner occlusion (docs/fine-slope-normals.md §13):
 /// the [`face_occlusion`] counting rule run from the air
 /// cell diagonally in front of one face corner — the front
 /// cell that has the corner vertex on its back face, one
@@ -1105,7 +1105,7 @@ pub fn mesh_chunk_fine(
                             // pre-pass mesher. Under the
                             // slope opt-in the factor is
                             // PER-CORNER (docs/fine-slope-
-                            // normals.md §12): each corner
+                            // normals.md §13): each corner
                             // counts the occluders around
                             // its own front cell, so a step
                             // darkens only the tread corners
@@ -1127,13 +1127,26 @@ pub fn mesh_chunk_fine(
                                     ]
                                 }
                             };
-                            let corner_colors: [[f32; 4]; 4] = if slope_normals {
-                                FACE_CORNERS[di].map(|c| {
-                                    shade(corner_occlusion(&sampler, fx, fy, fz, *dir, c))
-                                })
+                            // Under the opt-in the raw corner
+                            // factors are kept alongside the
+                            // shaded colours: a textured face
+                            // records them in the mesh's
+                            // tex_occlusion (§14) because the
+                            // light bake discards a textured
+                            // vertex's RGB.
+                            let corner_occs: Option<[f32; 4]> = if slope_normals {
+                                Some(FACE_CORNERS[di].map(|c| {
+                                    corner_occlusion(&sampler, fx, fy, fz, *dir, c)
+                                }))
                             } else {
-                                let occ = face_occlusion(&sampler, fx, fy, fz, *dir);
-                                [shade(occ); 4]
+                                None
+                            };
+                            let corner_colors: [[f32; 4]; 4] = match corner_occs {
+                                Some(occs) => occs.map(|o| shade(o)),
+                                None => {
+                                    let occ = face_occlusion(&sampler, fx, fy, fz, *dir);
+                                    [shade(occ); 4]
+                                }
                             };
                             let normals4 = corner_normals.unwrap_or([normal; 4]);
                             match layer_for_dir(cell, di) {
@@ -1147,13 +1160,24 @@ pub fn mesh_chunk_fine(
                                         [inv, inv, inv],
                                         tex_layer,
                                     );
-                                    mesh.push_quad_textured_per_corner_colors(
-                                        corners,
-                                        normals4,
-                                        corner_colors,
-                                        uvs,
-                                        tex_layer,
-                                    );
+                                    match corner_occs {
+                                        Some(occs) => mesh
+                                            .push_quad_textured_per_corner_colors_occ(
+                                                corners,
+                                                normals4,
+                                                corner_colors,
+                                                occs,
+                                                uvs,
+                                                tex_layer,
+                                            ),
+                                        None => mesh.push_quad_textured_per_corner_colors(
+                                            corners,
+                                            normals4,
+                                            corner_colors,
+                                            uvs,
+                                            tex_layer,
+                                        ),
+                                    }
                                 }
                                 None => mesh.push_quad_per_corner_colors(
                                     corners,

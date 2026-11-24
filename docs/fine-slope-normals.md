@@ -349,3 +349,78 @@ fine path, where the per-corner gradient now applies;
 in the textured path the grooves are step geometry plus
 the per-vertex bake, and softening them there is a
 bake-side question, not a mesher one. Not pushed.
+
+## 14. Outcome — bake-side fix for the textured path (2026-11-24, Joey's order)
+
+§13's attribution was INCOMPLETE, found by doing the work:
+the first cut folded the factor into the bake (mesher
+records per-corner factors, `bake_pass_meshes` multiplies
+its textured multiplier by them) and the vehicle capture
+changed on ZERO pixels. The deeper root cause, read out of
+`render.rs`: a textured fragment's diffuse term is
+`texel * (sky_gi_factor + emit * bake_ceil)` — the baked
+vertex RGB is read ONLY as the emitter ceiling
+(`bake_ceil`), never as diffuse light. In an emitter-less
+scene the bake multiplier is dead data for textured
+surfaces, so no colour-channel route — mesher colour or
+bake multiplier — can ever carry occlusion to a textured
+diffuse term. The factor needs its own channel.
+
+Final design, as built:
+
+- `mesher::Mesh` gains `tex_occlusion: Vec<f32>`, parallel
+  to `positions` when non-empty (empty = no factors, all
+  1.0). Every `push_quad*` maintains it (1.0 appends while
+  active); `Mesh::append` merges it with the same
+  empty-means-none semantics; the new
+  `push_quad_textured_per_corner_colors_occ` records real
+  factors (backfilling 1.0 over earlier vertices on first
+  use).
+- `mesh_chunk_fine`, under the existing slope opt-in only,
+  records the corner factors at the textured emission site
+  (the same `corner_occlusion` values that shade the
+  per-corner colours). Opt-in off records nothing — the
+  legacy textured path is byte-identical.
+- The bake deliberately does NOT fold the factor in (it
+  would double-apply and pollute the emitter ceiling);
+  `tex_occlusion` passes through `bake_pass_meshes`
+  untouched, pinned by
+  `lighting/tests/tex_occlusion_bake_gate.rs`.
+- The engine uploads the array as vertex attribute 5
+  (`Vertex.occ`, defensive per-vertex fallback 1.0) and
+  the textured fragment branches (opaque, transparent,
+  and textured water) multiply their result by the
+  interpolated factor. Flat fragments always carry 1.0
+  by construction (their occlusion rides in their
+  colours, as before) and their branch is untouched.
+
+Gates: `mesher/tests/fine_occlusion_textured_gate.rs`
+(recording: tread factors 0.67 near / 1.0 far on a
+TEXTURED step, array exactly parallel, opt-in off empty)
+and the lighting gate above — both verified failing-first
+(the bake-multiply cut satisfied neither the capture nor,
+on reflection, the contract). Regression: mesher 40/40,
+lighting 45/45, engine lib 33/33; golden 3/3 (within
+tolerance, no regen), phase9_render 3/3, puddle 4/4,
+raster_tex 3/3, sky_raster 7/7, vehicle_texture 4/4,
+emitter 5/5, frame 4/5 — frame's one failure is the
+gate_2h4 UI-latency BUDGET (median ~180 ms vs 50 ms on
+llvmpipe), proven pre-existing by a stash A/B: the clean
+tree fails with the same numbers (178.85/412.51 ms vs
+188.09/419.27 ms) under the day's VM load; it passed
+earlier the same day. Not this change; not touched.
+
+Vehicle evidence: quads unchanged (221,840); raster
+capture 30,494 pixels differ (3.31%), 30,493 of them
+DARKER (mean −22.9 luma) — the occlusion signature, on
+the car and on the scene's other textured props (contact
+darkening now reaches every textured fine surface, not
+just this car). Distinct colours 10,994 → 12,427 raster,
+6,762 → 8,164 top. The crown grooves soften from flat
+notches into gradients that darken toward each step; the
+steps themselves are geometry and remain — the shallower
+crown stays a Stage-G tuning item. RT untouched (it
+never reads raster meshes); its committed capture is
+unchanged. Also fixed in passing: fine.rs and the corner
+gate still cited this plan's §12 for per-corner
+occlusion after the renumber — now §13.

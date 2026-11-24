@@ -91,6 +91,15 @@ pub struct Vertex {
     pub uv: [f32; 2],
     /// Phase 2f: texture-array layer, or `FLAT_LAYER` (u32::MAX).
     pub layer: u32,
+    /// Fine-slope-normals §14: the fine mesher's Stage H
+    /// occlusion factor for textured vertices (1.0 for flat
+    /// vertices and for meshes that record none). A colour
+    /// channel cannot carry it — the bake replaces a
+    /// textured vertex's RGB with the pure light multiplier
+    /// and the shader reads that only as the emitter
+    /// ceiling — so it rides as its own attribute and the
+    /// textured fragment multiplies its diffuse term by it.
+    pub occ: f32,
 }
 
 impl Vertex {
@@ -123,6 +132,11 @@ impl Vertex {
                     offset: 48,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    offset: 52,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }
@@ -249,6 +263,7 @@ struct VsIn {
     @location(2) color: vec4<f32>,
     @location(3) uv: vec2<f32>,
     @location(4) layer: u32,
+    @location(5) occ: f32,
 };
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -257,6 +272,7 @@ struct VsOut {
     @location(2) uv: vec2<f32>,
     @location(3) @interpolate(flat) layer: u32,
     @location(4) world_pos: vec3<f32>,
+    @location(5) occ: f32,
 };
 
 @vertex
@@ -268,6 +284,7 @@ fn vs_main(input: VsIn) -> VsOut {
     out.uv = input.uv;
     out.layer = input.layer;
     out.world_pos = input.position;
+    out.occ = input.occ;
     return out;
 }
 
@@ -388,7 +405,7 @@ fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
         let hv = normalize(l + v);
         let spec = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
         let fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-        var col = base * shade;
+        var col = base * shade * select(input.occ, 1.0, flat);
         col = mix(col, vec3<f32>(0.55, 0.65, 0.75), fres * 0.45);
         col = col + vec3<f32>(spec, spec, spec);
         return vec4<f32>(col, 1.0);
@@ -433,12 +450,12 @@ fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
     }
     let bake_ceil = input.color.rgb;
     if transparent {
-        return vec4<f32>(texel.rgb * (shade + emit * bake_ceil), texel.a * input.color.a);
+        return vec4<f32>(texel.rgb * input.occ * (shade + emit * bake_ceil), texel.a * input.color.a);
     }
     // Textured opaque/cutout: the input alpha was the sky
     // factor (consumed), not an opacity — the texel's own alpha
     // is the output, as it was pre-10.3 when the factor was 1.0.
-    return vec4<f32>(texel.rgb * (shade + emit * bake_ceil), texel.a);
+    return vec4<f32>(texel.rgb * input.occ * (shade + emit * bake_ceil), texel.a);
 }
 
 @fragment
@@ -1188,6 +1205,9 @@ impl Renderer {
                     // UV/layer data: flat sentinel, never sampled.
                     uv: mesh.uvs.get(i).copied().unwrap_or([0.0, 0.0]),
                     layer: mesh.layers.get(i).copied().unwrap_or(FLAT_LAYER),
+                    // §14: no recorded factor (or a short
+                    // array) means unoccluded.
+                    occ: mesh.tex_occlusion.get(i).copied().unwrap_or(1.0),
                 });
             }
             let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

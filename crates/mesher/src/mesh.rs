@@ -156,6 +156,21 @@ pub struct Mesh {
     /// Per-vertex texture-array layer (Phase 2f), `FLAT_LAYER` for
     /// untextured faces. Parallel to `positions`.
     pub layers: Vec<u32>,
+    /// Per-vertex occlusion factor for TEXTURED vertices
+    /// (fine-slope-normals §14): the fine mesher's Stage H
+    /// occlusion factor, carried separately from `colors`
+    /// because a textured vertex's RGB never reaches the
+    /// raster shader's diffuse term — the light bake
+    /// replaces it with the pure light multiplier, and the
+    /// shader reads that only as the emitter ceiling. The
+    /// factor therefore rides to the GPU as its own vertex
+    /// attribute, and the textured fragment multiplies its
+    /// diffuse term by it. Empty means "no factors recorded"
+    /// (every factor 1.0); when non-empty it is exactly
+    /// parallel to `positions`, maintained by every
+    /// `push_quad*` (1.0 unless the `_occ` variant supplies
+    /// real factors) and by `append`.
+    pub tex_occlusion: Vec<f32>,
     pub indices: Vec<u32>,
 }
 
@@ -264,6 +279,40 @@ impl Mesh {
         }
         self.indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        if !self.tex_occlusion.is_empty() {
+            self.tex_occlusion.extend_from_slice(&[1.0; 4]);
+        }
+    }
+
+    /// Append one textured quad with PER-CORNER occlusion
+    /// factors (fine-slope-normals §14): as
+    /// [`Mesh::push_quad_textured_per_corner_colors`], but the
+    /// quad's vertices record `factors` in `tex_occlusion`
+    /// (activating the array — backfilled with 1.0 over any
+    /// earlier vertices — when this is the first factored
+    /// quad). The bake applies these to textured vertices;
+    /// flat vertices' factors are ignored (their occlusion
+    /// already rides in their colours).
+    pub fn push_quad_textured_per_corner_colors_occ(
+        &mut self,
+        corners: [[f32; 3]; 4],
+        normals: [[f32; 3]; 4],
+        colors: [[f32; 4]; 4],
+        factors: [f32; 4],
+        uvs: [[f32; 2]; 4],
+        layer: u32,
+    ) {
+        let base = self.positions.len();
+        let was_active = !self.tex_occlusion.is_empty();
+        self.push_quad_textured_per_corner_colors(corners, normals, colors, uvs, layer);
+        if was_active {
+            // The plain push appended neutral factors; replace
+            // them with this quad's real ones.
+            self.tex_occlusion[base..base + 4].copy_from_slice(&factors);
+        } else {
+            self.tex_occlusion = vec![1.0; base];
+            self.tex_occlusion.extend_from_slice(&factors);
+        }
     }
 
     /// Append one textured quad (Phase 2f): per-corner `uvs` in the
@@ -286,10 +335,27 @@ impl Mesh {
         }
         self.indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        if !self.tex_occlusion.is_empty() {
+            self.tex_occlusion.extend_from_slice(&[1.0; 4]);
+        }
     }
 
     pub fn append(&mut self, other: &Mesh) {
         let base = self.positions.len() as u32;
+        // tex_occlusion merge (§14): an active side keeps the
+        // combined array parallel; an inactive side
+        // contributes neutral factors.
+        let self_active = !self.tex_occlusion.is_empty();
+        let other_active = !other.tex_occlusion.is_empty();
+        if self_active && other_active {
+            self.tex_occlusion.extend_from_slice(&other.tex_occlusion);
+        } else if self_active {
+            self.tex_occlusion
+                .extend(std::iter::repeat(1.0).take(other.positions.len()));
+        } else if other_active {
+            self.tex_occlusion = vec![1.0; self.positions.len()];
+            self.tex_occlusion.extend_from_slice(&other.tex_occlusion);
+        }
         self.positions.extend_from_slice(&other.positions);
         self.normals.extend_from_slice(&other.normals);
         self.colors.extend_from_slice(&other.colors);
