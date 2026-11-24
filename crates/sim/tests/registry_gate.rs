@@ -55,8 +55,14 @@ fn registry_loads_full_table() {
         .expect("wire t_door_c");
     assert_eq!(wire_door.open_result.as_deref(), Some("t_door_o"));
     assert_eq!(wire_door.roof_result.as_deref(), Some("t_wood_roof"));
-    assert_eq!(wire_door.fg_ref, -1);
-    assert_eq!(wire_door.bg_ref, -1);
+    // fg/bg: -1 for every def until the fg_refs join landed
+    // (Phase 11 follow-up, 2026-11-24). t_door_c's composed UltiCa
+    // entry primaries are fg 6076 / bg 6077 — the same values the
+    // importer's validate spot-checks pin against the 0.I-1 tree's
+    // bundled tile_config.json (cross-verified against the tileset
+    // crate's fg_refs tool, 12,143 ids / 0 diffs).
+    assert_eq!(wire_door.fg_ref, 6076);
+    assert_eq!(wire_door.bg_ref, 6077);
 }
 
 #[test]

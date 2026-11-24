@@ -72,5 +72,71 @@
   "Monster": 1123,
   "Item": 9912,
   "VehiclePart": 462
+ },
+ "fg_bg": {
+  "tile_config": "/home/hatch/workspace/cdda-stable/cdda-0.I-1/gfx/UltimateCataclysm/tile_config.json",
+  "entries_seen": 9252,
+  "ids_registered": 12143,
+  "duplicate_id_registrations_skipped": 0,
+  "ids_with_fg": 12139,
+  "ids_with_bg": 2654,
+  "per_kind": {
+   "Terrain": {
+    "defs": 1108,
+    "with_fg": 623,
+    "with_bg": 337,
+    "no_tileset_entry": 485,
+    "entry_without_fg": 0,
+    "entry_without_bg": 286
+   },
+   "Furniture": {
+    "defs": 659,
+    "with_fg": 313,
+    "with_bg": 12,
+    "no_tileset_entry": 346,
+    "entry_without_fg": 0,
+    "entry_without_bg": 301
+   },
+   "Trap": {
+    "defs": 124,
+    "with_fg": 29,
+    "with_bg": 8,
+    "no_tileset_entry": 95,
+    "entry_without_fg": 0,
+    "entry_without_bg": 21
+   },
+   "Field": {
+    "defs": 144,
+    "with_fg": 32,
+    "with_bg": 0,
+    "no_tileset_entry": 112,
+    "entry_without_fg": 0,
+    "entry_without_bg": 32
+   },
+   "Monster": {
+    "defs": 1123,
+    "with_fg": 659,
+    "with_bg": 573,
+    "no_tileset_entry": 464,
+    "entry_without_fg": 0,
+    "entry_without_bg": 86
+   },
+   "Item": {
+    "defs": 9912,
+    "with_fg": 3308,
+    "with_bg": 249,
+    "no_tileset_entry": 6600,
+    "entry_without_fg": 4,
+    "entry_without_bg": 3063
+   },
+   "VehiclePart": {
+    "defs": 462,
+    "with_fg": 64,
+    "with_bg": 2,
+    "no_tileset_entry": 398,
+    "entry_without_fg": 0,
+    "entry_without_bg": 62
+   }
+  }
  }
 }

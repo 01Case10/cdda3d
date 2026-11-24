@@ -19,7 +19,10 @@ python3 tools/sim-defs/sim_defs.py validate  # -> generated/validation.json
 
 Python 3, stdlib only. Paths default to this repo's
 `fork-src/cdda/data/json` and `fork-src/cdda/src/mapdata.h`;
-override with `--data` / `--mapdata` / `--out-dir`.
+override with `--data` / `--mapdata` / `--out-dir`. The fg/bg
+join reads the composed tileset config bundled with the data
+tree (`<tree>/gfx/UltimateCataclysm/tile_config.json`); override
+with `--tile-config`.
 
 Entries are found by their `"type"` field across **all** folders
 under `data/json` (terrain/furniture live in
@@ -71,6 +74,30 @@ Monster=4, Item=5, VehiclePart=6.
   `bash_result` is `bash.ter_set` (terrain) / `bash.furn_set`
   (furniture); `roof_result` is `roof` (terrain only);
   `looks_like` is taken for every kind.
+- `fg_ref` / `bg_ref` (Phase 11 follow-up, 2026-11-24): joined
+  from the composed tileset `tile_config.json` bundled with the
+  data tree (UltiCa), keyed by string id — string ids are global
+  in the tileset, exactly as in the fork adapter's `FgBgRefs`
+  table (`refs.lookup(string_id)`, no `looks_like` resolution).
+  The value is the entry's **primary** sprite index (highest
+  weight, ties by list order — the tileset crate's
+  `SpriteRef::primary` convention, ported from
+  `crates/tileset/src/lib.rs`; the port was cross-verified
+  value-for-value against the crate's `fg_refs` tool: 12,143 ids,
+  0 diffs). Refs are section-local composed indices, matching the
+  schema's single-int fields. A def whose string id has no
+  composed entry, or whose entry's slot has no index primary,
+  keeps **-1** — indices are never invented. Against the 0.I-1
+  tree: 12,143 tileset ids (12,139 with fg, 2,654 with bg);
+  of the 13,532 defs, 5,028 gain an fg ref and 1,181 a bg ref.
+  The remaining fg -1s are 8,500 defs with no tileset entry at
+  all (6,600 of them items — UltiCa tiles only a fraction of the
+  item universe) plus 4 items (`pie`, `pie_maple`, `pie_meat`,
+  `pie_veggy`) whose composed entries carry a bg but no fg slot.
+  Per-kind coverage is in `build_report.json` (`fg_bg`); validate
+  recomputes the join and fails on any mismatch, and spot-checks
+  pin `t_door_c` (6076, 6077), `mon_zombie` (12548, 12377),
+  `t_floor` (6317, -1), and `pie` (-1, 1445).
 - Names: strings pass through; translation dicts take `str`
   (then `str_sp`/`str_pl`); field types take their first
   intensity level's name (the adapter's `field_type::name(0)`).
@@ -89,11 +116,14 @@ Monster=4, Item=5, VehiclePart=6.
    happen to use exactly this sorted scheme already — see
    `item_wire_id()` in the adapter.) Ids collide across kinds by
    design, exactly as in the game; the tile field gives context.
-2. **fg_ref / bg_ref are -1 for every def in this slice.** The
-   join against the composed tileset `tile_config.json` (the
-   tileset crate's fg_refs table) is a follow-up slice. -1 is the
-   schema's "none" sentinel and is what the real adapter emits
-   when its refs table is absent — no indices are invented.
+2. **fg_ref / bg_ref were -1 for every def in slice S1a** — the
+   join against the composed tileset `tile_config.json` was a
+   follow-up. **RESOLVED 2026-11-24** (Phase 11 follow-up): the
+   join is implemented (see the `fg_ref`/`bg_ref` bullet under
+   "What build emits"); -1 now remains only where the tileset
+   genuinely has no entry or no index primary for the slot, which
+   is also what the real adapter emits for unmapped ids — no
+   indices are invented.
 
 ## Inheritance rule implemented
 
