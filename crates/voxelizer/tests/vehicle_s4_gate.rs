@@ -63,7 +63,8 @@ fn thin_vehicle_parts_stay_in_the_centre_band() {
     layout.tiles.insert((1, 0, 0), vec![spot("wheel_bicycle")]);
     layout.tiles.insert((-1, 0, 0), vec![spot("wheel_bicycle")]);
     let models = compose_vehicle(&layout, &sprites);
-    // Frame: footprint extrusion confined to rows 13..19.
+    // Frame: a side elevation like every other part on a
+    // thin vehicle — centre plane rows 15..18 only.
     let frame = &models
         .iter()
         .find(|(k, _)| *k == (0, 0, 0))
@@ -71,7 +72,7 @@ fn thin_vehicle_parts_stay_in_the_centre_band() {
         .1;
     for z in 0..32u32 {
         let any = (0..32u32).any(|x| (0..96u32).any(|y| frame.get(x, y, z).is_some()));
-        assert_eq!(any, (13..19).contains(&z), "frame row {z} occupancy");
+        assert_eq!(any, (15..18).contains(&z), "frame row {z} occupancy");
     }
     // Wheel: a profile disc — centre rows only, spanning
     // most of the tile's height, touching near the ground.

@@ -240,3 +240,25 @@ Gates: vehicle_s4_gate 2/2 (bed floor/rim heights, thin
 band + profile-wheel occupancy); the S1/S2 car gate is
 unchanged and green — the car has no bed tiles and is not
 thin, by construction.
+
+## 11. S5 bike correction (2026-11-24, Joey's diagnosis)
+
+Joey: the bicycle sprite is from a side view while the car
+sprites are top down. Verified against the tileset: EVERY
+bicycle-specific sprite is a side elevation (wheel_bicycle,
+vp_saddle — handlebar curve over stem over saddle,
+vp_foot_pedals — a crank, vp_basketsm_bike_rear), while the
+generic vp_basketsm is top-down and xlframe does not
+resolve in the material table at all (the bike's frame was
+never drawn). The S4 band extrusions were therefore wrong
+in kind, not degree.
+
+New thin rule: on a thin vehicle every part is drawn as a
+side elevation in the centre plane (draw_profile: sprite
+rows -> height, rows 15..18), wheels deferred so they draw
+over the parts behind them, and the tileset's bike variant
+vp_<base>_bike_rear wins over the generic sprite when it
+exists. Thin itself is now single-row AND no bed tiles —
+a one-row cargo cart keeps the footprint treatment (its
+sprites are top-down); the first cut profile-mapped the
+S4 gate's one-row bed layout and the gate caught it.

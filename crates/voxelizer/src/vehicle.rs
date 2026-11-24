@@ -179,6 +179,31 @@ fn extrude(
     }
 }
 
+/// Draw a sprite as a side elevation in the tile's centre
+/// plane (rows 15..18): sprite columns map to tile x,
+/// sprite rows map to height (30 units over the tile).
+/// Thin vehicles' tileset art is drawn this way — the
+/// bicycle's wheel, saddle, pedals and rear basket are all
+/// side elevations, unlike the cars' top-down sprites.
+fn draw_profile(grid: &mut Grid, tx: i32, ty: i32, spr: &RgbaImage, part: &str) {
+    let (w, h) = (spr.width() as i32, spr.height() as i32);
+    for sy in 0..h {
+        for sx in 0..w {
+            let px = spr.get_pixel(sx as u32, sy as u32);
+            if px[3] < 128 {
+                continue;
+            }
+            let lx = sx * FINE / w;
+            let zt = (h - 1 - sy) as f64 * 30.0 / h as f64;
+            for ly in 15..18 {
+                put(grid, tx * FINE + lx, ty * FINE + ly,
+                    zt, zt + 30.0 / h as f64,
+                    [px[0], px[1], px[2]], part);
+            }
+        }
+    }
+}
+
 /// Zones derived from one z-level's tile map.
 struct Zones {
     roof_tiles: std::collections::HashSet<(i32, i32)>,
@@ -255,6 +280,11 @@ fn zones(tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>) -> Option<Zones> {
     }
     let row_lo = tiles.keys().map(|t| t.1).min().unwrap();
     let row_hi = tiles.keys().map(|t| t.1).max().unwrap();
+    // Thin means a profile-art vehicle (the bicycle): a
+    // single row AND no bed — a one-row cargo cart or
+    // trailer keeps the footprint treatment, its sprites
+    // are top-down like the cars'.
+    let thin = row_lo == row_hi && bed_tiles.is_empty();
     Some(Zones {
         roof_tiles,
         glass_tiles,
@@ -267,7 +297,7 @@ fn zones(tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>) -> Option<Zones> {
         row_lo,
         row_hi,
         bed_tiles,
-        thin: row_lo == row_hi,
+        thin,
     })
 }
 
@@ -303,6 +333,25 @@ fn build_level(
         let mut thin_wheels: Vec<RgbaImage> = Vec::new();
         for spot in spots {
             let base = spot.base.as_str();
+            if z.thin {
+                // Thin vehicle: every part is a side
+                // elevation in the centre plane. The
+                // tileset's bike-specific variant of a
+                // part (vp_<base>_bike_rear) wins over the
+                // generic sprite when it exists. Wheels
+                // defer so they draw over the parts behind
+                // them in the plane.
+                let Some(generic) = sprite_for(base, sprites) else {
+                    continue;
+                };
+                let spr = sprites(&format!("vp_{base}_bike_rear")).unwrap_or(generic);
+                if base.starts_with("wheel") {
+                    thin_wheels.push(spr);
+                } else {
+                    draw_profile(&mut grid, tx, ty, &spr, base);
+                }
+                continue;
+            }
             if base == "wheel" {
                 continue; // the tile-level constructor below
             }
@@ -352,20 +401,6 @@ fn build_level(
                 extrude(&mut grid, tx, ty, &spr, FRAME_Z.0, &|_, _, _| FRAME_Z.1, Some(&band), "frame");
             } else if matches!(base, "seat" | "reclining_seat" | "seat_back" | "saddle") {
                 extrude(&mut grid, tx, ty, &spr, SEAT_Z.0, &|_, _, _| SEAT_Z.1, Some(&band), base);
-            } else if z.thin && base.starts_with("wheel") {
-                thin_wheels.push(spr);
-            } else if base == "basketsm" && z.thin {
-                // A basket is a container (the bed rule at
-                // tile scale): rim walls on the tile edges,
-                // a floor inside — not a solid block.
-                let top = |_gx: i32, lx: i32, ly: i32| {
-                    if lx < 4 || lx >= FINE - 4 || ly < 4 || ly >= FINE - 4 {
-                        26.0
-                    } else {
-                        17.0
-                    }
-                };
-                extrude(&mut grid, tx, ty, &spr, CLEAR, &top, Some(&band), base);
             } else if matches!(base, "cargo_space" | "trunk") && z.bed_tiles.contains(&(tx, ty)) {
                 // The bed: interior columns stop at the
                 // floor; a 4-wide rim on any edge facing a
@@ -385,11 +420,7 @@ fn build_level(
                 };
                 extrude(&mut grid, tx, ty, &spr, CLEAR, &top, Some(&band), base);
             } else {
-                // Thin vehicles: nothing but the wheels
-                // stands at deck height; generic parts cap
-                // at 20 (saddle posts, a basket's rim).
-                let cap = if z.thin { 20.0 } else { f64::INFINITY };
-                let top = |gx: i32, _lx: i32, _ly: i32| deck_top_at(&z, gx, tx).min(cap);
+                let top = |gx: i32, _lx: i32, _ly: i32| deck_top_at(&z, gx, tx);
                 extrude(&mut grid, tx, ty, &spr, CLEAR, &top, Some(&band), base);
             }
         }
@@ -429,25 +460,7 @@ fn build_level(
             }
         }
         for spr in &thin_wheels {
-            // A thin vehicle's wheel sprite is a true side
-            // profile: map sprite rows to height in the
-            // centre rows instead of extruding the footprint.
-            let (w, h) = (spr.width() as i32, spr.height() as i32);
-            for sy in 0..h {
-                for sx in 0..w {
-                    let px = spr.get_pixel(sx as u32, sy as u32);
-                    if px[3] < 128 {
-                        continue;
-                    }
-                    let lx = sx * FINE / w;
-                    let zt = (h - 1 - sy) as f64 * 30.0 / h as f64;
-                    for ly in 15..18 {
-                        put(&mut grid, tx * FINE + lx, ty * FINE + ly,
-                            zt, zt + 30.0 / h as f64,
-                            [px[0], px[1], px[2]], "wheel");
-                    }
-                }
-            }
+            draw_profile(&mut grid, tx, ty, spr, "wheel");
         }
         // Wheel constructor: a disc at the tile's centre
         // column, on the vehicle's outer side.
