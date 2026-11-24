@@ -226,3 +226,42 @@ by this addendum. When built, the slice's gates are:
    inside the pool stays absent.
 4. Sim parity: S3's hand-computed street_block expectations
    (noon and midnight) assert lit, frac, and tint per tile.
+
+## 7. Emitter prototype — built and merged (2026-11-23)
+
+The §5 prototype slice was built ahead of the frac/tint wire
+work, to measure the capped baseline ("lid", option (a) shape)
+before the A-vs-B decision. Branch `p11-emitter-proto`
+@ 43e873d, merged to local main @ a1335f9 on Joey's word
+(2026-11-23); parent re-verified (gate re-run + full
+lighting/treebuild/engine suites green, no goldens regen'd).
+
+- Shared model `crates/lighting/src/emitters.rs` (max 4
+  emitters, packed uniforms, one WGSL cone+distance falloff
+  snippet; visibility caller-supplied). Raster: per-fragment
+  falloff, visibility 1.0 (v1 asymmetry). RT: falloff plus one
+  shadow ray per emitter. Fixture-only `headlight-car` scene
+  behind `--emitters`; empty set renders byte-identical.
+- Measured (gate `crates/engine/tests/emitter_gate.rs`,
+  lavapipe, empty render as control): raster pool luminance
+  0.015 → 0.149 (per-vertex) / 0.020 → 0.190 (per-block);
+  RT pool 0.061 → 0.620; RT occluded tiles behind the tree
+  0.0686 → 0.0688 (shadow holds); DARK tile in the beam
+  capped in both renderers; BLANK tile unchanged.
+  Verdict so far: the lid is well-behaved; nothing measured
+  forces option (b). A-vs-B remains Joey's call.
+- Textured follow-up (2026-11-23, Joey's request): with
+  `--textures assets/ultica_run1`, RT carries materials
+  correctly (warm pool over grass texture, textured DARK
+  patch, pond edge lit, shadow wedge intact; sampled pool
+  RGB (175,167,71) vs outside grass (2,2,3)). **Raster
+  textured path BUG:** the pool is effectively invisible
+  (sampled pool (49,53,27) vs outside grass (51,56,59)).
+  Root cause, `crates/engine/src/render.rs` textured branch:
+  the emitter term is multiplied by `bake_ceil` = mean of
+  the vertex colour, and the vertex colour is albedo × bake
+  — so albedo and bake are applied twice to emitter light
+  (the flat path has no such extra factor, which is why it
+  works). The ceiling scalar must be the bake (lit factor)
+  alone. Fix + a textured raster gate assertion are the
+  follow-up; not yet done.
