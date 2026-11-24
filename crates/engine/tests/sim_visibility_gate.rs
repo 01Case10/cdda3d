@@ -153,13 +153,13 @@ fn t1_render_half_midnight_and_memory() {
     // contract, voxel_exporter.cpp:164-167 — never-memorized
     // tiles in a partial memory block stay BLANK).
     //
-    // FOUND DIVERGENCE (engine side, not fixed here — the
-    // lighting crate is another thread's territory):
-    // grid_from_snapshot's apply_block stamps MEMORIZED on
-    // EVERY tile of a memory block, ignoring the block's lit
-    // array, so through the grid this tile currently reads
-    // Memorized instead of Hidden. The fixtures never exposed
-    // it (the stub house has no memory blocks at all). The
+    // FIXED 2026-11-24 (Phase 11 follow-up lane C): the
+    // adapter's apply_block used to stamp MEMORIZED on EVERY
+    // tile of a memory block, ignoring the block's lit array,
+    // so this tile read Memorized instead of Hidden. It now
+    // honours the per-tile lit array fail-closed (non-MEMORIZED
+    // → BLANK); regression gate:
+    // crates/lighting/tests/memory_block_partial_gate.rs. The
     // wire-level assertion below is the contract the sim is
     // responsible for.
     let mb = snap
