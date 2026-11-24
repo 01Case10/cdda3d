@@ -424,3 +424,46 @@ never reads raster meshes); its committed capture is
 unchanged. Also fixed in passing: fine.rs and the corner
 gate still cited this plan's §12 for per-corner
 occlusion after the renumber — now §13.
+
+## 15. Correction — occlusion off slope-treated faces (2026-11-24, Joey's verdict)
+
+§14 as built made the vehicle WORSE (Joey, on the capture:
+"This is worse than the previous image"). Measured: the
+car darkened on 20,980 px (mean luma −7.4%), the roof
+alone on 1,407 tread-band pixels. The mechanism: the
+factor darkens tread corners beside every step, and on a
+shallow slope every tread has a step beside it — so each
+step gained a dark line, re-emphasising the staircase the
+fitted normals had smoothed. On a slope the counted
+"occluder" is the surface's own next step; the fitted
+normal already shades exactly that. Occlusion is for
+light blocked by OTHER geometry.
+
+Rule (Joey's pick over a full revert): a corner whose
+shading normal is TILTED records 1.0; an axis-shaded
+corner keeps its factor. Per-corner, in the fine mesher's
+recording step only — colours, the flat path, the bake
+and the shader are untouched from §14. Consequences by
+construction: fitted top faces and slope risers record
+nothing; a tread beside a CLIFF keeps its contact shadow
+(the cliff's samples fall outside the fit's threshold, so
+its fit — and normal — stay axis); wall contacts and
+undersides keep theirs.
+
+Gate re-scoped to match (same file): the step tread now
+pins 1.0 at every corner (was 0.67; verified failing-first
+against the §14 mesher), and a new cliff scene pins the
+preservation — tread beside a 32-cell cliff records 0.56
+near / 1.0 far. Mesher 41/41; engine set green (emitter
+5/5, golden 3/3 no regen, phase9_render 3/3, puddle 4/4,
+raster_tex 3/3, sky_raster 7/7, vehicle_texture 4/4).
+
+Vehicle evidence: against the pre-§14 capture only 2,846
+px differ (was 30,494), 2,845 of them darker — the kept
+contact occlusion at axis-shaded faces (glasshouse
+junctions, prop contacts); on the blue roof, ZERO pixels
+differ (was 1,407). Against §14, 27,736 px differ — the
+slopes restored. Quads unchanged (221,840); distinct
+colours 11,321 raster / 7,014 top. §14's plumbing (the
+tex_occlusion array, the attribute, the shader multiply)
+stands; §15 is purely the recording rule.

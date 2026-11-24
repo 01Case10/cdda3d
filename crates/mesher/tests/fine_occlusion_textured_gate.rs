@@ -1,21 +1,30 @@
 //! Textured-path occlusion gate (docs/fine-slope-normals.md
-//! §14): under the fine-path opt-in, a stamped TEXTURED
-//! face's per-corner Stage H occlusion factors are recorded
-//! in `Mesh::tex_occlusion`, parallel to the vertices,
-//! because the per-vertex light bake replaces a textured
-//! vertex's RGB with the pure light multiplier — factors
-//! folded into the colour (the flat path's route) would be
-//! discarded there. The gate pins:
+//! §14, re-scoped by §15): under the fine-path opt-in, a
+//! stamped TEXTURED face's per-corner Stage H occlusion
+//! factors are recorded in `Mesh::tex_occlusion`, parallel
+//! to the vertices, because a textured vertex's RGB never
+//! reaches the raster shader's diffuse term. §15's rule,
+//! from the vehicle captures: a corner whose shading
+//! normal is TILTED (slope-treated — a fitted top face or
+//! a slope riser) records 1.0, because the fitted normal
+//! already shades the step and the step occluding itself
+//! on top of that draws a dark line at every step; an
+//! axis-shaded corner keeps its factor, because there the
+//! darkening is OTHER geometry's shadow (a tread beside a
+//! cliff, a wall contact). The gate pins:
 //!
-//! - the tread beside a 1-cell step: the textured top face's
-//!   recorded factors read 0.67 at the step-side corners and
-//!   1.0 at the far corners — the same gradient the flat
-//!   gate pins on colours;
+//! - the tread beside a 1-cell step (its fit tilts):
+//!   every recorded factor is 1.0 — where §14 recorded
+//!   0.67 at the step-side corners;
+//! - the tread beside a 32-cell cliff (samples beyond the
+//!   fit's cliff threshold are excluded, so its fit stays
+//!   flat): step-side corners record 0.56 (4 occluders —
+//!   the cliff fills the front cell's side and above),
+//!   far corners 1.0;
 //! - the array is exactly parallel to the vertex arrays
-//!   (the bake's length check depends on it), including
-//!   vertices from the chunk's coarse part (factor 1.0);
-//! - with the opt-in OFF nothing is recorded (empty array):
-//!   the legacy textured path stays byte-identical.
+//!   whenever anything is recorded;
+//! - with the opt-in OFF nothing is recorded (empty
+//!   array): the legacy textured path stays byte-identical.
 
 use mesher::block::Block;
 use mesher::chunk::ChunkMap;
@@ -94,7 +103,7 @@ fn top_quads(mesh: &Mesh) -> Vec<([f32; 3], [([f32; 3], f32); 4])> {
 
 /// (near, far) recorded factors of the tread top faces over
 /// fine column `lx` of tile (4,4), interior ly band — the
-/// corner gate's split: corners toward the step are near.
+/// corner gate's split: corners toward the rise are near.
 fn tread_factors(mesh: &Mesh, lx: i32) -> (Vec<f32>, Vec<f32>) {
     let bs = WorldScale::default().block_size;
     let want_cx = (4 * FINE + lx) as f32 / FINE as f32 * bs + 0.5 * bs / FINE as f32;
@@ -120,20 +129,37 @@ fn tread_factors(mesh: &Mesh, lx: i32) -> (Vec<f32>, Vec<f32>) {
     (near, far)
 }
 
-fn step_scene() -> (ChunkMap, FineLayer) {
-    // One-cell step at lx = 16, rising along +x.
-    scene(|lx, _ly| if lx < 16 { 8 } else { 9 })
-}
-
 #[test]
-fn textured_tread_records_the_occlusion_gradient() {
-    let mesh = mesh(&step_scene(), true);
+fn slope_tread_records_no_occlusion() {
+    // One-cell step at lx = 16, rising along +x: the
+    // tread's plane fit tilts, so §15 records nothing.
+    let mesh = mesh(&scene(|lx, _ly| if lx < 16 { 8 } else { 9 }), true);
     assert_eq!(
         mesh.tex_occlusion.len(),
         mesh.positions.len(),
         "recorded factors must be exactly parallel to the vertices"
     );
-    // The tread beside the riser is the top of column 15.
+    let (near, far) = tread_factors(&mesh, 15);
+    assert!(
+        near.len() >= 40 && far.len() >= 40,
+        "tread corners sampled: near {}, far {}",
+        near.len(),
+        far.len()
+    );
+    for f in near.iter().chain(far.iter()) {
+        assert!(
+            (f - 1.0).abs() < 1e-4,
+            "slope-treated tread corner factor {f}, want 1.0 (§15)"
+        );
+    }
+}
+
+#[test]
+fn cliff_tread_keeps_its_contact_occlusion() {
+    // A 32-cell cliff at lx = 16: beyond the fit's cliff
+    // threshold, so the tread's fit stays flat and its
+    // corners keep the cliff's contact shadow.
+    let mesh = mesh(&scene(|lx, _ly| if lx < 16 { 8 } else { 40 }), true);
     let (near, far) = tread_factors(&mesh, 15);
     assert!(
         near.len() >= 40 && far.len() >= 40,
@@ -149,15 +175,15 @@ fn textured_tread_records_the_occlusion_gradient() {
     }
     for f in &near {
         assert!(
-            (f - 0.67).abs() < 1e-4,
-            "near corner factor {f}, want 0.67 (3 occluders)"
+            (f - 0.56).abs() < 1e-4,
+            "near corner factor {f}, want 0.56 (4 occluders: the cliff)"
         );
     }
 }
 
 #[test]
 fn flag_off_records_nothing() {
-    let mesh = mesh(&step_scene(), false);
+    let mesh = mesh(&scene(|lx, _ly| if lx < 16 { 8 } else { 9 }), false);
     assert!(
         mesh.tex_occlusion.is_empty(),
         "opt-in off must keep the legacy textured path untouched"

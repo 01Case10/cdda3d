@@ -1161,15 +1161,41 @@ pub fn mesh_chunk_fine(
                                         tex_layer,
                                     );
                                     match corner_occs {
-                                        Some(occs) => mesh
-                                            .push_quad_textured_per_corner_colors_occ(
+                                        Some(occs) => {
+                                            // §15: a corner whose
+                                            // shading normal is
+                                            // TILTED (slope-treated)
+                                            // records 1.0 — the
+                                            // fitted normal already
+                                            // shades its step, and
+                                            // the step occluding
+                                            // itself on top of that
+                                            // drew a dark line at
+                                            // every step of the
+                                            // vehicle slopes.
+                                            // Axis-shaded corners
+                                            // keep their factor:
+                                            // there the darkening
+                                            // is other geometry's
+                                            // shadow (a tread
+                                            // beside a cliff, a
+                                            // wall contact).
+                                            let rec = [0, 1, 2, 3].map(|i| {
+                                                if normals4[i] == normal {
+                                                    occs[i]
+                                                } else {
+                                                    1.0
+                                                }
+                                            });
+                                            mesh.push_quad_textured_per_corner_colors_occ(
                                                 corners,
                                                 normals4,
                                                 corner_colors,
-                                                occs,
+                                                rec,
                                                 uvs,
                                                 tex_layer,
-                                            ),
+                                            )
+                                        }
                                         None => mesh.push_quad_textured_per_corner_colors(
                                             corners,
                                             normals4,
