@@ -21,6 +21,14 @@
 //! stored `Snapshot` with [`apply_delta_to_snapshot`] and
 //! rebuilds the `WireScene`, so the seated world is the
 //! delta-fed state, not just the connect-time snapshot.
+//!
+//! GI companions (Lane H): a scene built by the live session
+//! (`client::LiveWorld::wire_scene`) also carries the wire
+//! environment sample and the lighting scene derived from the
+//! same snapshot, so a consumer (the windowed app, a live
+//! capture) seats Phase 10 sky + GI from the wire data itself.
+//! [`WireScene::from_wire`] leaves both `None` — it stays the
+//! pure world build the parity gates pin.
 
 use std::sync::Arc;
 
@@ -52,6 +60,23 @@ pub struct WireScene {
     /// it through the same `stamp_props_into` pipeline the
     /// fixture prop scenes take.
     pub props: Option<crate::frame::PropScene>,
+    /// The wire environment sample this world was built from
+    /// (Lane H): the snapshot's piggybacked
+    /// `EnvironmentUpdate`, converted by the lighting proto
+    /// adapter. A consumer seats its sky scene from it
+    /// (`SkyScene::new` / `SkyScene::push` on newer samples).
+    /// `None` = the snapshot carried no environment (or the
+    /// scene was built by [`WireScene::from_wire`] directly,
+    /// which leaves the companions unseated by design).
+    pub environment: Option<lighting::GameEnvironment>,
+    /// The lighting scene derived from the same snapshot
+    /// (Lane H): the game's lit/outside grids via
+    /// `LightingScene::from_snapshot`, sky exposure included.
+    /// Seated into `CaptureArgs::lighting` by the live
+    /// consumers, so both renderers apply the Phase 7 ceiling
+    /// rule + Phase 10 GI to the wire world. `None` as for
+    /// [`WireScene::environment`].
+    pub lighting: Option<crate::frame::LightingScene>,
 }
 
 impl WireScene {
@@ -87,6 +112,8 @@ impl WireScene {
             map: Arc::new(map),
             min_game_z,
             props: None,
+            environment: None,
+            lighting: None,
         }
     }
 
@@ -94,6 +121,19 @@ impl WireScene {
     /// scene's own snapshot (see [`prop_scene_for_wire`]).
     pub fn with_props(mut self, props: Option<crate::frame::PropScene>) -> Self {
         self.props = props;
+        self
+    }
+
+    /// Attach the GI companions derived from this scene's
+    /// own snapshot (Lane H — see the field docs): the wire
+    /// environment sample and the snapshot's lighting scene.
+    pub fn with_companions(
+        mut self,
+        environment: Option<lighting::GameEnvironment>,
+        lighting: Option<crate::frame::LightingScene>,
+    ) -> Self {
+        self.environment = environment;
+        self.lighting = lighting;
         self
     }
 }

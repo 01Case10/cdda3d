@@ -130,14 +130,35 @@ impl LiveWorld {
         }
     }
 
+    /// The current wire environment sample (Lane H): the
+    /// held snapshot's piggybacked `EnvironmentUpdate` — the
+    /// connect-time one with every accepted Delta's
+    /// environment folded over it — converted by the lighting
+    /// proto adapter. `None` before the first Snapshot, or
+    /// when the snapshot carries no environment.
+    pub fn environment(&self) -> Option<lighting::GameEnvironment> {
+        self.snapshot
+            .as_ref()
+            .and_then(lighting::proto_adapter::game_environment_from_snapshot)
+    }
+
     /// The renderable wire scene for the current live state
     /// (blocks coloured by the string-id palette,
     /// [`crate::wire::palette_resolver`] — Lane G; before it,
     /// every def rendered the same grey), or `None` before
     /// the first Snapshot.
+    ///
+    /// Lane H: the scene also carries the GI companions
+    /// derived from the same snapshot — the environment
+    /// sample and the lighting scene
+    /// (`LightingScene::from_snapshot`: the game's lit/outside
+    /// grids + wire-derived sky exposure) — so its consumers
+    /// seat Phase 10 sky + GI from the wire data itself.
     pub fn wire_scene(&self) -> Option<WireScene> {
         let (defs, snap) = (self.defs.as_ref()?, self.snapshot.as_ref()?);
         let scene = WireScene::from_wire(defs, snap, &crate::wire::palette_resolver(defs));
+        let lighting = crate::frame::LightingScene::from_snapshot(snap, scene.min_game_z);
+        let scene = scene.with_companions(self.environment(), Some(lighting));
         match &self.props_table {
             Some(table) => Some(scene.with_props(crate::wire::prop_scene_for_wire(defs, snap, table))),
             None => Some(scene),
@@ -145,13 +166,20 @@ impl LiveWorld {
     }
 
     /// Capture args rendering the live world to `out`: the
-    /// wire scene seated, camera on the player (or the house
+    /// wire scene seated with its GI companions (sky +
+    /// lighting, Lane H), camera on the player (or the house
     /// centre before the player is known), cutaway at the
     /// player's z.
     pub fn capture_args(&self, out: &Path, size: (u32, u32)) -> Option<CaptureArgs> {
         let wire = self.wire_scene()?;
         let mut args = CaptureArgs::default();
         args.snapshot = "wire".to_string();
+        if let Some(lit) = &wire.lighting {
+            args.lighting = Some(lit.clone());
+        }
+        if let Some(env) = &wire.environment {
+            args.sky = Some(crate::frame::SkyScene::new(env.clone()));
+        }
         args.wire = Some(wire);
         args.out = out.to_path_buf();
         args.size = size;

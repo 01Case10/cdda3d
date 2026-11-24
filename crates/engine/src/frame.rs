@@ -147,6 +147,32 @@ impl LightingScene {
         }
     }
 
+    /// A scene seated from a wire `Snapshot` (Phase 11
+    /// follow-up, Lane H — the live session's lighting): the
+    /// grid is the game's own lit/outside data via the proto
+    /// adapter (`grid_from_snapshot` — the same conversion the
+    /// capture path and the sim gates use), and the bake
+    /// environment is derived from the snapshot's piggybacked
+    /// environment — hour from `time_of_day_sec`, weather
+    /// classified from the resolved numerics
+    /// (`lighting::sky::classify_weather`, the §2.1 rule:
+    /// classification never reads the weather id). A snapshot
+    /// carrying no environment seats the grid under the
+    /// neutral bake environment: the grid is the game's light
+    /// truth either way, the environment only tempers it.
+    pub fn from_snapshot(snap: &proto::SnapshotT, min_game_z: i32) -> Self {
+        let grid = lighting::proto_adapter::grid_from_snapshot(snap);
+        let env = lighting::proto_adapter::game_environment_from_snapshot(snap)
+            .map(|ge| {
+                lighting::Environment::new(
+                    ge.time_of_day_sec / 3600.0,
+                    lighting::sky::classify_weather(&ge),
+                )
+            })
+            .unwrap_or_else(lighting::Environment::neutral);
+        Self::from_grid(grid, env, min_game_z)
+    }
+
     /// The fake house under the Phase 7 night-interior light grid
     /// (exterior `DARK`, lamp falloff inside, walls occluding),
     /// evaluated at `hour` in `weather`. The fixture grid
