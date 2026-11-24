@@ -2,7 +2,9 @@
 //! by a client speaking the Phase 1 wire through `proto` framing —
 //! the same path `proto-client` uses. S1: the server sends the
 //! FULL registry TileDefs (14,262 defs) and the stub_house scene
-//! Snapshot.
+//! Snapshot. S2: the S0 Input echo is replaced by real-game
+//! semantics — a pressed Key Input is one turn, answered by a
+//! Delta (see crates/sim/tests/turn_gate.rs for the rule gates).
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -102,7 +104,7 @@ fn join_server(handle: JoinHandle<proto::Result<()>>) {
 }
 
 #[test]
-fn s0_handshake_snapshot_echo_ping_shutdown() {
+fn s0_handshake_snapshot_turn_ping_shutdown() {
     let path = temp_socket("flow");
     let server = spawn_server(path.clone());
     let mut stream = connect(&path);
@@ -144,13 +146,37 @@ fn s0_handshake_snapshot_echo_ping_shutdown() {
         other => panic!("expected Snapshot, got {other:?}"),
     }
 
-    // Input echo is semantically equal to what was sent.
+    // S2 turn semantics (replacing the S0 echo): a pressed Key
+    // Input is one turn, answered by exactly one Delta with the
+    // next seq. sample_input is the key 'i' — an unrecognised
+    // key, so the turn changes nothing: no tile changes, no
+    // entity updates. stub_house has no player, so no map shift
+    // can occur either.
     let input = sample_input();
-    send(&mut stream, &MessageT::Input(Box::new(input.clone())));
+    send(&mut stream, &MessageT::Input(Box::new(input)));
     match recv(&mut stream, &mut dec) {
-        MessageT::Input(echo) => assert_eq!(*echo, input),
-        other => panic!("expected Input echo, got {other:?}"),
+        MessageT::Delta(d) => {
+            assert_eq!(d.seq, 2, "seq advances by exactly 1 per turn");
+            assert_eq!(d.epoch, 1);
+            assert!(
+                d.tile_changes.as_ref().is_none_or(|v| v.is_empty()),
+                "a no-op turn must not change tiles: {:?}",
+                d.tile_changes
+            );
+            assert!(
+                d.entity_updates.as_ref().is_none_or(|v| v.is_empty()),
+                "a no-op turn must not update entities: {:?}",
+                d.entity_updates
+            );
+        }
+        other => panic!("expected Delta after a Key turn, got {other:?}"),
     }
+
+    // A key RELEASE is not a turn: no reply. (Proved by the Ping
+    // below being answered by a Pong, not by a stray Delta.)
+    let mut release = sample_input();
+    release.pressed = false;
+    send(&mut stream, &MessageT::Input(Box::new(release)));
 
     // Ping -> Pong with the same nonce (and sent_ms).
     let mut ping = PingT::default();

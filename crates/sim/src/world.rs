@@ -27,15 +27,16 @@
 //! displayed over other fields; otherwise the highest intensity
 //! wins; ties keep the first entry.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use proto::samples::sample_environment;
 use proto::{
-    DisplayedFieldT, EntityT, Facing, FieldOnTileT, LitLevel, SnapshotT, SubmapBlockT, Vec3iT,
-    VehiclePartStateT, VehicleT,
+    DeltaT, DisplayedFieldT, EntityT, Facing, FieldOnTileT, LitLevel, MessageT, SnapshotT,
+    SubmapBlockT, TileChangeT, Vec3iT, VehiclePartStateT, VehicleT,
 };
 
 use crate::defs::{DefRegistry, Kind};
+use crate::rules::PendingAction;
 use crate::scenes::{Scene, SUBMAP};
 
 pub const TILES: usize = SUBMAP * SUBMAP;
@@ -71,6 +72,27 @@ pub struct World {
     pub view_radius: u32,
     pub environment: bool,
     pub emit_outside: bool,
+    /// Entity id of the player spawn (`type = "player"`), if the
+    /// scene has one. The player entity is the movement actor.
+    pub player_id: Option<u64>,
+    /// Seq of the last message sent (0 = nothing sent yet). Every
+    /// Snapshot/Delta send advances it by exactly 1 (proto::sync).
+    pub seq: u64,
+    /// Current epoch. Starts at 1; a map shift (the player crosses
+    /// into a different submap than the one they were in at the
+    /// last Snapshot) bumps it and forces a fresh Snapshot.
+    pub epoch: u64,
+    /// Wire form of the blocks as last sent — the diff baseline,
+    /// exactly like the fork exporter diffing dirty submaps
+    /// against the client's known state.
+    last_blocks: Vec<SubmapBlockT>,
+    /// Entities as last sent — the entity-diff baseline.
+    last_entities: Vec<EntityT>,
+    /// Submap index (x/12, y/12, z) the player was in at the last
+    /// Snapshot; `None` until the first Snapshot is sent.
+    last_snapshot_player_submap: Option<(i32, i32, i32)>,
+    /// A pending Open/Close awaiting its direction key (S2 rules).
+    pub pending: Option<PendingAction>,
 }
 
 fn v3(x: i32, y: i32, z: i32) -> Vec3iT {
@@ -83,64 +105,73 @@ fn idx(x: usize, y: usize) -> usize {
 
 impl World {
     pub fn from_scene(reg: &DefRegistry, scene: &Scene) -> Result<World, String> {
+        // One BlockState per submap: a z-section may span several
+        // submaps (S2), split here into 12x12 blocks with absolute
+        // origins, row-major over the section.
         let mut blocks: Vec<BlockState> = Vec::new();
         for zs in &scene.zsections {
-            let mut tiles = vec![TileState::default(); TILES];
             let layer = |rows: &[String], x: usize, y: usize| -> char {
                 rows[y]
                     .chars()
                     .nth(x)
                     .expect("layer rows are width-checked")
             };
-            for y in 0..SUBMAP {
-                for x in 0..SUBMAP {
-                    let t = &mut tiles[idx(x, y)];
-                    let c = layer(&zs.map, x, y);
-                    let sid = zs.legend.get(&c).expect("map chars are legend-checked");
-                    t.terrain = reg.id_of(Kind::Terrain, sid);
-                    if t.terrain == 0 {
-                        return Err(format!(
-                            "scene '{}': legend char '{c}' -> '{sid}' is not a Terrain def",
-                            scene.name
-                        ));
-                    }
-                    if let Some(furn) = &zs.furn {
-                        let fc = layer(furn, x, y);
-                        if fc != '.' {
-                            let fsid = zs.legend.get(&fc).expect("furn chars are legend-checked");
-                            t.furniture = reg.id_of(Kind::Furniture, fsid);
-                            if t.furniture == 0 {
+            for by in 0..zs.height / SUBMAP {
+                for bx in 0..zs.width / SUBMAP {
+                    let mut tiles = vec![TileState::default(); TILES];
+                    for ly in 0..SUBMAP {
+                        for lx in 0..SUBMAP {
+                            let (gx, gy) = (bx * SUBMAP + lx, by * SUBMAP + ly);
+                            let t = &mut tiles[idx(lx, ly)];
+                            let c = layer(&zs.map, gx, gy);
+                            let sid = zs.legend.get(&c).expect("map chars are legend-checked");
+                            t.terrain = reg.id_of(Kind::Terrain, sid);
+                            if t.terrain == 0 {
                                 return Err(format!(
-                                    "scene '{}': furn char '{fc}' -> '{fsid}' is not a Furniture def",
+                                    "scene '{}': legend char '{c}' -> '{sid}' is not a Terrain def",
                                     scene.name
                                 ));
                             }
-                        }
-                    }
-                    if let Some(trap) = &zs.trap {
-                        let tc = layer(trap, x, y);
-                        if tc != '.' {
-                            let tsid = zs.legend.get(&tc).expect("trap chars are legend-checked");
-                            t.trap = reg.id_of(Kind::Trap, tsid);
-                            if t.trap == 0 {
-                                return Err(format!(
-                                    "scene '{}': trap char '{tc}' -> '{tsid}' is not a Trap def",
-                                    scene.name
-                                ));
+                            if let Some(furn) = &zs.furn {
+                                let fc = layer(furn, gx, gy);
+                                if fc != '.' {
+                                    let fsid =
+                                        zs.legend.get(&fc).expect("furn chars are legend-checked");
+                                    t.furniture = reg.id_of(Kind::Furniture, fsid);
+                                    if t.furniture == 0 {
+                                        return Err(format!(
+                                            "scene '{}': furn char '{fc}' -> '{fsid}' is not a Furniture def",
+                                            scene.name
+                                        ));
+                                    }
+                                }
+                            }
+                            if let Some(trap) = &zs.trap {
+                                let tc = layer(trap, gx, gy);
+                                if tc != '.' {
+                                    let tsid =
+                                        zs.legend.get(&tc).expect("trap chars are legend-checked");
+                                    t.trap = reg.id_of(Kind::Trap, tsid);
+                                    if t.trap == 0 {
+                                        return Err(format!(
+                                            "scene '{}': trap char '{tc}' -> '{tsid}' is not a Trap def",
+                                            scene.name
+                                        ));
+                                    }
+                                }
                             }
                         }
                     }
+                    blocks.push(BlockState {
+                        origin: v3((bx * SUBMAP) as i32, (by * SUBMAP) as i32, zs.z),
+                        tiles,
+                    });
                 }
             }
-            blocks.push(BlockState {
-                origin: v3(0, 0, zs.z),
-                tiles,
-            });
         }
 
-        // Sparse per-tile extras, addressed by absolute pos. The
-        // block containing the pos must exist (single-submap S1
-        // scenes: x/y in 0..12, z one of the sections).
+        // Sparse per-tile extras, addressed by absolute pos: the
+        // block whose 12x12 footprint contains the pos.
         fn place(
             blocks: &[BlockState],
             scene_name: &str,
@@ -149,19 +180,18 @@ impl World {
         ) -> Result<(usize, usize), String> {
             let b = blocks
                 .iter()
-                .position(|b| b.origin.z == pos[2])
+                .position(|b| {
+                    b.origin.z == pos[2]
+                        && (b.origin.x..b.origin.x + SUBMAP as i32).contains(&pos[0])
+                        && (b.origin.y..b.origin.y + SUBMAP as i32).contains(&pos[1])
+                })
                 .ok_or_else(|| {
                     format!(
-                        "scene '{scene_name}': {what} at {pos:?} has no [z{}] section",
-                        pos[2]
+                        "scene '{scene_name}': {what} at {pos:?} is outside the scene's submaps"
                     )
                 })?;
-            if !(0..SUBMAP as i32).contains(&pos[0]) || !(0..SUBMAP as i32).contains(&pos[1]) {
-                return Err(format!(
-                    "scene '{scene_name}': {what} at {pos:?} is outside the 12x12 submap (S1 scenes are one submap)"
-                ));
-            }
-            Ok((b, idx(pos[0] as usize, pos[1] as usize)))
+            let o = &blocks[b].origin;
+            Ok((b, idx((pos[0] - o.x) as usize, (pos[1] - o.y) as usize)))
         }
         for f in &scene.fields {
             let (b, i) = place(&blocks, &scene.name, f.pos, "field")?;
@@ -194,6 +224,7 @@ impl World {
         // Entities in file order, ids 1.. — author the player
         // first (the real adapter emits the avatar first).
         let mut entities = Vec::new();
+        let mut player_id: Option<u64> = None;
         for (n, s) in scene.spawns.iter().enumerate() {
             let (type_def, sprite) = if s.type_id == "player" {
                 (0, s.sprite.clone().unwrap_or_else(|| "player".to_string()))
@@ -218,6 +249,9 @@ impl World {
                     ))
                 }
             };
+            if s.type_id == "player" {
+                player_id = Some((n + 1) as u64);
+            }
             // Generated table types are #[non_exhaustive] outside
             // the proto crate: Default + field assignment.
             let mut e = EntityT::default();
@@ -290,6 +324,13 @@ impl World {
             view_radius: scene.view_radius,
             environment: scene.environment,
             emit_outside: scene.emit_outside,
+            player_id,
+            seq: 0,
+            epoch: 1,
+            last_blocks: Vec::new(),
+            last_entities: Vec::new(),
+            last_snapshot_player_submap: None,
+            pending: None,
         })
     }
 
@@ -303,15 +344,18 @@ impl World {
         self.dirty.insert(origin);
     }
 
-    /// Build the Snapshot (seq 1, epoch 1 in S1) and clear the
-    /// dirty set — the all-dirty first send.
-    pub fn snapshot(&mut self, reg: &DefRegistry) -> SnapshotT {
+    /// Build a Snapshot of the current state with the given
+    /// seq/epoch. Pure: does not touch the send baseline (the
+    /// mirror-invariant gate uses it to ask "what would a fresh
+    /// Snapshot say right now?"). Note the S2 simplification: a
+    /// Snapshot contains ALL scene submaps — the scene extent is
+    /// the bubble; there is no view-window culling yet.
+    pub fn build_snapshot(&self, reg: &DefRegistry, seq: u64, epoch: u64) -> SnapshotT {
         let blocks: Vec<SubmapBlockT> = self
             .blocks
             .iter()
             .map(|b| self.build_block(reg, b))
             .collect();
-        self.dirty.clear();
         let mut snap = SnapshotT::default();
         snap.view_origin = Some(self.view_origin.clone());
         snap.view_radius = self.view_radius;
@@ -327,8 +371,8 @@ impl World {
         } else {
             Some(self.vehicles.clone())
         };
-        snap.seq = 1;
-        snap.epoch = 1;
+        snap.seq = seq;
+        snap.epoch = epoch;
         // S1 placeholder: the canonical sample environment
         // (noon/clear/spring). Time/weather simulation is S3.
         snap.environment = if self.environment {
@@ -337,6 +381,195 @@ impl World {
             None
         };
         snap
+    }
+
+    /// Record a Snapshot as sent: it becomes the diff baseline,
+    /// the dirty set clears, and the player's submap at this
+    /// Snapshot is remembered for shift detection.
+    fn record_sent(&mut self, snap: &SnapshotT) {
+        self.seq = snap.seq;
+        self.epoch = snap.epoch;
+        self.last_blocks = snap.blocks.clone().unwrap_or_default();
+        self.last_entities = snap.entities.clone().unwrap_or_default();
+        self.last_snapshot_player_submap = self.player_pos().map(submap_index);
+        self.dirty.clear();
+    }
+
+    /// The initial Snapshot send (seq 1, epoch 1 on a fresh
+    /// world) — the all-dirty first send.
+    pub fn snapshot(&mut self, reg: &DefRegistry) -> SnapshotT {
+        let snap = self.build_snapshot(reg, self.seq + 1, self.epoch);
+        self.record_sent(&snap);
+        snap
+    }
+
+    // -----------------------------------------------------------------
+    // Turn-loop support (S2): tile/entity access for the rules,
+    // and the diff-shaped flush.
+    // -----------------------------------------------------------------
+
+    /// (block index, tile index) for an absolute tile pos, if the
+    /// scene has a submap containing it.
+    pub fn tile_at(&self, pos: [i32; 3]) -> Option<(usize, usize)> {
+        let b = self.blocks.iter().position(|b| {
+            b.origin.z == pos[2]
+                && (b.origin.x..b.origin.x + SUBMAP as i32).contains(&pos[0])
+                && (b.origin.y..b.origin.y + SUBMAP as i32).contains(&pos[1])
+        })?;
+        let o = &self.blocks[b].origin;
+        Some((b, idx((pos[0] - o.x) as usize, (pos[1] - o.y) as usize)))
+    }
+
+    /// Terrain wire id at an absolute pos.
+    pub fn terrain_at(&self, pos: [i32; 3]) -> Option<u32> {
+        let (b, i) = self.tile_at(pos)?;
+        Some(self.blocks[b].tiles[i].terrain)
+    }
+
+    /// Set the terrain at an absolute pos and mark its submap
+    /// dirty. Returns false if the pos is outside the scene.
+    pub fn set_terrain(&mut self, pos: [i32; 3], terrain: u32) -> bool {
+        let Some((b, i)) = self.tile_at(pos) else {
+            return false;
+        };
+        self.blocks[b].tiles[i].terrain = terrain;
+        let o = &self.blocks[b].origin;
+        self.mark_dirty((o.x, o.y, o.z));
+        true
+    }
+
+    /// The player's current position: the player entity's pos
+    /// (the entity list is the source of truth once spawned),
+    /// falling back to the scene's `player` key.
+    pub fn player_pos(&self) -> Option<[i32; 3]> {
+        if let Some(id) = self.player_id {
+            if let Some(e) = self.entities.iter().find(|e| e.id == id) {
+                if let Some(p) = &e.pos {
+                    return Some([p.x, p.y, p.z]);
+                }
+            }
+        }
+        self.player_pos
+    }
+
+    /// Move the player entity to `pos`, updating facing from the
+    /// horizontal step: LEFT if dx < 0, RIGHT if dx > 0, unchanged
+    /// if dx == 0 (§3.2). No submap is dirtied — entities are not
+    /// tile state; the entity diff carries the move.
+    pub fn set_player_pos(&mut self, pos: [i32; 3]) {
+        if let Some(id) = self.player_id {
+            if let Some(e) = self.entities.iter_mut().find(|e| e.id == id) {
+                let dx = e.pos.as_ref().map_or(0, |p| pos[0] - p.x);
+                if dx < 0 {
+                    e.facing = Facing::LEFT;
+                } else if dx > 0 {
+                    e.facing = Facing::RIGHT;
+                }
+                e.pos = Some(v3(pos[0], pos[1], pos[2]));
+            }
+        }
+        self.player_pos = Some(pos);
+    }
+
+    /// True if a creature entity (not the player) occupies `pos`.
+    pub fn creature_at(&self, pos: [i32; 3]) -> bool {
+        self.entities.iter().any(|e| {
+            Some(e.id) != self.player_id
+                && e.pos
+                    .as_ref()
+                    .is_some_and(|p| p.x == pos[0] && p.y == pos[1] && p.z == pos[2])
+        })
+    }
+
+    /// Flush one resolved turn (S2): diff the current state
+    /// against the last-sent baseline, exactly like the fork
+    /// exporter — mutations marked their submap dirty, and only
+    /// dirty submaps are diffed, tile by tile. Entities are
+    /// diffed by id over the whole list.
+    ///
+    /// If the player is now in a different submap than at the
+    /// last Snapshot (a map shift, plan §2.7), the flush is
+    /// instead a fresh Snapshot with epoch + 1. Either way seq
+    /// advances by exactly 1, and a Delta is sent even when
+    /// nothing changed.
+    pub fn flush_turn(&mut self, reg: &DefRegistry) -> MessageT {
+        // No Snapshot sent yet: the first flush IS the Snapshot.
+        if self.last_blocks.is_empty() {
+            return MessageT::Snapshot(Box::new(self.snapshot(reg)));
+        }
+        // Map shift?
+        if let (Some(cur), Some(last)) = (
+            self.player_pos().map(submap_index),
+            self.last_snapshot_player_submap,
+        ) {
+            if cur != last {
+                let snap = self.build_snapshot(reg, self.seq + 1, self.epoch + 1);
+                self.record_sent(&snap);
+                return MessageT::Snapshot(Box::new(snap));
+            }
+        }
+
+        self.seq += 1;
+        let cur_blocks: Vec<SubmapBlockT> = self
+            .blocks
+            .iter()
+            .map(|b| self.build_block(reg, b))
+            .collect();
+        let last_by_origin: HashMap<(i32, i32, i32), &SubmapBlockT> = self
+            .last_blocks
+            .iter()
+            .map(|b| {
+                let o = b.origin.as_ref().expect("blocks always carry an origin");
+                ((o.x, o.y, o.z), b)
+            })
+            .collect();
+
+        let mut tile_changes: Vec<TileChangeT> = Vec::new();
+        for cb in &cur_blocks {
+            let o = cb.origin.as_ref().expect("blocks always carry an origin");
+            let key = (o.x, o.y, o.z);
+            if !self.dirty.contains(&key) {
+                continue;
+            }
+            let Some(lb) = last_by_origin.get(&key) else {
+                continue;
+            };
+            for i in 0..TILES {
+                if let Some(tc) = diff_tile(lb, cb, i) {
+                    tile_changes.push(tc);
+                }
+            }
+        }
+
+        let mut entity_updates: Vec<EntityT> = Vec::new();
+        for e in &self.entities {
+            match self.last_entities.iter().find(|old| old.id == e.id) {
+                Some(old) if old == e => {}
+                _ => entity_updates.push(e.clone()),
+            }
+        }
+        let entity_removed: Vec<u64> = self
+            .last_entities
+            .iter()
+            .map(|old| old.id)
+            .filter(|id| !self.entities.iter().any(|e| e.id == *id))
+            .collect();
+
+        self.dirty.clear();
+        self.last_blocks = cur_blocks;
+        self.last_entities = self.entities.clone();
+
+        let mut delta = DeltaT::default();
+        delta.seq = self.seq;
+        delta.epoch = self.epoch;
+        delta.tile_changes = Some(tile_changes);
+        delta.entity_updates = Some(entity_updates);
+        delta.entity_removed = Some(entity_removed);
+        delta.vehicle_updates = None;
+        delta.vehicle_removed = None;
+        // Environment changes are S3; a turn never carries one yet.
+        delta.environment = None;
+        MessageT::Delta(Box::new(delta))
     }
 
     fn build_block(&self, reg: &DefRegistry, b: &BlockState) -> SubmapBlockT {
@@ -450,6 +683,118 @@ impl World {
         }
         (0..TILES).map(|i| barrier[i] || reached[i]).collect()
     }
+}
+
+/// Submap index of a tile pos: (x/12, y/12, z), euclidean so
+/// negative coordinates index correctly.
+pub fn submap_index(pos: [i32; 3]) -> (i32, i32, i32) {
+    (
+        pos[0].div_euclid(SUBMAP as i32),
+        pos[1].div_euclid(SUBMAP as i32),
+        pos[2],
+    )
+}
+
+/// One tile's full wire state, extracted from a `SubmapBlockT` —
+/// the unit the Delta diff compares. Missing arrays read as
+/// their zero values (our own blocks always carry every array;
+/// `outside` is the exception, absent unless the scene emits it).
+#[derive(Debug, Clone, PartialEq)]
+struct TileView {
+    terrain: u32,
+    furniture: u32,
+    trap: u32,
+    fields: Vec<(u32, u8)>,
+    displayed: (u32, u8),
+    top_item: u32,
+    item_count: u16,
+    lit: LitLevel,
+    seen: u8,
+    graffiti: bool,
+    outside: bool,
+}
+
+fn tile_view(b: &SubmapBlockT, i: usize) -> TileView {
+    fn at<T: Copy>(arr: &Option<Vec<T>>, i: usize, zero: T) -> T {
+        arr.as_ref().and_then(|v| v.get(i)).copied().unwrap_or(zero)
+    }
+    let fields: Vec<(u32, u8)> = b
+        .fields
+        .as_ref()
+        .map(|fs| {
+            fs.iter()
+                .filter(|f| f.tile_index as usize == i)
+                .map(|f| (f.type_, f.intensity))
+                .collect()
+        })
+        .unwrap_or_default();
+    let displayed = b
+        .displayed_field
+        .as_ref()
+        .and_then(|v| v.get(i))
+        .map(|d| (d.field_type, d.intensity))
+        .unwrap_or((0, 0));
+    TileView {
+        terrain: at(&b.terrain, i, 0),
+        furniture: at(&b.furniture, i, 0),
+        trap: at(&b.trap, i, 0),
+        fields,
+        displayed,
+        top_item: at(&b.top_item, i, 0),
+        item_count: at(&b.item_count, i, 0),
+        lit: at(&b.lit, i, LitLevel::DARK),
+        seen: at(&b.seen, i, 0),
+        graffiti: at(&b.has_graffiti, i, false),
+        outside: at(&b.outside, i, false),
+    }
+}
+
+/// Diff one tile between the last-sent block and the current
+/// block; `Some(TileChange)` with the CURRENT state if anything
+/// differs. lit/seen/outside are compared (and carried) as
+/// stored — recomputing them is S3.
+fn diff_tile(last: &SubmapBlockT, cur: &SubmapBlockT, i: usize) -> Option<TileChangeT> {
+    let (lv, cv) = (tile_view(last, i), tile_view(cur, i));
+    if lv == cv {
+        return None;
+    }
+    let o = cur.origin.as_ref().expect("blocks always carry an origin");
+    let mut tc = TileChangeT::default();
+    tc.pos = Some(v3(
+        o.x + (i % SUBMAP) as i32,
+        o.y + (i / SUBMAP) as i32,
+        o.z,
+    ));
+    tc.terrain = cv.terrain;
+    tc.furniture = cv.furniture;
+    tc.trap = cv.trap;
+    tc.fields = if cv.fields.is_empty() {
+        None
+    } else {
+        Some(
+            cv.fields
+                .iter()
+                .map(|&(type_, intensity)| {
+                    let mut f = FieldOnTileT::default();
+                    f.tile_index = i as u16;
+                    f.type_ = type_;
+                    f.intensity = intensity;
+                    f
+                })
+                .collect(),
+        )
+    };
+    tc.top_item = cv.top_item;
+    tc.item_count = cv.item_count;
+    tc.lit = cv.lit;
+    tc.seen = cv.seen;
+    tc.has_graffiti = cv.graffiti;
+    tc.displayed_field = Some(DisplayedFieldT {
+        field_type: cv.displayed.0,
+        intensity: cv.displayed.1,
+    });
+    tc.outside = cv.outside;
+    Some(tc)
 }
 
 /// The displayed-field rule (§3.2, as in the sample house): fire

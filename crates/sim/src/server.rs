@@ -8,9 +8,14 @@
 //! S1 behaviour: after the HelloAck, the server sends the FULL
 //! registry TileDefs (all 14,262 defs from the S1a generated
 //! table) and then the configured scene's Snapshot, built by
-//! [`crate::world::World`]. The rest of the loop is S0's: Input
-//! echo (the turn loop is S2), Ping/Pong, Resize/PickResult
-//! logging, Shutdown.
+//! [`crate::world::World`].
+//!
+//! S2 behaviour: the Input ECHO of S0/S1 is gone — it was stub
+//! semantics. A pressed Key Input is one game turn, resolved by
+//! [`crate::rules`] and answered with exactly one Delta (or a
+//! fresh Snapshot on a map shift); key releases and non-Key
+//! inputs get no reply. Ping/Pong, Resize/PickResult logging,
+//! and Shutdown are unchanged from S0.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -164,8 +169,13 @@ fn serve_one(listener: &UnixListener, reg: &DefRegistry, world: &mut World) -> p
                     "sim-server: input kind={:?} key={} pressed={}",
                     input.kind, input.key_code, input.pressed
                 );
-                // Echo the input back verbatim (S0/S1: no turn loop yet).
-                send(&mut stream, &MessageT::Input(input))?;
+                // One pressed Key = one turn (S2 rules); the turn's
+                // Delta/Snapshot is the only reply. Releases,
+                // non-Key inputs and Open/Close arming keys produce
+                // no message.
+                if let Some(msg) = world.apply_input(reg, &input) {
+                    send(&mut stream, &msg)?;
+                }
             }
             MessageT::Ping(ping) => {
                 // Generated types are #[non_exhaustive] outside the

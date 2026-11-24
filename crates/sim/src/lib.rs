@@ -6,15 +6,18 @@
 //! frame, verifier-checked decode, exact-match handshake.
 //!
 //! Slices landed: S0 (socket skeleton: handshake, TileDefs,
-//! Snapshot, Input echo, Ping/Pong, clean shutdown) and S1 (the
-//! full S1a def registry — 14,262 real defs — plus the §3.4 scene
-//! loader and the Snapshot builder; stub_house and the roofed-house
-//! pair reproduce the `proto::samples` fixtures semantically).
-//! The stateful turn loop (one Input = one turn, diff-shaped
-//! Deltas) is slice S2; visibility/environment simulation is S3.
+//! Snapshot, Ping/Pong, clean shutdown), S1 (the full S1a def
+//! registry — 14,262 real defs — plus the §3.4 scene loader and
+//! the Snapshot builder; stub_house and the roofed-house pair
+//! reproduce the `proto::samples` fixtures semantically), and
+//! S2 (the turn loop: one pressed Key Input = one turn, movement
+//! / door open-close rules, diff-shaped Deltas, fresh Snapshot
+//! with epoch + 1 on a map shift). Visibility/environment
+//! simulation is S3.
 
 pub mod defs;
 pub mod measure;
+pub mod rules;
 pub mod scenes;
 pub mod server;
 pub mod world;

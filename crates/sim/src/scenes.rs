@@ -21,9 +21,12 @@
 //!   `outside[]`, exactly like the samples).
 //! - Per-z sections `[z0]`, `[z1]`, `[z-1]`, each with:
 //!   - `legend = { "#" = "t_wall", ... }` — char -> string id.
-//!   - `map = [ "row", ... ]` — the TERRAIN layer. S1 scenes are
-//!     exactly one submap: 12 rows of 12 chars. Every char must
-//!     appear in the legend and resolve to a Terrain def.
+//!   - `map = [ "row", ... ]` — the TERRAIN layer. Since S2 a
+//!     section may span several submaps: the row count and the
+//!     row width must each be a multiple of 12 (S1 scenes are
+//!     12x12 = one submap; `street_block` is 24x24 = 2x2). Every
+//!     char must appear in the legend and resolve to a Terrain
+//!     def.
 //!   - `furn = [ "row", ... ]` (optional) — the FURNITURE layer,
 //!     a separate layer because the wire carries furniture as its
 //!     own array: `'.'` always means "no furniture"; any other
@@ -69,6 +72,10 @@ pub struct ZSection {
     pub map: Vec<String>,
     pub furn: Option<Vec<String>>,
     pub trap: Option<Vec<String>>,
+    /// Map width in tiles (a multiple of `SUBMAP`).
+    pub width: usize,
+    /// Map height in tiles (a multiple of `SUBMAP`).
+    pub height: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -713,11 +720,11 @@ impl RawDoc {
                 _ => return Err(format!("scene: {ctx}.legend must be an inline table")),
             }
             let map_rows = as_str_array(req(map, "map", &ctx)?, &format!("{ctx}.map"))?;
-            check_layer(&map_rows, &legend, &ctx, "map", false)?;
+            let (width, height) = check_layer(&map_rows, &legend, &ctx, "map", false)?;
             let furn = match get(map, "furn") {
                 Some(v) => {
                     let rows = as_str_array(v, &format!("{ctx}.furn"))?;
-                    check_layer(&rows, &legend, &ctx, "furn", true)?;
+                    check_layer_dims(&rows, &legend, &ctx, "furn", true, width, height)?;
                     Some(rows)
                 }
                 None => None,
@@ -725,7 +732,7 @@ impl RawDoc {
             let trap = match get(map, "trap") {
                 Some(v) => {
                     let rows = as_str_array(v, &format!("{ctx}.trap"))?;
-                    check_layer(&rows, &legend, &ctx, "trap", true)?;
+                    check_layer_dims(&rows, &legend, &ctx, "trap", true, width, height)?;
                     Some(rows)
                 }
                 None => None,
@@ -736,6 +743,8 @@ impl RawDoc {
                 map: map_rows,
                 furn,
                 trap,
+                width,
+                height,
             });
         }
         if zsections.is_empty() {
@@ -837,24 +846,54 @@ impl RawDoc {
     }
 }
 
+/// Validate a layer and return its `(width, height)` in tiles.
+/// Both dimensions must be a multiple of `SUBMAP` (a section may
+/// span several submaps since S2).
 fn check_layer(
     rows: &[String],
     legend: &HashMap<char, String>,
     ctx: &str,
     layer: &str,
     dot_is_none: bool,
-) -> Result<(), String> {
-    if rows.len() != SUBMAP {
+) -> Result<(usize, usize), String> {
+    let height = rows.len();
+    if height == 0 || height % SUBMAP != 0 {
         return Err(format!(
-            "scene: {ctx}.{layer} must have exactly {SUBMAP} rows (S1 scenes are one submap), got {}",
+            "scene: {ctx}.{layer} must have a multiple of {SUBMAP} rows, got {height}"
+        ));
+    }
+    let width = rows[0].chars().count();
+    if width == 0 || width % SUBMAP != 0 {
+        return Err(format!(
+            "scene: {ctx}.{layer} rows must be a multiple of {SUBMAP} chars wide, got {width}"
+        ));
+    }
+    check_layer_dims(rows, legend, ctx, layer, dot_is_none, width, height)?;
+    Ok((width, height))
+}
+
+/// Validate a layer against expected `(width, height)` (the
+/// overlay layers must match their section's `map` exactly).
+fn check_layer_dims(
+    rows: &[String],
+    legend: &HashMap<char, String>,
+    ctx: &str,
+    layer: &str,
+    dot_is_none: bool,
+    width: usize,
+    height: usize,
+) -> Result<(), String> {
+    if rows.len() != height {
+        return Err(format!(
+            "scene: {ctx}.{layer} must have {height} rows to match the map, got {}",
             rows.len()
         ));
     }
     for (y, row) in rows.iter().enumerate() {
         let chars: Vec<char> = row.chars().collect();
-        if chars.len() != SUBMAP {
+        if chars.len() != width {
             return Err(format!(
-                "scene: {ctx}.{layer} row {y} must be {SUBMAP} chars, got {}",
+                "scene: {ctx}.{layer} row {y} must be {width} chars, got {}",
                 chars.len()
             ));
         }
