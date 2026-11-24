@@ -33,6 +33,9 @@
 //! - raster DARK centre (per-block): 0.0041 -> 0.0556 (rise 0.052,
 //!   0.30x the pool's rise; per-vertex it leaks to 0.103 through
 //!   vertex smoothing/greedy merging — still below the pool)
+//! - raster textured pool (per-vertex): 0.0162 -> 0.0431
+//!   (rise 0.027; DARK centre rise 0.71x the pool's — see the
+//!   textured test's own doc for detail and pre-fix numbers)
 //! - RT pool: 0.0611 -> 0.6199 (rise 0.559)
 //! - RT occluded {(16,21),(18,21)}: 0.0686 -> 0.0688 (rise 0.0002)
 //! - RT DARK centre (11, 18): 0.0203 -> 0.2924 (rise 0.272,
@@ -313,6 +316,86 @@ fn raster_beam_pool_brightens_and_dark_tile_is_capped() {
     assert!(
         dw < pw,
         "DARK tile must stay below the pool even per-vertex: {dw:.4} vs {pw:.4}"
+    );
+}
+
+/// Textured raster (the `--textures assets/ultica_run1` path):
+/// the same pool/ceiling assertions over textured materials.
+/// This is the regression gate for the textured-ceiling bug:
+/// the shader's textured branch capped the emitter term by the
+/// MEAN of the vertex colour, but the Phase 7 per-vertex bake
+/// fuses albedo x bake into that colour, so the cap applied
+/// albedo and bake a second time and the pool was invisible
+/// over textures (CLI sample, pre-fix: pool RGB (49,53,27) vs
+/// outside grass (51,56,59)). The fix's contract: textured
+/// vertices carry the PURE bake multiplier in colour.rgb
+/// (bake_pass_meshes), and the shader caps the emitter term by
+/// that multiplier per channel.
+///
+/// Measured on lavapipe at 480x360 (per-vertex bake):
+/// - pool: 0.0162 -> 0.0431 (rise 0.027, 2.66x; the buggy fused
+///   cap measured 0.0162 -> 0.0271, rise 0.011 / 1.67x, when
+///   this test was run against the unfixed code)
+/// - DARK centre: 0.0163 -> 0.0355 (rise 0.019, 0.71x the
+///   pool's rise — per-vertex smoothing leaks across the patch
+///   border as in the flat gate; an uncapped tile at that spot,
+///   closer to the headlights than the pool mean, would rise
+///   ~1.0x)
+#[test]
+fn raster_textured_beam_pool_brightens_and_dark_tile_is_capped() {
+    let Some((device, queue, name)) = gpu() else {
+        println!("NOT RUN: no adapter");
+        return;
+    };
+    println!("adapter: {name}");
+    let tex_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ultica_run1");
+    if !tex_dir.join("materials.json").exists() {
+        // assets/ is gitignored voxelizer output (the 2f.2
+        // gate's convention): absent on a bare checkout.
+        println!("NOT RUN: assets/ultica_run1 not present");
+        return;
+    }
+    let render_tex = |with: bool| -> image::RgbaImage {
+        let mut args = scene_args(with, BakeMode::PerVertex);
+        args.textures = Some(tex_dir.clone());
+        let frame = render_frame(&device, &queue, &args).expect("textured raster frame");
+        let (img, _) = readback_rgba(&device, &queue, &frame.texture, frame.size).expect("readback");
+        img
+    };
+    let args0 = scene_args(false, BakeMode::PerVertex);
+    let empty = render_tex(false);
+    let with = render_tex(true);
+    let pe = raster_region(&args0, &empty, POOL);
+    let pw = raster_region(&args0, &with, POOL);
+    println!("raster textured pool (per-vertex): {pe:.4} -> {pw:.4}");
+    // Thresholds from the measured numbers: the buggy fused
+    // cap rose 0.011 (1.67x); the fixed multiplier cap rises
+    // 0.027 (2.66x). The rise is smaller than the flat path's
+    // 0.134 because the UltiCa grass texel is much darker than
+    // the scene's flat grass colour — the emitter term is
+    // multiplied by the texel albedo in both paths.
+    assert!(
+        pw > pe + 0.02 && pw > 2.2 * pe,
+        "textured beam pool must brighten measurably: {pe:.4} -> {pw:.4}"
+    );
+
+    // Ceiling over textures (per-vertex bake — the textured
+    // path's baker; as in the flat gate, vertex smoothing leaks
+    // some light across the patch border, but the DARK centre
+    // must stay below the pool and its rise must be a capped
+    // fraction of the pool's rise).
+    let de = raster_tile_lum(&args0, &empty, DARK_TILE, 2);
+    let dw = raster_tile_lum(&args0, &with, DARK_TILE, 2);
+    println!("raster textured DARK centre (per-vertex): {de:.4} -> {dw:.4} (pool {pe:.4} -> {pw:.4})");
+    assert!(
+        dw < pw,
+        "textured DARK tile must stay below the pool: {dw:.4} vs {pw:.4}"
+    );
+    assert!(
+        dw - de < (pw - pe) * 0.85,
+        "textured DARK tile's rise must be a capped fraction of the pool's: rise {:.4} vs pool rise {:.4}",
+        dw - de,
+        pw - pe
     );
 }
 

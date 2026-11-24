@@ -25,12 +25,12 @@
 //! same inputs, same outputs, no hidden state.
 
 use mesher::chunk::{Chunk, ChunkMap};
-use mesher::mesh::PassMeshes;
+use mesher::mesh::{PassMeshes, FLAT_LAYER};
 use mesher::scale::WorldScale;
 
 use crate::atmosphere::Environment;
 use crate::grid::LightSampler;
-use crate::mapping::{apply_visibility_rgb, LightSample, Visibility};
+use crate::mapping::{apply_visibility_rgb, LightSample, Visibility, MEMORIZED_BRIGHTNESS};
 use crate::smoothing::{smoothed_tile_sample, vertex_light_at_grid_corner, FACE_DIRS};
 
 /// Reference composition for one vertex/face color (used by both
@@ -77,6 +77,39 @@ fn shade_rgba(
 ) -> [f32; 4] {
     let rgb = shade_color([albedo[0], albedo[1], albedo[2]], sample, vis, env);
     [rgb[0], rgb[1], rgb[2], albedo[3]]
+}
+
+/// The pure light multiplier for one vertex — [`shade_color`]
+/// with the albedo step factored out (the separation
+/// `mapping::presented_sample` documents): the factor the fused
+/// composition multiplies the albedo by, per channel. The
+/// raster shader's textured path needs exactly this as its
+/// emitter ceiling: the texel supplies the albedo, so the
+/// vertex colour must carry the multiplier alone — carrying
+/// albedo x bake instead would apply both twice.
+fn light_multiplier(sample: LightSample, vis: Visibility, env: Environment) -> [f32; 3] {
+    match vis {
+        Visibility::Hidden => [0.0, 0.0, 0.0],
+        Visibility::Memorized => {
+            // Environment tint x the MEMORIZED dim, mirroring
+            // shade_color's Memorized arm. That arm's other
+            // step — desaturation — mixes channels and is not
+            // representable in a per-channel multiplier, so a
+            // textured memorized tile's emitter cap carries the
+            // brightness but not the desaturation.
+            let tint = [
+                env.day_night.tint[0] * env.weather.tint[0],
+                env.day_night.tint[1] * env.weather.tint[1],
+                env.day_night.tint[2] * env.weather.tint[2],
+            ];
+            [
+                tint[0] * MEMORIZED_BRIGHTNESS,
+                tint[1] * MEMORIZED_BRIGHTNESS,
+                tint[2] * MEMORIZED_BRIGHTNESS,
+            ]
+        }
+        Visibility::Visible => env.apply(sample).multiplier(),
+    }
 }
 
 /// Per-block bake. `grid_z_of_level0` maps chunk level 0 onto the
@@ -182,6 +215,11 @@ pub fn bake_pass_meshes<S: LightSampler + ?Sized>(
     let bs = scale.block_size;
     let per = scale.blocks_per_z_level.max(1) as i32;
     for mesh in meshes.meshes.iter_mut() {
+        // Defensive: `layers` is documented parallel to the
+        // vertex arrays; if a mesh's layers don't line up with
+        // its vertices, treat every vertex as flat rather than
+        // guess which ones are textured.
+        let layers_ok = mesh.layers.len() == mesh.positions.len();
         for i in 0..mesh.positions.len() {
             let p = mesh.positions[i];
             let n = mesh.normals[i];
@@ -223,7 +261,20 @@ pub fn bake_pass_meshes<S: LightSampler + ?Sized>(
                 vertex_light_at_grid_corner(sampler, air_tile, di, corner_tile)
             };
             let albedo = mesh.colors[i];
-            mesh.colors[i] = shade_rgba(albedo, sample, vis, env);
+            if layers_ok && mesh.layers[i] != FLAT_LAYER {
+                // Textured vertex (ordinary, macro and blend
+                // layer words alike): store the pure light
+                // multiplier, NOT shade_rgba's fused
+                // albedo x bake — the shader samples the albedo
+                // from the texture array and needs the bake
+                // alone, both as the emitter ceiling and to keep
+                // the albedo applied exactly once. Alpha is
+                // preserved exactly as shade_rgba preserves it.
+                let m = light_multiplier(sample, vis, env);
+                mesh.colors[i] = [m[0], m[1], m[2], albedo[3]];
+            } else {
+                mesh.colors[i] = shade_rgba(albedo, sample, vis, env);
+            }
         }
     }
 }
