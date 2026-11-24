@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use proto::samples::{sample_hello_ack, sample_input};
 use proto::{
     decode_message, encode_message, FrameDecoder, FrameEncoder, MessageT, PingT, ShutdownT,
-    PROTOCOL_VERSION,
+    UiMode, PROTOCOL_VERSION,
 };
 use sim::ServerConfig;
 
@@ -38,6 +38,8 @@ fn spawn_server(path: PathBuf) -> JoinHandle<proto::Result<()>> {
         ),
         scene_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scenes/stub_house.toml"),
         weather: None,
+        ui_shm_path: None,
+        ui_start: None,
     };
     std::thread::spawn(move || sim::run_server(&config))
 }
@@ -151,13 +153,26 @@ fn s0_handshake_snapshot_turn_ping_shutdown() {
         other => panic!("expected Snapshot, got {other:?}"),
     }
 
+    // S4: the initial UiFrame follows the Snapshot (the UI shm
+    // file was attached at the HelloAck's screen size; gameplay
+    // mode = MapInput).
+    match recv(&mut stream, &mut dec) {
+        MessageT::UiFrame(f) => {
+            assert_eq!(f.mode, UiMode::MapInput);
+            assert_eq!(f.seq, 1, "first frame in the attached store");
+            assert!(f.width > 0 && f.height > 0);
+        }
+        other => panic!("expected initial UiFrame, got {other:?}"),
+    }
+
     // S2 turn semantics (replacing the S0 echo): a pressed Key
     // Input is one turn, answered by exactly one Delta with the
-    // next seq. sample_input is the key 'i' — an unrecognised
-    // key, so the turn changes nothing: no tile changes, no
-    // entity updates. stub_house has no player, so no map shift
-    // can occur either.
-    let input = sample_input();
+    // next seq. The key is '5' — unbound (sample_input's 'i'
+    // became the Inventory binding in S4), so the turn changes
+    // nothing: no tile changes, no entity updates. stub_house
+    // has no player, so no map shift can occur either.
+    let mut input = sample_input();
+    input.key_code = '5' as i32;
     send(&mut stream, &MessageT::Input(Box::new(input)));
     match recv(&mut stream, &mut dec) {
         MessageT::Delta(d) => {

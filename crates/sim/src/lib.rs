@@ -16,7 +16,9 @@
 //! (computed visibility + environment: LOS/apparent-light/
 //! outside/frac/tint recompute, tile memory, the real calendar
 //! and weather presets, EnvironmentUpdate cadence, LightUpdate
-//! folding — see `environment` and `visibility`).
+//! folding — see `environment` and `visibility`), and S4 (the
+//! UI: shm writer in the ui-share store format, a five-state
+//! UI state machine with real-font rendering — see `ui`).
 
 pub mod defs;
 pub mod environment;
@@ -24,6 +26,7 @@ pub mod measure;
 pub mod rules;
 pub mod scenes;
 pub mod server;
+pub mod ui;
 pub mod visibility;
 pub mod world;
 

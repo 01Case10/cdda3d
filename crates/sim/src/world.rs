@@ -27,16 +27,20 @@
 //! wins; ties keep the first entry.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use proto::{
     DeltaT, DisplayedFieldT, EntityT, EnvironmentUpdateT, Facing, FieldOnTileT, LightUpdateT,
-    LitLevel, MessageT, SnapshotT, SubmapBlockT, TileChangeT, Vec3iT, VehiclePartStateT, VehicleT,
+    LitLevel, MessageT, PickResultT, SnapshotT, SubmapBlockT, TileChangeT, UiFrameT, Vec3iT,
+    VehiclePartStateT, VehicleT,
 };
+use ui_share::store::UiShmStore;
 
 use crate::defs::{DefRegistry, Kind};
 use crate::environment::{self, WeatherState};
 use crate::rules::PendingAction;
 use crate::scenes::{LightSpec, Scene, WeatherStep, SUBMAP};
+use crate::ui::{CellGrid, Ui, UiState, UiView, DEFAULT_UI_SIZE};
 use crate::visibility::{self, BlockVis};
 
 pub const TILES: usize = SUBMAP * SUBMAP;
@@ -111,6 +115,21 @@ pub struct World {
     last_snapshot_player_submap: Option<(i32, i32, i32)>,
     /// A pending Open/Close awaiting its direction key (S2 rules).
     pub pending: Option<PendingAction>,
+    /// The UI state machine + shm store (S4). Owns its store
+    /// (in-memory in-process; the server attaches a file store
+    /// after the handshake).
+    pub ui: Ui,
+    /// Items the player carries: (item wire id, count), in
+    /// inventory-list order. Seeded from the scene's
+    /// `[[carried]]` tables; pickup/drop (S6) will mutate it.
+    carried: Vec<(u32, u16)>,
+    /// The most recent PickResult the engine sent (S4): a pick
+    /// is a query answer, recorded for the gates — it never
+    /// mutates the world.
+    last_pick: Option<PickResultT>,
+    /// Message-log lines for the gameplay sidebar (oldest
+    /// first). Fed by the turn rules (door open/close today).
+    pub messages: Vec<String>,
 }
 
 fn v3(x: i32, y: i32, z: i32) -> Vec3iT {
@@ -358,6 +377,34 @@ impl World {
             }
         }
 
+        // S4: the carried list (inventory contents), resolved
+        // through the registry like every other scene extra.
+        let mut carried = Vec::new();
+        for c in &scene.carried {
+            let id = reg.id_of(Kind::Item, &c.type_id);
+            if id == 0 {
+                return Err(format!(
+                    "scene '{}': carried item '{}' is not an Item def",
+                    scene.name, c.type_id
+                ));
+            }
+            carried.push((id, c.count));
+        }
+        // S4: the UI, in-process form (memory store at the
+        // default size; the server attaches a file store at the
+        // HelloAck screen size after the handshake).
+        let mut ui = Ui::new_memory(DEFAULT_UI_SIZE.0, DEFAULT_UI_SIZE.1)
+            .map_err(|e| format!("scene '{}': ui store: {e}", scene.name))?;
+        if let Some(start) = &scene.ui_start {
+            let state = UiState::parse(start).ok_or_else(|| {
+                format!(
+                    "scene '{}': unknown ui_start '{start}' (use gameplay/inventory/crafting/look/main-menu)",
+                    scene.name
+                )
+            })?;
+            ui.set_state(state, scene.player);
+        }
+
         let dirty = blocks
             .iter()
             .map(|b| (b.origin.x, b.origin.y, b.origin.z))
@@ -392,8 +439,17 @@ impl World {
             last_entities: Vec::new(),
             last_snapshot_player_submap: None,
             pending: None,
+            ui,
+            carried,
+            last_pick: None,
+            messages: Vec::new(),
         };
         world.recompute_visibility(reg);
+        // Publish the initial UI frame into the store (the
+        // server sends its notification after the Snapshot,
+        // once the file store is attached; in-process readers
+        // see it via `ui_store()`).
+        world.refresh_ui(reg);
         Ok(world)
     }
 
@@ -421,6 +477,197 @@ impl World {
                 self.memory.insert(*pos, (t.terrain, t.furniture));
             }
         }
+    }
+
+    // -----------------------------------------------------------------
+    // UI support (S4): view assembly, publish, resize, picks.
+    // -----------------------------------------------------------------
+
+    /// An item def's display name: the def's `name` when the
+    /// table carries one, else its string id.
+    pub fn item_display_name(reg: &DefRegistry, id: u32) -> String {
+        match reg.def_by_id(Kind::Item, id) {
+            Some(d) if !d.name.is_empty() => d.name.clone(),
+            Some(d) => d.string_id.clone(),
+            None => format!("<item {id}>"),
+        }
+    }
+
+    /// The items the player carries: (item wire id, count).
+    pub fn carried_items(&self) -> &[(u32, u16)] {
+        &self.carried
+    }
+
+    /// The UI store handle (readers/tests attach through this;
+    /// the server swaps in a file store — fetch the handle
+    /// after any attach/resize).
+    pub fn ui_store(&self) -> &UiShmStore {
+        self.ui.store()
+    }
+
+    /// The current UI cell grid (the frame's text source).
+    pub fn ui_grid(&self) -> &CellGrid {
+        self.ui.grid()
+    }
+
+    /// The current UI state.
+    pub fn ui_state(&self) -> UiState {
+        self.ui.state()
+    }
+
+    /// The most recent PickResult received, if any.
+    pub fn last_pick(&self) -> Option<&PickResultT> {
+        self.last_pick.as_ref()
+    }
+
+    /// Assemble the render view from world state (plain data —
+    /// `crate::ui` never touches the world).
+    pub fn ui_view(&self, reg: &DefRegistry) -> UiView {
+        let secs = self.game_turn.rem_euclid(86_400);
+        let clock = format!(
+            "Day {}  {:02}:{:02}",
+            self.game_turn.div_euclid(86_400) + 1,
+            secs / 3600,
+            (secs % 3600) / 60
+        );
+        let look_lines = if self.ui.state() == UiState::LookAround {
+            self.look_lines(reg, self.ui.look_cursor())
+        } else {
+            Vec::new()
+        };
+        UiView {
+            scene_name: self.name.clone(),
+            player_pos: self.player_pos(),
+            player_hp: self
+                .player_id
+                .and_then(|id| self.entities.iter().find(|e| e.id == id))
+                .map(|e| e.hp_frac),
+            clock,
+            weather: self.weather.preset.to_string(),
+            carried: self
+                .carried
+                .iter()
+                .map(|&(id, n)| (Self::item_display_name(reg, id), n))
+                .collect(),
+            messages: self.messages.clone(),
+            look_lines,
+        }
+    }
+
+    /// Description lines for the look-around cursor tile:
+    /// terrain / furniture / trap / items / fields by def name,
+    /// plus the computed light + outside verdicts.
+    fn look_lines(&self, reg: &DefRegistry, pos: [i32; 3]) -> Vec<String> {
+        let name_of = |kind: Kind, id: u32| -> String {
+            if id == 0 {
+                return String::new();
+            }
+            match reg.def_by_id(kind, id) {
+                Some(d) if !d.name.is_empty() => d.name.clone(),
+                Some(d) => d.string_id.clone(),
+                None => format!("<def {id}>"),
+            }
+        };
+        let Some((b, i)) = self.tile_at(pos) else {
+            return vec!["(outside the scene)".to_string()];
+        };
+        let t = &self.blocks[b].tiles[i];
+        let mut lines = Vec::new();
+        lines.push(format!("Terrain: {}", name_of(Kind::Terrain, t.terrain)));
+        let furn = name_of(Kind::Furniture, t.furniture);
+        if !furn.is_empty() {
+            lines.push(format!("Furniture: {furn}"));
+        }
+        let trap = name_of(Kind::Trap, t.trap);
+        if !trap.is_empty() {
+            lines.push(format!("Trap: {trap}"));
+        }
+        if t.top_item != 0 {
+            let mut line = format!("Items: {}", Self::item_display_name(reg, t.top_item));
+            if t.item_count > 1 {
+                line.push_str(&format!(" × {}", t.item_count));
+            }
+            lines.push(line);
+        }
+        for &(type_, intensity) in &t.fields {
+            lines.push(format!("Field: {} (intensity {intensity})", name_of(Kind::Field, type_)));
+        }
+        let vis = &self.vis[b];
+        lines.push(format!(
+            "Light: {:?}   Outside: {}",
+            vis.lit[i], vis.outside[i]
+        ));
+        lines
+    }
+
+    /// Clamp bounds for the look cursor: the scene's tile
+    /// extent ([min, max] absolute pos over all blocks).
+    pub fn look_bounds(&self) -> ([i32; 3], [i32; 3]) {
+        let mut min = [i32::MAX; 3];
+        let mut max = [i32::MIN; 3];
+        for b in &self.blocks {
+            min[0] = min[0].min(b.origin.x);
+            min[1] = min[1].min(b.origin.y);
+            min[2] = min[2].min(b.origin.z);
+            max[0] = max[0].max(b.origin.x + SUBMAP as i32 - 1);
+            max[1] = max[1].max(b.origin.y + SUBMAP as i32 - 1);
+            max[2] = max[2].max(b.origin.z);
+        }
+        (min, max)
+    }
+
+    /// Render + publish the current UI state; returns the
+    /// UiFrame notification to send, or `None` on a store error
+    /// (logged, never a panic — a UI failure must not kill the
+    /// game loop).
+    pub fn refresh_ui(&mut self, reg: &DefRegistry) -> Option<UiFrameT> {
+        let view = self.ui_view(reg);
+        match self.ui.publish(&view) {
+            Ok(frame) => Some(frame),
+            Err(e) => {
+                eprintln!("sim: ui publish failed: {e}");
+                None
+            }
+        }
+    }
+
+    /// Attach the server-side file store (after the handshake
+    /// told us the screen size) and publish the current state
+    /// into it; returns the UiFrame notification to send.
+    pub fn ui_attach_file(
+        &mut self,
+        reg: &DefRegistry,
+        path: PathBuf,
+        width: u32,
+        height: u32,
+    ) -> Result<UiFrameT, String> {
+        self.ui
+            .attach_file(path, width, height)
+            .map_err(|e| format!("ui store: {e}"))?;
+        self.refresh_ui(reg).ok_or_else(|| "ui publish failed".to_string())
+    }
+
+    /// Handle a Resize message: recreate the store at the new
+    /// geometry and publish a full frame with the new size.
+    /// A same-size resize is a no-op (no messages).
+    pub fn apply_resize(&mut self, reg: &DefRegistry, width: u32, height: u32) -> Vec<MessageT> {
+        if self.ui.size() == (width, height) || width == 0 || height == 0 {
+            return Vec::new();
+        }
+        if let Err(e) = self.ui.resize(width, height) {
+            eprintln!("sim: ui resize failed: {e}");
+            return Vec::new();
+        }
+        self.refresh_ui(reg)
+            .map(|f| vec![MessageT::UiFrame(Box::new(f))])
+            .unwrap_or_default()
+    }
+
+    /// Record a PickResult from the engine. A pick is a query
+    /// answer (the engine ran the ray; gate 4.11): it is kept
+    /// for the gates and never mutates the world.
+    pub fn apply_pick_result(&mut self, pick: &PickResultT) {
+        self.last_pick = Some(pick.clone());
     }
 
     /// The current EnvironmentUpdate (this world's seq/epoch are

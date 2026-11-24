@@ -54,6 +54,8 @@ pub fn measure(defs_path: Option<&Path>, scene_path: &Path) -> Result<Measuremen
         defs_path: defs_path.map(Path::to_path_buf),
         scene_path: scene_path.to_path_buf(),
         weather: None,
+        ui_shm_path: None,
+        ui_start: None,
     };
     let server = std::thread::spawn(move || run_server(&cfg));
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -110,10 +112,15 @@ pub fn measure(defs_path: Option<&Path>, scene_path: &Path) -> Result<Measuremen
     }
     let connect_to_tiledefs = t_connect.elapsed();
 
-    // Drain the Snapshot, then shut the server down cleanly.
+    // Drain the Snapshot and the S4 initial UiFrame, then shut
+    // the server down cleanly.
     match recv(&mut stream, &mut dec)? {
         MessageT::Snapshot(_) => {}
         other => return Err(format!("measure: expected Snapshot, got {other:?}")),
+    }
+    match recv(&mut stream, &mut dec)? {
+        MessageT::UiFrame(_) => {}
+        other => return Err(format!("measure: expected UiFrame, got {other:?}")),
     }
     let mut shutdown = proto::ShutdownT::default();
     shutdown.reason = Some("measure done".into());

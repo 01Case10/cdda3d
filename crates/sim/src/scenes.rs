@@ -55,6 +55,12 @@
 //!   - `[[vpart]]`: `vehicle` (id of a `[[vehicle]]`), `type`
 //!     (VehiclePart string id), `pos` (game-computed absolute),
 //!     `mount`, `hp_frac`, `flags`.
+//!   - `[[carried]]`: `type` (Item string id), `count` — an item
+//!     stack the player starts carrying (S4; the inventory UI's
+//!     initial contents).
+//! - Top-level `ui_start` (string, S4): the UI state the world
+//!   starts in (`gameplay`/`inventory`/`crafting`/`look`/
+//!   `main-menu`); validated at world build.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -125,6 +131,15 @@ pub struct WeatherStep {
     pub weather: String,
 }
 
+/// An item stack the player starts out carrying (S4): the
+/// inventory UI's initial contents. Pickup/drop (S6) will
+/// mutate the same list at runtime.
+#[derive(Debug, Clone)]
+pub struct CarriedSpec {
+    pub type_id: String,
+    pub count: u16,
+}
+
 #[derive(Debug, Clone)]
 pub struct VehicleSpec {
     pub id: u64,
@@ -165,6 +180,11 @@ pub struct Scene {
     pub vparts: Vec<VPartSpec>,
     pub lights: Vec<LightSpec>,
     pub weather_script: Vec<WeatherStep>,
+    /// Items the player starts carrying (S4), in list order.
+    pub carried: Vec<CarriedSpec>,
+    /// Initial UI state name (S4; `crate::ui::UiState::parse`
+    /// validates it at world build). `None` = gameplay.
+    pub ui_start: Option<String>,
 }
 
 impl Scene {
@@ -724,6 +744,7 @@ impl RawDoc {
         let view_radius = opt_int(top, "view_radius", "scene")?.unwrap_or(60) as u32;
         let environment = opt_bool(top, "environment", "scene")?.unwrap_or(false);
         let emit_outside = opt_bool(top, "emit_outside", "scene")?.unwrap_or(false);
+        let ui_start = opt_string(top, "ui_start", "scene")?;
 
         let mut zsections = Vec::new();
         for (z, map) in &self.zsections {
@@ -787,6 +808,7 @@ impl RawDoc {
         let mut vparts = Vec::new();
         let mut lights = Vec::new();
         let mut weather_script = Vec::new();
+        let mut carried = Vec::new();
         for (tname, map) in &self.tables {
             match tname.as_str() {
                 "spawn" => {
@@ -876,9 +898,16 @@ impl RawDoc {
                         weather: as_string(req(map, "weather", ctx)?, "weather_script.weather")?,
                     });
                 }
+                "carried" => {
+                    let ctx = "[[carried]]";
+                    carried.push(CarriedSpec {
+                        type_id: as_string(req(map, "type", ctx)?, "carried.type")?,
+                        count: opt_int(map, "count", ctx)?.unwrap_or(1) as u16,
+                    });
+                }
                 other => {
                     return Err(format!(
-                        "scene: unknown array table [[{other}]] (subset has spawn/field/items/graffiti/vehicle/vpart/light/weather_script)"
+                        "scene: unknown array table [[{other}]] (subset has spawn/field/items/graffiti/vehicle/vpart/light/weather_script/carried)"
                     ));
                 }
             }
@@ -904,6 +933,8 @@ impl RawDoc {
             vparts,
             lights,
             weather_script,
+            carried,
+            ui_start,
         })
     }
 }

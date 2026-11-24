@@ -16,10 +16,18 @@
 //! fresh Snapshot on a map shift); key releases and non-Key
 //! inputs get no reply. Ping/Pong, Resize/PickResult logging,
 //! and Shutdown are unchanged from S0.
+//!
+//! S4 behaviour: after the Snapshot, the server attaches the UI
+//! shared-memory file (at the HelloAck's screen size) and sends
+//! the initial UiFrame; UI publishes during the run are single
+//! UiFrame replies from the input routing (see [`crate::rules`]
+//! module docs). Resize recreates the UI store at the new
+//! geometry and is answered by one UiFrame; PickResult is
+//! recorded on the world. The shm file is removed on exit.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use proto::samples::sample_hello;
 use proto::{
@@ -29,6 +37,7 @@ use proto::{
 
 use crate::defs::DefRegistry;
 use crate::scenes::Scene;
+use crate::ui::DEFAULT_UI_SIZE;
 use crate::world::World;
 
 /// Everything the server needs, resolved before binding.
@@ -44,6 +53,14 @@ pub struct ServerConfig {
     /// `weather` key. Mid-run changes use the scene's
     /// `[[weather_script]]` entries or `World::set_weather`.
     pub weather: Option<String>,
+    /// UI shared-memory file path (S4); `None` = derive from
+    /// the socket path (`<socket>.ui-shm`, beside the socket —
+    /// the phase4-ui convention: the game creates the file and
+    /// the engine maps it). The file is removed on exit.
+    pub ui_shm_path: Option<PathBuf>,
+    /// Initial UI state override (S4; `--ui-start`); `None` =
+    /// the scene's `ui_start` key, else gameplay.
+    pub ui_start: Option<String>,
 }
 
 fn send(stream: &mut UnixStream, msg: &MessageT) -> proto::Result<()> {
@@ -79,6 +96,9 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     if let Some(w) = &config.weather {
         scene.weather = w.clone();
     }
+    if let Some(start) = &config.ui_start {
+        scene.ui_start = Some(start.clone());
+    }
     let mut world = World::from_scene(&reg, &scene)
         .map_err(|e| proto::ProtoError::Malformed(format!("world: {e}")))?;
     eprintln!(
@@ -88,6 +108,14 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
         world.blocks.len()
     );
 
+    // The UI shm path (S4): explicit, or derived from the
+    // socket path so it sits beside the socket.
+    let ui_shm_path = config.ui_shm_path.clone().unwrap_or_else(|| {
+        let mut p = config.socket_path.clone().into_os_string();
+        p.push(".ui-shm");
+        PathBuf::from(p)
+    });
+
     let socket_path = &config.socket_path;
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
@@ -95,18 +123,27 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     let listener = UnixListener::bind(socket_path)?;
     eprintln!("sim-server: listening on {}", socket_path.display());
 
-    let result = serve_one(&listener, &reg, &mut world);
+    let result = serve_one(&listener, &reg, &mut world, &ui_shm_path);
 
     // Clean exit path for every outcome (shutdown, disconnect,
-    // version mismatch): close the listener (drop) and unlink.
+    // version mismatch): close the listener (drop) and unlink
+    // the socket and the UI shm file.
     drop(listener);
     if socket_path.exists() {
         let _ = std::fs::remove_file(socket_path);
     }
+    if ui_shm_path.exists() {
+        let _ = std::fs::remove_file(&ui_shm_path);
+    }
     result
 }
 
-fn serve_one(listener: &UnixListener, reg: &DefRegistry, world: &mut World) -> proto::Result<()> {
+fn serve_one(
+    listener: &UnixListener,
+    reg: &DefRegistry,
+    world: &mut World,
+    ui_shm_path: &Path,
+) -> proto::Result<()> {
     let (mut stream, _) = listener.accept()?;
     let mut dec = FrameDecoder::new();
 
@@ -146,6 +183,25 @@ fn serve_one(listener: &UnixListener, reg: &DefRegistry, world: &mut World) -> p
         &mut stream,
         &MessageT::Snapshot(Box::new(world.snapshot(reg))),
     )?;
+    // S4: attach the UI shm file at the HelloAck's screen size
+    // (the sim's default when the client reports 0) and send the
+    // initial UiFrame — the real game sends a UiFrame at its
+    // draw points, and the engine needs one to map the store.
+    let (ui_w, ui_h) = if ack.screen_width > 0 && ack.screen_height > 0 {
+        (ack.screen_width, ack.screen_height)
+    } else {
+        DEFAULT_UI_SIZE
+    };
+    let frame = world
+        .ui_attach_file(reg, ui_shm_path.to_path_buf(), ui_w, ui_h)
+        .map_err(proto::ProtoError::Malformed)?;
+    send(&mut stream, &MessageT::UiFrame(Box::new(frame)))?;
+    eprintln!(
+        "sim-server: initial UiFrame sent (shm {}, {}x{})",
+        ui_shm_path.display(),
+        ui_w,
+        ui_h
+    );
     // DEVIATION from the C++ stub server: the stub also sends one
     // standalone EnvironmentUpdate after the Snapshot. The sim does
     // NOT: the existing proto-client expects the Input echo as the
@@ -194,10 +250,19 @@ fn serve_one(listener: &UnixListener, reg: &DefRegistry, world: &mut World) -> p
                 send(&mut stream, &MessageT::Pong(Box::new(pong)))?;
             }
             MessageT::Resize(r) => {
+                // S4: recreate the UI store at the new geometry;
+                // the reply is one UiFrame with the new
+                // size/stride and a full-frame dirty rect.
+                for msg in world.apply_resize(reg, r.width, r.height) {
+                    send(&mut stream, &msg)?;
+                }
                 eprintln!("sim-server: resize {}x{} dpi={}", r.width, r.height, r.dpi);
             }
             MessageT::PickResult(p) => {
-                eprintln!("sim-server: pick hit={} pos={:?}", p.hit, p.pos);
+                // S4: recorded on the world (a pick is a query
+                // answer — it never mutates the world).
+                world.apply_pick_result(&p);
+                eprintln!("sim-server: pick hit={} pos={:?} (recorded)", p.hit, p.pos);
             }
             MessageT::Shutdown(s) => {
                 eprintln!("sim-server: shutdown reason={:?}", s.reason);

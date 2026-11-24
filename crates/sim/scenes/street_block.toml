@@ -86,3 +86,14 @@ facing = "NONE"
 pos = [12, 9, 0]
 color = [1.0, 0.6, 0.2]
 intensity = 6.0
+
+# What the player starts out carrying (S4): the inventory UI's
+# initial contents — the text-honesty gate asserts the rendered
+# rows spell "rock" and "× 3" (plan §3.3).
+[[carried]]
+type = "rock"
+count = 3
+
+[[carried]]
+type = "stick"
+count = 1

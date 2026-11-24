@@ -315,6 +315,63 @@ hash. Add a state machine on top:
 - Resize: on `Resize`, redraw at the new size, terrain rect scales
   with the layout rule, next `UiFrame` carries the new geometry.
 
+**Settled in S4 (2026-11-24):**
+
+- **Font choice (recorded per the paragraph above):** rasteriser =
+  **`ab_glyph` 0.2.32** (named above as an acceptable crate;
+  `fontdue` was not fetchable in this environment — crates.io
+  returns 403 through the proxy and it is not in the local
+  registry cache, while `ab_glyph` was already in the workspace
+  lock). Font = **Liberation Mono Regular** (the documented OFL
+  fallback: SIL Open Font License 1.1; licence text bundled at
+  `crates/sim/assets/LICENSE-LiberationMono.txt`), embedded from
+  `crates/sim/assets/LiberationMono-Regular.ttf`, SHA-256
+  `395fa5ab8d40c8eba390ced528744ea75a7f69aabf3e68b6f925ca0e39a27370`.
+  Goldens pin the bytes by FNV-1a (`0x0b0d852dc58d8cc0`, asserted
+  in a unit test). Cell metrics come from the font at 16 px:
+  cell = the `M` advance × the ascent−descent+line-gap height.
+  Bold is a double-strike (coverage OR-ed with itself shifted
+  1 px), the catacurses convention.
+- **MainMenu entry (was unspecified above):** the menu is an
+  *entry* state, selected by the scene key `ui_start =
+  "main-menu"` or the server flag `--ui-start <state>` (the
+  same override shape as `--weather`). It is deliberately NOT
+  on Esc-from-Gameplay (T2 pins Esc = back to Gameplay from the
+  three sub-screens); inside MainMenu, Esc/`q` are no-ops (no
+  game exists behind it yet) and the entries are display-only.
+- **Shm path convention:** the server creates the UI file store
+  at `--ui-shm <path>`, defaulting to `<socket>.ui-shm` beside
+  the socket (the phase4-ui convention: the game creates the
+  file, the engine maps it), and removes it on exit. Over the
+  socket, the server sends one initial `UiFrame` right after
+  the Snapshot (mirroring the real game's draw-point send);
+  `measure` and the server gate consume it as part of the
+  handshake.
+- **Store generations:** the ui-share store's geometry is fixed
+  at creation, so both the post-handshake attach and every
+  Resize create a NEW store generation at the same path/role;
+  the frame seq restarts within the new store and the next
+  publish is a full-frame dirty rect. State, cursor and look
+  cursor survive a resize.
+- **Input routing details:** `Key` is the action channel; `Text`
+  inputs are accepted and ignored in both modes (the engine
+  sends Key+Text pairs for printable keys — routing Text would
+  double-drive turns and UI). In UiInput the full vi-key set
+  plus arrows/PgUp/PgDn drive the list/look cursor (`h`/`l`
+  included — no movement key may fall through to the world).
+  The UI-open bindings (`i`/`&`/`;`) in MapInput are not turns:
+  no Delta, no clock advance, exactly one UiFrame. Mouse: in
+  UiInput, clicks hit-test the list/menu rows (cursor moves,
+  one UiFrame, never a pick); in MapInput the sim emits nothing
+  for clicks — the engine routes terrain-rect clicks through
+  its own picking and answers with a `PickResult` message,
+  which the sim records verbatim (`World::last_pick`) without
+  mutating anything.
+- **Carried list:** scenes gain `[[carried]]` tables (`type` =
+  Item string id, `count`) seeding the inventory; display name
+  = the def's `name` when present, else its string id. Pickup
+  and drop remain S6 (T8).
+
 ### 3.4 Scene format
 One text file per scene, loadable by both the sim and (for fixture
 parity) the engine gates:

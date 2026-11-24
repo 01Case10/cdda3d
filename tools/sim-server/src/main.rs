@@ -2,12 +2,18 @@
 //!
 //! Usage:
 //!   sim-server <unix-socket-path> [--scene <name>] [--defs <path>]
-//!              [--weather <preset>]
+//!              [--weather <preset>] [--ui-shm <path>]
+//!              [--ui-start <state>]
 //!   sim-server --measure [--scene <name>] [--defs <path>]
 //!
 //! `--weather` overrides the scene's starting weather preset
 //! (S3: clear/sunny/cloudy/rain/storm/lightning). Mid-run weather
 //! changes are the scene's `[[weather_script]]` entries.
+//!
+//! `--ui-shm` sets the UI shared-memory file path (S4; default:
+//! `<socket>.ui-shm` beside the socket). `--ui-start` sets the
+//! initial UI state (gameplay|inventory|crafting|look|
+//! main-menu), overriding the scene's `ui_start` key.
 //!
 //! The voxel engine (or `proto-client`) connects as the IPC client,
 //! exactly as it will to the real fork with
@@ -26,7 +32,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>]");
+    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>] [--ui-shm <path>] [--ui-start <state>]");
     eprintln!("       sim-server --measure [--scene <name>] [--defs <path>]");
     ExitCode::from(2)
 }
@@ -36,6 +42,8 @@ fn main() -> ExitCode {
     let mut scene = "stub_house".to_string();
     let mut defs: Option<PathBuf> = None;
     let mut weather: Option<String> = None;
+    let mut ui_shm: Option<PathBuf> = None;
+    let mut ui_start: Option<String> = None;
     let mut measure = false;
 
     let mut args = std::env::args().skip(1);
@@ -51,6 +59,14 @@ fn main() -> ExitCode {
             },
             "--weather" => match args.next() {
                 Some(v) => weather = Some(v),
+                None => return usage(),
+            },
+            "--ui-shm" => match args.next() {
+                Some(v) => ui_shm = Some(PathBuf::from(v)),
+                None => return usage(),
+            },
+            "--ui-start" => match args.next() {
+                Some(v) => ui_start = Some(v),
                 None => return usage(),
             },
             "--measure" => measure = true,
@@ -98,6 +114,8 @@ fn main() -> ExitCode {
         defs_path: defs,
         scene_path,
         weather,
+        ui_shm_path: ui_shm,
+        ui_start,
     };
     match sim::run_server(&config) {
         Ok(()) => {

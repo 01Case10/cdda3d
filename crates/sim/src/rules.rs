@@ -38,10 +38,32 @@
 //! itself does not yet scale turn length (every step is one
 //! turn regardless of cost) — that is a later refinement, not
 //! part of passability.
+//!
+//! S4 routing (plan §2.7/§3.3): inputs route by the UI mode.
+//! - In `UiInput` mode, Key/MouseButton/Wheel inputs are
+//!   consumed by the UI state machine (`crate::ui`): a change
+//!   publishes exactly one UiFrame; the world does NOT change
+//!   and no turn is consumed. Movement keys move the list /
+//!   look cursor — never the player (gate T2).
+//! - In `MapInput` mode, the UI-open bindings (`i` Inventory,
+//!   `&` Crafting, `;` LookAround) are not turns either: they
+//!   publish one UiFrame and nothing else. All other pressed
+//!   Keys follow the S2/S3 turn rules below.
+//! - Text inputs never drive the world: the Key channel
+//!   carries actions (the engine sends both for printable
+//!   keys), and the sim's UI states have no text fields — Text
+//!   is accepted and ignored in both modes, so a Key+Text pair
+//!   can never double-drive anything.
+//! - MouseButton in MapInput: the engine does not forward
+//!   terrain clicks as Inputs (it picks and answers with a
+//!   PickResult message instead — gate 4.11); panel clicks do
+//!   arrive, and the sim's panels are display-only, so they
+//!   are accepted and ignored. MouseMove/Focus likewise.
 
-use proto::{InputKind, InputT, MessageT};
+use proto::{InputKind, InputT, MessageT, UiMode};
 
 use crate::defs::{Def, DefRegistry, Kind};
+use crate::ui::UiState;
 use crate::world::World;
 
 /// An armed Open/Close awaiting its direction key.
@@ -74,17 +96,70 @@ fn transform<'a>(def: &'a Def, which: fn(&Def) -> &Option<String>) -> Option<&'a
 
 impl World {
     /// Drive one Input (in-process mode: no socket involved).
-    /// Returns the turn's message flush (S3: a Vec — a Delta or
-    /// Snapshot plus any LightUpdate / EnvironmentUpdate the
-    /// turn produced, in send order), or an empty Vec when the
-    /// input is not a turn (key release, non-Key input, or an
-    /// Open/Close arming key). The server sends the returned
+    /// Returns the input's message flush: a turn's Delta /
+    /// Snapshot (+ LightUpdate / EnvironmentUpdate, S3), or a
+    /// single UiFrame for a UI publish (S4), or an empty Vec
+    /// when the input produces nothing (key release, an
+    /// Open/Close arming key, an ignored input kind, a UI key
+    /// that changed nothing). The server sends the returned
     /// messages verbatim; tests assert on them directly.
     pub fn apply_input(&mut self, reg: &DefRegistry, input: &InputT) -> Vec<MessageT> {
-        if input.kind != InputKind::Key || !input.pressed {
+        match input.kind {
+            InputKind::Key => {
+                if !input.pressed {
+                    return Vec::new();
+                }
+                self.apply_key(reg, input.key_code)
+            }
+            InputKind::MouseButton => {
+                if !input.pressed || self.ui.mode() != UiMode::UiInput {
+                    return Vec::new();
+                }
+                let view = self.ui_view(reg);
+                if self.ui.apply_click(input.mouse_x, input.mouse_y, &view) {
+                    return self.ui_flush(reg);
+                }
+                Vec::new()
+            }
+            InputKind::Wheel => {
+                if self.ui.mode() != UiMode::UiInput {
+                    return Vec::new();
+                }
+                let view = self.ui_view(reg);
+                if self.ui.apply_wheel(input.wheel_delta, &view) {
+                    return self.ui_flush(reg);
+                }
+                Vec::new()
+            }
+            // Text (see module docs), MouseMove, Focus: accepted,
+            // no effect, no reply.
+            _ => Vec::new(),
+        }
+    }
+
+    /// Publish the UI after a state-machine change: exactly one
+    /// UiFrame message (or none if the store write failed —
+    /// `refresh_ui` logs it).
+    fn ui_flush(&mut self, reg: &DefRegistry) -> Vec<MessageT> {
+        self.refresh_ui(reg)
+            .map(|f| vec![MessageT::UiFrame(Box::new(f))])
+            .unwrap_or_default()
+    }
+
+    /// One pressed Key, routed by the UI mode (S4).
+    fn apply_key(&mut self, reg: &DefRegistry, key_code: i32) -> Vec<MessageT> {
+        // UiInput: the state machine consumes the key; the
+        // world does not change and no turn is consumed.
+        if self.ui.mode() == UiMode::UiInput {
+            let view = self.ui_view(reg);
+            let bounds = self.look_bounds();
+            if self.ui.apply_ui_key(key_code, &view, bounds) {
+                return self.ui_flush(reg);
+            }
             return Vec::new();
         }
-        let key = char::from_u32(input.key_code as u32).unwrap_or('\0');
+
+        let key = char::from_u32(key_code as u32).unwrap_or('\0');
 
         // A pending Open/Close takes the next direction key.
         if let Some(action) = self.pending.take() {
@@ -97,6 +172,20 @@ impl World {
         }
 
         match key {
+            // UI-open bindings (§3.3): not turns — one UiFrame,
+            // no Delta, the clock does not advance.
+            'i' => {
+                self.ui.open(UiState::Inventory, self.player_pos());
+                self.ui_flush(reg)
+            }
+            '&' => {
+                self.ui.open(UiState::Crafting, self.player_pos());
+                self.ui_flush(reg)
+            }
+            ';' => {
+                self.ui.open(UiState::LookAround, self.player_pos());
+                self.ui_flush(reg)
+            }
             'o' => {
                 self.pending = Some(PendingAction::Open);
                 Vec::new()
@@ -184,5 +273,10 @@ impl World {
             return;
         }
         self.set_terrain(target, new_id);
+        // The message log (gameplay sidebar) records the action.
+        self.messages.push(match action {
+            PendingAction::Open => "You open the door.".to_string(),
+            PendingAction::Close => "You close the door.".to_string(),
+        });
     }
 }
