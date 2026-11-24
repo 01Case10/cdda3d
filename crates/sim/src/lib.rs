@@ -27,12 +27,17 @@
 //! S7 (the §5 scenario DSL: one scenario file drives the world
 //! in-process or a real server subprocess over its socket,
 //! with the mirror invariant checked after every step — see
-//! `scenario` and `mirror`).
+//! `scenario` and `mirror`), and S8 (the z-move rule + the
+//! multistorey scene closing T9, the seeded soak closing
+//! T12, the server-side malformed-frame fuzz closing T10's
+//! abuse half, and `--record` session logs whose replay is
+//! the scenario runner — see `record`).
 
 pub mod defs;
 pub mod environment;
 pub mod measure;
 pub mod mirror;
+pub mod record;
 pub mod rules;
 pub mod scenario;
 pub mod scenes;

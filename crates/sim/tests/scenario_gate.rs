@@ -2,10 +2,13 @@
 //! `crates/sim/scenarios/` runs in-process against the world;
 //! a subset also runs in process mode, driving a real
 //! `sim-server` subprocess over its Unix socket with the same
-//! assertions. The deferred files (T9, T12) must carry
-//! `status = "s8"` and stay out of the green set — S8 owns
-//! their PASS. The `capture` step must be refused at parse
-//! time, naming the CaptureArgs limitation.
+//! assertions. S8 landed the last two deferred files (T9,
+//! T12): both are in the green set now and no file carries
+//! `status = "s8"` — the status-honesty test below keeps it
+//! that way (a green file must be listed; a deferred file
+//! must be named in DEFERRED_S8, which is empty). The
+//! `capture` step must be refused at parse time, naming the
+//! CaptureArgs limitation.
 //!
 //! Failing-first note: pre-S7 there was no scenario runner at
 //! all (no `crates/sim/src/scenario.rs`, no `--scenario`
@@ -17,7 +20,7 @@ use std::path::PathBuf;
 use sim::scenario::{run_in_process, run_process, ProcessConfig, Scenario};
 use sim::{DefRegistry, Scene};
 
-/// Scenarios green in-process (T1–T8 + T10-resync + T11).
+/// Scenarios green in-process (T1–T12).
 const GREEN_IN_PROCESS: &[&str] = &[
     "t1_go_outside",
     "t2_open_ui",
@@ -27,16 +30,26 @@ const GREEN_IN_PROCESS: &[&str] = &[
     "t6_time_weather",
     "t7_fields",
     "t8_items",
+    "t9_stairs",
     "t10_resync",
     "t11_vehicles",
+    "t12_soak",
 ];
 
 /// Scenarios green over a real socket (client-expressible
 /// steps only; T3's twin authors its zombie into the scene).
-const GREEN_PROCESS: &[&str] = &["t1_go_outside", "t3_process", "t5_door_cycle", "t10_resync"];
+const GREEN_PROCESS: &[&str] = &[
+    "t1_go_outside",
+    "t3_process",
+    "t5_door_cycle",
+    "t9_stairs",
+    "t10_resync",
+];
 
-/// Written but not runnable until S8; must carry the status.
-const DEFERRED_S8: &[&str] = &["t9_stairs", "t12_soak"];
+/// Written but not runnable, deferred to a later slice; must
+/// carry the status. Empty since S8 closed T9/T12 — kept as
+/// the mechanism for future deferrals.
+const DEFERRED_S8: &[&str] = &[];
 
 fn scenarios_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scenarios")

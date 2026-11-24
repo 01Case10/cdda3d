@@ -261,7 +261,7 @@ consumes its output:
 | Movement | 8-way step per movement key; blocked by wall / closed door / closed window / vehicle part / creature; costs 1 turn | Delta ingest, billboard move, camera follow |
 | Open / close | Stepping into / activating a tile with `open_result` swaps terrain to that def (and back via `close_result`); recomputes transparency | TileChange restamp, LOS/light change through a doorway |
 | Bash / destroy | Bash action on adjacent tile: terrain/furniture follows `bash_result` chain (door → bashed door → rubble/air per def table); furniture with no bash result is removed; emits HitFlash + Sound effects. **S6 settled:** the key is the game's own — `s` arms, a direction key executes (0.I-1 `data/raw/keybindings.json`: `smash` = `s`, like `open`/`close` = `o`/`c`); resolution mirrors `map::bash_ter_furn` (0.I-1 src/map.cpp:3932+) — furniture on the tile is smashed first (its `bash_result` furn_set applies; `"f_null"` removes it), terrain otherwise (ter_set; a `"t_null"` result destroys the tile to `t_open_air`, map.cpp:4203). Two named simplifications: **one bash = one chain step** (no strength stat; upstream rolls `strength + damage >= str_max` with damage accruing), and furniture with NO `bash_result` is **removed outright** (this plan's rule — upstream's missing bash spec falls through to the terrain). Terrain with no `bash_result` is unbashable (no-op, turn consumed). Success emits exactly one HitFlash + one Sound (`"smash_success"`, map.cpp:4108) at the target. Creature tiles (bump attack's) and vehicle-part tiles (the vehicle damage API's) are out of bash scope — no-ops. **Keymap settlement:** real bindings win over movement aliases — the S2 WASD aliases `s` (south) / `d` (east) are removed (`w`/`a` stay; south = `j`, east = `l`), in the UI cursor keys too; pre-S6 gates amended with the reason recorded in place | Fine-prop restamp removal (Phase 9), hardcases state=id-change (8.4), transient effects |
-| Stairs / z-move | `>`/`<` on a stair tile moves player z ±1, snapshot window recentres | Multi-storey seating, cutaway, cave factor |
+| Stairs / z-move | `>`/`<` on a stair tile moves player z ±1, snapshot window recentres. **S8 settled:** `>` descends, `<` ascends (CDDA's convention — 0.I-1 src/action.cpp:498-501, src/mapdata.h:184-185); the move requires the matching flag at the player's tile — GOES_DOWN for `>`, GOES_UP for `<`, on the terrain OR furniture def (upstream's gate is `game::move_vertical`'s `has_flag(TFLAG_GOES_DOWN/GOES_UP, pos)`, game.cpp:12430 / 12336). Destination = same (x, y) at z ±1; the sim's landing rule: it must exist, be passable (the movecost rule), be unoccupied, and not be NO_FLOOR terrain (you land on a floor/stair, not into open air). Otherwise a no-op turn. Upstream's climbing fallback (no-stair climb checks, wall cling, swimming) is NOT modelled. A z change crosses a submap boundary (the submap index includes z), so the flush rides the map-shift path: fresh Snapshot, epoch + 1 — the "window recentres" of the contract in the sim's no-culling form (a Snapshot carries all scene submaps) | Multi-storey seating, cutaway, cave factor |
 | Items | Pickup removes top item / decrements `item_count`; drop reverses it. Piles only — no inventory simulation beyond a list for the UI. **S6 settled:** keys are the game's (`pickup` = `g`, `drop` = `d`, keybindings.json), acting on the player's OWN tile only (CDDA's adjacent-pickup UI is out of scope). Pickup takes ONE unit: `item_count` −1, `top_item` stable until the last unit clears it; the unit joins the S4 carried list (the inventory UI shows it — T8 ties T2 shut). Drop takes one unit from the FIRST carried stack (list order): an empty tile takes it as top_item × 1, a matching pile grows by one, a pile of a DIFFERENT kind **refuses** the drop (the lossy wire holds one kind per tile) — state unchanged but the turn is still consumed (the attempted-action rule, as for a blocked step). Empty-tile pickup / empty-hands drop are no-op turns | top_item billboard/item layer, UI inventory contents |
 | Fields | Fire spreads to adjacent flammable tiles, intensity ±, burns out to smoke; smoke drifts with wind and decays. `displayed_field` recomputed by the game's rule (highest intensity, fire over smoke on tie — as in the sample house). **S5 settled:** the tick ports `field_processor_fd_fire`'s shape (0.I-1 map_field.cpp) — spread chance `25 × (intensity − 1)` as rng(1,100) < chance, targets gated FLAMMABLE/FLAMMABLE_ASH (power ≥ 2) / FLAMMABLE_HARD (power ≥ 3), growth cap 1 + flammable-tile + burning-neighbour rule (≥3 → 2, ≥7 → 3), smoke created on the fire tile at the fire's intensity; smoke drift follows `gas_spread_to` (source −1, downwind dest +1, intensity > 1 gate). Wind = the S3 fixture constant (5 mph at 90° → (+1, 0) by `convert_wind_to_coord`, weather.cpp). Timescale is compressed (upstream fuel is field-age in tens of minutes; sim budgets fuel in turns by class) and fire damage is the expectation of upstream's flat 3 + rng by intensity = [7, 12, 18]/turn. Note: `t_grass` is NOT flammable in 0.I-1 — grass does not carry fire; floors/furniture do | fx field volumes, heat/smoke coupling, displayed-field correctness from Delta alone |
 | Creatures | Spawn (script or scenario), simple AI per turn: idle → wander (seeded) → chase player if visible (LOS + lit != BLANK) → attack in range (hp_frac drops, HitFlash). Death ⇒ `entity_removed` + corpse item. **S5 settled:** there is NO EntityAdded on the wire — Delta carries `entity_updates` + `entity_removed` only, so spawns ride `entity_updates`; runtime spawn entry point `World::spawn_monster` (S7's scripts drive it). Damage = the def's melee-dice **expected value** (importer now carries hp + melee dice from the monster defs); player bump-attack = fixed sim constant 8; corpse = item type `corpse` (`mdeath::normal`'s drop) as top_item. Player death is NOT simulated: player HP floors at 1. Greedy-chase limit (documented): Chebyshev greedy stalls in local minima behind obstacles — upstream pathfinds, the sim keeps the greedy rule per the non-goal below. Overlays empty (no grounded source in def data); FIREPROOF field exemption not modelled (monster flags are not in defs.json) | Billboard spawn/move/despawn, occlusion, picking, entity delta handling |
@@ -561,18 +561,18 @@ and a subset over a real socket. Settled points:
   meaningful against the real binary.
 - **Scenario file inventory:** green in-process — `t1_go_outside`,
   `t2_open_ui`, `t3_spawn_chase_kill`, `t4_bash`, `t5_door_cycle`,
-  `t6_time_weather`, `t7_fields`, `t8_items`, `t10_resync`,
-  `t11_vehicles`; green over a real socket — `t1_go_outside`,
+  `t6_time_weather`, `t7_fields`, `t8_items`, `t9_stairs` (S8),
+  `t10_resync`, `t11_vehicles`, `t12_soak` (S8, a scripted slice —
+  see below); green over a real socket — `t1_go_outside`,
   `t3_process` (scene `crates/sim/scenes/zombie_yard.toml`),
-  `t5_door_cycle`, `t10_resync`. T10's green half is the
-  disconnect/reconnect + shift resync; its abuse half (garbage
-  seqs, replayed epochs, corrupt frames) is S8 fuzz work, recorded
-  in the file. T7's smoke-drift half stays gate-only (it needs a
+  `t5_door_cycle`, `t9_stairs` (S8), `t10_resync`. T10's green half is the
+  disconnect/reconnect + shift resync; its abuse half is S8's
+  server fuzz gate (§5.2). T7's smoke-drift half stays gate-only (it needs a
   mid-run scene mutation scenario steps cannot express).
-  Deferred with `status = "s8"`: `t9_stairs` (no stair/z-move rule
-  and no multistorey scene exist yet — the file records the
-  intended steps) and `t12_soak` (the fuzz driver is S8's; the
-  file records the deterministic skeleton).
+  No scenario file carries `status = "s8"` since S8: T9's rule
+  and scene exist (§5.2), and T12's full form is a gate, not a
+  scenario — `t12_soak.toml` runs a 200-turn scripted slice in
+  the green set and names `soak_gate.rs` as the real thing.
 - **Interactive mode:** `voxel-engine --connect <socket>`
   (crates/engine/src/client.rs) — a headless live session:
   handshake, Snapshot → world via `snapshot_world`, UiFrame +
@@ -588,6 +588,104 @@ and a subset over a real socket. Settled points:
   walked (5,5) → (5,9), out of the house; clean exits both
   ends).
 
+### 5.2 S8 settlements (soak & fuzz; T9 / T10-abuse / T12)
+
+- **Multistorey scene** (`crates/sim/scenes/multistorey.toml`):
+  a port of the fork-harness mock `make_multistorey`
+  (tools/fork-harness/mock_world.cpp:101) — its 9×9 walled
+  stack (basement z −1, ground z 0, first floor z 1, roof
+  z 2) kept, offset into a 12×12 section per level. The
+  mock's bare `t_open_air` stairwell holes become real stair
+  terrain (the mock predates the z-move rule): stair A at
+  (3,3) ground `t_stairs_down` → basement `t_stairs_up`
+  (the z 1 tile above it stays `t_open_air`, the mock's
+  opening carried up); stair B at (7,7) ground
+  `t_stairs_up` → first-floor `t_stairs_down`. The
+  basement's non-building tiles are `t_rock`, the roof
+  level is `t_flat_roof` over the footprint.
+- **Basement light — the T9 sketch's "lit DARK" was wrong,
+  corrected here and in the §6 row.** The fork exporter
+  takes lit from `map::apparent_light_at` (0.I-1
+  lightmap.cpp:801), which never returns DARK (DARK comes
+  from `map::light_at`, which the exporter does not use).
+  `build_sunlight_cache` fills a fully-inside level at
+  `inside_light_level` = LIGHT_AMBIENT_LOW (3.5)
+  (lightmap.cpp:340-345), and 3.5 ≥ the vision threshold at
+  that ambient (≈3.22), so a *visible* sealed-basement tile
+  reads **LOW**; tiles the player cannot see read BLANK.
+  The ported S3 model already produces exactly this (z < 0
+  gets no direct sun and no sun cast; the inside floor
+  applies) — no model change and no scene change was
+  needed; the gates assert the honest output:
+  outside=false on all 144 basement tiles, every basement
+  lit ∈ {LOW, BLANK}, the player's tile LOW
+  (`stairs_gate.rs`, `t9_stairs.toml`).
+- **Soak as-run (T12, `crates/sim/tests/soak_gate.rs`):**
+  the plan's matrix verbatim — 1,100 turns × 10 seeds,
+  seeded xorshift generator over the full key vocabulary
+  (movement incl. diagonals, arm + direction keys, g, d,
+  the UI opens, Esc ×2 + q so runs return to MapInput,
+  `>`/`<`), scenes alternating destructible_street (even
+  seeds) and zombie_yard (odd). After every flush: mirror
+  == fresh Snapshot structurally AND by FNV-1a hash over a
+  canonical mirror encoding; seq advances by exactly 1 per
+  seq-bearing message; epoch never regresses. Measured on
+  this VM (debug profile): 11,000 inputs, mean step
+  17.5 ms, p95 70.9 ms, gate wall time ≈ 4.1 min — the
+  assertions on step cost are generous named bounds (mean
+  < 250 ms, p95 < 1 s) that trip on a pathological blow-up,
+  not a product spec. **Zero map shifts occurred** in the
+  10 runs (random walks stayed inside their starting
+  submaps — both scenes start the player indoors); the
+  shift path itself is pinned by T1/T10/T9, and the soak
+  asserts the invariant whether or not a shift happens.
+  CI: the soak runs in the nightly workflow (new
+  `sim-soak` job in ci-nightly.yml); the PR job carries
+  the fast S8 gates (stairs / fuzz / record).
+- **Server fuzz (T10 abuse half,
+  `crates/sim/tests/server_fuzz_gate.rs`):** a deterministic
+  corpus driven at a real server — garbage bytes, a
+  0xFFFFFFFF length prefix, a prefix one byte over the
+  32 MiB cap, a valid prefix wrapping an invalid
+  FlatBuffers payload, a truncated prefix, a well-formed
+  wrong first message, empty reads, 20 rapid
+  connect/disconnects — before AND after the handshake.
+  Assertions: no panic, no hang (all client ops
+  timeout-bounded), each bad connection closed cleanly,
+  and a full normal session completes afterwards. **One
+  real bug found and fixed:** a malformed FIRST frame
+  (pre-HelloAck) propagated its decode/framing error out
+  of `serve_one` and killed the accept loop — one hostile
+  connection took the server down. The fix treats
+  pre-handshake receive errors as ClientGone, exactly like
+  the post-handshake path already did; the fuzz gate is
+  its regression test (it fails on the pre-fix code at the
+  second connection). Wrong protocol version is asserted
+  separately as a clean server EXIT (the S0 rule), not a
+  rejected connection. The wire-level T10 assertions
+  (duplicate delta applied zero times, skipped seq ⇒
+  snapshot request, replayed epoch discarded) were already
+  covered engine/proto-side by proto's gate
+  `t1_14_seq_epoch_semantics` (crates/proto/tests/
+  gate_tests.rs, over `proto::sync::SeqTracker`) — recorded
+  here, not duplicated.
+- **Record/replay (`crates/sim/src/record.rs`,
+  `sim-server --record <path>`):** the log format IS the
+  §5 scenario format — scene name + effective seed +
+  one step per recorded Input — so replay is the S7
+  runner. Recorded: pressed Keys, Text, clicks, Resizes.
+  Not recorded, by design: Key releases, MouseMove, Focus
+  (none can change state) and Wheel inputs (the DSL has
+  no wheel step; they are counted in the file's header
+  comment when they occur, so the gap is on the record).
+  The gate (`record_gate.rs`) drives a scripted live
+  session, replays the recorded keys against a fresh
+  server, and compares the full message streams
+  frame-by-frame byte-for-byte — no class excluded (the
+  sim has no wall-clock input; the gate's Ping barriers
+  are deterministic): 31 frames, 1,409,476 bytes,
+  byte-identical.
+
 ## 6. Test matrix — the user's named tests, plus the ones they imply
 
 | # | Test | Scenario sketch | Key assertions |
@@ -600,10 +698,10 @@ and a subset over a real socket. Settled points:
 | T6 | Time & weather sweep | advance 24 h; storm script (mirrors stub `--env-script`) | EnvironmentUpdate cadence = on-change + 10-min time-only; sun altitude sign flips at dawn/dusk; storm: precip_class 3, `lightning_active`, fog/sight penalty reaches the frame; captures at dawn/noon/dusk/midnight × clear/storm differ in the Phase 10 §8 pattern |
 | T7 | Fields: fire & smoke | light the cabin floor / grass | Field list grows/shrinks per tile; `displayed_field` correct from Delta alone; smoke drifts downwind; fire lights its tiles at night (lit bump) and damages a standing creature |
 | T8 | Items: pickup & drop | rock pile (count 3) | `item_count` 3→2→… with `top_item` stable, last pickup clears `top_item`; drop restores; inventory UI lists the rocks (ties T2 shut) |
-| T9 | Stairs & multi-storey | multistorey scene, go up, then to basement | Player z changes; snapshot window recentres (z −1/+1 around new z); basement: outside=false everywhere, lit DARK, cave gradient in capture |
-| T10 | Resync & lifecycle | move across submap edge; kill/restart sim; send garbage seq | Shift ⇒ epoch++ + fresh Snapshot; duplicate delta applied zero times; skipped seq ⇒ engine requests snapshot; Ping/Pong; Shutdown < 2 s; reconnect gets TileDefs + Snapshot + piggybacked environment |
+| T9 | Stairs & multi-storey | multistorey scene, go up, then to basement | Player z changes; snapshot window recentres (z −1/+1 around new z — in the sim's no-culling form: z change ⇒ fresh Snapshot, epoch + 1, the new level's tiles present); basement: outside=false everywhere, lit LOW on visible tiles / BLANK beyond LOS (**S8 correction:** the sketch's "lit DARK" is not what the exporter produces — `apparent_light_at` never returns DARK and a sealed level sits at inside_light_level 3.5 ≥ the vision threshold; see §5.2), cave gradient in capture |
+| T10 | Resync & lifecycle | move across submap edge; kill/restart sim; send garbage seq | Shift ⇒ epoch++ + fresh Snapshot; duplicate delta applied zero times; skipped seq ⇒ engine requests snapshot; Ping/Pong; Shutdown < 2 s; reconnect gets TileDefs + Snapshot + piggybacked environment. **S8: the abuse half passes** — wire-level seq/epoch abuse was already pinned by proto's `t1_14_seq_epoch_semantics`; malformed-frame abuse of the sim's own server is `server_fuzz_gate` (one real bug found + fixed, §5.2) |
 | T11 | Vehicles | rotate/translate the fixture car 23°→90°; remove a part | Part absolute positions move rigidly; `face_deg` stays float-exact; roof parts stay on the top block; removed part leaves no stamped tile |
-| T12 | Soak / invariant | seeded random-input run, 1,100 turns × 10 seeds (fork-harness 3.9 parity) | After every Delta, engine mirror == a fresh Snapshot from the sim (hash compare); no seq regression; RSS/step cost flat (8.8-style) |
+| T12 | Soak / invariant | seeded random-input run, 1,100 turns × 10 seeds (fork-harness 3.9 parity) | After every Delta, engine mirror == a fresh Snapshot from the sim (hash compare); no seq regression; RSS/step cost flat (8.8-style). **S8 as-run: PASS** — 11,000 inputs, mean step 17.5 ms / p95 70.9 ms on the dev VM, 0 map shifts (see §5.2) |
 
 T1–T4 are the acceptance set for v1; T5–T12 can land slice by slice.
 
@@ -624,7 +722,7 @@ updated in the same change.
 | **S5 — Creatures, fields, effects** | Spawn/AI/combat/death; field spread/decay + displayed-field rule; Effects emission | **T3 + T7 pass** — DONE 2026-11-24 |
 | **S6 — Destruction, items, vehicles** | Bash chains, furniture removal, item piles + inventory list, vehicle move/damage/remove | **T4 + T8 + T11 pass**; fine-layer restamp assertions in engine gates — DONE 2026-11-24 (v1 gate T1–T4 complete) |
 | **S7 — Scenario DSL + interactive mode** | §5 runner (process + in-process), scenario files for T1–T12; `engine --connect` live session against sim-server you can play with the keyboard; CI job (headless, lavapipe) | All scenarios green in CI; a human can run the windowed engine against the sim and walk out of the house — **DONE 2026-11-24 with the windowed half named, not built**: scenarios green in-process + process subset over real sockets (locally validated CI commands; CI itself runs on push via Joey's PC route), `engine --connect` proven headless (walk out of the house, clean shutdown); the windowed seating waits on the CaptureArgs wire-source engine change (see §5.1) |
-| **S8 — Soak & fuzz (optional, after v1)** | Random-input soak, malformed-frame fuzz on the sim's own server side, record/replay of a session log | **T9/T10/T12 pass**; decode fuzz clean (parity with the existing proto fuzz gates) |
+| **S8 — Soak & fuzz (optional, after v1)** ✅ DONE 2026-11-24 | Random-input soak, malformed-frame fuzz on the sim's own server side, record/replay of a session log | **T9/T10/T12 pass**; decode fuzz clean (parity with the existing proto fuzz gates) — z-move rule + multistorey scene (T9, with the basement-lit correction in §5.2), soak 1,100 × 10 as-run (T12), server fuzz with one real bug found + fixed (T10 abuse half), `--record` session logs replaying byte-identical (§5.2) |
 
 Rough size: S0–S2 is the critical path to first value (a walkable,
 door-opening world the engine renders live). S3–S6 are each

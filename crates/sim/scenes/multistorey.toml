@@ -1,0 +1,107 @@
+# multistorey — plan §4.3's fork-harness port (S8): the
+# harness mock `make_multistorey` (tools/fork-harness/
+# mock_world.cpp:101) is a 9x9 walled stack — basement (z -1),
+# ground (z 0), first floor (z 1), roof (z 2) — with a
+# stairwell opening and the player starting upstairs. The sim
+# port keeps that footprint and structure (building x/y
+# 1..9, interior 2..8), placed in a 12x12 section (one submap
+# per level), and makes the vertical connections real CDDA
+# stair terrain instead of the mock's bare t_open_air holes
+# (the mock predates the z-move rule; the sim's stairs are
+# the defs the rule keys on):
+#
+# - Stair A at (3,3): ground t_stairs_down (GOES_DOWN) ->
+#   basement t_stairs_up (GOES_UP); the z 1 tile above it is
+#   t_open_air (the stairwell opening, the mock's centre hole
+#   carried up one level).
+# - Stair B at (7,7): ground t_stairs_up (GOES_UP) -> first
+#   floor t_stairs_down (GOES_DOWN).
+# - The basement's non-building tiles are t_rock (solid
+#   underground), the first floor's are t_open_air, the roof
+#   level is t_flat_roof over the footprint and t_open_air
+#   elsewhere — the mock's roof slab, one level up.
+# - A closed door at (5,9) in the ground south wall (the
+#   mock's door), purely decorative here.
+#
+# The player starts ON stair B's ground tile (7,7,0), so the
+# T9 scenario needs no approach walk for the up leg.
+name = "multistorey"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [7, 7, 0]
+environment = true
+
+[z-1]
+legend = { "#" = "t_wall", "." = "t_floor", "^" = "t_stairs_up", "X" = "t_rock" }
+map = [
+  "XXXXXXXXXXXX",
+  "X#########XX",
+  "X#.......#XX",
+  "X#.^.....#XX",
+  "X#.......#XX",
+  "X#.......#XX",
+  "X#.......#XX",
+  "X#.......#XX",
+  "X#.......#XX",
+  "X#########XX",
+  "XXXXXXXXXXXX",
+  "XXXXXXXXXXXX",
+]
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "v" = "t_stairs_down", "^" = "t_stairs_up", "," = "t_grass" }
+map = [
+  ",,,,,,,,,,,,",
+  ",#########,,",
+  ",#.......#,,",
+  ",#.v.....#,,",
+  ",#.......#,,",
+  ",#.......#,,",
+  ",#.......#,,",
+  ",#.....^.#,,",
+  ",#.......#,,",
+  ",####D####,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+]
+
+[z1]
+legend = { "#" = "t_wall", "." = "t_floor", "v" = "t_stairs_down", "O" = "t_open_air" }
+map = [
+  "OOOOOOOOOOOO",
+  "O#########OO",
+  "O#.......#OO",
+  "O#.O.....#OO",
+  "O#.......#OO",
+  "O#.......#OO",
+  "O#.......#OO",
+  "O#.....v.#OO",
+  "O#.......#OO",
+  "O#########OO",
+  "OOOOOOOOOOOO",
+  "OOOOOOOOOOOO",
+]
+
+[z2]
+legend = { "R" = "t_flat_roof", "O" = "t_open_air" }
+map = [
+  "OOOOOOOOOOOO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "ORRRRRRRRROO",
+  "OOOOOOOOOOOO",
+  "OOOOOOOOOOOO",
+]
+
+[[spawn]]
+type = "player"
+pos = [7, 7, 0]
+hp_frac = 255
+facing = "NONE"

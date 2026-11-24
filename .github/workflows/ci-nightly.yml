@@ -34,6 +34,21 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 2
 
+  sim-soak:
+    # Phase 11 S8: the T12 seeded soak (1,100 turns x 10
+    # seeds, mirror + hash invariant after every flush).
+    # Nightly, not per-PR: it measured ~4.1 min on the
+    # 1.5-CPU dev VM (debug profile) on top of the sim
+    # suite's own runtime.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sim soak gate (T12)
+        run: cargo test -p sim --test soak_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+
   fuzz-long:
     runs-on: ubuntu-latest
     steps:

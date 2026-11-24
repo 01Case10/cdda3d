@@ -4,6 +4,7 @@
 //!   sim-server <unix-socket-path> [--scene <name>] [--defs <path>]
 //!              [--weather <preset>] [--ui-shm <path>]
 //!              [--ui-start <state>] [--seed <n>]
+//!              [--record <path>]
 //!   sim-server --measure [--scene <name>] [--defs <path>]
 //!   sim-server --scenario <file> [--defs <path>]
 //!
@@ -16,6 +17,10 @@
 //! initial UI state (gameplay|inventory|crafting|look|
 //! main-menu), overriding the scene's `ui_start` key. `--seed`
 //! overrides the scene's world RNG seed (S7; the §3.1 CLI shape).
+//! `--record <path>` (S8) writes the session log on exit: a
+//! §5 scenario file (scene + effective seed + every recorded
+//! Input) whose replay through the scenario runner reproduces
+//! the session's message stream byte-for-byte (§3.1).
 //!
 //! `--scenario <file>` (S7) runs a §5 scenario file in-process
 //! against a fresh world built from the scenario's own scene,
@@ -39,7 +44,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>] [--ui-shm <path>] [--ui-start <state>] [--seed <n>]");
+    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>] [--ui-shm <path>] [--ui-start <state>] [--seed <n>] [--record <path>]");
     eprintln!("       sim-server --measure [--scene <name>] [--defs <path>]");
     eprintln!("       sim-server --scenario <file> [--defs <path>]");
     ExitCode::from(2)
@@ -53,6 +58,7 @@ fn main() -> ExitCode {
     let mut ui_shm: Option<PathBuf> = None;
     let mut ui_start: Option<String> = None;
     let mut seed: Option<i64> = None;
+    let mut record: Option<PathBuf> = None;
     let mut scenario_file: Option<PathBuf> = None;
     let mut measure = false;
 
@@ -84,6 +90,10 @@ fn main() -> ExitCode {
                     Ok(n) => seed = Some(n),
                     Err(_) => return usage(),
                 },
+                None => return usage(),
+            },
+            "--record" => match args.next() {
+                Some(v) => record = Some(PathBuf::from(v)),
                 None => return usage(),
             },
             "--scenario" => match args.next() {
@@ -144,6 +154,7 @@ fn main() -> ExitCode {
         ui_shm_path: ui_shm,
         ui_start,
         seed,
+        record_path: record,
     };
     match sim::run_server(&config) {
         Ok(()) => {

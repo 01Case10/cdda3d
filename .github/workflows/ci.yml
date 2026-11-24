@@ -129,6 +129,12 @@ jobs:
         run: cargo test -p sim --test scenario_gate
         env:
           CARGO_BUILD_JOBS: 2
+      - name: S8 gates (T9 stairs, T10 server fuzz, record/replay)
+        run: >-
+          cargo test -p sim --test stairs_gate
+          --test server_fuzz_gate --test record_gate
+        env:
+          CARGO_BUILD_JOBS: 2
       - name: Engine sim-ingest gates
         run: >
           cargo test -p engine --test sim_world_parity_gate

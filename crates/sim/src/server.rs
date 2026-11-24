@@ -68,6 +68,11 @@ pub struct ServerConfig {
     /// World RNG seed override (S7; `--seed n`, the §3.1 CLI
     /// shape); `None` = the scene's own `seed` key.
     pub seed: Option<i64>,
+    /// Session log path (S8; `--record <path>`): on exit the
+    /// server writes a scenario file holding the scene, the
+    /// effective seed and every recorded Input (see
+    /// [`crate::record`]). `None` = no recording.
+    pub record_path: Option<PathBuf>,
 }
 
 fn send(stream: &mut UnixStream, msg: &MessageT) -> proto::Result<()> {
@@ -113,6 +118,14 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     }
     let mut world = World::from_scene(&reg, &scene)
         .map_err(|e| proto::ProtoError::Malformed(format!("world: {e}")))?;
+    // S8: the session recorder (--record). It logs the
+    // scene name + the EFFECTIVE seed (after the --seed
+    // override above) and every Input the server receives,
+    // across all connections; the file is written at exit.
+    let mut recorder = config
+        .record_path
+        .as_ref()
+        .map(|p| crate::record::Recorder::new(p.clone(), scene.name.clone(), scene.seed));
     eprintln!(
         "sim-server: loaded {} defs, scene '{}' ({} blocks)",
         reg.len(),
@@ -137,7 +150,7 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
 
     let mut result = Ok(());
     loop {
-        match serve_one(&listener, &reg, &mut world, &ui_shm_path) {
+        match serve_one(&listener, &reg, &mut world, &ui_shm_path, &mut recorder) {
             Ok(ServeEnd::Shutdown) | Ok(ServeEnd::Fatal) => break,
             Ok(ServeEnd::ClientGone) => {
                 eprintln!("sim-server: waiting for the next connection");
@@ -147,8 +160,11 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
                 // A client that vanishes mid-flush (broken
                 // pipe on send, reset on read) ends its own
                 // session, not the server: the accept loop
-                // takes the next connection. Structural errors
-                // (a corrupt frame, a bad handshake) stay fatal.
+                // takes the next connection. Per-connection
+                // decode/framing errors never reach here —
+                // `serve_one` folds them into ClientGone (S8);
+                // what remains fatal is a server-side failure
+                // (e.g. the UI store attach).
                 if matches!(e, proto::ProtoError::Io(_)) {
                     eprintln!(
                         "sim-server: connection died ({e}); waiting for the next connection"
@@ -158,6 +174,21 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
                 result = Err(e);
                 break;
             }
+        }
+    }
+
+    // S8: write the session log (if recording) before the
+    // clean-exit cleanup. A write failure is reported on
+    // stderr but does not change the server's exit result —
+    // the log is a diagnostic artifact, not the session.
+    if let Some(rec) = &recorder {
+        match rec.finish() {
+            Ok(()) => eprintln!(
+                "sim-server: session recorded to {} ({} inputs dropped as inexpressible)",
+                config.record_path.as_ref().unwrap().display(),
+                rec.dropped()
+            ),
+            Err(e) => eprintln!("sim-server: {e}"),
         }
     }
 
@@ -191,20 +222,33 @@ fn serve_one(
     reg: &DefRegistry,
     world: &mut World,
     ui_shm_path: &Path,
+    recorder: &mut Option<crate::record::Recorder>,
 ) -> proto::Result<ServeEnd> {
     let (mut stream, _) = listener.accept()?;
     let mut dec = FrameDecoder::new();
 
     // Handshake: Hello out, HelloAck in, exact version match.
     send(&mut stream, &MessageT::Hello(Box::new(sample_hello())))?;
-    let ack = match recv(&mut stream, &mut dec)? {
-        Some(MessageT::HelloAck(ack)) => ack,
-        Some(other) => {
+    let ack = match recv(&mut stream, &mut dec) {
+        Ok(Some(MessageT::HelloAck(ack))) => ack,
+        Ok(Some(other)) => {
             eprintln!("sim-server: expected HelloAck, got {other:?}; closing");
             return Ok(ServeEnd::ClientGone);
         }
-        None => {
+        Ok(None) => {
             eprintln!("sim-server: client disconnected before HelloAck");
+            return Ok(ServeEnd::ClientGone);
+        }
+        Err(e) => {
+            // S8 fuzz fix: a malformed FIRST frame (garbage
+            // bytes, an oversize length prefix, an invalid
+            // FlatBuffers payload) is a per-connection error,
+            // exactly like the post-handshake receive errors
+            // the main loop already treats as ClientGone.
+            // Pre-S8 this propagated out of `serve_one` and
+            // killed the accept loop — one hostile connection
+            // took the whole server down (server_fuzz_gate).
+            eprintln!("sim-server: receive error before HelloAck ({e}); closing");
             return Ok(ServeEnd::ClientGone);
         }
     };
@@ -276,6 +320,9 @@ fn serve_one(
         };
         match msg {
             MessageT::Input(input) => {
+                if let Some(rec) = recorder.as_mut() {
+                    rec.record_input(&input);
+                }
                 eprintln!(
                     "sim-server: input kind={:?} key={} pressed={}",
                     input.kind, input.key_code, input.pressed
@@ -298,6 +345,9 @@ fn serve_one(
                 send(&mut stream, &MessageT::Pong(Box::new(pong)))?;
             }
             MessageT::Resize(r) => {
+                if let Some(rec) = recorder.as_mut() {
+                    rec.record_resize(r.width, r.height);
+                }
                 // S4: recreate the UI store at the new geometry;
                 // the reply is one UiFrame with the new
                 // size/stride and a full-frame dirty rect.

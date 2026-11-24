@@ -17,6 +17,7 @@
 //!   action still consumes the turn.
 //! - `g` picks up one unit from the player's own tile, `d`
 //!   drops one unit onto it (S6; see below).
+//! - `>` descends and `<` ascends (S8; see below).
 //! - Any other pressed key consumes a turn with no effect. Key
 //!   releases and non-Key inputs are not turns at all: no state
 //!   change, no reply.
@@ -92,6 +93,34 @@
 //!   consumed, the sim's attempted-action rule, same as a
 //!   blocked step. Empty-tile pickup and empty-hands drop
 //!   are likewise no-op turns.
+//!
+//! S8 additions:
+//! - **Stairs / z-move (`>` / `<`):** `>` descends, `<`
+//!   ascends — CDDA's own convention (0.I-1 src/action.cpp:
+//!   498-501 maps the `move_down` / `move_up` actions;
+//!   src/mapdata.h:184-185 documents the stair flags with
+//!   exactly these keys). The move is legal only while
+//!   standing on a tile whose terrain OR furniture def
+//!   carries the matching flag — GOES_DOWN for `>`, GOES_UP
+//!   for `<` (upstream's gate is `game::move_vertical`'s
+//!   `has_flag(TFLAG_GOES_DOWN/GOES_UP, pos)` test,
+//!   game.cpp:12430 / 12336, over ter_furn_flag, so both
+//!   layers count). The destination is the same (x, y) one
+//!   level over (upstream's `stairs` is `pos.xy()` at
+//!   `pos.z() + movez`); the sim's landing rule: the
+//!   destination must exist, be passable by the usual
+//!   movecost rule, be unoccupied, and its terrain must not
+//!   be NO_FLOOR (you land on a floor/stair, not into open
+//!   air — the stair tiles themselves are floors). Anything
+//!   else is a no-op turn (the attempted-action convention).
+//!   Upstream's climbing fallback (no stair flag: climb
+//!   checks, wall cling, swimming) is NOT modelled — the
+//!   sim's rule is the stair path only, named here. A z
+//!   change crosses a submap boundary (the submap index
+//!   includes z), so the flush rides the existing map-shift
+//!   path: fresh Snapshot, epoch + 1 — the contract's
+//!   "snapshot window recentres", in the sim's no-culling
+//!   form (a Snapshot carries all scene submaps).
 //!
 //! S5 additions:
 //! - **Bump attack:** stepping into a creature's tile is a
@@ -421,6 +450,16 @@ impl World {
                 self.drop_item(reg);
                 self.flush_turn(reg)
             }
+            // Stairs (S8): '>' descends, '<' ascends, only
+            // from a tile carrying the matching GOES_* flag.
+            '>' => {
+                self.try_z_move(reg, -1);
+                self.flush_turn(reg)
+            }
+            '<' => {
+                self.try_z_move(reg, 1);
+                self.flush_turn(reg)
+            }
             _ => {
                 if let Some(dir) = direction_for_key(key) {
                     self.try_move(reg, dir);
@@ -452,6 +491,46 @@ impl World {
             return;
         }
         self.set_player_pos(target);
+    }
+
+    /// Attempt a z-move (S8): `dz` -1 descends (`>`), +1
+    /// ascends (`<`). See the module docs for the rule and
+    /// its upstream grounding. A failed attempt changes
+    /// nothing (the caller still flushes the turn).
+    fn try_z_move(&mut self, reg: &DefRegistry, dz: i32) {
+        let Some(pos) = self.player_pos() else {
+            return;
+        };
+        let flag = if dz < 0 { "GOES_DOWN" } else { "GOES_UP" };
+        // Upstream tests ter_furn_flag at the player's tile:
+        // either layer (terrain or furniture) can carry it.
+        let has = |kind: Kind, id: u32| {
+            id != 0
+                && reg
+                    .def_by_id(kind, id)
+                    .is_some_and(|d| d.flags.iter().any(|f| f == flag))
+        };
+        let terrain = self.terrain_at(pos).unwrap_or(0);
+        let furniture = self.furniture_at(pos).unwrap_or(0);
+        if !has(Kind::Terrain, terrain) && !has(Kind::Furniture, furniture) {
+            return;
+        }
+        let dest = [pos[0], pos[1], pos[2] + dz];
+        // Landing rule: the destination must be a real,
+        // passable, unoccupied floor — not open air.
+        let Some(dest_terrain) = self.terrain_at(dest) else {
+            return;
+        };
+        let Some(dest_def) = reg.def_by_id(Kind::Terrain, dest_terrain) else {
+            return;
+        };
+        if dest_def.flags.iter().any(|f| f == "NO_FLOOR") {
+            return;
+        }
+        if self.creature_id_at(dest).is_some() || !self.passable(reg, dest) {
+            return;
+        }
+        self.set_player_pos(dest);
     }
 
     /// Apply an armed Open/Close to the tile adjacent to the

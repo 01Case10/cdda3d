@@ -57,6 +57,7 @@ pub fn measure(defs_path: Option<&Path>, scene_path: &Path) -> Result<Measuremen
         ui_shm_path: None,
         ui_start: None,
         seed: None,
+        record_path: None,
     };
     let server = std::thread::spawn(move || run_server(&cfg));
     let deadline = Instant::now() + Duration::from_secs(30);
