@@ -515,6 +515,7 @@ dependencies = [
  "pollster",
  "proto",
  "serde_json",
+ "sim",
  "tileset",
  "transient",
  "treebuild",

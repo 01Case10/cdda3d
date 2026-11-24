@@ -43,3 +43,7 @@ naga = { version = "24", features = ["wgsl-in"] }
 # tileset in-process.
 voxelizer = { path = "../voxelizer" }
 tileset = { path = "../tileset" }
+# Phase 11 S1 gate (sim_world_parity_gate): build sim scenes
+# in-process and compare their wire-ingested worlds against the
+# proto sample fixtures.
+sim = { path = "../sim" }
