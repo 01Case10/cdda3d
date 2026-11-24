@@ -1,0 +1,64 @@
+# field_fire — plan §4 item 6 (new in S5): grass + a cabin, one
+# lit fire tile. The field-fire workhorse: fire spread, smoke
+# drift, night light pool, field damage.
+#
+# Grounding note (0.I-1 data): t_grass carries NO flammable
+# flag (TRANSPARENT/DIGGABLE/FLAT via t_natural_floor_abstract)
+# — in the real game a fire on open grass has nothing to burn
+# and dies fast. The fuel here is the cabin: t_floor is
+# FLAMMABLE_HARD and the f_table tiles are FLAMMABLE, so the
+# fire (lit on the cabin floor) grows, spreads across the
+# floor and tables, and eventually burns out.
+#
+# Cabin: walls x 15..22 / y 2..9, floor interior, closed door
+# at (18,9) in the south wall. Player starts inside at (16,5);
+# the lit fire tile is (18,5). 24x12 = 2 submaps.
+name = "field_fire"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [16, 5, 0]
+environment = true
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "," = "t_grass", "T" = "f_table" }
+map = [
+  ",,,,,,,,,,,,,,,,,,,,,,,,",
+  ",,,,,,,,,,,,,,,,,,,,,,,,",
+  ",,,,,,,,,,,,,,,########,",
+  ",,,,,,,,,,,,,,,#......#,",
+  ",,,,,,,,,,,,,,,#......#,",
+  ",,,,,,,,,,,,,,,#......#,",
+  ",,,,,,,,,,,,,,,#......#,",
+  ",,,,,,,,,,,,,,,#......#,",
+  ",,,,,,,,,,,,,,,#......#,",
+  ",,,,,,,,,,,,,,,###D####,",
+  ",,,,,,,,,,,,,,,,,,,,,,,,",
+  ",,,,,,,,,,,,,,,,,,,,,,,,",
+]
+furn = [
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  ".................T.T....",
+  "........................",
+  ".................T......",
+  "....................T...",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+]
+
+[[spawn]]
+type = "player"
+pos = [16, 5, 0]
+hp_frac = 255
+facing = "NONE"
+
+# The one lit fire tile (§4.6): a small fire on the cabin floor.
+[[field]]
+pos = [18, 5, 0]
+type = "fd_fire"
+intensity = 1

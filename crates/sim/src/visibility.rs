@@ -59,6 +59,10 @@
 //!   gets sm = luminance, and colour accumulates into a
 //!   light-colour-cache analogue (source colour * attenuated
 //!   luminance). Same z-level only.
+//! - **Field light (S5).** fd_fire tiles join the source list
+//!   with their intensity level's `light_emitted` (20/60/160,
+//!   0.I-1 lightmap.cpp:535-540 + field_type.json) and the
+//!   master `light_color` per level — see `FIRE_LIGHT_*`.
 //! - **Opaque tiles' light.** The game's apparent_light_helper
 //!   evaluates an opaque tile from the quadrants of its visible
 //!   non-opaque neighbours (its lit faces). The sim's
@@ -458,18 +462,11 @@ fn tile_tint(cc: [f32; 3], scalar_light: f32) -> [u8; 3] {
     out
 }
 
-/// Run the full recompute over the world's blocks.
-#[allow(clippy::too_many_arguments)]
-pub fn compute(
+/// Index every tile's static props (+ the z levels present).
+fn build_props(
     reg: &DefRegistry,
     blocks: &[BlockState],
-    lights: &[LightSpec],
-    viewpoint: Option<[i32; 3]>,
-    spectator_origin: [i32; 3],
-    turn: i64,
-    weather: &WeatherState,
-) -> VisResult {
-    // Index every tile.
+) -> (HashMap<[i32; 3], Props>, Vec<i32>) {
     let mut props: HashMap<[i32; 3], Props> = HashMap::new();
     let mut zs: Vec<i32> = Vec::new();
     for b in blocks {
@@ -485,6 +482,80 @@ pub fn compute(
             props.insert(pos, props_of(reg, t.terrain, t.furniture));
         }
     }
+    (props, zs)
+}
+
+/// Line of sight between two tiles (S5 creature sight): the
+/// same flood + endpoint rule `compute_visible` applies from
+/// the player's viewpoint — `to` is seen iff the flood from
+/// `from` reaches it, or it neighbours a reached tile (the
+/// opaque-endpoint case). Same z only: the z-crossing rules
+/// are the player's; creature scenes are single-level.
+pub fn has_line_of_sight(
+    reg: &DefRegistry,
+    blocks: &[BlockState],
+    from: [i32; 3],
+    to: [i32; 3],
+) -> bool {
+    if from == to {
+        return true;
+    }
+    if from[2] != to[2] {
+        return false;
+    }
+    let (props, _zs) = build_props(reg, blocks);
+    if !props.contains_key(&from) || !props.contains_key(&to) {
+        return false;
+    }
+    let reached = flood(&props, from);
+    if reached.contains_key(&to) {
+        return true;
+    }
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            if reached.contains_key(&[to[0] + dx, to[1] + dy, to[2]]) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// fd_fire light emission per intensity level (1..=3), the
+/// S5 landing of S3's deferral: `generate_lightmap`'s field
+/// loop calls `add_light_source(p, light_emitted)` for every
+/// field on a tile (0.I-1 lightmap.cpp:535-540), and fd_fire's
+/// intensity levels carry `light_emitted` 20 / 60 / 160
+/// (0.I-1 data/json/field_type.json) — the game's own
+/// luminance scale (sun_light_at peaks at 125, so a small
+/// fire outshines LIGHT_SOURCE_BRIGHT = 10 at its tile).
+pub const FIRE_LIGHT_EMITTED: [f32; 3] = [20.0, 60.0, 160.0];
+/// fd_fire light colour per intensity level: master
+/// field_type.json's `light_color` ([255,120,40] / [255,180,80]
+/// / [255,255,210], loaded by master field_type.cpp:249-253,
+/// normalised /255 here like the loader). 0.I-1's field_type
+/// has no light_color — but the colour cache itself is the
+/// master smooth-lighting lineage S3 ports, so fire's colour
+/// comes from the same source as the tint definitions.
+pub const FIRE_LIGHT_COLOR: [[f32; 3]; 3] = [
+    [1.0, 120.0 / 255.0, 40.0 / 255.0],
+    [1.0, 180.0 / 255.0, 80.0 / 255.0],
+    [1.0, 1.0, 210.0 / 255.0],
+];
+
+/// Run the full recompute over the world's blocks.
+#[allow(clippy::too_many_arguments)]
+pub fn compute(
+    reg: &DefRegistry,
+    blocks: &[BlockState],
+    lights: &[LightSpec],
+    viewpoint: Option<[i32; 3]>,
+    spectator_origin: [i32; 3],
+    turn: i64,
+    weather: &WeatherState,
+) -> VisResult {
+    // Index every tile.
+    let (props, zs) = build_props(reg, blocks);
 
     let outside_map = compute_outside(&props, &zs);
 
@@ -524,7 +595,32 @@ pub fn compute(
         lm.insert(pos, base);
         cc.insert(pos, [0.0; 3]);
     }
-    for light in lights {
+    // Field light (S5): every fd_fire tile is a light source
+    // with its intensity level's emission + colour, fed through
+    // the same apply_light_source analogue as scene lights.
+    let fire_id = reg.id_of(Kind::Field, "fd_fire");
+    let mut all_lights: Vec<LightSpec> = lights.to_vec();
+    if fire_id != 0 {
+        for b in blocks {
+            for (i, t) in b.tiles.iter().enumerate() {
+                for &(type_, intensity) in &t.fields {
+                    if type_ == fire_id {
+                        let lvl = ((intensity.max(1) - 1) as usize).min(2);
+                        all_lights.push(LightSpec {
+                            pos: [
+                                b.origin.x + (i % SUBMAP) as i32,
+                                b.origin.y + (i / SUBMAP) as i32,
+                                b.origin.z,
+                            ],
+                            color: FIRE_LIGHT_COLOR[lvl],
+                            intensity: FIRE_LIGHT_EMITTED[lvl],
+                        });
+                    }
+                }
+            }
+        }
+    }
+    for light in &all_lights {
         if !props.contains_key(&light.pos) {
             continue;
         }

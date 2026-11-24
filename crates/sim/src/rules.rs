@@ -39,6 +39,28 @@
 //! turn regardless of cost) — that is a later refinement, not
 //! part of passability.
 //!
+//! S5 additions:
+//! - **Bump attack:** stepping into a creature's tile is a
+//!   melee attack (CDDA's rule), not a step: the creature
+//!   takes `PLAYER_MELEE_DAMAGE`, a HitFlash rides the flush,
+//!   the player does not move, the turn is consumed.
+//! - **Creature phase** (after the player's action, once per
+//!   turn, creatures in id order): a creature adjacent to the
+//!   player attacks (its def's expected melee damage; player
+//!   hp_frac falls; HitFlash + Sound effects); else if it can
+//!   see the player (flood LOS + the player's tile lit !=
+//!   BLANK in the computed cache) it takes one greedy 8-way
+//!   chase step minimising Chebyshev distance, under the same
+//!   passability as the player (it cannot open doors and
+//!   cannot enter occupied tiles); else it wanders one seeded
+//!   step or stays. Death (HP <= 0, from any source) removes
+//!   the entity and drops a corpse item — see
+//!   `World::damage_entity`.
+//! - **Field phase** (before the creature phase): fire and
+//!   smoke tick — see `tick_fields` for the rule set and its
+//!   upstream grounding. Field damage lands here, so a
+//!   creature killed by its fire does not act that turn.
+//!
 //! S4 routing (plan §2.7/§3.3): inputs route by the UI mode.
 //! - In `UiInput` mode, Key/MouseButton/Wheel inputs are
 //!   consumed by the UI state machine (`crate::ui`): a change
@@ -60,11 +82,121 @@
 //!   arrive, and the sim's panels are display-only, so they
 //!   are accepted and ignored. MouseMove/Focus likewise.
 
-use proto::{InputKind, InputT, MessageT, UiMode};
+use proto::{EffectEventT, EffectKind, InputKind, InputT, LitLevel, MessageT, UiMode, Vec3iT};
 
 use crate::defs::{Def, DefRegistry, Kind};
 use crate::ui::UiState;
+use crate::visibility;
 use crate::world::World;
+
+/// The player's bump-attack damage (S5 sim constant): a
+/// fixed melee value, roughly an unarmed hit — CDDA derives
+/// the avatar's melee damage from stats/skills/equipment,
+/// none of which the sim models; the constant is named here
+/// so gates can do exact HP arithmetic (mon_zombie: 80 HP =
+/// 10 bumps).
+pub const PLAYER_MELEE_DAMAGE: i32 = 8;
+
+/// Fire damage per turn to a creature (or the player)
+/// standing in fd_fire, by intensity 1..=3 (S5): upstream
+/// rolls rng(2,6) / rng(6,12) / rng(10,20) plus a flat 3 for
+/// flesh creatures (0.I-1 map_field.cpp, the creature
+/// field-effects section of `field_processor_fd_fire`'s
+/// file — `cur_field_type == fd_fire` in the damage loop);
+/// the sim deals the expectations 3+4 / 3+9 / 3+15. No
+/// material/armour model (the registry carries neither), and
+/// the FIREPROOF/FIREY exemption is not applied — monster
+/// flag strings are not in the def table (the importer
+/// carries flags for terrain/furniture only).
+pub const FIRE_DAMAGE: [i32; 3] = [7, 12, 18];
+/// Turns of burning between intensity growth steps (S5).
+pub const FIRE_GROW_EVERY: i32 = 8;
+/// Turns between intensity decay steps once fuel is gone.
+pub const FIRE_DECAY_EVERY: i32 = 6;
+/// Fuel (turns) a fire draws from its tile, by flammability
+/// class: FLAMMABLE / FLAMMABLE_ASH tiles feed a fire for
+/// FUEL_FLAMMABLE turns; FLAMMABLE_HARD-only tiles burn
+/// slower and longer (upstream consumes their fuel at
+/// one_in(3) per turn vs every turn); a non-flammable tile
+/// gives FUEL_NONE — "nothing to burn = fire should be dying
+/// out faster" (map_field.cpp, fd_fire processor). Upstream
+/// fuel is measured in field age (tens of minutes); the sim
+/// compresses the timescale so a cabin fire lives and dies
+/// inside a gate's horizon — the shape (grow while fuelled,
+/// decay when spent, intensity caps from burning neighbours)
+/// is upstream's, the constants are the sim's.
+pub const FUEL_FLAMMABLE: i32 = 90;
+/// See `FUEL_FLAMMABLE`.
+pub const FUEL_HARD: i32 = 150;
+/// See `FUEL_FLAMMABLE`.
+pub const FUEL_NONE: i32 = 8;
+/// Turns before an undrifted smoke entry loses an intensity
+/// level (the sim's stand-in for fd_smoke's 2-minute
+/// half-life at gate timescale).
+pub const SMOKE_DECAY_EVERY: i32 = 12;
+/// HitFlash / melee Sound duration on the wire (ms).
+pub const HIT_EFFECT_MS: u32 = 100;
+
+/// The 8 movement directions in fixed (row-major) order —
+/// every neighbour scan in the turn rules uses this order,
+/// so seeded-RNG draws and tie-breaks are deterministic.
+pub const DIRS: [(i32, i32); 8] = [
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (-1, 0),
+    (1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+];
+
+/// The sim's wind: a single downwind step, +x. The sim has
+/// no weather wind model — the EnvironmentUpdate carries the
+/// fixture constants (5 mph, wind_dir_deg 90; see
+/// environment.rs) — and 90 degrees maps to the vector (1, 0)
+/// by the game's own `convert_wind_to_coord` (0.I-1
+/// weather.cpp:852-863: the 60..120 band yields (1, 0)).
+pub const WIND_STEP: (i32, i32) = (1, 0);
+
+fn v3(pos: [i32; 3]) -> Vec3iT {
+    Vec3iT {
+        x: pos[0],
+        y: pos[1],
+        z: pos[2],
+    }
+}
+
+/// A HitFlash at a tile: effect id "hit" (the transient
+/// system's recognised id — crates/transient gate
+/// convention), from == to == the struck tile.
+fn hit_flash(pos: [i32; 3]) -> EffectEventT {
+    let mut e = EffectEventT::default();
+    e.kind = EffectKind::HitFlash;
+    e.effect_id = Some("hit".to_string());
+    e.from_pos = Some(v3(pos));
+    e.to_pos = Some(v3(pos));
+    e.duration_ms = HIT_EFFECT_MS;
+    e
+}
+
+/// A melee Sound: from the attacker to the struck tile.
+/// Sound ids are soundpack strings upstream (no closed set);
+/// the sim's is "melee_hit".
+fn melee_sound(from: [i32; 3], to: [i32; 3]) -> EffectEventT {
+    let mut e = EffectEventT::default();
+    e.kind = EffectKind::Sound;
+    e.effect_id = Some("melee_hit".to_string());
+    e.from_pos = Some(v3(from));
+    e.to_pos = Some(v3(to));
+    e.duration_ms = HIT_EFFECT_MS;
+    e
+}
+
+/// Chebyshev distance (8-way movement's natural metric).
+fn chebyshev(a: [i32; 3], b: [i32; 3]) -> i32 {
+    (a[0] - b[0]).abs().max((a[1] - b[1]).abs()).max((a[2] - b[2]).abs())
+}
 
 /// An armed Open/Close awaiting its direction key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,36 +338,23 @@ impl World {
 
     /// Attempt to step the player by `dir`. A blocked step
     /// changes nothing (the caller still flushes the turn).
+    /// Stepping into a creature's tile is a bump attack
+    /// (S5): the creature takes `PLAYER_MELEE_DAMAGE` and a
+    /// HitFlash is queued; the player does not move.
     fn try_move(&mut self, reg: &DefRegistry, dir: (i32, i32)) {
         let Some(pos) = self.player_pos() else {
             return;
         };
         let target = [pos[0] + dir.0, pos[1] + dir.1, pos[2]];
-        let Some(terrain) = self.terrain_at(target) else {
-            return; // outside the scene: blocked
-        };
-        let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
-            return; // unknown terrain id: blocked, never a panic
-        };
-        // map::move_cost_ter_furn, mirrored exactly (see module
-        // docs). A def with no move_cost in the table counts as
-        // the game's member default, 0 = impassable.
-        let ter_cost = def.move_cost.unwrap_or(0);
-        if ter_cost == 0 {
+        if let Some(zid) = self.creature_id_at(target) {
+            self.damage_entity(reg, zid, PLAYER_MELEE_DAMAGE);
+            self.push_effect(hit_flash(target));
             return;
         }
-        let furn_mod = match self.furniture_at(target) {
-            Some(0) | None => 0, // no furniture: null furniture's mod is 0
-            Some(furn_id) => reg
-                .def_by_id(Kind::Furniture, furn_id)
-                .and_then(|d| d.move_cost)
-                .unwrap_or(0),
-        };
-        if furn_mod < 0 || ter_cost + furn_mod <= 0 {
+        // map::move_cost_ter_furn, mirrored exactly (see
+        // module docs) — `World::passable`.
+        if !self.passable(reg, target) {
             return;
-        }
-        if self.creature_at(target) {
-            return; // creature in the way
         }
         self.set_player_pos(target);
     }
@@ -278,5 +397,376 @@ impl World {
             PendingAction::Open => "You open the door.".to_string(),
             PendingAction::Close => "You close the door.".to_string(),
         });
+    }
+}
+
+// ---------------------------------------------------------------------
+// S5 turn processing: fields, then creatures. Called from
+// `World::flush_turn` (the player's own action has already
+// resolved). NOT called by `advance_clock` — the fast-forward
+// is a harness time skip, not a per-second simulation, so
+// fields and creatures do not tick during it.
+// ---------------------------------------------------------------------
+
+/// A tile's flammability class (S5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FuelClass {
+    /// No FLAMMABLE* flag on either layer.
+    None,
+    /// FLAMMABLE or FLAMMABLE_ASH on terrain or furniture.
+    Standard,
+    /// FLAMMABLE_HARD only.
+    Hard,
+}
+
+impl FuelClass {
+    fn fuel_turns(self) -> i32 {
+        match self {
+            FuelClass::None => FUEL_NONE,
+            FuelClass::Standard => FUEL_FLAMMABLE,
+            FuelClass::Hard => FUEL_HARD,
+        }
+    }
+}
+
+impl World {
+    /// Flammability of a tile: the game's fuel flags across
+    /// the terrain + furniture layers. Upstream's tests are a
+    /// disjunction (ter_furn_has_flag over FLAMMABLE /
+    /// FLAMMABLE_ASH at the low power gate, FLAMMABLE_HARD at
+    /// the high one — 0.I-1 map_field.cpp:908-910 for spread
+    /// targets, 1051-1099 for fuel), so the easiest applicable
+    /// class wins: FLAMMABLE furniture on a FLAMMABLE_HARD
+    /// floor burns by the FLAMMABLE rule.
+    fn fuel_class(&self, reg: &DefRegistry, pos: [i32; 3]) -> FuelClass {
+        let has = |kind: Kind, id: u32, flag: &str| {
+            id != 0
+                && reg
+                    .def_by_id(kind, id)
+                    .is_some_and(|d| d.flags.iter().any(|f| f == flag))
+        };
+        let ter = self.terrain_at(pos).unwrap_or(0);
+        let furn = self.furniture_at(pos).unwrap_or(0);
+        let any = |flag: &str| {
+            has(Kind::Terrain, ter, flag) || has(Kind::Furniture, furn, flag)
+        };
+        if any("FLAMMABLE") || any("FLAMMABLE_ASH") {
+            FuelClass::Standard
+        } else if any("FLAMMABLE_HARD") {
+            FuelClass::Hard
+        } else {
+            FuelClass::None
+        }
+    }
+
+    /// One turn of field processing (S5): fire lifecycle +
+    /// spread, smoke production/drift/decay, and field damage
+    /// to whoever stands in fire. Deterministic: tiles are
+    /// processed in block/row-major order, neighbours in
+    /// `DIRS` order, and the only randomness is the world's
+    /// seeded RNG (spread rolls).
+    ///
+    /// The rule set compresses upstream's age-based fire
+    /// processor (`field_processor_fd_fire`, 0.I-1
+    /// map_field.cpp:945+) to gate timescale while keeping
+    /// its structure:
+    /// - A fire draws fuel from its tile (class-based budget;
+    ///   see the FUEL_* constants). While fuel remains it can
+    ///   GROW: +1 intensity per `FIRE_GROW_EVERY` turns, up to
+    ///   a cap of 1 + (its tile is flammable) + the neighbour
+    ///   rule — upstream's maximum intensity is 1 for a lone
+    ///   fire, 2 with fuel or >= 3 burning neighbours, 3 with
+    ///   >= 7 (map_field.cpp:1243-1261; the fuel path to 2 is
+    ///   its age < -50 min branch).
+    /// - When the fuel is spent, intensity decays
+    ///   (`FIRE_DECAY_EVERY`) and the fire goes out, leaving
+    ///   its smoke; the tile is marked burned (fuel gone for
+    ///   good — the sim's stand-in for terrain consumption).
+    /// - Spread: per neighbour per turn, upstream's chance
+    ///   `25 * (intensity - 1)` rolled as rng(1,100) < chance
+    ///   (map_field.cpp:1310-1330); the target must be
+    ///   flammable and unburned; FLAMMABLE_HARD-only targets
+    ///   need a raging (intensity 3) source, upstream's
+    ///   power >= 3 gate. New fires start at intensity 1.
+    /// - Smoke: a burning tile carries fd_smoke at the fire's
+    ///   intensity (upstream creates it on the fire tile,
+    ///   map_field.cpp:1417), pinned while the fire lives.
+    ///   Free smoke follows `gas_spread_to`'s shape
+    ///   (map_field.cpp:250-274): one intensity unit moves to
+    ///   the downwind neighbour per turn when the source is
+    ///   at intensity >= 2 and the destination is passable
+    ///   with weaker/no smoke (upstream's percent-spread roll
+    ///   and intensity > 1 gate, made deterministic); what
+    ///   cannot drift decays (`SMOKE_DECAY_EVERY`).
+    /// - Damage: standing in fd_fire costs `FIRE_DAMAGE` per
+    ///   turn (creatures and the player alike).
+    pub fn tick_fields(&mut self, reg: &DefRegistry) {
+        let fire_id = reg.id_of(Kind::Field, "fd_fire");
+        let smoke_id = reg.id_of(Kind::Field, "fd_smoke");
+        if fire_id == 0 || smoke_id == 0 {
+            return;
+        }
+
+        // Every field entry ages one turn (an entry's age
+        // resets whenever its intensity changes).
+        for b in &mut self.blocks {
+            for t in &mut b.tiles {
+                for meta in &mut t.field_meta {
+                    meta.0 += 1;
+                }
+            }
+        }
+
+        // Field positions, in deterministic (block, row-major)
+        // order, snapshotted before any mutation: entries
+        // created this tick do not process until the next.
+        let mut fire_tiles: Vec<[i32; 3]> = Vec::new();
+        let mut smoke_tiles: Vec<[i32; 3]> = Vec::new();
+        for b in &self.blocks {
+            for (i, t) in b.tiles.iter().enumerate() {
+                let pos = [
+                    b.origin.x + (i % crate::scenes::SUBMAP) as i32,
+                    b.origin.y + (i / crate::scenes::SUBMAP) as i32,
+                    b.origin.z,
+                ];
+                if t.field_intensity(fire_id).is_some() {
+                    fire_tiles.push(pos);
+                }
+                if t.field_intensity(smoke_id).is_some() {
+                    smoke_tiles.push(pos);
+                }
+            }
+        }
+        let fire_set: std::collections::HashSet<[i32; 3]> =
+            fire_tiles.iter().copied().collect();
+
+        // --- Fire: fuel, growth, decay, smoke, spread. ---
+        for &pos in &fire_tiles {
+            let (b, i) = self.tile_at(pos).expect("field tile is in the scene");
+            let class = self.fuel_class(reg, pos);
+            let burning_neighbours = DIRS
+                .iter()
+                .filter(|&&(dx, dy)| fire_set.contains(&[pos[0] + dx, pos[1] + dy, pos[2]]))
+                .count();
+            let cap = if burning_neighbours >= 7 {
+                3
+            } else if burning_neighbours >= 3 || class != FuelClass::None {
+                2
+            } else {
+                1
+            };
+            let mut died = false;
+            {
+                let t = &mut self.blocks[b].tiles[i];
+                let fi = t.field_index(fire_id).expect("fire present");
+                if t.field_meta[fi].1 < 0 {
+                    t.field_meta[fi].1 = class.fuel_turns();
+                }
+                let (age, fuel) = t.field_meta[fi];
+                let intensity = t.fields[fi].1;
+                if fuel > 0 {
+                    t.field_meta[fi].1 = fuel - 1;
+                    if age >= FIRE_GROW_EVERY && intensity < cap {
+                        t.set_field_at(fi, intensity + 1, None);
+                    }
+                } else if age >= FIRE_DECAY_EVERY {
+                    if intensity <= 1 {
+                        t.remove_field_at(fi);
+                        died = true;
+                    } else {
+                        t.set_field_at(fi, intensity - 1, None);
+                    }
+                }
+            }
+            if died {
+                self.burned.insert(pos);
+                continue;
+            }
+            let intensity = self.blocks[b].tiles[i]
+                .field_intensity(fire_id)
+                .unwrap_or(0);
+            // Smoke on the burning tile, at the fire's
+            // intensity, pinned while the fire lives.
+            {
+                let t = &mut self.blocks[b].tiles[i];
+                match t.field_index(smoke_id) {
+                    Some(si) => t.set_field_at(si, intensity, None),
+                    None => t.add_field(smoke_id, intensity, -1),
+                }
+            }
+            // Spread.
+            if intensity >= 2 {
+                let chance = 25 * (intensity as i32 - 1);
+                for (dx, dy) in DIRS {
+                    let dst = [pos[0] + dx, pos[1] + dy, pos[2]];
+                    if self.burned.contains(&dst) {
+                        continue;
+                    }
+                    let Some((db, di)) = self.tile_at(dst) else {
+                        continue;
+                    };
+                    if self.blocks[db].tiles[di].field_intensity(fire_id).is_some() {
+                        continue;
+                    }
+                    let dclass = self.fuel_class(reg, dst);
+                    if dclass == FuelClass::None {
+                        continue;
+                    }
+                    if dclass == FuelClass::Hard && intensity < 3 {
+                        continue;
+                    }
+                    if self.rng.roll_under(chance) {
+                        self.blocks[db].tiles[di].add_field(fire_id, 1, -1);
+                    }
+                }
+            }
+        }
+
+        // --- Smoke: downwind drift, else decay. ---
+        for &pos in &smoke_tiles {
+            let Some((b, i)) = self.tile_at(pos) else {
+                continue;
+            };
+            // Pinned under a live fire (handled above).
+            if self.blocks[b].tiles[i].field_intensity(fire_id).is_some() {
+                continue;
+            }
+            let Some(si) = self.blocks[b].tiles[i].field_index(smoke_id) else {
+                continue;
+            };
+            let intensity = self.blocks[b].tiles[i].fields[si].1;
+            let age = self.blocks[b].tiles[i].field_meta[si].0;
+            let mut moved = false;
+            if intensity >= 2 {
+                let dst = [pos[0] + WIND_STEP.0, pos[1] + WIND_STEP.1, pos[2]];
+                if let Some((db, di)) = self.tile_at(dst) {
+                    let dst_ok = self.passable(reg, dst)
+                        && self.blocks[db].tiles[di].field_intensity(fire_id).is_none()
+                        && self.blocks[db].tiles[di]
+                            .field_intensity(smoke_id)
+                            .is_none_or(|s| s < intensity);
+                    if dst_ok {
+                        match self.blocks[db].tiles[di].field_index(smoke_id) {
+                            Some(dsi) => {
+                                let cur = self.blocks[db].tiles[di].fields[dsi].1;
+                                self.blocks[db].tiles[di]
+                                    .set_field_at(dsi, (cur + 1).min(3), None);
+                            }
+                            None => {
+                                self.blocks[db].tiles[di].add_field(smoke_id, 1, -1);
+                            }
+                        }
+                        self.blocks[b].tiles[i].set_field_at(si, intensity - 1, None);
+                        moved = true;
+                    }
+                }
+            }
+            if !moved && age >= SMOKE_DECAY_EVERY {
+                let t = &mut self.blocks[b].tiles[i];
+                if let Some(si) = t.field_index(smoke_id) {
+                    let cur = t.fields[si].1;
+                    if cur <= 1 {
+                        t.remove_field_at(si);
+                    } else {
+                        t.set_field_at(si, cur - 1, None);
+                    }
+                }
+            }
+        }
+
+        // --- Field damage: whoever stands in fire burns. ---
+        let mut victims: Vec<(u64, i32)> = Vec::new();
+        for e in &self.entities {
+            let Some(p) = e.pos.as_ref() else { continue };
+            let pos = [p.x, p.y, p.z];
+            if let Some((b, i)) = self.tile_at(pos) {
+                if let Some(intensity) = self.blocks[b].tiles[i].field_intensity(fire_id) {
+                    let dmg = FIRE_DAMAGE[((intensity.max(1) - 1) as usize).min(2)];
+                    victims.push((e.id, dmg));
+                }
+            }
+        }
+        for (id, dmg) in victims {
+            self.damage_entity(reg, id, dmg);
+        }
+    }
+
+    /// One turn of creature AI (S5), creatures in ascending
+    /// id order (deterministic RNG draw order). Per creature:
+    /// attack if adjacent to the player; else chase if it can
+    /// see the player (flood LOS from the creature, and the
+    /// player's tile lit != BLANK in the computed cache —
+    /// §3.2's visibility test); else wander. See the module
+    /// docs for the rule details.
+    pub fn tick_creatures(&mut self, reg: &DefRegistry) {
+        let Some(player_pos) = self.player_pos() else {
+            return;
+        };
+        let Some(player_id) = self.player_id else {
+            return;
+        };
+        let mut ids: Vec<u64> = self
+            .entities
+            .iter()
+            .map(|e| e.id)
+            .filter(|&id| id != player_id)
+            .collect();
+        ids.sort_unstable();
+        for id in ids {
+            let Some(pos) = self.entity_pos(id) else {
+                continue; // died earlier this turn (field damage)
+            };
+            let dist = chebyshev(pos, player_pos);
+            if dist <= 1 {
+                // Attack: the def's expected melee damage,
+                // HitFlash at the player + a Sound.
+                let dmg = self
+                    .entities
+                    .iter()
+                    .find(|e| e.id == id)
+                    .and_then(|e| reg.def_by_id(Kind::Monster, e.type_def))
+                    .map_or(0, |d| d.melee_expected());
+                self.damage_entity(reg, player_id, dmg);
+                self.push_effect(hit_flash(player_pos));
+                self.push_effect(melee_sound(pos, player_pos));
+            } else if visibility::has_line_of_sight(reg, &self.blocks, pos, player_pos)
+                && self
+                    .lit_at(player_pos)
+                    .is_some_and(|l| l != LitLevel::BLANK)
+            {
+                // Greedy chase: the step minimising Chebyshev
+                // distance (first in DIRS order on ties),
+                // under the player's passability rule, into an
+                // unoccupied tile. No door opening: a closed
+                // door's tile is impassable, full stop.
+                let mut best: Option<[i32; 3]> = None;
+                let mut best_dist = dist;
+                for (dx, dy) in DIRS {
+                    let dst = [pos[0] + dx, pos[1] + dy, pos[2]];
+                    let d = chebyshev(dst, player_pos);
+                    if d >= best_dist {
+                        continue;
+                    }
+                    if !self.passable(reg, dst) || self.entity_at(dst).is_some() {
+                        continue;
+                    }
+                    best = Some(dst);
+                    best_dist = d;
+                }
+                if let Some(dst) = best {
+                    self.set_entity_pos(id, dst);
+                }
+            } else {
+                // Wander: one seeded step (a roll of 8 = stay).
+                let roll = self.rng.below(9);
+                if roll < 8 {
+                    let (dx, dy) = DIRS[roll as usize];
+                    let dst = [pos[0] + dx, pos[1] + dy, pos[2]];
+                    if self.passable(reg, dst) && self.entity_at(dst).is_none() {
+                        self.set_entity_pos(id, dst);
+                    }
+                }
+            }
+        }
     }
 }

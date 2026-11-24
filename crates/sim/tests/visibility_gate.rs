@@ -224,19 +224,28 @@ fn street_block_midnight_lamp_pool() {
 fn stub_house_noon_spectator() {
     // No player spawn: the fixture snapshot is fully observed
     // (no LOS culling), classified by light alone.
+    //
+    // S5 amendment: the fixture's fd_fire at (6,6) is a light
+    // source now (intensity 1 -> light_emitted 20, 0.I-1
+    // lightmap.cpp:535-540). Under the lm flood's attenuation
+    // (0.0383/tile) a 20-luminance source still delivers >= 10
+    // across the whole sealed 12x12, so every tile reads
+    // BRIGHT — pre-S5 this test asserted the inside_light_level
+    // classification (LOW / frac 20), which the fire's light
+    // now legitimately overrules. The inside-light rule itself
+    // stays covered by the street_block gates (no fire there).
     let (_reg, _world, snap) = build("stub_house", |_| {});
     let (lit, seen, outside, frac, _) = tile(&snap, [6, 6, 0]);
-    assert_eq!(lit, LitLevel::LOW, "interior floor: inside_light_level 4.0");
+    assert_eq!(lit, LitLevel::BRIGHT, "the fire tile itself: lm = 20");
     assert_eq!(seen, 255);
     assert!(!outside, "interior floor is not outside");
-    assert_eq!(frac, Some(20));
+    assert_eq!(frac, Some(255));
     let (lit, seen, outside, ..) = tile(&snap, [0, 0, 0]);
     // The stub house is a sealed 12x12 fixture — it has NO
     // exterior tiles at all, so the corner wall's sun cast is
-    // blocked by the wall below it and no lit face spills onto
-    // it: it reads the inside floor, LOW. (In the real bubble
-    // the surroundings would light its outer face.)
-    assert_eq!(lit, LitLevel::LOW, "sealed-fixture corner wall");
+    // blocked by the wall below it; pre-S5 it read the inside
+    // floor, LOW. The fire's flood now reaches it too.
+    assert_eq!(lit, LitLevel::BRIGHT, "sealed-fixture corner wall, fire-lit");
     assert_eq!(seen, 255);
     assert!(
         !outside,

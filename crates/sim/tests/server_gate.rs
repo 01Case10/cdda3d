@@ -168,9 +168,13 @@ fn s0_handshake_snapshot_turn_ping_shutdown() {
     // S2 turn semantics (replacing the S0 echo): a pressed Key
     // Input is one turn, answered by exactly one Delta with the
     // next seq. The key is '5' — unbound (sample_input's 'i'
-    // became the Inventory binding in S4), so the turn changes
-    // nothing: no tile changes, no entity updates. stub_house
-    // has no player, so no map shift can occur either.
+    // became the Inventory binding in S4), so the turn moves
+    // nothing and updates no entity. S5 amendment: stub_house's
+    // fixture fire is LIVE now — the field tick pins smoke onto
+    // the burning tile, so the Delta carries exactly one tile
+    // change (that tile, its field list grown fire + smoke,
+    // displayed_field still the fire). stub_house has no
+    // player, so no map shift can occur either.
     let mut input = sample_input();
     input.key_code = '5' as i32;
     send(&mut stream, &MessageT::Input(Box::new(input)));
@@ -178,10 +182,23 @@ fn s0_handshake_snapshot_turn_ping_shutdown() {
         MessageT::Delta(d) => {
             assert_eq!(d.seq, 2, "seq advances by exactly 1 per turn");
             assert_eq!(d.epoch, 1);
+            let changes = d.tile_changes.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
+            assert_eq!(
+                changes.len(),
+                1,
+                "only the live fire's tile changes on a no-op turn: {changes:?}"
+            );
+            let tc = &changes[0];
+            let fields = tc.fields.as_ref().expect("the fire tile's fields");
+            assert_eq!(fields.len(), 2, "fire + its pinned smoke: {fields:?}");
+            let df = tc.displayed_field.as_ref().expect("displayed field");
             assert!(
-                d.tile_changes.as_ref().is_none_or(|v| v.is_empty()),
-                "a no-op turn must not change tiles: {:?}",
-                d.tile_changes
+                fields
+                    .iter()
+                    .any(|f| f.type_ == df.field_type && f.intensity == df.intensity),
+                "displayed_field is one of the tile's fields at its intensity \
+                 (the fire-over-smoke tie-break is pinned with registry ids \
+                 in the sim-side T7 gate): {fields:?} vs {df:?}"
             );
             assert!(
                 d.entity_updates.as_ref().is_none_or(|v| v.is_empty()),

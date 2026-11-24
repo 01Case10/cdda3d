@@ -1,4 +1,4 @@
-//! World state + Snapshot builder (slices S1-S3).
+//! World state + Snapshot builder (slices S1-S5).
 //!
 //! The `World` holds tile state per submap block in *registry*
 //! wire ids (per-kind, from [`crate::defs::DefRegistry`]), the
@@ -25,14 +25,20 @@
 //! `displayed_field` follows the sample rule (§3.2): fire is
 //! displayed over other fields; otherwise the highest intensity
 //! wins; ties keep the first entry.
+//!
+//! S5 state: sim HP per entity behind the wire `hp_frac`, a
+//! seeded xorshift RNG, per-field age/fuel bookkeeping
+//! (parallel to the wire field list, never sent), a burned-out
+//! tile set, and the turn's pending Effects — the creature /
+//! field machinery itself lives in [`crate::rules`].
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use proto::{
-    DeltaT, DisplayedFieldT, EntityT, EnvironmentUpdateT, Facing, FieldOnTileT, LightUpdateT,
-    LitLevel, MessageT, PickResultT, SnapshotT, SubmapBlockT, TileChangeT, UiFrameT, Vec3iT,
-    VehiclePartStateT, VehicleT,
+    DeltaT, DisplayedFieldT, EffectEventT, EffectsT, EntityT, EnvironmentUpdateT, Facing,
+    FieldOnTileT, LightUpdateT, LitLevel, MessageT, PickResultT, SnapshotT, SubmapBlockT,
+    TileChangeT, UiFrameT, Vec3iT, VehiclePartStateT, VehicleT,
 };
 use ui_share::store::UiShmStore;
 
@@ -52,9 +58,61 @@ pub struct TileState {
     pub trap: u32,
     /// (field def id, intensity) in wire order.
     pub fields: Vec<(u32, u8)>,
+    /// Sim-internal per-field bookkeeping (S5), parallel to
+    /// `fields`: (age in turns since the entry appeared or
+    /// last changed intensity, fuel turns remaining for fire;
+    /// fuel -1 = not yet initialised / not applicable). Never
+    /// on the wire — the wire shape is `fields` alone.
+    pub field_meta: Vec<(i32, i32)>,
     pub top_item: u32,
     pub item_count: u16,
     pub graffiti: bool,
+}
+
+impl TileState {
+    /// Index of the field entry of type `type_`, if present.
+    pub fn field_index(&self, type_: u32) -> Option<usize> {
+        self.fields.iter().position(|&(t, _)| t == type_)
+    }
+
+    /// Intensity of the field of type `type_`, if present.
+    pub fn field_intensity(&self, type_: u32) -> Option<u8> {
+        self.field_index(type_).map(|i| self.fields[i].1)
+    }
+
+    /// Add a field entry (or refresh an existing one of the
+    /// same type: intensity keeps the max, age restarts — the
+    /// shape of the game's add_field on an existing entry).
+    /// `fuel` < 0 leaves the fuel counter uninitialised (the
+    /// field tick initialises fire fuel from the tile).
+    pub fn add_field(&mut self, type_: u32, intensity: u8, fuel: i32) {
+        match self.field_index(type_) {
+            Some(i) => {
+                self.fields[i].1 = self.fields[i].1.max(intensity);
+                self.field_meta[i].0 = 0;
+            }
+            None => {
+                self.fields.push((type_, intensity));
+                self.field_meta.push((0, fuel));
+            }
+        }
+    }
+
+    /// Set an entry's intensity (+ optionally its fuel),
+    /// restarting its age. Removing at intensity 0 is the
+    /// caller's job (`remove_field_at`).
+    pub fn set_field_at(&mut self, i: usize, intensity: u8, fuel: Option<i32>) {
+        self.fields[i].1 = intensity;
+        self.field_meta[i].0 = 0;
+        if let Some(f) = fuel {
+            self.field_meta[i].1 = f;
+        }
+    }
+
+    pub fn remove_field_at(&mut self, i: usize) {
+        self.fields.remove(i);
+        self.field_meta.remove(i);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +188,82 @@ pub struct World {
     /// Message-log lines for the gameplay sidebar (oldest
     /// first). Fed by the turn rules (door open/close today).
     pub messages: Vec<String>,
+    /// Sim hit points per entity id (S5): the player and every
+    /// monster. The wire carries only the derived `hp_frac`
+    /// (0-255 of the entity's max, kept in sync by
+    /// `sync_hp_frac`); max HP comes from the monster def's
+    /// `hp` (the player's is `PLAYER_MAX_HP`).
+    pub hp: HashMap<u64, i32>,
+    /// Next entity id to allocate (runtime spawns, S5). Ids
+    /// are never reused: a removed id stays removed, exactly
+    /// like the game's creature tracker.
+    next_entity_id: u64,
+    /// Seeded RNG (xorshift64 — plan §3.1: the fork harness
+    /// mock's family). Draws happen in a fixed order (fields
+    /// in tile order, then creatures in id order), so seed +
+    /// input log determines the whole run.
+    pub rng: Rng,
+    /// Effects produced since the last flush (S5): combat
+    /// HitFlash/Sound from the rules. Drained into an Effects
+    /// message by the flush, after the Delta/Snapshot.
+    pub effects: Vec<EffectEventT>,
+    /// Tiles whose fuel has burned out (S5): a burned tile no
+    /// longer feeds a fire and cannot be re-lit by spread —
+    /// the sim's stand-in for the game consuming the
+    /// terrain/furniture itself (bash chains are S6).
+    pub burned: HashSet<[i32; 3]>,
+}
+
+/// The avatar's max HP (S5 sim constant). CDDA tracks HP per
+/// body part; the wire collapses it to one hp_frac, and the
+/// sim's single-pool avatar uses 100 — the game's nominal
+/// per-part scale — so 1 HP of damage is ~2.5 frac points.
+pub const PLAYER_MAX_HP: i32 = 100;
+/// Player HP floor (S5): the sim has no death/game-over
+/// state, so damage floors the avatar at 1 HP. Monster
+/// attacks and field burns still land (effects fire, frac
+/// falls to the floor value); a game-over state is future
+/// scope, named here rather than silently immortal — the
+/// floor is the only lie, and it is this constant.
+pub const PLAYER_HP_FLOOR: i32 = 1;
+/// Fallback max HP for a monster def with no `hp` in the
+/// table (the 0.I-1 table has none — all 1,123 carry `hp` —
+/// but a hand-built registry must not panic the sim).
+pub const DEFAULT_MONSTER_HP: i32 = 50;
+
+/// xorshift64 (the fork harness mock's PRNG family, plan
+/// §3.1; the same shifts as proto's gate Rng). Seed 0 maps to
+/// a fixed nonzero constant — xorshift's zero state is a
+/// fixed point.
+#[derive(Debug, Clone)]
+pub struct Rng(u64);
+
+impl Rng {
+    pub fn new(seed: i64) -> Rng {
+        let s = seed as u64;
+        Rng(if s == 0 { 0x9E37_79B9_7F4A_7C15 } else { s })
+    }
+
+    pub fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+
+    /// Uniform in 0..n (n > 0).
+    pub fn below(&mut self, n: u64) -> u64 {
+        self.next_u64() % n
+    }
+
+    /// The game's `rng(1, 100) < chance` shape: a 1..=100 roll
+    /// strictly below `chance` (so chance 25 succeeds on
+    /// 1..=24 — upstream's literal comparison).
+    pub fn roll_under(&mut self, chance: i32) -> bool {
+        (self.below(100) as i32 + 1) < chance
+    }
 }
 
 fn v3(x: i32, y: i32, z: i32) -> Vec3iT {
@@ -239,7 +373,7 @@ impl World {
                     scene.name, f.type_id
                 ));
             }
-            blocks[b].tiles[i].fields.push((id, f.intensity));
+            blocks[b].tiles[i].add_field(id, f.intensity, -1);
         }
         for it in &scene.items {
             let (b, i) = place(&blocks, &scene.name, it.pos, "items")?;
@@ -261,6 +395,7 @@ impl World {
         // Entities in file order, ids 1.. — author the player
         // first (the real adapter emits the avatar first).
         let mut entities = Vec::new();
+        let mut entity_hp: HashMap<u64, i32> = HashMap::new();
         let mut player_id: Option<u64> = None;
         for (n, s) in scene.spawns.iter().enumerate() {
             let (type_def, sprite) = if s.type_id == "player" {
@@ -304,8 +439,19 @@ impl World {
             };
             e.hp_frac = s.hp_frac;
             e.flags = s.flags;
+            // S5: sim HP behind the wire frac — the def's max
+            // scaled by the scene-authored frac.
+            let max_hp = if s.type_id == "player" {
+                PLAYER_MAX_HP
+            } else {
+                reg.def_by_id(Kind::Monster, type_def)
+                    .and_then(|d| d.hp)
+                    .unwrap_or(DEFAULT_MONSTER_HP)
+            };
+            entity_hp.insert(e.id, (max_hp * s.hp_frac as i32 + 127) / 255);
             entities.push(e);
         }
+        let next_entity_id = entities.len() as u64 + 1;
 
         let mut vehicles = Vec::new();
         for v in &scene.vehicles {
@@ -443,6 +589,11 @@ impl World {
             carried,
             last_pick: None,
             messages: Vec::new(),
+            hp: entity_hp,
+            next_entity_id,
+            rng: Rng::new(scene.seed),
+            effects: Vec::new(),
+            burned: HashSet::new(),
         };
         world.recompute_visibility(reg);
         // Publish the initial UI frame into the store (the
@@ -846,6 +997,15 @@ impl World {
         Some(self.blocks[b].tiles[i].terrain)
     }
 
+    /// The computed lit level at an absolute pos, from the
+    /// visibility cache (S3/S5): what the wire currently says
+    /// about the tile. `None` outside the scene or before the
+    /// first recompute.
+    pub fn lit_at(&self, pos: [i32; 3]) -> Option<LitLevel> {
+        let (b, i) = self.tile_at(pos)?;
+        self.vis.get(b).and_then(|v| v.lit.get(i)).copied()
+    }
+
     /// Furniture wire id at an absolute pos (0 = none).
     pub fn furniture_at(&self, pos: [i32; 3]) -> Option<u32> {
         let (b, i) = self.tile_at(pos)?;
@@ -878,33 +1038,233 @@ impl World {
         self.player_pos
     }
 
-    /// Move the player entity to `pos`, updating facing from the
-    /// horizontal step: LEFT if dx < 0, RIGHT if dx > 0, unchanged
-    /// if dx == 0 (§3.2). No submap is dirtied — entities are not
+    /// Move any entity to `pos`, updating facing from the
+    /// horizontal step: LEFT if dx < 0, RIGHT if dx > 0,
+    /// unchanged if dx == 0 (§2.4: facing is the horizontal
+    /// flip only). No submap is dirtied — entities are not
     /// tile state; the entity diff carries the move.
+    pub fn set_entity_pos(&mut self, id: u64, pos: [i32; 3]) {
+        if let Some(e) = self.entities.iter_mut().find(|e| e.id == id) {
+            let dx = e.pos.as_ref().map_or(0, |p| pos[0] - p.x);
+            if dx < 0 {
+                e.facing = Facing::LEFT;
+            } else if dx > 0 {
+                e.facing = Facing::RIGHT;
+            }
+            e.pos = Some(v3(pos[0], pos[1], pos[2]));
+        }
+    }
+
+    /// Move the player entity to `pos` (§3.2 facing rule, via
+    /// `set_entity_pos`).
     pub fn set_player_pos(&mut self, pos: [i32; 3]) {
         if let Some(id) = self.player_id {
-            if let Some(e) = self.entities.iter_mut().find(|e| e.id == id) {
-                let dx = e.pos.as_ref().map_or(0, |p| pos[0] - p.x);
-                if dx < 0 {
-                    e.facing = Facing::LEFT;
-                } else if dx > 0 {
-                    e.facing = Facing::RIGHT;
-                }
-                e.pos = Some(v3(pos[0], pos[1], pos[2]));
-            }
+            self.set_entity_pos(id, pos);
         }
         self.player_pos = Some(pos);
     }
 
     /// True if a creature entity (not the player) occupies `pos`.
     pub fn creature_at(&self, pos: [i32; 3]) -> bool {
-        self.entities.iter().any(|e| {
-            Some(e.id) != self.player_id
-                && e.pos
+        self.creature_id_at(pos).is_some()
+    }
+
+    /// The creature entity (not the player) occupying `pos`.
+    pub fn creature_id_at(&self, pos: [i32; 3]) -> Option<u64> {
+        self.entities
+            .iter()
+            .find(|e| {
+                Some(e.id) != self.player_id
+                    && e.pos
+                        .as_ref()
+                        .is_some_and(|p| p.x == pos[0] && p.y == pos[1] && p.z == pos[2])
+            })
+            .map(|e| e.id)
+    }
+
+    /// Any entity (player included) occupying `pos`.
+    pub fn entity_at(&self, pos: [i32; 3]) -> Option<u64> {
+        self.entities
+            .iter()
+            .find(|e| {
+                e.pos
                     .as_ref()
                     .is_some_and(|p| p.x == pos[0] && p.y == pos[1] && p.z == pos[2])
-        })
+            })
+            .map(|e| e.id)
+    }
+
+    /// An entity's absolute position.
+    pub fn entity_pos(&self, id: u64) -> Option<[i32; 3]> {
+        self.entities
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| e.pos.as_ref())
+            .map(|p| [p.x, p.y, p.z])
+    }
+
+    /// An entity's max HP: the player's pool, or its monster
+    /// def's `hp` (fallback `DEFAULT_MONSTER_HP`).
+    pub fn max_hp(&self, reg: &DefRegistry, id: u64) -> i32 {
+        if Some(id) == self.player_id {
+            return PLAYER_MAX_HP;
+        }
+        self.entities
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| reg.def_by_id(Kind::Monster, e.type_def))
+            .and_then(|d| d.hp)
+            .unwrap_or(DEFAULT_MONSTER_HP)
+    }
+
+    /// An entity's current sim HP (0 if unknown/dead).
+    pub fn current_hp(&self, id: u64) -> i32 {
+        self.hp.get(&id).copied().unwrap_or(0)
+    }
+
+    /// Recompute an entity's wire `hp_frac` from its sim HP:
+    /// round(255 * hp / max), clamped to 0..=255.
+    pub fn sync_hp_frac(&mut self, reg: &DefRegistry, id: u64) {
+        let max = self.max_hp(reg, id);
+        let hp = self.current_hp(id).clamp(0, max.max(1));
+        let frac = if max > 0 {
+            ((hp * 255 + max / 2) / max).clamp(0, 255) as u8
+        } else {
+            0
+        };
+        if let Some(e) = self.entities.iter_mut().find(|e| e.id == id) {
+            e.hp_frac = frac;
+        }
+    }
+
+    /// Spawn a monster at runtime (S5): the mechanism S7's
+    /// scenario/script spawns will call — game-side, exactly
+    /// like the real game, where a spawn is an internal event
+    /// and the wire only sees the resulting entity diff (the
+    /// next flush's Delta carries it in `entity_updates`; it
+    /// does NOT wait for a Snapshot). Returns the new entity
+    /// id, or `None` if the type is not a Monster def or the
+    /// pos is outside the scene. Sprite = the monster's
+    /// string id (§2.4); overlays empty (no grounded source —
+    /// the def table carries no overlay data).
+    pub fn spawn_monster(
+        &mut self,
+        reg: &DefRegistry,
+        type_id: &str,
+        pos: [i32; 3],
+    ) -> Option<u64> {
+        let type_def = reg.id_of(Kind::Monster, type_id);
+        if type_def == 0 || self.tile_at(pos).is_none() {
+            return None;
+        }
+        let id = self.next_entity_id;
+        self.next_entity_id += 1;
+        let mut e = EntityT::default();
+        e.id = id;
+        e.type_def = type_def;
+        e.sprite_id = Some(type_id.to_string());
+        e.pos = Some(v3(pos[0], pos[1], pos[2]));
+        e.facing = Facing::NONE;
+        e.overlays = None;
+        e.hp_frac = 255;
+        e.flags = 0;
+        self.entities.push(e);
+        let max = self.max_hp(reg, id);
+        self.hp.insert(id, max);
+        Some(id)
+    }
+
+    /// Deal `damage` to an entity. Returns true if it died.
+    /// The player's HP floors at `PLAYER_HP_FLOOR` (no
+    /// game-over state in S5); a monster at HP <= 0 dies:
+    /// removed from the entity list (the differ emits
+    /// `entity_removed`) and its corpse item lands on its
+    /// tile — the game's own outcome: `monster::die` drops a
+    /// corpse item via `mdeath::normal` (0.I-1 monster.cpp:
+    /// 3096-3098), whose item type is `corpse`; the wire's
+    /// lossy pile (top_item + count) carries that def. If a
+    /// pile already occupies the tile the corpse lands on top
+    /// (top_item = corpse, count + 1) — the newest item is
+    /// the uppermost.
+    pub fn damage_entity(&mut self, reg: &DefRegistry, id: u64, damage: i32) -> bool {
+        if damage <= 0 || !self.hp.contains_key(&id) {
+            return false;
+        }
+        let is_player = Some(id) == self.player_id;
+        let new_hp = {
+            let hp = self.hp.get_mut(&id).expect("checked above");
+            *hp -= damage;
+            if is_player {
+                *hp = (*hp).max(PLAYER_HP_FLOOR);
+            }
+            *hp
+        };
+        if !is_player && new_hp <= 0 {
+            self.kill_entity(reg, id);
+            return true;
+        }
+        self.sync_hp_frac(reg, id);
+        false
+    }
+
+    /// Remove a creature and drop its corpse (see
+    /// `damage_entity`). No-op for the player / unknown ids.
+    pub fn kill_entity(&mut self, reg: &DefRegistry, id: u64) {
+        if Some(id) == self.player_id {
+            return;
+        }
+        let Some(pos) = self.entity_pos(id) else {
+            return;
+        };
+        self.entities.retain(|e| e.id != id);
+        self.hp.remove(&id);
+        let corpse = reg.id_of(Kind::Item, "corpse");
+        if corpse != 0 {
+            if let Some((b, i)) = self.tile_at(pos) {
+                let t = &mut self.blocks[b].tiles[i];
+                if t.top_item == 0 {
+                    t.top_item = corpse;
+                    t.item_count = 1;
+                } else {
+                    t.top_item = corpse;
+                    t.item_count = t.item_count.saturating_add(1);
+                }
+                let o = &self.blocks[b].origin;
+                self.mark_dirty((o.x, o.y, o.z));
+            }
+        }
+    }
+
+    /// Record an effect for the current turn's flush.
+    pub fn push_effect(&mut self, event: EffectEventT) {
+        self.effects.push(event);
+    }
+
+    /// Can a creature stand on `pos`? CDDA's own rule,
+    /// `map::move_cost_ter_furn` (see rules.rs module docs):
+    /// terrain cost 0 blocks, a negative furniture modifier
+    /// blocks, else the sum must be > 0. Shared by the
+    /// player's step and creature movement — one rule, one
+    /// implementation.
+    pub fn passable(&self, reg: &DefRegistry, pos: [i32; 3]) -> bool {
+        let Some(terrain) = self.terrain_at(pos) else {
+            return false; // outside the scene
+        };
+        let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
+            return false; // unknown terrain id: blocked, never a panic
+        };
+        let ter_cost = def.move_cost.unwrap_or(0);
+        if ter_cost == 0 {
+            return false;
+        }
+        let furn_mod = match self.furniture_at(pos) {
+            Some(0) | None => 0, // no furniture: null furniture's mod is 0
+            Some(furn_id) => reg
+                .def_by_id(Kind::Furniture, furn_id)
+                .and_then(|d| d.move_cost)
+                .unwrap_or(0),
+        };
+        furn_mod >= 0 && ter_cost + furn_mod > 0
     }
 
     /// Apply any weather-script entries scheduled at or before
@@ -950,7 +1310,17 @@ impl World {
         }
         self.game_turn += 1;
         self.apply_script_due();
+        // S5 turn processing (rules.rs), in the game's own
+        // do_turn order of concerns: the world's fields tick
+        // first (spread/decay/drift + field damage to whoever
+        // stands in them), visibility recomputes over the new
+        // field state (fire light is part of the light model),
+        // then creatures act (their sight reads the fresh
+        // cache). The player's own action already happened in
+        // `apply_key`, before this flush.
+        self.tick_fields(reg);
         self.recompute_visibility(reg);
+        self.tick_creatures(reg);
         // Map shift?
         if let (Some(cur), Some(last)) = (
             self.player_pos().map(submap_index),
@@ -959,10 +1329,27 @@ impl World {
             if cur != last {
                 let snap = self.build_snapshot(reg, self.seq + 1, self.epoch + 1);
                 self.record_sent(&snap);
-                return vec![MessageT::Snapshot(Box::new(snap))];
+                let mut msgs = vec![MessageT::Snapshot(Box::new(snap))];
+                self.drain_effects(&mut msgs);
+                return msgs;
             }
         }
         self.compose_flush(reg, true)
+    }
+
+    /// Append the turn's pending Effects as one Effects
+    /// message (its own seq, after the flush's other
+    /// messages — plan §2.7: a flush is a Delta/Snapshot plus
+    /// optional companions).
+    fn drain_effects(&mut self, msgs: &mut Vec<MessageT>) {
+        if self.effects.is_empty() {
+            return;
+        }
+        self.seq += 1;
+        let mut fx = EffectsT::default();
+        fx.seq = self.seq;
+        fx.events = Some(std::mem::take(&mut self.effects));
+        msgs.push(MessageT::Effects(Box::new(fx)));
     }
 
     /// Fast-forward the clock by `seconds` (the T6 mechanism):
@@ -1162,6 +1549,7 @@ impl World {
             self.env_dirty = false;
             msgs.push(MessageT::EnvironmentUpdate(Box::new(env)));
         }
+        self.drain_effects(&mut msgs);
         msgs
     }
 

@@ -84,6 +84,22 @@ pub struct Def {
     /// `map::move_cost_ter_furn`.
     #[serde(default)]
     pub move_cost: Option<i32>,
+    /// Monster hit points (S5): the def's `hp` from the game
+    /// JSON, extracted by the importer like `move_cost`.
+    /// Sim-internal — not on the wire. `None` for non-monsters
+    /// (and for any monster whose JSON carries no `hp`; the
+    /// 0.I-1 table has none — all 1,123 monsters carry one).
+    #[serde(default)]
+    pub hp: Option<i32>,
+    /// Monster melee dice (S5): `melee_dice` × d`melee_dice_sides`
+    /// + `melee_bonus` (the summed flat `melee_damage` amounts).
+    /// Sim-internal; 0 for non-monsters.
+    #[serde(default)]
+    pub melee_dice: i32,
+    #[serde(default)]
+    pub melee_dice_sides: i32,
+    #[serde(default)]
+    pub melee_bonus: i32,
     #[serde(default)]
     pub connect_groups: Vec<u16>,
     #[serde(default)]
@@ -108,6 +124,18 @@ fn minus_one() -> i32 {
 impl Def {
     pub fn kind_enum(&self) -> Kind {
         Kind::from_int(self.kind).expect("importer emits kinds 0..=6")
+    }
+
+    /// Expected melee damage of one hit (S5): the dice's mean,
+    /// dice * (sides + 1) / 2, plus the flat bonus, rounded.
+    /// The game rolls the dice per hit (mtype melee spec in
+    /// the monster JSON); the sim deals the expectation — a
+    /// named simplification that keeps combat deterministic
+    /// per seed. mon_zombie: 2d3+0 = 4.
+    pub fn melee_expected(&self) -> i32 {
+        let dice = (self.melee_dice as f32 * (self.melee_dice_sides as f32 + 1.0) / 2.0).round()
+            as i32;
+        dice + self.melee_bonus
     }
 
     fn to_tile_def(&self) -> TileDefT {

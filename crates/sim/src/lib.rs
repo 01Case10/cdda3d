@@ -16,9 +16,13 @@
 //! (computed visibility + environment: LOS/apparent-light/
 //! outside/frac/tint recompute, tile memory, the real calendar
 //! and weather presets, EnvironmentUpdate cadence, LightUpdate
-//! folding — see `environment` and `visibility`), and S4 (the
+//! folding — see `environment` and `visibility`), S4 (the
 //! UI: shm writer in the ui-share store format, a five-state
-//! UI state machine with real-font rendering — see `ui`).
+//! UI state machine with real-font rendering — see `ui`), and
+//! S5 (creatures, fields, effects: runtime spawns, chase /
+//! wander / attack AI, bump attacks, corpse drops, fire
+//! spread / smoke drift field ticks, fd_fire light in the
+//! visibility model, Effects emission — see `rules`).
 
 pub mod defs;
 pub mod environment;

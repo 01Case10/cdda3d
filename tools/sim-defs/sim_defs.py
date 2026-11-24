@@ -359,6 +359,31 @@ def build_defs(data_dir, mapdata_h, connect_json):
                 val = entry.get("move_cost_mod")
                 move_cost = val if isinstance(val, int) else 0
 
+            # Monster combat stats (S5), sim-internal like
+            # move_cost (TileDef has no such fields on the wire):
+            # "hp" (mtype::load, hit points) and the melee dice
+            # spec — "melee_dice" x d"melee_dice_sides" plus the
+            # flat "melee_damage" amounts summed over damage
+            # types. The sim deals the dice's expected value.
+            # Non-monster kinds: hp None, dice 0.
+            mon_hp = None
+            melee_dice = 0
+            melee_dice_sides = 0
+            melee_bonus = 0
+            if kind == 4:
+                val = entry.get("hp")
+                mon_hp = val if isinstance(val, int) else None
+                val = entry.get("melee_dice")
+                melee_dice = val if isinstance(val, int) else 0
+                val = entry.get("melee_dice_sides")
+                melee_dice_sides = val if isinstance(val, int) else 0
+                dmg = entry.get("melee_damage")
+                if isinstance(dmg, list):
+                    melee_bonus = sum(
+                        d.get("amount") for d in dmg
+                        if isinstance(d, dict)
+                        and isinstance(d.get("amount"), int))
+
             defs.append({
                 "id": 0,  # assigned below
                 "string_id": string_id,
@@ -367,6 +392,10 @@ def build_defs(data_dir, mapdata_h, connect_json):
                 "flags": flags,
                 "hot_flags": hot,
                 "move_cost": move_cost,
+                "hp": mon_hp,
+                "melee_dice": melee_dice,
+                "melee_dice_sides": melee_dice_sides,
+                "melee_bonus": melee_bonus,
                 "connect_groups": group_indices("connect_groups") if kind in TER_FURN_KINDS else [],
                 "connects_to_groups": group_indices("connects_to") if kind in TER_FURN_KINDS else [],
                 "rotate_to_groups": group_indices("rotates_to") if kind in TER_FURN_KINDS else [],
