@@ -74,7 +74,13 @@ fn main() {
 
     // v2 schema for the forward-compat test: Hello gains one field. Insert it
     // just before the closing brace of the Hello table.
-    let src = fs::read_to_string(&schema).expect("read schema");
+    // Normalise line endings before the marker surgery below: a
+    // Windows checkout with core.autocrlf=true gives the schema CRLF
+    // endings and the LF marker would never match (hit on Joey's PC,
+    // 2026-11-24: "schema changed: Hello/z_max marker gone").
+    let src = fs::read_to_string(&schema)
+        .expect("read schema")
+        .replace("\r\n", "\n");
     let marker = "  z_max: int32;\n}";
     assert!(
         src.contains(marker),
