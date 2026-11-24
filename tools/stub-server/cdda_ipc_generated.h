@@ -1521,6 +1521,8 @@ struct SubmapBlockT : public ::flatbuffers::NativeTable {
   std::vector<uint8_t> seen{};
   std::vector<bool> has_graffiti{};
   std::vector<bool> outside{};
+  std::vector<uint8_t> light_frac{};
+  std::vector<uint8_t> light_tint{};
   SubmapBlockT() = default;
   SubmapBlockT(const SubmapBlockT &o);
   SubmapBlockT(SubmapBlockT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -1545,7 +1547,9 @@ struct SubmapBlock FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_LIT = 22,
     VT_SEEN = 24,
     VT_HAS_GRAFFITI = 26,
-    VT_OUTSIDE = 28
+    VT_OUTSIDE = 28,
+    VT_LIGHT_FRAC = 30,
+    VT_LIGHT_TINT = 32
   };
   /// Absolute tile coordinates of the block's corner (x, y) and its z-level.
   const cdda::ipc::Vec3i *origin() const {
@@ -1602,6 +1606,25 @@ struct SubmapBlock FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::Vector<uint8_t> *outside() const {
     return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_OUTSIDE);
   }
+  /// Per tile: smooth-lighting fraction (Phase 11 S3, Addendum 11):
+  /// light_above_threshold(apparent_light, vision_threshold) scaled
+  /// to 0..255 — 255 for BRIGHT, the threshold fraction for LOW/LIT,
+  /// 0 otherwise. The game's visibility/ceiling verdict for the
+  /// tile; renderer-transported light stays capped by it (option A).
+  /// Appended last: additive/non-breaking, old readers ignore it,
+  /// old data reads as absent (= derive from lit/seen as before).
+  const ::flatbuffers::Vector<uint8_t> *light_frac() const {
+    return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_LIGHT_FRAC);
+  }
+  /// Per tile: normalised light colour (Phase 11 S3, Addendum 11):
+  /// illumination_hue of the tile's accumulated light colour —
+  /// 3 ubytes per tile (R, G, B interleaved, same tile order as
+  /// `lit`), brightest channel 255 when coloured, 255/255/255 =
+  /// uncoloured. Appended last: additive/non-breaking, old data
+  /// reads as absent (= white).
+  const ::flatbuffers::Vector<uint8_t> *light_tint() const {
+    return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_LIGHT_TINT);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<cdda::ipc::Vec3i>(verifier, VT_ORIGIN, 4) &&
@@ -1630,6 +1653,10 @@ struct SubmapBlock FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyVector(has_graffiti()) &&
            VerifyOffset(verifier, VT_OUTSIDE) &&
            verifier.VerifyVector(outside()) &&
+           VerifyOffset(verifier, VT_LIGHT_FRAC) &&
+           verifier.VerifyVector(light_frac()) &&
+           VerifyOffset(verifier, VT_LIGHT_TINT) &&
+           verifier.VerifyVector(light_tint()) &&
            verifier.EndTable();
   }
   SubmapBlockT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1680,6 +1707,12 @@ struct SubmapBlockBuilder {
   void add_outside(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> outside) {
     fbb_.AddOffset(SubmapBlock::VT_OUTSIDE, outside);
   }
+  void add_light_frac(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_frac) {
+    fbb_.AddOffset(SubmapBlock::VT_LIGHT_FRAC, light_frac);
+  }
+  void add_light_tint(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_tint) {
+    fbb_.AddOffset(SubmapBlock::VT_LIGHT_TINT, light_tint);
+  }
   explicit SubmapBlockBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1705,8 +1738,12 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> lit = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> seen = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> has_graffiti = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> outside = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> outside = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_frac = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_tint = 0) {
   SubmapBlockBuilder builder_(_fbb);
+  builder_.add_light_tint(light_tint);
+  builder_.add_light_frac(light_frac);
   builder_.add_outside(outside);
   builder_.add_has_graffiti(has_graffiti);
   builder_.add_seen(seen);
@@ -1737,7 +1774,9 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlockDirect(
     const std::vector<uint8_t> *lit = nullptr,
     const std::vector<uint8_t> *seen = nullptr,
     const std::vector<uint8_t> *has_graffiti = nullptr,
-    const std::vector<uint8_t> *outside = nullptr) {
+    const std::vector<uint8_t> *outside = nullptr,
+    const std::vector<uint8_t> *light_frac = nullptr,
+    const std::vector<uint8_t> *light_tint = nullptr) {
   auto terrain__ = terrain ? _fbb.CreateVector<uint32_t>(*terrain) : 0;
   auto furniture__ = furniture ? _fbb.CreateVector<uint32_t>(*furniture) : 0;
   auto trap__ = trap ? _fbb.CreateVector<uint32_t>(*trap) : 0;
@@ -1750,6 +1789,8 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlockDirect(
   auto seen__ = seen ? _fbb.CreateVector<uint8_t>(*seen) : 0;
   auto has_graffiti__ = has_graffiti ? _fbb.CreateVector<uint8_t>(*has_graffiti) : 0;
   auto outside__ = outside ? _fbb.CreateVector<uint8_t>(*outside) : 0;
+  auto light_frac__ = light_frac ? _fbb.CreateVector<uint8_t>(*light_frac) : 0;
+  auto light_tint__ = light_tint ? _fbb.CreateVector<uint8_t>(*light_tint) : 0;
   return cdda::ipc::CreateSubmapBlock(
       _fbb,
       origin,
@@ -1764,7 +1805,9 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlockDirect(
       lit__,
       seen__,
       has_graffiti__,
-      outside__);
+      outside__,
+      light_frac__,
+      light_tint__);
 }
 
 ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(::flatbuffers::FlatBufferBuilder &_fbb, const SubmapBlockT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -2728,6 +2771,10 @@ struct TileChangeT : public ::flatbuffers::NativeTable {
   bool has_graffiti = false;
   std::unique_ptr<cdda::ipc::DisplayedField> displayed_field{};
   bool outside = false;
+  uint8_t light_frac = 0;
+  uint8_t light_tint_r = 0;
+  uint8_t light_tint_g = 0;
+  uint8_t light_tint_b = 0;
   TileChangeT() = default;
   TileChangeT(const TileChangeT &o);
   TileChangeT(TileChangeT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -2750,7 +2797,11 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SEEN = 20,
     VT_HAS_GRAFFITI = 22,
     VT_DISPLAYED_FIELD = 24,
-    VT_OUTSIDE = 26
+    VT_OUTSIDE = 26,
+    VT_LIGHT_FRAC = 28,
+    VT_LIGHT_TINT_R = 30,
+    VT_LIGHT_TINT_G = 32,
+    VT_LIGHT_TINT_B = 34
   };
   const cdda::ipc::Vec3i *pos() const {
     return GetStruct<const cdda::ipc::Vec3i *>(VT_POS);
@@ -2798,6 +2849,25 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool outside() const {
     return GetField<uint8_t>(VT_OUTSIDE, 0) != 0;
   }
+  /// Smooth-lighting fraction after this change (Phase 11 S3;
+  /// same definition as SubmapBlock.light_frac). Appended last:
+  /// additive/non-breaking, old data reads as 0.
+  uint8_t light_frac() const {
+    return GetField<uint8_t>(VT_LIGHT_FRAC, 0);
+  }
+  /// Normalised light colour after this change (Phase 11 S3;
+  /// same definition as SubmapBlock.light_tint, one tile's RGB).
+  /// Appended last: additive/non-breaking, old data reads as 0
+  /// (= white by the absent-field convention).
+  uint8_t light_tint_r() const {
+    return GetField<uint8_t>(VT_LIGHT_TINT_R, 0);
+  }
+  uint8_t light_tint_g() const {
+    return GetField<uint8_t>(VT_LIGHT_TINT_G, 0);
+  }
+  uint8_t light_tint_b() const {
+    return GetField<uint8_t>(VT_LIGHT_TINT_B, 0);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<cdda::ipc::Vec3i>(verifier, VT_POS, 4) &&
@@ -2814,6 +2884,10 @@ struct TileChange FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_HAS_GRAFFITI, 1) &&
            VerifyField<cdda::ipc::DisplayedField>(verifier, VT_DISPLAYED_FIELD, 4) &&
            VerifyField<uint8_t>(verifier, VT_OUTSIDE, 1) &&
+           VerifyField<uint8_t>(verifier, VT_LIGHT_FRAC, 1) &&
+           VerifyField<uint8_t>(verifier, VT_LIGHT_TINT_R, 1) &&
+           VerifyField<uint8_t>(verifier, VT_LIGHT_TINT_G, 1) &&
+           VerifyField<uint8_t>(verifier, VT_LIGHT_TINT_B, 1) &&
            verifier.EndTable();
   }
   TileChangeT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2861,6 +2935,18 @@ struct TileChangeBuilder {
   void add_outside(bool outside) {
     fbb_.AddElement<uint8_t>(TileChange::VT_OUTSIDE, static_cast<uint8_t>(outside), 0);
   }
+  void add_light_frac(uint8_t light_frac) {
+    fbb_.AddElement<uint8_t>(TileChange::VT_LIGHT_FRAC, light_frac, 0);
+  }
+  void add_light_tint_r(uint8_t light_tint_r) {
+    fbb_.AddElement<uint8_t>(TileChange::VT_LIGHT_TINT_R, light_tint_r, 0);
+  }
+  void add_light_tint_g(uint8_t light_tint_g) {
+    fbb_.AddElement<uint8_t>(TileChange::VT_LIGHT_TINT_G, light_tint_g, 0);
+  }
+  void add_light_tint_b(uint8_t light_tint_b) {
+    fbb_.AddElement<uint8_t>(TileChange::VT_LIGHT_TINT_B, light_tint_b, 0);
+  }
   explicit TileChangeBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2885,7 +2971,11 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(
     uint8_t seen = 0,
     bool has_graffiti = false,
     const cdda::ipc::DisplayedField *displayed_field = nullptr,
-    bool outside = false) {
+    bool outside = false,
+    uint8_t light_frac = 0,
+    uint8_t light_tint_r = 0,
+    uint8_t light_tint_g = 0,
+    uint8_t light_tint_b = 0) {
   TileChangeBuilder builder_(_fbb);
   builder_.add_displayed_field(displayed_field);
   builder_.add_top_item(top_item);
@@ -2895,6 +2985,10 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(
   builder_.add_terrain(terrain);
   builder_.add_pos(pos);
   builder_.add_item_count(item_count);
+  builder_.add_light_tint_b(light_tint_b);
+  builder_.add_light_tint_g(light_tint_g);
+  builder_.add_light_tint_r(light_tint_r);
+  builder_.add_light_frac(light_frac);
   builder_.add_outside(outside);
   builder_.add_has_graffiti(has_graffiti);
   builder_.add_seen(seen);
@@ -2915,7 +3009,11 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChangeDirect(
     uint8_t seen = 0,
     bool has_graffiti = false,
     const cdda::ipc::DisplayedField *displayed_field = nullptr,
-    bool outside = false) {
+    bool outside = false,
+    uint8_t light_frac = 0,
+    uint8_t light_tint_r = 0,
+    uint8_t light_tint_g = 0,
+    uint8_t light_tint_b = 0) {
   auto fields__ = fields ? _fbb.CreateVector<::flatbuffers::Offset<cdda::ipc::FieldOnTile>>(*fields) : 0;
   return cdda::ipc::CreateTileChange(
       _fbb,
@@ -2930,7 +3028,11 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChangeDirect(
       seen,
       has_graffiti,
       displayed_field,
-      outside);
+      outside,
+      light_frac,
+      light_tint_r,
+      light_tint_g,
+      light_tint_b);
 }
 
 ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBufferBuilder &_fbb, const TileChangeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -3113,6 +3215,8 @@ struct LightUpdateT : public ::flatbuffers::NativeTable {
   std::unique_ptr<cdda::ipc::Vec3i> origin{};
   std::vector<cdda::ipc::LitLevel> lit{};
   std::vector<uint8_t> seen{};
+  std::vector<uint8_t> light_frac{};
+  std::vector<uint8_t> light_tint{};
   LightUpdateT() = default;
   LightUpdateT(const LightUpdateT &o);
   LightUpdateT(LightUpdateT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -3128,7 +3232,9 @@ struct LightUpdate FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_EPOCH = 6,
     VT_ORIGIN = 8,
     VT_LIT = 10,
-    VT_SEEN = 12
+    VT_SEEN = 12,
+    VT_LIGHT_FRAC = 14,
+    VT_LIGHT_TINT = 16
   };
   uint64_t seq() const {
     return GetField<uint64_t>(VT_SEQ, 0);
@@ -3145,6 +3251,20 @@ struct LightUpdate FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::Vector<uint8_t> *seen() const {
     return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_SEEN);
   }
+  /// Smooth-lighting fraction per tile (Phase 11 S3; same
+  /// definition and shape as SubmapBlock.light_frac).
+  /// Appended last: additive/non-breaking, old data reads as
+  /// absent (= derive from lit/seen as before).
+  const ::flatbuffers::Vector<uint8_t> *light_frac() const {
+    return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_LIGHT_FRAC);
+  }
+  /// Normalised light colour per tile (Phase 11 S3; same
+  /// definition and interleaved-RGB shape as
+  /// SubmapBlock.light_tint). Appended last: additive/non-breaking,
+  /// old data reads as absent (= white).
+  const ::flatbuffers::Vector<uint8_t> *light_tint() const {
+    return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_LIGHT_TINT);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint64_t>(verifier, VT_SEQ, 8) &&
@@ -3154,6 +3274,10 @@ struct LightUpdate FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyVector(lit()) &&
            VerifyOffset(verifier, VT_SEEN) &&
            verifier.VerifyVector(seen()) &&
+           VerifyOffset(verifier, VT_LIGHT_FRAC) &&
+           verifier.VerifyVector(light_frac()) &&
+           VerifyOffset(verifier, VT_LIGHT_TINT) &&
+           verifier.VerifyVector(light_tint()) &&
            verifier.EndTable();
   }
   LightUpdateT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -3180,6 +3304,12 @@ struct LightUpdateBuilder {
   void add_seen(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> seen) {
     fbb_.AddOffset(LightUpdate::VT_SEEN, seen);
   }
+  void add_light_frac(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_frac) {
+    fbb_.AddOffset(LightUpdate::VT_LIGHT_FRAC, light_frac);
+  }
+  void add_light_tint(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_tint) {
+    fbb_.AddOffset(LightUpdate::VT_LIGHT_TINT, light_tint);
+  }
   explicit LightUpdateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -3197,10 +3327,14 @@ inline ::flatbuffers::Offset<LightUpdate> CreateLightUpdate(
     uint64_t epoch = 0,
     const cdda::ipc::Vec3i *origin = nullptr,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> lit = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> seen = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> seen = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_frac = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> light_tint = 0) {
   LightUpdateBuilder builder_(_fbb);
   builder_.add_epoch(epoch);
   builder_.add_seq(seq);
+  builder_.add_light_tint(light_tint);
+  builder_.add_light_frac(light_frac);
   builder_.add_seen(seen);
   builder_.add_lit(lit);
   builder_.add_origin(origin);
@@ -3213,16 +3347,22 @@ inline ::flatbuffers::Offset<LightUpdate> CreateLightUpdateDirect(
     uint64_t epoch = 0,
     const cdda::ipc::Vec3i *origin = nullptr,
     const std::vector<uint8_t> *lit = nullptr,
-    const std::vector<uint8_t> *seen = nullptr) {
+    const std::vector<uint8_t> *seen = nullptr,
+    const std::vector<uint8_t> *light_frac = nullptr,
+    const std::vector<uint8_t> *light_tint = nullptr) {
   auto lit__ = lit ? _fbb.CreateVector<uint8_t>(*lit) : 0;
   auto seen__ = seen ? _fbb.CreateVector<uint8_t>(*seen) : 0;
+  auto light_frac__ = light_frac ? _fbb.CreateVector<uint8_t>(*light_frac) : 0;
+  auto light_tint__ = light_tint ? _fbb.CreateVector<uint8_t>(*light_tint) : 0;
   return cdda::ipc::CreateLightUpdate(
       _fbb,
       seq,
       epoch,
       origin,
       lit__,
-      seen__);
+      seen__,
+      light_frac__,
+      light_tint__);
 }
 
 ::flatbuffers::Offset<LightUpdate> CreateLightUpdate(::flatbuffers::FlatBufferBuilder &_fbb, const LightUpdateT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -4564,7 +4704,9 @@ inline SubmapBlockT::SubmapBlockT(const SubmapBlockT &o)
         lit(o.lit),
         seen(o.seen),
         has_graffiti(o.has_graffiti),
-        outside(o.outside) {
+        outside(o.outside),
+        light_frac(o.light_frac),
+        light_tint(o.light_tint) {
   fields.reserve(o.fields.size());
   for (const auto &fields_ : o.fields) { fields.emplace_back((fields_) ? new cdda::ipc::FieldOnTileT(*fields_) : nullptr); }
 }
@@ -4583,6 +4725,8 @@ inline SubmapBlockT &SubmapBlockT::operator=(SubmapBlockT o) FLATBUFFERS_NOEXCEP
   std::swap(seen, o.seen);
   std::swap(has_graffiti, o.has_graffiti);
   std::swap(outside, o.outside);
+  std::swap(light_frac, o.light_frac);
+  std::swap(light_tint, o.light_tint);
   return *this;
 }
 
@@ -4608,6 +4752,8 @@ inline void SubmapBlock::UnPackTo(SubmapBlockT *_o, const ::flatbuffers::resolve
   { auto _e = seen(); if (_e) { _o->seen.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->seen.begin()); } }
   { auto _e = has_graffiti(); if (_e) { _o->has_graffiti.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->has_graffiti[_i] = _e->Get(_i) != 0; } } else { _o->has_graffiti.resize(0); } }
   { auto _e = outside(); if (_e) { _o->outside.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->outside[_i] = _e->Get(_i) != 0; } } else { _o->outside.resize(0); } }
+  { auto _e = light_frac(); if (_e) { _o->light_frac.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->light_frac.begin()); } }
+  { auto _e = light_tint(); if (_e) { _o->light_tint.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->light_tint.begin()); } }
 }
 
 inline ::flatbuffers::Offset<SubmapBlock> SubmapBlock::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const SubmapBlockT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4631,6 +4777,8 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(::flatbuffers::FlatB
   auto _seen = _o->seen.size() ? _fbb.CreateVector(_o->seen) : 0;
   auto _has_graffiti = _o->has_graffiti.size() ? _fbb.CreateVector(_o->has_graffiti) : 0;
   auto _outside = _o->outside.size() ? _fbb.CreateVector(_o->outside) : 0;
+  auto _light_frac = _o->light_frac.size() ? _fbb.CreateVector(_o->light_frac) : 0;
+  auto _light_tint = _o->light_tint.size() ? _fbb.CreateVector(_o->light_tint) : 0;
   return cdda::ipc::CreateSubmapBlock(
       _fbb,
       _origin,
@@ -4645,7 +4793,9 @@ inline ::flatbuffers::Offset<SubmapBlock> CreateSubmapBlock(::flatbuffers::FlatB
       _lit,
       _seen,
       _has_graffiti,
-      _outside);
+      _outside,
+      _light_frac,
+      _light_tint);
 }
 
 inline EntityT::EntityT(const EntityT &o)
@@ -5012,7 +5162,11 @@ inline TileChangeT::TileChangeT(const TileChangeT &o)
         seen(o.seen),
         has_graffiti(o.has_graffiti),
         displayed_field((o.displayed_field) ? new cdda::ipc::DisplayedField(*o.displayed_field) : nullptr),
-        outside(o.outside) {
+        outside(o.outside),
+        light_frac(o.light_frac),
+        light_tint_r(o.light_tint_r),
+        light_tint_g(o.light_tint_g),
+        light_tint_b(o.light_tint_b) {
   fields.reserve(o.fields.size());
   for (const auto &fields_ : o.fields) { fields.emplace_back((fields_) ? new cdda::ipc::FieldOnTileT(*fields_) : nullptr); }
 }
@@ -5030,6 +5184,10 @@ inline TileChangeT &TileChangeT::operator=(TileChangeT o) FLATBUFFERS_NOEXCEPT {
   std::swap(has_graffiti, o.has_graffiti);
   std::swap(displayed_field, o.displayed_field);
   std::swap(outside, o.outside);
+  std::swap(light_frac, o.light_frac);
+  std::swap(light_tint_r, o.light_tint_r);
+  std::swap(light_tint_g, o.light_tint_g);
+  std::swap(light_tint_b, o.light_tint_b);
   return *this;
 }
 
@@ -5054,6 +5212,10 @@ inline void TileChange::UnPackTo(TileChangeT *_o, const ::flatbuffers::resolver_
   { auto _e = has_graffiti(); _o->has_graffiti = _e; }
   { auto _e = displayed_field(); if (_e) _o->displayed_field = std::unique_ptr<cdda::ipc::DisplayedField>(new cdda::ipc::DisplayedField(*_e)); }
   { auto _e = outside(); _o->outside = _e; }
+  { auto _e = light_frac(); _o->light_frac = _e; }
+  { auto _e = light_tint_r(); _o->light_tint_r = _e; }
+  { auto _e = light_tint_g(); _o->light_tint_g = _e; }
+  { auto _e = light_tint_b(); _o->light_tint_b = _e; }
 }
 
 inline ::flatbuffers::Offset<TileChange> TileChange::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TileChangeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -5076,6 +5238,10 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBuf
   auto _has_graffiti = _o->has_graffiti;
   auto _displayed_field = _o->displayed_field ? _o->displayed_field.get() : nullptr;
   auto _outside = _o->outside;
+  auto _light_frac = _o->light_frac;
+  auto _light_tint_r = _o->light_tint_r;
+  auto _light_tint_g = _o->light_tint_g;
+  auto _light_tint_b = _o->light_tint_b;
   return cdda::ipc::CreateTileChange(
       _fbb,
       _pos,
@@ -5089,7 +5255,11 @@ inline ::flatbuffers::Offset<TileChange> CreateTileChange(::flatbuffers::FlatBuf
       _seen,
       _has_graffiti,
       _displayed_field,
-      _outside);
+      _outside,
+      _light_frac,
+      _light_tint_r,
+      _light_tint_g,
+      _light_tint_b);
 }
 
 inline DeltaT::DeltaT(const DeltaT &o)
@@ -5170,7 +5340,9 @@ inline LightUpdateT::LightUpdateT(const LightUpdateT &o)
         epoch(o.epoch),
         origin((o.origin) ? new cdda::ipc::Vec3i(*o.origin) : nullptr),
         lit(o.lit),
-        seen(o.seen) {
+        seen(o.seen),
+        light_frac(o.light_frac),
+        light_tint(o.light_tint) {
 }
 
 inline LightUpdateT &LightUpdateT::operator=(LightUpdateT o) FLATBUFFERS_NOEXCEPT {
@@ -5179,6 +5351,8 @@ inline LightUpdateT &LightUpdateT::operator=(LightUpdateT o) FLATBUFFERS_NOEXCEP
   std::swap(origin, o.origin);
   std::swap(lit, o.lit);
   std::swap(seen, o.seen);
+  std::swap(light_frac, o.light_frac);
+  std::swap(light_tint, o.light_tint);
   return *this;
 }
 
@@ -5196,6 +5370,8 @@ inline void LightUpdate::UnPackTo(LightUpdateT *_o, const ::flatbuffers::resolve
   { auto _e = origin(); if (_e) _o->origin = std::unique_ptr<cdda::ipc::Vec3i>(new cdda::ipc::Vec3i(*_e)); }
   { auto _e = lit(); if (_e) { _o->lit.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->lit[_i] = static_cast<cdda::ipc::LitLevel>(_e->Get(_i)); } } else { _o->lit.resize(0); } }
   { auto _e = seen(); if (_e) { _o->seen.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->seen.begin()); } }
+  { auto _e = light_frac(); if (_e) { _o->light_frac.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->light_frac.begin()); } }
+  { auto _e = light_tint(); if (_e) { _o->light_tint.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->light_tint.begin()); } }
 }
 
 inline ::flatbuffers::Offset<LightUpdate> LightUpdate::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const LightUpdateT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -5211,13 +5387,17 @@ inline ::flatbuffers::Offset<LightUpdate> CreateLightUpdate(::flatbuffers::FlatB
   auto _origin = _o->origin ? _o->origin.get() : nullptr;
   auto _lit = _o->lit.size() ? _fbb.CreateVectorScalarCast<uint8_t>(::flatbuffers::data(_o->lit), _o->lit.size()) : 0;
   auto _seen = _o->seen.size() ? _fbb.CreateVector(_o->seen) : 0;
+  auto _light_frac = _o->light_frac.size() ? _fbb.CreateVector(_o->light_frac) : 0;
+  auto _light_tint = _o->light_tint.size() ? _fbb.CreateVector(_o->light_tint) : 0;
   return cdda::ipc::CreateLightUpdate(
       _fbb,
       _seq,
       _epoch,
       _origin,
       _lit,
-      _seen);
+      _seen,
+      _light_frac,
+      _light_tint);
 }
 
 inline EffectEventT::EffectEventT(const EffectEventT &o)

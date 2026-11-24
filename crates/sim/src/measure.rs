@@ -53,6 +53,7 @@ pub fn measure(defs_path: Option<&Path>, scene_path: &Path) -> Result<Measuremen
         socket_path: sock.clone(),
         defs_path: defs_path.map(Path::to_path_buf),
         scene_path: scene_path.to_path_buf(),
+        weather: None,
     };
     let server = std::thread::spawn(move || run_server(&cfg));
     let deadline = Instant::now() + Duration::from_secs(30);

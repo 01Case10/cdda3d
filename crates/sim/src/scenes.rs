@@ -103,6 +103,28 @@ pub struct ItemsPlace {
     pub count: u16,
 }
 
+/// A scene-declared light source (S3): the sim's analogue of a
+/// terrain/furniture def with `light_emitted` — it feeds the
+/// visibility recompute's lm + light-colour caches at `pos`.
+/// `color` is light energy tint (float RGB, like the game's
+/// `light_color`), `intensity` the luminance at the source tile
+/// (like `light_emitted`).
+#[derive(Debug, Clone)]
+pub struct LightSpec {
+    pub pos: [i32; 3],
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
+/// One entry of a scene's weather script (S3): at absolute
+/// calendar `turn`, the weather preset changes to `weather`.
+/// Mirrors the C++ stub's `--env-script` concept, data-driven.
+#[derive(Debug, Clone)]
+pub struct WeatherStep {
+    pub turn: i64,
+    pub weather: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct VehicleSpec {
     pub id: u64,
@@ -126,6 +148,9 @@ pub struct Scene {
     pub seed: i64,
     pub time: String,
     pub weather: String,
+    /// Absolute calendar start turn (turns since turn_zero, S3).
+    /// When present it wins over the `time` preset.
+    pub turn: Option<i64>,
     pub player: Option<[i32; 3]>,
     pub view_origin: [i32; 3],
     pub view_radius: u32,
@@ -138,6 +163,8 @@ pub struct Scene {
     pub graffiti: Vec<[i32; 3]>,
     pub vehicles: Vec<VehicleSpec>,
     pub vparts: Vec<VPartSpec>,
+    pub lights: Vec<LightSpec>,
+    pub weather_script: Vec<WeatherStep>,
 }
 
 impl Scene {
@@ -689,6 +716,7 @@ impl RawDoc {
         let seed = opt_int(top, "seed", "scene")?.unwrap_or(1);
         let time = opt_string(top, "time", "scene")?.unwrap_or_default();
         let weather = opt_string(top, "weather", "scene")?.unwrap_or_default();
+        let turn = opt_int(top, "turn", "scene")?;
         let player = opt_pos(top, "player", "scene")?;
         let view_origin = opt_pos(top, "view_origin", "scene")?
             .or(player)
@@ -757,6 +785,8 @@ impl RawDoc {
         let mut graffiti = Vec::new();
         let mut vehicles = Vec::new();
         let mut vparts = Vec::new();
+        let mut lights = Vec::new();
+        let mut weather_script = Vec::new();
         for (tname, map) in &self.tables {
             match tname.as_str() {
                 "spawn" => {
@@ -817,9 +847,38 @@ impl RawDoc {
                         flags: opt_int(map, "flags", ctx)?.unwrap_or(0) as u32,
                     });
                 }
+                "light" => {
+                    let ctx = "[[light]]";
+                    let color_v = req(map, "color", ctx)?;
+                    let color = match color_v {
+                        Value::Array(items) if items.len() == 3 => {
+                            let mut c = [0f32; 3];
+                            for (i, item) in items.iter().enumerate() {
+                                c[i] = as_float(item, "light.color")? as f32;
+                            }
+                            c
+                        }
+                        _ => return Err("scene: light.color must be [r, g, b] numbers".to_string()),
+                    };
+                    lights.push(LightSpec {
+                        pos: as_pos(req(map, "pos", ctx)?, "light.pos")?,
+                        color,
+                        intensity: match get(map, "intensity") {
+                            Some(v) => as_float(v, "light.intensity")? as f32,
+                            None => 10.0,
+                        },
+                    });
+                }
+                "weather_script" => {
+                    let ctx = "[[weather_script]]";
+                    weather_script.push(WeatherStep {
+                        turn: as_int(req(map, "turn", ctx)?, "weather_script.turn")?,
+                        weather: as_string(req(map, "weather", ctx)?, "weather_script.weather")?,
+                    });
+                }
                 other => {
                     return Err(format!(
-                        "scene: unknown array table [[{other}]] (subset has spawn/field/items/graffiti/vehicle/vpart)"
+                        "scene: unknown array table [[{other}]] (subset has spawn/field/items/graffiti/vehicle/vpart/light/weather_script)"
                     ));
                 }
             }
@@ -830,6 +889,7 @@ impl RawDoc {
             seed,
             time,
             weather,
+            turn,
             player,
             view_origin,
             view_radius,
@@ -842,6 +902,8 @@ impl RawDoc {
             graffiti,
             vehicles,
             vparts,
+            lights,
+            weather_script,
         })
     }
 }

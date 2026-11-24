@@ -260,6 +260,10 @@ pub fn sample_house_block() -> SubmapBlockT {
         seen: Some(vec![255; TILES]),
         has_graffiti: Some(graffiti),
         outside: Some(outside),
+        // Phase 11 S3 frac/tint: this fixture predates them and
+        // reads as absent (= derive frac from lit/seen, tint white).
+        light_frac: None,
+        light_tint: None,
     }
 }
 
@@ -471,6 +475,9 @@ fn roofed_house_block(z: i32, explicit_roof: bool) -> SubmapBlockT {
         // Phase 10 outside[] is exercised by the stub-house samples;
         // these fixtures predate it and read as absent (= not exposed).
         outside: None,
+        // Phase 11 S3 frac/tint likewise absent in these fixtures.
+        light_frac: None,
+        light_tint: None,
     }
 }
 
@@ -581,6 +588,8 @@ fn terrain_block(z: i32, terrain: Vec<u32>) -> SubmapBlockT {
         seen: Some(vec![255; TILES]),
         has_graffiti: Some(vec![false; TILES]),
         outside: None,
+        light_frac: None,
+        light_tint: None,
     }
 }
 
@@ -640,6 +649,12 @@ pub fn sample_delta() -> DeltaT {
             // Phase 10: the door tile sits on the house perimeter —
             // sky-exposed, matching the block rule in sample_house_block.
             outside: true,
+            // Phase 11 S3: a LIT tile part-way between the vision
+            // threshold and full light, uncoloured light.
+            light_frac: 128,
+            light_tint_r: 255,
+            light_tint_g: 255,
+            light_tint_b: 255,
         }]),
         entity_updates: Some(vec![sample_entity()]),
         entity_removed: Some(vec![99]),
@@ -688,6 +703,19 @@ pub fn all_sample_messages() -> Vec<MessageT> {
                 LitLevel::BLANK,
             ]),
             seen: Some(vec![0, 32, 64, 128, 200, 255, 0]),
+            // Phase 11 S3: frac follows the lit row (0 except the
+            // LOW/LIT fractions and BRIGHT = 255); the LOW tile is
+            // warm-tinted, the rest uncoloured (white).
+            light_frac: Some(vec![0, 100, 0, 200, 255, 0, 0]),
+            light_tint: Some(vec![
+                255, 255, 255, // DARK
+                255, 180, 80, // LOW, warm
+                255, 255, 255, // BRIGHT_ONLY
+                255, 255, 255, // LIT
+                255, 255, 255, // BRIGHT
+                255, 255, 255, // MEMORIZED
+                255, 255, 255, // BLANK
+            ]),
         })),
         MessageT::EnvironmentUpdate(Box::new(sample_environment())),
         MessageT::Effects(Box::new(EffectsT {

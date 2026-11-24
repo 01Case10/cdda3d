@@ -2,7 +2,12 @@
 //!
 //! Usage:
 //!   sim-server <unix-socket-path> [--scene <name>] [--defs <path>]
+//!              [--weather <preset>]
 //!   sim-server --measure [--scene <name>] [--defs <path>]
+//!
+//! `--weather` overrides the scene's starting weather preset
+//! (S3: clear/sunny/cloudy/rain/storm/lightning). Mid-run weather
+//! changes are the scene's `[[weather_script]]` entries.
 //!
 //! The voxel engine (or `proto-client`) connects as the IPC client,
 //! exactly as it will to the real fork with
@@ -21,7 +26,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>]");
+    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>]");
     eprintln!("       sim-server --measure [--scene <name>] [--defs <path>]");
     ExitCode::from(2)
 }
@@ -30,6 +35,7 @@ fn main() -> ExitCode {
     let mut socket: Option<PathBuf> = None;
     let mut scene = "stub_house".to_string();
     let mut defs: Option<PathBuf> = None;
+    let mut weather: Option<String> = None;
     let mut measure = false;
 
     let mut args = std::env::args().skip(1);
@@ -41,6 +47,10 @@ fn main() -> ExitCode {
             },
             "--defs" => match args.next() {
                 Some(v) => defs = Some(PathBuf::from(v)),
+                None => return usage(),
+            },
+            "--weather" => match args.next() {
+                Some(v) => weather = Some(v),
                 None => return usage(),
             },
             "--measure" => measure = true,
@@ -87,6 +97,7 @@ fn main() -> ExitCode {
         socket_path: socket,
         defs_path: defs,
         scene_path,
+        weather,
     };
     match sim::run_server(&config) {
         Ok(()) => {

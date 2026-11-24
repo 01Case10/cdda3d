@@ -70,6 +70,11 @@ void CheckSnapshotEqual(const SnapshotT& a, const SnapshotT& b) {
         CHECK(x.has_graffiti == y.has_graffiti);
         // Phase 10: per-tile sky exposure, same stub-house rule.
         CHECK(x.outside == y.outside);
+        // Phase 11 S3: smooth-lighting fraction + tint. The stub
+        // house predates them (absent on both sides = equal here);
+        // the check pins that the regenerated header carries them.
+        CHECK(x.light_frac == y.light_frac);
+        CHECK(x.light_tint == y.light_tint);
         if (x.outside.size() == house::TILES) {
             CHECK(!x.outside[house::idx(6, 6)]);  // interior: not exposed
             CHECK(x.outside[house::idx(0, 0)]);   // corner: exposed

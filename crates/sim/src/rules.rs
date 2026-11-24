@@ -74,13 +74,15 @@ fn transform<'a>(def: &'a Def, which: fn(&Def) -> &Option<String>) -> Option<&'a
 
 impl World {
     /// Drive one Input (in-process mode: no socket involved).
-    /// Returns the message the turn produced, or `None` when the
+    /// Returns the turn's message flush (S3: a Vec — a Delta or
+    /// Snapshot plus any LightUpdate / EnvironmentUpdate the
+    /// turn produced, in send order), or an empty Vec when the
     /// input is not a turn (key release, non-Key input, or an
     /// Open/Close arming key). The server sends the returned
-    /// message verbatim; tests assert on it directly.
-    pub fn apply_input(&mut self, reg: &DefRegistry, input: &InputT) -> Option<MessageT> {
+    /// messages verbatim; tests assert on them directly.
+    pub fn apply_input(&mut self, reg: &DefRegistry, input: &InputT) -> Vec<MessageT> {
         if input.kind != InputKind::Key || !input.pressed {
-            return None;
+            return Vec::new();
         }
         let key = char::from_u32(input.key_code as u32).unwrap_or('\0');
 
@@ -88,7 +90,7 @@ impl World {
         if let Some(action) = self.pending.take() {
             if let Some(dir) = direction_for_key(key) {
                 self.apply_open_close(reg, action, dir);
-                return Some(self.flush_turn(reg));
+                return self.flush_turn(reg);
             }
             // Any other key cancels the pending action and is
             // then processed as its own key below.
@@ -97,18 +99,18 @@ impl World {
         match key {
             'o' => {
                 self.pending = Some(PendingAction::Open);
-                None
+                Vec::new()
             }
             'c' => {
                 self.pending = Some(PendingAction::Close);
-                None
+                Vec::new()
             }
             _ => {
                 if let Some(dir) = direction_for_key(key) {
                     self.try_move(reg, dir);
                 }
                 // '.' / ' ' wait; every other key is a no-op turn.
-                Some(self.flush_turn(reg))
+                self.flush_turn(reg)
             }
         }
     }

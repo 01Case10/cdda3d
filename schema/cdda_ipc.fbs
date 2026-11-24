@@ -174,6 +174,21 @@ table SubmapBlock {
   /// Appended last: additive/non-breaking, old readers ignore it,
   /// old data reads as absent (= not exposed).
   outside: [bool];
+  /// Per tile: smooth-lighting fraction (Phase 11 S3, Addendum 11):
+  /// light_above_threshold(apparent_light, vision_threshold) scaled
+  /// to 0..255 — 255 for BRIGHT, the threshold fraction for LOW/LIT,
+  /// 0 otherwise. The game's visibility/ceiling verdict for the
+  /// tile; renderer-transported light stays capped by it (option A).
+  /// Appended last: additive/non-breaking, old readers ignore it,
+  /// old data reads as absent (= derive from lit/seen as before).
+  light_frac: [ubyte];
+  /// Per tile: normalised light colour (Phase 11 S3, Addendum 11):
+  /// illumination_hue of the tile's accumulated light colour —
+  /// 3 ubytes per tile (R, G, B interleaved, same tile order as
+  /// `lit`), brightest channel 255 when coloured, 255/255/255 =
+  /// uncoloured. Appended last: additive/non-breaking, old data
+  /// reads as absent (= white).
+  light_tint: [ubyte];
 }
 
 table Entity {
@@ -286,6 +301,17 @@ table TileChange {
   /// SubmapBlock.outside). Appended last: additive/non-breaking, old
   /// data reads as false.
   outside: bool;
+  /// Smooth-lighting fraction after this change (Phase 11 S3;
+  /// same definition as SubmapBlock.light_frac). Appended last:
+  /// additive/non-breaking, old data reads as 0.
+  light_frac: ubyte;
+  /// Normalised light colour after this change (Phase 11 S3;
+  /// same definition as SubmapBlock.light_tint, one tile's RGB).
+  /// Appended last: additive/non-breaking, old data reads as 0
+  /// (= white by the absent-field convention).
+  light_tint_r: ubyte;
+  light_tint_g: ubyte;
+  light_tint_b: ubyte;
 }
 
 table Delta {
@@ -308,6 +334,16 @@ table LightUpdate {
   origin: Vec3i;
   lit: [LitLevel];
   seen: [ubyte];
+  /// Smooth-lighting fraction per tile (Phase 11 S3; same
+  /// definition and shape as SubmapBlock.light_frac).
+  /// Appended last: additive/non-breaking, old data reads as
+  /// absent (= derive from lit/seen as before).
+  light_frac: [ubyte];
+  /// Normalised light colour per tile (Phase 11 S3; same
+  /// definition and interleaved-RGB shape as
+  /// SubmapBlock.light_tint). Appended last: additive/non-breaking,
+  /// old data reads as absent (= white).
+  light_tint: [ubyte];
 }
 
 // ---------------------------------------------------------------------------

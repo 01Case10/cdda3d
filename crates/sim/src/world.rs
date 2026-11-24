@@ -1,27 +1,26 @@
-//! World state + Snapshot builder (slice S1).
+//! World state + Snapshot builder (slices S1-S3).
 //!
 //! The `World` holds tile state per submap block in *registry*
 //! wire ids (per-kind, from [`crate::defs::DefRegistry`]), the
 //! entity/vehicle lists, and a dirty-submap set — the shape the
 //! S2 turn loop needs: mutate world -> mark submap dirty -> diff
-//! -> Delta. S1 only builds the first Snapshot (every submap
-//! starts dirty, i.e. the all-dirty first send) and clears the
-//! set once the Snapshot is taken.
+//! -> Delta.
 //!
-//! S1 visibility is a documented placeholder rule, replaced by
-//! the real LOS/roof computation in S3:
-//! - `lit`/`seen` by z level: z < 0 -> DARK / 0 (never seen),
-//!   z == 0 -> LIT / 255, z > 0 -> BRIGHT / 255 (open sky at the
-//!   sample environment's noon).
-//! - `outside[]` is only emitted when the scene sets
-//!   `emit_outside`: z < 0 -> all false, z > 0 -> all true, and at
-//!   z == 0 an enclosure flood: starting from the block border,
-//!   flood through tiles whose terrain is not a barrier; barrier
-//!   tiles (authored flags contain WALL, DOOR, or WINDOW — the
-//!   perimeter set) and reached tiles are outside, unreached
-//!   interior tiles are not. This reproduces the stub house's
-//!   documented rule (interior floor sheltered, perimeter
-//!   exposed) from the defs' own flags, not from sample values.
+//! S3 state: a game clock (calendar turn, 1 s/turn — see
+//! [`crate::environment`]), the current weather preset, the
+//! scene's weather script and light sources, a visibility cache
+//! (per-block lit/seen/frac/tint/outside, recomputed by
+//! [`crate::visibility`] after any world/player/time change),
+//! and the tile memory (terrain/furniture of every tile ever
+//! visible, exported as MEMORIZED memory blocks once a tile
+//! leaves visibility — the fork exporter's shape).
+//!
+//! The S1 placeholder rules are gone: lit/seen are no longer a
+//! z-level rule, `outside` is always computed and always
+//! emitted (the scene `emit_outside` key is vestigial — the real
+//! exporter always writes the array), and the Snapshot's
+//! environment is the computed EnvironmentUpdate, not
+//! `sample_environment()`.
 //!
 //! `displayed_field` follows the sample rule (§3.2): fire is
 //! displayed over other fields; otherwise the highest intensity
@@ -29,15 +28,16 @@
 
 use std::collections::{HashMap, HashSet};
 
-use proto::samples::sample_environment;
 use proto::{
-    DeltaT, DisplayedFieldT, EntityT, Facing, FieldOnTileT, LitLevel, MessageT, SnapshotT,
-    SubmapBlockT, TileChangeT, Vec3iT, VehiclePartStateT, VehicleT,
+    DeltaT, DisplayedFieldT, EntityT, EnvironmentUpdateT, Facing, FieldOnTileT, LightUpdateT,
+    LitLevel, MessageT, SnapshotT, SubmapBlockT, TileChangeT, Vec3iT, VehiclePartStateT, VehicleT,
 };
 
 use crate::defs::{DefRegistry, Kind};
+use crate::environment::{self, WeatherState};
 use crate::rules::PendingAction;
-use crate::scenes::{Scene, SUBMAP};
+use crate::scenes::{LightSpec, Scene, WeatherStep, SUBMAP};
+use crate::visibility::{self, BlockVis};
 
 pub const TILES: usize = SUBMAP * SUBMAP;
 
@@ -71,7 +71,25 @@ pub struct World {
     pub view_origin: Vec3iT,
     pub view_radius: u32,
     pub environment: bool,
-    pub emit_outside: bool,
+    /// Game clock: calendar turns since turn_zero (1 s/turn).
+    pub game_turn: i64,
+    /// Current weather preset (resolved numerics).
+    pub weather: WeatherState,
+    /// Scene weather script, in file order.
+    weather_script: Vec<WeatherStep>,
+    /// Scene-declared light sources.
+    lights: Vec<LightSpec>,
+    /// Visibility cache, parallel to `blocks` (S3 recompute).
+    vis: Vec<BlockVis>,
+    /// Tiles visible at the last recompute.
+    visible: HashSet<[i32; 3]>,
+    /// Tile memory: pos -> (terrain, furniture) as last seen.
+    memory: HashMap<[i32; 3], (u32, u32)>,
+    /// Calendar turn at which an EnvironmentUpdate was last
+    /// sent (piggybacked or standalone).
+    last_env_turn: i64,
+    /// Weather changed since the last EnvironmentUpdate send.
+    env_dirty: bool,
     /// Entity id of the player spawn (`type = "player"`), if the
     /// scene has one. The player entity is the movement actor.
     pub player_id: Option<u64>,
@@ -305,11 +323,46 @@ impl World {
             vehicles.push(veh);
         }
 
+        // S3 clock: the scene's `turn` key wins; else the
+        // `time` preset (time-of-day on day 0); an empty time
+        // means noon, matching the old placeholder's assumption.
+        let game_turn = if let Some(t) = scene.turn {
+            t
+        } else if scene.time.is_empty() {
+            environment::time_preset_turn("noon").expect("noon preset exists")
+        } else {
+            environment::time_preset_turn(&scene.time).ok_or_else(|| {
+                format!(
+                    "scene '{}': unknown time preset '{}' (use midnight/dawn/noon/dusk or turn = <int>)",
+                    scene.name, scene.time
+                )
+            })?
+        };
+        let weather_name = if scene.weather.is_empty() {
+            "clear"
+        } else {
+            scene.weather.as_str()
+        };
+        let weather = environment::weather_preset(weather_name).ok_or_else(|| {
+            format!(
+                "scene '{}': unknown weather preset '{weather_name}'",
+                scene.name
+            )
+        })?;
+        for step in &scene.weather_script {
+            if environment::weather_preset(&step.weather).is_none() {
+                return Err(format!(
+                    "scene '{}': weather_script names unknown preset '{}'",
+                    scene.name, step.weather
+                ));
+            }
+        }
+
         let dirty = blocks
             .iter()
             .map(|b| (b.origin.x, b.origin.y, b.origin.z))
             .collect();
-        Ok(World {
+        let mut world = World {
             name: scene.name.clone(),
             blocks,
             dirty,
@@ -323,7 +376,15 @@ impl World {
             ),
             view_radius: scene.view_radius,
             environment: scene.environment,
-            emit_outside: scene.emit_outside,
+            game_turn,
+            weather,
+            weather_script: scene.weather_script.clone(),
+            lights: scene.lights.clone(),
+            vis: Vec::new(),
+            visible: HashSet::new(),
+            memory: HashMap::new(),
+            last_env_turn: game_turn,
+            env_dirty: false,
             player_id,
             seq: 0,
             epoch: 1,
@@ -331,7 +392,50 @@ impl World {
             last_entities: Vec::new(),
             last_snapshot_player_submap: None,
             pending: None,
-        })
+        };
+        world.recompute_visibility(reg);
+        Ok(world)
+    }
+
+    /// Recompute the visibility cache (lit/seen/frac/tint/
+    /// outside for every block) and fold newly-visible tiles
+    /// into tile memory. Called after any world, player, clock
+    /// or weather change.
+    pub fn recompute_visibility(&mut self, reg: &DefRegistry) {
+        let viewpoint = self.player_pos();
+        let spectator = [self.view_origin.x, self.view_origin.y, self.view_origin.z];
+        let result = visibility::compute(
+            reg,
+            &self.blocks,
+            &self.lights,
+            viewpoint,
+            spectator,
+            self.game_turn,
+            &self.weather,
+        );
+        self.vis = result.blocks;
+        self.visible = result.visible;
+        for pos in &self.visible {
+            if let Some((b, i)) = self.tile_at(*pos) {
+                let t = &self.blocks[b].tiles[i];
+                self.memory.insert(*pos, (t.terrain, t.furniture));
+            }
+        }
+    }
+
+    /// The current EnvironmentUpdate (this world's seq/epoch are
+    /// filled in by the caller-visible builders below; this is
+    /// the pure value for a given seq/epoch).
+    pub fn environment_update(&self, seq: u64, epoch: u64) -> EnvironmentUpdateT {
+        environment::build_environment(seq, epoch, self.game_turn, &self.weather)
+    }
+
+    /// Is an EnvironmentUpdate due at the current turn? (Only
+    /// scenes with `environment = true` ever send one.)
+    fn env_due(&self) -> bool {
+        self.environment
+            && (self.env_dirty
+                || self.game_turn - self.last_env_turn >= environment::ENV_CADENCE_SECONDS)
     }
 
     /// Submaps changed since the last Snapshot/Delta send. S1:
@@ -347,20 +451,24 @@ impl World {
     /// Build a Snapshot of the current state with the given
     /// seq/epoch. Pure: does not touch the send baseline (the
     /// mirror-invariant gate uses it to ask "what would a fresh
-    /// Snapshot say right now?"). Note the S2 simplification: a
-    /// Snapshot contains ALL scene submaps — the scene extent is
-    /// the bubble; there is no view-window culling yet.
+    /// Snapshot say right now?"). Reads the visibility cache —
+    /// refreshed by `snapshot()`, `flush_turn()`,
+    /// `advance_clock()` and `set_weather()`. Note the S2
+    /// simplification: a Snapshot contains ALL scene submaps —
+    /// the scene extent is the bubble; there is no view-window
+    /// culling yet.
     pub fn build_snapshot(&self, reg: &DefRegistry, seq: u64, epoch: u64) -> SnapshotT {
         let blocks: Vec<SubmapBlockT> = self
             .blocks
             .iter()
-            .map(|b| self.build_block(reg, b))
+            .enumerate()
+            .map(|(bi, b)| self.build_block(reg, b, &self.vis[bi]))
             .collect();
         let mut snap = SnapshotT::default();
         snap.view_origin = Some(self.view_origin.clone());
         snap.view_radius = self.view_radius;
         snap.blocks = Some(blocks);
-        snap.memory_blocks = None;
+        snap.memory_blocks = self.build_memory_blocks();
         snap.entities = if self.entities.is_empty() {
             None
         } else {
@@ -373,19 +481,79 @@ impl World {
         };
         snap.seq = seq;
         snap.epoch = epoch;
-        // S1 placeholder: the canonical sample environment
-        // (noon/clear/spring). Time/weather simulation is S3.
         snap.environment = if self.environment {
-            Some(Box::new(sample_environment()))
+            Some(Box::new(self.environment_update(seq, epoch)))
         } else {
             None
         };
         snap
     }
 
+    /// Memory blocks in the fork exporter's shape
+    /// (voxel_exporter.cpp build_memory_blocks): one block per
+    /// submap holding at least one memorized-but-not-currently-
+    /// visible tile; terrain/furniture only, lit MEMORIZED on
+    /// those tiles and BLANK elsewhere in the block, seen 0,
+    /// outside all false, no frac/tint. `None` when nothing is
+    /// memorized out of sight.
+    fn build_memory_blocks(&self) -> Option<Vec<SubmapBlockT>> {
+        let mut by_origin: HashMap<(i32, i32, i32), Vec<([i32; 3], (u32, u32))>> = HashMap::new();
+        for (pos, tf) in &self.memory {
+            if self.visible.contains(pos) {
+                continue;
+            }
+            by_origin
+                .entry(submap_origin(*pos))
+                .or_default()
+                .push((*pos, *tf));
+        }
+        if by_origin.is_empty() {
+            return None;
+        }
+        let mut origins: Vec<(i32, i32, i32)> = by_origin.keys().copied().collect();
+        origins.sort();
+        let mut blocks = Vec::with_capacity(origins.len());
+        for origin in origins {
+            let mut block = SubmapBlockT::default();
+            block.origin = Some(v3(origin.0, origin.1, origin.2));
+            let mut terrain = vec![0u32; TILES];
+            let mut furniture = vec![0u32; TILES];
+            let mut lit = vec![LitLevel::BLANK; TILES];
+            for (pos, (ter, furn)) in &by_origin[&origin] {
+                let i = idx((pos[0] - origin.0) as usize, (pos[1] - origin.1) as usize);
+                terrain[i] = *ter;
+                furniture[i] = *furn;
+                lit[i] = LitLevel::MEMORIZED;
+            }
+            block.terrain = Some(terrain);
+            block.furniture = Some(furniture);
+            block.trap = Some(vec![0; TILES]);
+            block.fields = Some(Vec::new());
+            block.field_index = Some(vec![-1; TILES]);
+            block.displayed_field = Some(vec![
+                DisplayedFieldT {
+                    field_type: 0,
+                    intensity: 0
+                };
+                TILES
+            ]);
+            block.top_item = Some(vec![0; TILES]);
+            block.item_count = Some(vec![0; TILES]);
+            block.lit = Some(lit);
+            block.seen = Some(vec![0; TILES]);
+            block.has_graffiti = Some(vec![false; TILES]);
+            block.outside = Some(vec![false; TILES]);
+            block.light_frac = None;
+            block.light_tint = None;
+            blocks.push(block);
+        }
+        Some(blocks)
+    }
+
     /// Record a Snapshot as sent: it becomes the diff baseline,
     /// the dirty set clears, and the player's submap at this
-    /// Snapshot is remembered for shift detection.
+    /// Snapshot is remembered for shift detection. A piggybacked
+    /// environment counts as sent at the current turn.
     fn record_sent(&mut self, snap: &SnapshotT) {
         self.seq = snap.seq;
         self.epoch = snap.epoch;
@@ -393,11 +561,16 @@ impl World {
         self.last_entities = snap.entities.clone().unwrap_or_default();
         self.last_snapshot_player_submap = self.player_pos().map(submap_index);
         self.dirty.clear();
+        if snap.environment.is_some() {
+            self.last_env_turn = self.game_turn;
+            self.env_dirty = false;
+        }
     }
 
     /// The initial Snapshot send (seq 1, epoch 1 on a fresh
     /// world) — the all-dirty first send.
     pub fn snapshot(&mut self, reg: &DefRegistry) -> SnapshotT {
+        self.recompute_visibility(reg);
         let snap = self.build_snapshot(reg, self.seq + 1, self.epoch);
         self.record_sent(&snap);
         snap
@@ -487,22 +660,50 @@ impl World {
         })
     }
 
-    /// Flush one resolved turn (S2): diff the current state
-    /// against the last-sent baseline, exactly like the fork
-    /// exporter — mutations marked their submap dirty, and only
-    /// dirty submaps are diffed, tile by tile. Entities are
-    /// diffed by id over the whole list.
+    /// Apply any weather-script entries scheduled at or before
+    /// the current turn. A change marks the environment dirty
+    /// (an on-change EnvironmentUpdate is due).
+    fn apply_script_due(&mut self) {
+        let due: Vec<String> = self
+            .weather_script
+            .iter()
+            .filter(|s| s.turn <= self.game_turn)
+            .map(|s| s.weather.clone())
+            .collect();
+        if due.is_empty() {
+            return;
+        }
+        self.weather_script.retain(|s| s.turn > self.game_turn);
+        for name in due {
+            if let Some(w) = environment::weather_preset(&name) {
+                if w.preset != self.weather.preset {
+                    self.weather = w;
+                    self.env_dirty = true;
+                }
+            }
+        }
+    }
+
+    /// Flush one resolved turn (S2 shape, S3 contents): the
+    /// clock advances 1 s (do_turn order: `calendar::turn +=
+    /// 1_turns` happens inside the turn), due weather-script
+    /// entries apply, visibility recomputes, and the diff
+    /// against the last-sent baseline is composed into the
+    /// turn's message flush (plan §2.7: a flush is a Delta plus
+    /// optional LightUpdate / EnvironmentUpdate messages).
     ///
     /// If the player is now in a different submap than at the
-    /// last Snapshot (a map shift, plan §2.7), the flush is
-    /// instead a fresh Snapshot with epoch + 1. Either way seq
-    /// advances by exactly 1, and a Delta is sent even when
-    /// nothing changed.
-    pub fn flush_turn(&mut self, reg: &DefRegistry) -> MessageT {
+    /// last Snapshot (a map shift), the flush is instead a fresh
+    /// Snapshot with epoch + 1. Seq advances by exactly 1 per
+    /// message, in flush order.
+    pub fn flush_turn(&mut self, reg: &DefRegistry) -> Vec<MessageT> {
         // No Snapshot sent yet: the first flush IS the Snapshot.
         if self.last_blocks.is_empty() {
-            return MessageT::Snapshot(Box::new(self.snapshot(reg)));
+            return vec![MessageT::Snapshot(Box::new(self.snapshot(reg)))];
         }
+        self.game_turn += 1;
+        self.apply_script_due();
+        self.recompute_visibility(reg);
         // Map shift?
         if let (Some(cur), Some(last)) = (
             self.player_pos().map(submap_index),
@@ -511,15 +712,100 @@ impl World {
             if cur != last {
                 let snap = self.build_snapshot(reg, self.seq + 1, self.epoch + 1);
                 self.record_sent(&snap);
-                return MessageT::Snapshot(Box::new(snap));
+                return vec![MessageT::Snapshot(Box::new(snap))];
             }
         }
+        self.compose_flush(reg, true)
+    }
 
-        self.seq += 1;
+    /// Fast-forward the clock by `seconds` (the T6 mechanism):
+    /// step through every environment boundary in the interval
+    /// — weather-script entries and the 10-minute time-only
+    /// cadence — emitting one standalone EnvironmentUpdate per
+    /// boundary (on-change sends reset the cadence clock, as in
+    /// the per-turn path), then recompute visibility once at the
+    /// end and flush the accumulated light diff. Intermediate
+    /// light states are skipped by design: this is a harness
+    /// fast-forward, not a per-turn simulation.
+    pub fn advance_clock(&mut self, reg: &DefRegistry, seconds: i64) -> Vec<MessageT> {
+        let mut msgs = Vec::new();
+        if self.last_blocks.is_empty() {
+            msgs.push(MessageT::Snapshot(Box::new(self.snapshot(reg))));
+        }
+        let target = self.game_turn + seconds.max(0);
+        loop {
+            let next_script = self
+                .weather_script
+                .iter()
+                .map(|s| s.turn)
+                .filter(|t| *t > self.game_turn && *t <= target)
+                .min();
+            let next_cadence = if self.environment {
+                let t = self.last_env_turn + environment::ENV_CADENCE_SECONDS;
+                (t > self.game_turn && t <= target).then_some(t)
+            } else {
+                None
+            };
+            let Some(boundary) = [next_script, next_cadence].into_iter().flatten().min() else {
+                break;
+            };
+            self.game_turn = boundary;
+            self.apply_script_due();
+            if self.env_due() {
+                self.seq += 1;
+                let env = self.environment_update(self.seq, self.epoch);
+                self.last_env_turn = self.game_turn;
+                self.env_dirty = false;
+                msgs.push(MessageT::EnvironmentUpdate(Box::new(env)));
+            }
+        }
+        self.game_turn = target;
+        self.apply_script_due();
+        self.recompute_visibility(reg);
+        msgs.extend(self.compose_flush(reg, false));
+        msgs
+    }
+
+    /// Change the weather preset now (the sim-server/test
+    /// counterpart of a script entry): marks the environment
+    /// dirty and flushes the relight + the on-change
+    /// EnvironmentUpdate.
+    pub fn set_weather(&mut self, reg: &DefRegistry, name: &str) -> Result<Vec<MessageT>, String> {
+        let w = environment::weather_preset(name)
+            .ok_or_else(|| format!("unknown weather preset '{name}'"))?;
+        if w.preset != self.weather.preset {
+            self.weather = w;
+            self.env_dirty = true;
+        }
+        self.recompute_visibility(reg);
+        Ok(self.compose_flush(reg, false))
+    }
+
+    /// The shared diff/compose step: diff every block against
+    /// the last-sent baseline (S3 recomputes visibility for the
+    /// whole scene each flush, so the diff — not the dirty set —
+    /// is authoritative; dawn/dusk relights in untouched submaps
+    /// are caught by construction), diff entities by id, and
+    /// compose the flush:
+    ///
+    /// - Any structural tile change (terrain/furniture/trap/
+    ///   fields/displayed/items/graffiti/outside) or any entity
+    ///   change -> one Delta carrying ALL tile changes (light
+    ///   changes fold in as TileChanges).
+    /// - Otherwise, light-only tile changes -> one LightUpdate
+    ///   per affected submap (full 144-tile arrays) instead of a
+    ///   Delta.
+    /// - A due EnvironmentUpdate rides the Delta when one is
+    ///   emitted; otherwise it is appended standalone.
+    /// - `emit_empty_delta` (the per-turn path): a turn with no
+    ///   changes at all still yields one empty Delta (the S2
+    ///   contract — the client knows the turn happened).
+    fn compose_flush(&mut self, reg: &DefRegistry, emit_empty_delta: bool) -> Vec<MessageT> {
         let cur_blocks: Vec<SubmapBlockT> = self
             .blocks
             .iter()
-            .map(|b| self.build_block(reg, b))
+            .enumerate()
+            .map(|(bi, b)| self.build_block(reg, b, &self.vis[bi]))
             .collect();
         let last_by_origin: HashMap<(i32, i32, i32), &SubmapBlockT> = self
             .last_blocks
@@ -530,20 +816,28 @@ impl World {
             })
             .collect();
 
-        let mut tile_changes: Vec<TileChangeT> = Vec::new();
+        let mut all_changes: Vec<TileChangeT> = Vec::new();
+        let mut any_structural = false;
+        let mut light_submaps: Vec<(i32, i32, i32)> = Vec::new();
         for cb in &cur_blocks {
             let o = cb.origin.as_ref().expect("blocks always carry an origin");
             let key = (o.x, o.y, o.z);
-            if !self.dirty.contains(&key) {
-                continue;
-            }
             let Some(lb) = last_by_origin.get(&key) else {
                 continue;
             };
+            let mut submap_light_only = false;
             for i in 0..TILES {
-                if let Some(tc) = diff_tile(lb, cb, i) {
-                    tile_changes.push(tc);
+                if let Some((tc, light_only)) = diff_tile(lb, cb, i) {
+                    if light_only {
+                        submap_light_only = true;
+                    } else {
+                        any_structural = true;
+                    }
+                    all_changes.push(tc);
                 }
+            }
+            if submap_light_only {
+                light_submaps.push(key);
             }
         }
 
@@ -560,26 +854,71 @@ impl World {
             .map(|old| old.id)
             .filter(|id| !self.entities.iter().any(|e| e.id == *id))
             .collect();
+        let entity_changed = !entity_updates.is_empty() || !entity_removed.is_empty();
 
         self.dirty.clear();
         self.last_blocks = cur_blocks;
         self.last_entities = self.entities.clone();
 
-        let mut delta = DeltaT::default();
-        delta.seq = self.seq;
-        delta.epoch = self.epoch;
-        delta.tile_changes = Some(tile_changes);
-        delta.entity_updates = Some(entity_updates);
-        delta.entity_removed = Some(entity_removed);
-        delta.vehicle_updates = None;
-        delta.vehicle_removed = None;
-        // Environment changes are S3; a turn never carries one yet.
-        delta.environment = None;
-        MessageT::Delta(Box::new(delta))
+        let env_due = self.env_due();
+        let mut msgs: Vec<MessageT> = Vec::new();
+        if any_structural || entity_changed || (all_changes.is_empty() && emit_empty_delta) {
+            self.seq += 1;
+            let mut delta = DeltaT::default();
+            delta.seq = self.seq;
+            delta.epoch = self.epoch;
+            delta.tile_changes = Some(all_changes);
+            delta.entity_updates = Some(entity_updates);
+            delta.entity_removed = Some(entity_removed);
+            delta.vehicle_updates = None;
+            delta.vehicle_removed = None;
+            if env_due {
+                delta.environment = Some(Box::new(self.environment_update(self.seq, self.epoch)));
+                self.last_env_turn = self.game_turn;
+                self.env_dirty = false;
+            }
+            msgs.push(MessageT::Delta(Box::new(delta)));
+        } else if !all_changes.is_empty() {
+            // Light-only flush: one LightUpdate per affected
+            // submap, full arrays from the current blocks.
+            for key in &light_submaps {
+                let cb = self
+                    .last_blocks
+                    .iter()
+                    .find(|b| {
+                        let o = b.origin.as_ref().expect("origin");
+                        (o.x, o.y, o.z) == *key
+                    })
+                    .expect("light submap is in the baseline");
+                self.seq += 1;
+                let mut lu = LightUpdateT::default();
+                lu.seq = self.seq;
+                lu.epoch = self.epoch;
+                lu.origin = cb.origin.clone();
+                lu.lit = cb.lit.clone();
+                lu.seen = cb.seen.clone();
+                lu.light_frac = cb.light_frac.clone();
+                lu.light_tint = cb.light_tint.clone();
+                msgs.push(MessageT::LightUpdate(Box::new(lu)));
+            }
+            if env_due {
+                self.seq += 1;
+                let env = self.environment_update(self.seq, self.epoch);
+                self.last_env_turn = self.game_turn;
+                self.env_dirty = false;
+                msgs.push(MessageT::EnvironmentUpdate(Box::new(env)));
+            }
+        } else if env_due {
+            self.seq += 1;
+            let env = self.environment_update(self.seq, self.epoch);
+            self.last_env_turn = self.game_turn;
+            self.env_dirty = false;
+            msgs.push(MessageT::EnvironmentUpdate(Box::new(env)));
+        }
+        msgs
     }
 
-    fn build_block(&self, reg: &DefRegistry, b: &BlockState) -> SubmapBlockT {
-        let z = b.origin.z;
+    fn build_block(&self, reg: &DefRegistry, b: &BlockState, vis: &BlockVis) -> SubmapBlockT {
         let mut terrain = Vec::with_capacity(TILES);
         let mut furniture = Vec::with_capacity(TILES);
         let mut trap = Vec::with_capacity(TILES);
@@ -618,11 +957,6 @@ impl World {
                 };
             }
         }
-        let (lit_level, seen_val) = match z {
-            z if z < 0 => (LitLevel::DARK, 0u8),
-            0 => (LitLevel::LIT, 255u8),
-            _ => (LitLevel::BRIGHT, 255u8),
-        };
         let mut block = SubmapBlockT::default();
         block.origin = Some(b.origin.clone());
         block.terrain = Some(terrain);
@@ -633,61 +967,14 @@ impl World {
         block.displayed_field = Some(displayed);
         block.top_item = Some(top_item);
         block.item_count = Some(item_count);
-        block.lit = Some(vec![lit_level; TILES]);
-        block.seen = Some(vec![seen_val; TILES]);
+        // S3: the computed visibility cache (crate::visibility).
+        block.lit = Some(vis.lit.clone());
+        block.seen = Some(vis.seen.clone());
         block.has_graffiti = Some(graffiti);
-        block.outside = if self.emit_outside {
-            Some(self.outside_for(reg, b))
-        } else {
-            None
-        };
+        block.outside = Some(vis.outside.clone());
+        block.light_frac = Some(vis.frac.clone());
+        block.light_tint = Some(vis.tint.clone());
         block
-    }
-
-    fn outside_for(&self, reg: &DefRegistry, b: &BlockState) -> Vec<bool> {
-        let z = b.origin.z;
-        if z < 0 {
-            return vec![false; TILES];
-        }
-        if z > 0 {
-            return vec![true; TILES];
-        }
-        // z == 0 enclosure flood (see module docs).
-        let barrier: Vec<bool> = b
-            .tiles
-            .iter()
-            .map(|t| {
-                reg.def_by_id(Kind::Terrain, t.terrain).is_some_and(|d| {
-                    d.flags
-                        .iter()
-                        .any(|f| f == "WALL" || f == "DOOR" || f == "WINDOW")
-                })
-            })
-            .collect();
-        let mut reached = vec![false; TILES];
-        let mut stack: Vec<(usize, usize)> = Vec::new();
-        for i in 0..SUBMAP {
-            for (x, y) in [(i, 0), (i, SUBMAP - 1), (0, i), (SUBMAP - 1, i)] {
-                if !barrier[idx(x, y)] && !reached[idx(x, y)] {
-                    reached[idx(x, y)] = true;
-                    stack.push((x, y));
-                }
-            }
-        }
-        while let Some((x, y)) = stack.pop() {
-            for (nx, ny) in [
-                (x.wrapping_sub(1), y),
-                (x + 1, y),
-                (x, y.wrapping_sub(1)),
-                (x, y + 1),
-            ] {
-                if nx < SUBMAP && ny < SUBMAP && !barrier[idx(nx, ny)] && !reached[idx(nx, ny)] {
-                    reached[idx(nx, ny)] = true;
-                    stack.push((nx, ny));
-                }
-            }
-        }
-        (0..TILES).map(|i| barrier[i] || reached[i]).collect()
     }
 }
 
@@ -699,6 +986,12 @@ pub fn submap_index(pos: [i32; 3]) -> (i32, i32, i32) {
         pos[1].div_euclid(SUBMAP as i32),
         pos[2],
     )
+}
+
+/// Absolute origin of the submap containing a tile pos.
+pub fn submap_origin(pos: [i32; 3]) -> (i32, i32, i32) {
+    let s = SUBMAP as i32;
+    (pos[0].div_euclid(s) * s, pos[1].div_euclid(s) * s, pos[2])
 }
 
 /// One tile's full wire state, extracted from a `SubmapBlockT` —
@@ -718,6 +1011,24 @@ struct TileView {
     seen: u8,
     graffiti: bool,
     outside: bool,
+    frac: u8,
+    tint: [u8; 3],
+}
+
+impl TileView {
+    /// True when two views differ ONLY in the light channels
+    /// (lit/seen/frac/tint) — the LightUpdate folding test.
+    fn light_only_differs(&self, other: &TileView) -> bool {
+        self.terrain == other.terrain
+            && self.furniture == other.furniture
+            && self.trap == other.trap
+            && self.fields == other.fields
+            && self.displayed == other.displayed
+            && self.top_item == other.top_item
+            && self.item_count == other.item_count
+            && self.graffiti == other.graffiti
+            && self.outside == other.outside
+    }
 }
 
 fn tile_view(b: &SubmapBlockT, i: usize) -> TileView {
@@ -740,6 +1051,14 @@ fn tile_view(b: &SubmapBlockT, i: usize) -> TileView {
         .and_then(|v| v.get(i))
         .map(|d| (d.field_type, d.intensity))
         .unwrap_or((0, 0));
+    let tint = b
+        .light_tint
+        .as_ref()
+        .and_then(|t| {
+            let j = i * 3;
+            Some([*t.get(j)?, *t.get(j + 1)?, *t.get(j + 2)?])
+        })
+        .unwrap_or([255, 255, 255]);
     TileView {
         terrain: at(&b.terrain, i, 0),
         furniture: at(&b.furniture, i, 0),
@@ -752,18 +1071,21 @@ fn tile_view(b: &SubmapBlockT, i: usize) -> TileView {
         seen: at(&b.seen, i, 0),
         graffiti: at(&b.has_graffiti, i, false),
         outside: at(&b.outside, i, false),
+        frac: at(&b.light_frac, i, 0),
+        tint,
     }
 }
 
 /// Diff one tile between the last-sent block and the current
-/// block; `Some(TileChange)` with the CURRENT state if anything
-/// differs. lit/seen/outside are compared (and carried) as
-/// stored — recomputing them is S3.
-fn diff_tile(last: &SubmapBlockT, cur: &SubmapBlockT, i: usize) -> Option<TileChangeT> {
+/// block; `Some((TileChange, light_only))` with the CURRENT
+/// state if anything differs — `light_only` marks diffs the
+/// LightUpdate folding may carry (lit/seen/frac/tint only).
+fn diff_tile(last: &SubmapBlockT, cur: &SubmapBlockT, i: usize) -> Option<(TileChangeT, bool)> {
     let (lv, cv) = (tile_view(last, i), tile_view(cur, i));
     if lv == cv {
         return None;
     }
+    let light_only = lv.light_only_differs(&cv);
     let o = cur.origin.as_ref().expect("blocks always carry an origin");
     let mut tc = TileChangeT::default();
     tc.pos = Some(v3(
@@ -800,7 +1122,11 @@ fn diff_tile(last: &SubmapBlockT, cur: &SubmapBlockT, i: usize) -> Option<TileCh
         intensity: cv.displayed.1,
     });
     tc.outside = cv.outside;
-    Some(tc)
+    tc.light_frac = cv.frac;
+    tc.light_tint_r = cv.tint[0];
+    tc.light_tint_g = cv.tint[1];
+    tc.light_tint_b = cv.tint[2];
+    Some((tc, light_only))
 }
 
 /// The displayed-field rule (§3.2, as in the sample house): fire

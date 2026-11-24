@@ -37,6 +37,7 @@ fn spawn_server(path: PathBuf) -> JoinHandle<proto::Result<()>> {
                 .join("../../tools/sim-defs/generated/defs.json"),
         ),
         scene_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scenes/stub_house.toml"),
+        weather: None,
     };
     std::thread::spawn(move || sim::run_server(&config))
 }
@@ -127,7 +128,11 @@ fn s0_handshake_snapshot_turn_ping_shutdown() {
     match recv(&mut stream, &mut dec) {
         MessageT::TileDefs(td) => {
             let defs = td.defs.unwrap_or_default();
-            assert_eq!(defs.len(), 13_532, "full Option C def table (0.I-1 base census)");
+            assert_eq!(
+                defs.len(),
+                13_532,
+                "full Option C def table (0.I-1 base census)"
+            );
             assert_eq!(
                 td.connect_groups.unwrap_or_default().len(),
                 36,

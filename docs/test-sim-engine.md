@@ -143,6 +143,21 @@ friendlier protocol:
 - `outside[]` / `TileChange.outside` = the game's own test,
   resolved game-side: `map::is_outside(p) && !map::is_roofed(p)`;
   z < 0 is never outside.
+- **S3 implementation notes:** the sim's calendar is a port of the
+  0.I-1 formulas (`sun_azimuth_altitude`, `sun_light_at`,
+  moon phase/light, incident sunlight/moonlight,
+  `natural_light_level`, `get_vision_threshold`) at the game's
+  fixed location (42.36, −71.06) with the default 91-day seasons;
+  1 turn = 1 s (see the §3.2 correction). Sunrise/sunset are
+  solved numerically from the same −1° altitude equation the
+  game's iterative solver answers. Weather changes mid-run via
+  scene `[[weather_script]]` entries (absolute calendar turn →
+  preset), `World::advance_clock` (fast-forward emitting the
+  cadence carriers), `World::set_weather`, or the sim-server
+  `--weather` startup override. A turn's flush is a message list
+  (Delta/Snapshot + optional LightUpdate(s) + optional
+  EnvironmentUpdate); a purely-light diff folds to one
+  LightUpdate per affected submap instead of a Delta.
 
 ### 2.6 TileDefs and transforms
 - Sent once at connect: string id, kind (Terrain/Furniture/Trap/
@@ -251,8 +266,8 @@ consumes its output:
 | Fields | Fire spreads to adjacent flammable tiles, intensity ±, burns out to smoke; smoke drifts with wind and decays. `displayed_field` recomputed by the game's rule (highest intensity, fire over smoke on tie — as in the sample house) | fx field volumes, heat/smoke coupling, displayed-field correctness from Delta alone |
 | Creatures | Spawn (script or scenario), simple AI per turn: idle → wander (seeded) → chase player if visible (LOS + lit != BLANK) → attack in range (hp_frac drops, HitFlash). Death ⇒ `entity_removed` + optional corpse item | Billboard spawn/move/despawn, occlusion, picking, entity delta handling |
 | Vehicles | Static by default; scenario can translate/rotate (parts' absolute positions recomputed sim-side, `face_deg` continuous), damage a part (hp_frac, broken flag), remove it | Vehicle stamping, roof-part split, restamp on damage/removal |
-| Time / weather | Every turn advances the calendar (6 s/turn default, scenario-settable); sun/moon recomputed; weather is a named preset or script (clear/rain/fog/thunderstorm, matching `SkyScene::named` vocabulary) with resolved numerics | SkyState, Phase 10 GI, fog/precip, EnvironmentUpdate cadence (10-min rule) |
-| Visibility | After any world/player change: LOS flood from player (radius ≤ 60, blocked by opaque defs, 3D z-range rule), lit from sun/moon + field light, **`light_frac`/`light_tint` derived from the same apparent-light values (§2.3)**, `outside` = no roof/explicit roof tile overhead, previously-seen → MEMORIZED memory tiles | Lighting bake, VisibilityMask (BLANK excluded in both renderers), sky-exposure channel (wire, not column scan) |
+| Time / weather | Every turn advances the calendar (**1 s/turn** — S3 grounded this in the 0.I-1 source: `calendar::turn += 1_turns` per do_turn and `time_duration`'s unit IS the turn; the earlier "6 s/turn" wording came from the old fixture convention and is superseded); sun/moon recomputed; weather is a named preset or script (clear/sunny/cloudy/rain/storm/lightning, resolved from 0.I-1 `weather_type.json`; "clear" is the game's built-in default type — it has no JSON entry) | SkyState, Phase 10 GI, fog/precip, EnvironmentUpdate cadence (10-min rule) |
+| Visibility | After any world/player change: LOS flood from player (radius ≤ 60, blocked by opaque defs, 3D z-range rule), lit from sun/moon + scene light sources (field light is S5), **`light_frac`/`light_tint` derived from the same apparent-light values (§2.3)**, `outside` = `is_outside && !is_roofed` resolved sim-side (S3: `build_outside_cache`'s INDOORS Chebyshev-1 stamp + the backported `is_roofed` upward walk — NOT the S1 enclosure-flood heuristic, and the scene `emit_outside` key is vestigial; the array is always emitted), previously-seen → MEMORIZED memory tiles | Lighting bake, VisibilityMask (BLANK excluded in both renderers), sky-exposure channel (wire, not column scan) |
 | Map shift | Player crossing a submap edge recentres the bubble: epoch++, fresh Snapshot | SeqTracker epoch handling, resync (8.12) |
 | UI state | See §3.3 | UI compositing, input routing, 4.12 latency path |
 
@@ -308,7 +323,7 @@ parity) the engine gates:
 # scenes/roofed_house.toml
 name = "roofed_house"
 seed = 1
-time = "noon"            # or turn = 309600
+time = "noon"            # preset (midnight/dawn/noon/dusk), or turn = 43200
 weather = "clear"
 player = [6, 6, 0]
 [z0]
@@ -319,7 +334,16 @@ map = [ "............", ".##########.", ... ]
 ...
 [[spawn]]  type = "mon_zombie", pos = [9, 6, 0], hp_frac = 200
 [[vehicle]] name = "car", face_deg = 37.5, parts = [...]
+[[light]]  pos = [12, 9, 0], color = [1.0, 0.6, 0.2], intensity = 6.0
+[[weather_script]]  turn = 50000, weather = "lightning"
 ```
+S3 scene additions: `turn = <int>` (absolute calendar start turn,
+wins over the `time` preset); `[[light]]` — a scene-declared
+light source (position, float-RGB colour energy, luminance at
+the source tile) feeding the visibility recompute's lm +
+colour caches, the sim's analogue of a def's `light_emitted`;
+`[[weather_script]]` — at the entry's absolute calendar turn the
+weather preset changes (drives T6's storm segment).
 ASCII layers per z keep scenes reviewable in a diff and close to
 CDDA's own mapgen mental model. Furniture/fields/items are legend
 characters on an overlay layer or explicit `[[place]]` entries.
@@ -422,7 +446,7 @@ updated in the same change.
 | **S1a — Full def importer (Option C, Joey's pick)** | `tools/sim-defs`: census of `fork-src/cdda/data/json`, `copy-from`/abstract resolution, connect-group indices from load order, nested bash/open/close/roof extraction, `hot_flags` from the `ter_furn_flag` order, fg/bg join from the tileset crate; generated table checked in + census/closure validation | Generated counts match the source census per kind; zero dangling transform strings; zero abstracts emitted; spot-parity vs the fork harness's mock defs and vs hand-checked real entries (glass door bash chain, `t_door_c` open/roof) |
 | **S1 — Static scenes over the wire** | Def registry from S1a's generated table, scene loader, Snapshot builder with diff infrastructure in place (all-dirty first send) | stub_house Snapshot ≡ `sample_snapshot()`; roofed-house pair matches the existing fixtures; engine capture of a sim scene ≡ capture of the same scene as a fixture (both renderers); **TileDefs connect time + message size measured and recorded** |
 | **S2 — Turn loop: movement, doors, Delta** | Input→turn→dirty-submap diff→Delta; movement/collision; open/close transforms | **T1 (world/wire half) + T5 pass**; mirror invariant holds for a scripted 200-turn walk |
-| **S3 — Visibility & environment** | LOS/lit/seen/memory/outside recompute; **`light_frac` + `light_tint` recompute and wire export (Addendum 11 light amendment, §2.3)**; calendar + weather presets/scripts; EnvironmentUpdate cadence; LightUpdate folding | **T1 (full, incl. render) + T6 pass**; outside/lit grids match a hand-computed expectation for street_block at noon and midnight, **including per-tile frac/tint (a coloured source's pool tints, tiles outside it stay white)** |
+| **S3 — Visibility & environment** ✅ DONE 2026-11-23 | LOS/lit/seen/memory/outside recompute; **`light_frac` + `light_tint` recompute and wire export (Addendum 11 light amendment, §2.3)**; calendar + weather presets/scripts; EnvironmentUpdate cadence; LightUpdate folding | **T1 (full, incl. render) + T6 pass**; outside/lit grids match a hand-computed expectation for street_block at noon and midnight, **including per-tile frac/tint (a coloured source's pool tints, tiles outside it stay white)** — record in plan.md Phase 11 (incl. the LOW→BRIGHT→LOW correction to T1's expected lit sequence and the grid-level render-half deviation) |
 | **S4 — UI** | shm writer (double-buffer, header, dirty rect), UI state machine (§3.3), Resize handling | **T2 pass**; ui-share gates re-run against sim-written frames (not just synthetic-written); torn-frame reader test against the sim writer |
 | **S5 — Creatures, fields, effects** | Spawn/AI/combat/death; field spread/decay + displayed-field rule; Effects emission | **T3 + T7 pass** |
 | **S6 — Destruction, items, vehicles** | Bash chains, furniture removal, item piles + inventory list, vehicle move/damage/remove | **T4 + T8 + T11 pass**; fine-layer restamp assertions in engine gates |

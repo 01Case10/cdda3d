@@ -40,6 +40,10 @@ pub struct ServerConfig {
     pub defs_path: Option<PathBuf>,
     /// Scene file to load and serve.
     pub scene_path: PathBuf,
+    /// Weather preset override (S3); `None` = the scene's own
+    /// `weather` key. Mid-run changes use the scene's
+    /// `[[weather_script]]` entries or `World::set_weather`.
+    pub weather: Option<String>,
 }
 
 fn send(stream: &mut UnixStream, msg: &MessageT) -> proto::Result<()> {
@@ -70,8 +74,11 @@ fn recv(stream: &mut UnixStream, dec: &mut FrameDecoder) -> proto::Result<Option
 pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     let reg = DefRegistry::load_resolved(config.defs_path.as_deref())
         .map_err(|e| proto::ProtoError::Malformed(format!("defs: {e}")))?;
-    let scene = Scene::load_file(&config.scene_path)
+    let mut scene = Scene::load_file(&config.scene_path)
         .map_err(|e| proto::ProtoError::Malformed(format!("scene: {e}")))?;
+    if let Some(w) = &config.weather {
+        scene.weather = w.clone();
+    }
     let mut world = World::from_scene(&reg, &scene)
         .map_err(|e| proto::ProtoError::Malformed(format!("world: {e}")))?;
     eprintln!(
@@ -169,11 +176,12 @@ fn serve_one(listener: &UnixListener, reg: &DefRegistry, world: &mut World) -> p
                     "sim-server: input kind={:?} key={} pressed={}",
                     input.kind, input.key_code, input.pressed
                 );
-                // One pressed Key = one turn (S2 rules); the turn's
-                // Delta/Snapshot is the only reply. Releases,
-                // non-Key inputs and Open/Close arming keys produce
-                // no message.
-                if let Some(msg) = world.apply_input(reg, &input) {
+                // One pressed Key = one turn (S2 rules); the
+                // turn's flush (Delta/Snapshot + any LightUpdate
+                // / EnvironmentUpdate, S3) is the only reply.
+                // Releases, non-Key inputs and Open/Close arming
+                // keys produce no messages.
+                for msg in world.apply_input(reg, &input) {
                     send(&mut stream, &msg)?;
                 }
             }

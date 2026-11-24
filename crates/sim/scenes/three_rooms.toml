@@ -1,0 +1,39 @@
+# three_rooms — the S3 tile-memory workhorse: three rooms in a
+# row (24x12 = 2 submaps), divided by walls with one door each.
+# The player starts in the west room, visits the middle room,
+# comes back and closes the door: the middle room leaves
+# visibility and must surface as MEMORIZED memory blocks, while
+# the east room (never visited, door never opened) stays BLANK
+# with no memory at all.
+#
+# West room x 1..7, middle x 9..15, east x 17..22; doors at
+# (8,5) and (16,5) in the divider walls.
+name = "three_rooms"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [3, 5, 0]
+environment = true
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c" }
+map = [
+  "########################",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "#.......D.......D......#",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "#.......#.......#......#",
+  "########################",
+]
+
+[[spawn]]
+type = "player"
+pos = [3, 5, 0]
+hp_frac = 255
+facing = "NONE"

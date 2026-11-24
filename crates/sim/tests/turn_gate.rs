@@ -6,13 +6,16 @@
 //!   (blocked), `o`+dir opens it (TileChange t_door_c -> t_door_o),
 //!   step out, cross a submap boundary (fresh Snapshot, epoch+1),
 //!   walk back in, `c`+dir closes it. Seq advances by exactly 1
-//!   per turn throughout. lit/outside values are NOT asserted —
-//!   recompute is S3.
+//!   per message throughout (S3: a turn produces a flush of
+//!   messages). lit/outside VALUES are asserted in
+//!   environment_gate.rs (S3); this file asserts the mechanics.
 //! - T5: the full door cycle, including no-op open/close turns
 //!   producing NO TileChange for the door tile.
-//! - The 200-turn mirror invariant: applying every Delta to a
-//!   mirror of the initial Snapshot reproduces a fresh Snapshot
-//!   after every single turn.
+//! - The 200-turn mirror invariant: applying every message of
+//!   every flush to a mirror of the initial Snapshot reproduces
+//!   a fresh Snapshot after every single turn — tiles including
+//!   lit/seen/outside/frac/tint, entities, and tile memory
+//!   (S3 extension).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -68,11 +71,14 @@ impl Driver {
         )
     }
 
-    /// Send one key; returns the turn's message (None for arming
-    /// keys), asserting the seq/epoch contract on any message.
-    fn key(&mut self, c: char) -> Option<MessageT> {
-        let msg = self.world.apply_input(&self.reg, &key_input(c));
-        if let Some(m) = &msg {
+    /// Send one key; returns the turn's flush (empty for arming
+    /// keys), asserting the seq/epoch contract on every message:
+    /// seq advances by exactly 1 per message in flush order,
+    /// Deltas/LightUpdates/EnvironmentUpdates carry the current
+    /// epoch, a Snapshot bumps it by exactly 1.
+    fn key(&mut self, c: char) -> Vec<MessageT> {
+        let msgs = self.world.apply_input(&self.reg, &key_input(c));
+        for m in &msgs {
             match m {
                 MessageT::Delta(d) => {
                     assert_eq!(
@@ -97,24 +103,57 @@ impl Driver {
                     self.seq = s.seq;
                     self.epoch = s.epoch;
                 }
-                other => panic!("a turn must produce a Delta or Snapshot, got {other:?}"),
+                MessageT::LightUpdate(lu) => {
+                    assert_eq!(lu.seq, self.seq + 1, "light update seq (key {c:?})");
+                    assert_eq!(lu.epoch, self.epoch, "light update epoch (key {c:?})");
+                    self.seq = lu.seq;
+                }
+                MessageT::EnvironmentUpdate(e) => {
+                    assert_eq!(e.seq, self.seq + 1, "environment seq (key {c:?})");
+                    assert_eq!(e.epoch, self.epoch, "environment epoch (key {c:?})");
+                    self.seq = e.seq;
+                }
+                other => panic!("a turn produced an unexpected message: {other:?}"),
             }
         }
-        msg
+        msgs
     }
 
+    /// The flush's Delta (most turns at noon produce exactly
+    /// one; light-only turns fold to LightUpdates instead and
+    /// are not driven through this helper).
     fn delta(&mut self, c: char) -> Box<DeltaT> {
-        match self.key(c) {
-            Some(MessageT::Delta(d)) => d,
-            other => panic!("key {c:?}: expected Delta, got {other:?}"),
-        }
+        let msgs = self.key(c);
+        let mut deltas: Vec<Box<DeltaT>> = msgs
+            .into_iter()
+            .filter_map(|m| match m {
+                MessageT::Delta(d) => Some(d),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            deltas.len(),
+            1,
+            "key {c:?}: expected exactly one Delta in the flush"
+        );
+        deltas.pop().expect("one delta")
     }
 
     fn snapshot(&mut self, c: char) -> Box<SnapshotT> {
-        match self.key(c) {
-            Some(MessageT::Snapshot(s)) => s,
-            other => panic!("key {c:?}: expected Snapshot, got {other:?}"),
-        }
+        let msgs = self.key(c);
+        let mut snaps: Vec<Box<SnapshotT>> = msgs
+            .into_iter()
+            .filter_map(|m| match m {
+                MessageT::Snapshot(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            snaps.len(),
+            1,
+            "key {c:?}: expected exactly one Snapshot in the flush"
+        );
+        snaps.pop().expect("one snapshot")
     }
 
     fn player(&self) -> [i32; 3] {
@@ -191,7 +230,7 @@ fn t1_outside_then_back_inside() {
     assert_eq!(drv.terrain_str(DOOR), "t_door_c", "bump does not auto-open");
 
     // o + south opens it.
-    assert!(drv.key('o').is_none(), "arming Open produces no message");
+    assert!(drv.key('o').is_empty(), "arming Open produces no message");
     let d = drv.delta('s');
     assert_eq!(
         drv.player(),
@@ -252,7 +291,7 @@ fn t1_outside_then_back_inside() {
     assert_eq!(drv.player(), [5, 8, 0], "back in the (open) doorway");
     drv.delta('k');
     assert_eq!(drv.player(), [5, 7, 0], "back inside");
-    assert!(drv.key('c').is_none(), "arming Close produces no message");
+    assert!(drv.key('c').is_empty(), "arming Close produces no message");
     let d = drv.delta('s');
     let tc = change_at(&d, DOOR).expect("close must emit a TileChange for the door tile");
     assert_eq!(
@@ -310,7 +349,7 @@ fn t5_door_cycle_and_noops() {
     drv.delta('s');
     drv.delta('s');
     assert_eq!(drv.player(), [5, 7, 0]);
-    assert!(drv.key('o').is_none());
+    assert!(drv.key('o').is_empty());
     let d = drv.delta('s');
     assert!(change_at(&d, DOOR).is_some(), "open emits a TileChange");
     drv.delta('s');
@@ -318,7 +357,7 @@ fn t5_door_cycle_and_noops() {
     assert_eq!(drv.player(), [5, 9, 0], "through the door and outside");
 
     // Close behind (north = back toward the door).
-    assert!(drv.key('c').is_none());
+    assert!(drv.key('c').is_empty());
     let d = drv.delta('k');
     let tc = change_at(&d, DOOR).expect("close emits a TileChange");
     assert_eq!(
@@ -328,7 +367,7 @@ fn t5_door_cycle_and_noops() {
 
     // Close AGAIN: no-op — the Delta must carry no TileChange
     // for the door tile.
-    assert!(drv.key('c').is_none());
+    assert!(drv.key('c').is_empty());
     let d = drv.delta('k');
     assert!(
         change_at(&d, DOOR).is_none(),
@@ -338,14 +377,14 @@ fn t5_door_cycle_and_noops() {
     assert_eq!(drv.terrain_str(DOOR), "t_door_c");
 
     // Re-open, then open AGAIN: same no-op rule.
-    assert!(drv.key('o').is_none());
+    assert!(drv.key('o').is_empty());
     let d = drv.delta('k');
     let tc = change_at(&d, DOOR).expect("re-open emits a TileChange");
     assert_eq!(
         drv.reg.string_of(Kind::Terrain, tc.terrain),
         Some("t_door_o")
     );
-    assert!(drv.key('o').is_none());
+    assert!(drv.key('o').is_empty());
     let d = drv.delta('k');
     assert!(
         change_at(&d, DOOR).is_none(),
@@ -372,12 +411,18 @@ struct TileMirror {
     seen: u8,
     graffiti: bool,
     outside: bool,
+    frac: u8,
+    tint: [u8; 3],
 }
 
 #[derive(Debug, Default, PartialEq)]
 struct Mirror {
     tiles: HashMap<[i32; 3], TileMirror>,
     entities: HashMap<u64, EntityT>,
+    /// Every tile ever seen -> (terrain, furniture) as last
+    /// seen. A fresh Snapshot exposes this as its visible tiles
+    /// plus its memory_blocks; the two views must agree.
+    memory: HashMap<[i32; 3], (u32, u32)>,
 }
 
 fn mirror_from_snapshot(snap: &SnapshotT) -> Mirror {
@@ -437,8 +482,48 @@ fn mirror_from_snapshot(snap: &SnapshotT) -> Mirror {
                         .and_then(|v| v.get(i))
                         .copied()
                         .unwrap_or(false),
+                    frac: b
+                        .light_frac
+                        .as_ref()
+                        .and_then(|v| v.get(i))
+                        .copied()
+                        .unwrap_or(0),
+                    tint: b
+                        .light_tint
+                        .as_ref()
+                        .and_then(|v| {
+                            let j = i * 3;
+                            Some([*v.get(j)?, *v.get(j + 1)?, *v.get(j + 2)?])
+                        })
+                        .unwrap_or([255, 255, 255]),
                 },
             );
+        }
+    }
+    // Memory: visible tiles (lit != BLANK in the live blocks)
+    // plus the snapshot's memory blocks (MEMORIZED tiles).
+    for (pos, t) in &m.tiles {
+        if t.lit != LitLevel::BLANK {
+            m.memory.insert(*pos, (t.terrain, t.furniture));
+        }
+    }
+    for b in snap
+        .memory_blocks
+        .as_ref()
+        .map(|v| v.as_slice())
+        .unwrap_or(&[])
+    {
+        let o = b.origin.as_ref().expect("origin");
+        for i in 0..144usize {
+            if b.lit.as_ref().and_then(|v| v.get(i)).copied() == Some(LitLevel::MEMORIZED) {
+                let at = |arr: &Option<Vec<u32>>| {
+                    arr.as_ref().and_then(|v| v.get(i)).copied().unwrap_or(0)
+                };
+                m.memory.insert(
+                    [o.x + (i % 12) as i32, o.y + (i / 12) as i32, o.z],
+                    (at(&b.terrain), at(&b.furniture)),
+                );
+            }
         }
     }
     for e in snap.entities.as_ref().map(|v| v.as_slice()).unwrap_or(&[]) {
@@ -463,8 +548,12 @@ fn mirror_apply(m: &mut Mirror, msg: &MessageT) {
                     .as_ref()
                     .map(|df| (df.field_type, df.intensity))
                     .unwrap_or((0, 0));
+                let pos = [p.x, p.y, p.z];
+                if tc.lit != LitLevel::BLANK {
+                    m.memory.insert(pos, (tc.terrain, tc.furniture));
+                }
                 m.tiles.insert(
-                    [p.x, p.y, p.z],
+                    pos,
                     TileMirror {
                         terrain: tc.terrain,
                         furniture: tc.furniture,
@@ -477,6 +566,8 @@ fn mirror_apply(m: &mut Mirror, msg: &MessageT) {
                         seen: tc.seen,
                         graffiti: tc.has_graffiti,
                         outside: tc.outside,
+                        frac: tc.light_frac,
+                        tint: [tc.light_tint_r, tc.light_tint_g, tc.light_tint_b],
                     },
                 );
             }
@@ -496,6 +587,51 @@ fn mirror_apply(m: &mut Mirror, msg: &MessageT) {
             {
                 m.entities.remove(id);
             }
+        }
+        MessageT::LightUpdate(lu) => {
+            let o = lu.origin.as_ref().expect("light update origin");
+            for i in 0..144usize {
+                let pos = [o.x + (i % 12) as i32, o.y + (i / 12) as i32, o.z];
+                let lit = lu
+                    .lit
+                    .as_ref()
+                    .and_then(|v| v.get(i))
+                    .copied()
+                    .unwrap_or(LitLevel::BLANK);
+                if let Some(t) = m.tiles.get_mut(&pos) {
+                    t.lit = lit;
+                    t.seen = lu
+                        .seen
+                        .as_ref()
+                        .and_then(|v| v.get(i))
+                        .copied()
+                        .unwrap_or(0);
+                    t.frac = lu
+                        .light_frac
+                        .as_ref()
+                        .and_then(|v| v.get(i))
+                        .copied()
+                        .unwrap_or(0);
+                    if let Some(tint) = &lu.light_tint {
+                        let j = i * 3;
+                        if let (Some(r), Some(g), Some(b)) =
+                            (tint.get(j), tint.get(j + 1), tint.get(j + 2))
+                        {
+                            t.tint = [*r, *g, *b];
+                        }
+                    }
+                }
+                if lit != LitLevel::BLANK {
+                    if let Some(t) = m.tiles.get(&pos) {
+                        let tf = (t.terrain, t.furniture);
+                        m.memory.insert(pos, tf);
+                    }
+                }
+            }
+        }
+        MessageT::EnvironmentUpdate(_) => {
+            // No tile/entity state rides a standalone
+            // EnvironmentUpdate; seq/epoch are the Driver's job.
         }
         other => panic!("turn produced a non-turn message: {other:?}"),
     }
@@ -519,11 +655,14 @@ fn mirror_invariant_200_turns() {
         let c = PATTERN[inputs % PATTERN.len()];
         inputs += 1;
         assert!(inputs < 10_000, "pattern stopped producing turns");
-        let Some(msg) = drv.key(c) else {
+        let msgs = drv.key(c);
+        if msgs.is_empty() {
             continue; // arming key: not a turn
-        };
+        }
         turns += 1;
-        mirror_apply(&mut mirror, &msg);
+        for msg in &msgs {
+            mirror_apply(&mut mirror, msg);
+        }
         // After EVERY turn: mirror == a fresh snapshot of the world.
         let fresh = drv.world.build_snapshot(&drv.reg, 0, 0);
         let fresh_mirror = mirror_from_snapshot(&fresh);

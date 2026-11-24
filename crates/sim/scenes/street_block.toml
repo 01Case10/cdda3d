@@ -77,3 +77,12 @@ type = "player"
 pos = [5, 5, 0]
 hp_frac = 255
 facing = "NONE"
+
+# S3: a streetlamp on the yard row east of the house (the T1
+# walkway row). Warm colour, modest intensity so the midnight
+# pool shows a frac gradient instead of saturating: luminance 6
+# at the source tile, exp(-0.0383/tile) falloff through the air.
+[[light]]
+pos = [12, 9, 0]
+color = [1.0, 0.6, 0.2]
+intensity = 6.0

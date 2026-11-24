@@ -5,8 +5,22 @@
 //! hand-assigned; registry ids are per-kind sorted), so every id
 //! is translated to its string id through its OWN table before
 //! comparison: sample ids via the sample TileDefs, sim ids via
-//! the registry. Everything else — fields, items, lit/seen/
-//! outside, entities, vehicles, view — is compared directly.
+//! the registry. Everything else — fields, items, entities,
+//! vehicles, view — is compared directly.
+//!
+//! S3 AMENDMENT (2026-11-23): lit/seen/outside are no longer
+//! compared against the fixtures. The samples encode the Phase
+//! 1/10 stub's documented simplifications (lit by z-level rule;
+//! stub_house outside = "perimeter ring is exposed"), which the
+//! real exporter would not produce either: the sim now computes
+//! all three from the game's own models (apparent_light_at,
+//! build_outside_cache's INDOORS stamp — which marks the stub
+//! house's wall ring NOT outside, through the wall, by design).
+//! The computed values are gated against hand-derived
+//! expectations in visibility_gate.rs / environment_gate.rs;
+//! here we assert only that the arrays are present and full
+//! length (the sim always emits them, as the real exporter
+//! does).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -226,14 +240,27 @@ fn assert_parity(scene_name: &str, sample: &SnapshotT, sample_defs: &[&TileDefsT
             pb.top_item.as_ref().unwrap(),
         );
         c.eq(&format!("{ctx} item_count"), &sb.item_count, &pb.item_count);
-        c.eq(&format!("{ctx} lit"), &sb.lit, &pb.lit);
-        c.eq(&format!("{ctx} seen"), &sb.seen, &pb.seen);
+        // lit/seen/outside: computed by the sim (S3), stub
+        // simplifications in the fixtures — see the module docs.
+        // Assert presence + shape only.
+        for (name, len) in [
+            ("lit", sb.lit.as_ref().map(|v| v.len())),
+            ("seen", sb.seen.as_ref().map(|v| v.len())),
+            ("outside", sb.outside.as_ref().map(|v| v.len())),
+            ("light_frac", sb.light_frac.as_ref().map(|v| v.len())),
+        ] {
+            c.eq(&format!("{ctx} {name} length"), &len, &Some(144usize));
+        }
+        c.eq(
+            &format!("{ctx} light_tint length"),
+            &sb.light_tint.as_ref().map(|v| v.len()),
+            &Some(432usize),
+        );
         c.eq(
             &format!("{ctx} has_graffiti"),
             &sb.has_graffiti,
             &pb.has_graffiti,
         );
-        c.eq(&format!("{ctx} outside"), &sb.outside, &pb.outside);
     }
 
     // Entities: sprite, pos, facing, overlays, hp_frac, flags, and
