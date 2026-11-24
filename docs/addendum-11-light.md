@@ -268,5 +268,23 @@ lighting/treebuild/engine suites green, no goldens regen'd).
   — so albedo and bake are applied twice to emitter light
   (the flat path has no such extra factor, which is why it
   works). The ceiling scalar must be the bake (lit factor)
-  alone. Fix + a textured raster gate assertion are the
-  follow-up; not yet done.
+  alone. **FIXED 2026-11-23 @ 59dd940, merged to local main
+  @ f4bda3a (Joey approved; parent re-verified, including
+  re-running the new gate against the pre-fix sources to
+  confirm it fails there):** `bake_pass_meshes` now stores
+  the pure light multiplier (intensity × tint; Memorized =
+  env tint × MEMORIZED_BRIGHTNESS, desaturation not
+  representable in a multiplier; Hidden = 0) on textured
+  vertices (layer ≠ FLAT_LAYER, incl. macro/blend), flat
+  vertices unchanged; the shader's textured branches use
+  `input.color.rgb` per-channel as the ceiling. New gate
+  `raster_textured_beam_pool_brightens_and_dark_tile_is_capped`:
+  unfixed pool 0.0162 → 0.0271 (rise 0.011, FAIL); fixed
+  0.0162 → 0.0431 (2.66×; smaller than the flat rise because
+  the UltiCa grass texel is much darker than the flat grass
+  colour and the emitter term is texel-multiplied in both
+  paths); DARK centre capped (rise 0.71× pool rise, asserted
+  < 0.85×). Full lighting+mesher+treebuild+engine suites:
+  233 passed / 0 failed, goldens without regen. Emitter-less
+  textured output unchanged (the ceiling only multiplies
+  the emitter term, exactly 0 for an empty set).
