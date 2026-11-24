@@ -1,0 +1,38 @@
+# shrub_walk — movecost time-scaling scene (Phase 11 follow-up).
+# A floor corridor with two t_shrub tiles in a row and a tree
+# beside the start, for the gate in tests/movecost_time_gate.rs.
+# Raw costs (defs.json, terrain JSON `move_cost` units):
+# t_floor 2, t_shrub 8, t_tree 0 (impassable).
+#
+# Player at (2,5) on floor, walking east:
+#   (2,5) floor -> (3,5) shrub -> (4,5) shrub -> (5,5) floor
+# North of the start, (2,4) is a tree: a blocked-step pin.
+name = "shrub_walk"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [2, 5, 0]
+environment = true
+
+[z0]
+legend = { "." = "t_floor", "S" = "t_shrub", "T" = "t_tree" }
+map = [
+  "............",
+  "............",
+  "............",
+  "............",
+  "..T.........",
+  "...SS.......",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+]
+
+[[spawn]]
+type = "player"
+pos = [2, 5, 0]
+hp_frac = 255
+facing = "NONE"

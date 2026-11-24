@@ -49,9 +49,8 @@
 //! through. The movecost rule replaced it 2026-11-23 (Joey's
 //! call); the regression gate is `movecost_passability` in
 //! tests/turn_gate.rs, which fails on the old rule. The cost
-//! itself does not yet scale turn length (every step is one
-//! turn regardless of cost) — that is a later refinement, not
-//! part of passability.
+//! also scales turn length (see the Phase 11 follow-up
+//! section below).
 //!
 //! S6 additions:
 //! - **Bash (`s` + direction):** the adjacent tile advances
@@ -121,6 +120,61 @@
 //!   path: fresh Snapshot, epoch + 1 — the contract's
 //!   "snapshot window recentres", in the sim's no-culling
 //!   form (a Snapshot carries all scene submaps).
+//!
+//! Movecost time scaling (Phase 11 follow-up, 2026-11-24):
+//! - **Model.** Upstream runs on move points: 1 calendar
+//!   turn = 1 second = 100 points (`time_duration::
+//!   from_moves(t) = t/100` turns, `from_seconds(t) = t`
+//!   turns — src/calendar.h:216-222); `do_turn()` advances
+//!   `calendar::turn += 1_turns` once per call (src/
+//!   do_turn.cpp:475) and each creature's points replenish
+//!   by its speed per second (`moves += get_speed()`,
+//!   src/creature.cpp:388). A walking step deducts
+//!   `run_cost(combined_movecost(from, to))` points
+//!   (src/game.cpp:10804-10814); `combined_movecost`
+//!   (src/map.cpp:2466-2488) is `(cost_from + cost_to) *
+//!   mult / 2` over the tiles' raw JSON costs, mult 50
+//!   cardinal / 71 diagonal. The sim's avatar is the
+//!   unmodified baseline (speed 100, `run_cost` the
+//!   identity), so a floor->floor step costs exactly 100
+//!   points. The player acts while their balance is > 0
+//!   (src/do_turn.cpp:564-605); when a step drives it to
+//!   <= 0, more do_turns elapse before the next action —
+//!   the sim carries the balance across actions
+//!   (`World::move_balance`, `spend_move_points`) and
+//!   `flush_turn` lives through one second per refill, so
+//!   upstream's aggregate timing is exact: cost-250 steps
+//!   alternate 2 s / 3 s from a full balance.
+//! - **Per-second systems.** Fields and creatures tick
+//!   once per do_turn upstream (`m.process_fields()`,
+//!   src/do_turn.cpp:655; `monmove()`, :666) — i.e. once
+//!   per elapsed SECOND, not once per player action — so
+//!   a 3-second step gives the world 3 field ticks and 3
+//!   creature rounds, and weather-script entries fire at
+//!   their absolute calendar turn inside the span. (At
+//!   the 1-second span of every other action this is
+//!   indistinguishable from the old per-action tick.)
+//!   Creature MOVEMENT within a round still uses the
+//!   sim's per-round rule (one tile, S5) — creature move
+//!   points/speeds are not modelled, named here.
+//! - **Scope.** ONLY successful movement steps spend
+//!   points: horizontal steps by the formula above, and
+//!   stair z-moves at `move_vertical`'s base 100 points
+//!   (`int move_cost = 100`, src/game.cpp:12331, deducted
+//!   at :12621; the +500 climbing surcharges belong to
+//!   the unmodelled climbing fallback). Everything else
+//!   stays exactly 1 s and never touches the balance:
+//!   waits, Open/Close, Bash, pickup/drop, bump attacks,
+//!   blocked steps, no-op keys. Upstream gives several of
+//!   those their own point costs (a wait deducts
+//!   `get_speed()` = 100, src/avatar_action.cpp:529;
+//!   pickup deducts the item's obtain cost, :1192) — at
+//!   the baseline avatar those are all 100-point actions
+//!   whose timing equals the sim's flat 1 s anyway; the
+//!   follow-up's scope was the terrain-driven scaling,
+//!   and melee/weapon costs are outside the sim's
+//!   fixed-damage abstraction. Gate:
+//!   tests/movecost_time_gate.rs.
 //!
 //! S5 additions:
 //! - **Bump attack:** stepping into a creature's tile is a
@@ -307,6 +361,25 @@ pub enum PendingAction {
 /// The vi-keys are the full set; `w`/`a` are the surviving
 /// WASD aliases — `s` and `d` are the game's smash/drop keys
 /// since S6 (see the module docs' keymap settlement).
+/// Move points a step from one tile to the next costs
+/// (movecost time scaling): upstream's `map::
+/// combined_movecost` (0.I-1 src/map.cpp:2466-2488) over
+/// the two tiles' raw costs — `(cost_from + cost_to) *
+/// mult / 2` with mult = 50 for a cardinal step and 71
+/// for a diagonal (the trigdist table {0, 50, 71, 100}:
+/// 100% / 141% of the two-tile average). The walking code
+/// deducts `run_cost(that value)` (src/game.cpp:10804-
+/// 10814); for the sim's unmodified baseline avatar
+/// `run_cost` (src/character.cpp:10363) returns it
+/// unchanged — its diagonal divide/re-multiply by sqrt(2)
+/// cancels against the mult table and it has no cost
+/// effects to apply. Floor (raw 2) to floor is therefore
+/// (2+2)*50/2 = 100 points = exactly 1 second.
+fn step_move_points(cost_from: i32, cost_to: i32, dir: (i32, i32)) -> i32 {
+    let mult = if dir.0 != 0 && dir.1 != 0 { 71 } else { 50 };
+    (cost_from + cost_to) * mult / 2
+}
+
 pub fn direction_for_key(key: char) -> Option<(i32, i32)> {
     Some(match key {
         'h' | 'a' => (-1, 0),
@@ -490,7 +563,18 @@ impl World {
         if !self.passable(reg, target) {
             return;
         }
+        // Movecost time scaling (Phase 11 follow-up; model
+        // in the module docs): the step spends its combined
+        // move points from the player's balance, and any
+        // refills that drives are elapsed seconds the flush
+        // will live through.
+        let points = step_move_points(
+            self.tile_move_cost(reg, pos),
+            self.tile_move_cost(reg, target),
+            dir,
+        );
         self.set_player_pos(target);
+        self.spend_move_points(points);
     }
 
     /// Attempt a z-move (S8): `dz` -1 descends (`>`), +1
@@ -531,6 +615,13 @@ impl World {
             return;
         }
         self.set_player_pos(dest);
+        // A stair move costs upstream's base 100 move points
+        // (`game::move_vertical`: `int move_cost = 100`,
+        // game.cpp:12331, deducted via `u.mod_moves(
+        // -move_cost)` at :12621; the +500 climbing cases
+        // are the fallback the sim does not model). From a
+        // full balance that is the same 1 s as a floor step.
+        self.spend_move_points(100);
     }
 
     /// Apply an armed Open/Close to the tile adjacent to the

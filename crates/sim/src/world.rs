@@ -329,6 +329,25 @@ pub struct World {
     pub environment: bool,
     /// Game clock: calendar turns since turn_zero (1 s/turn).
     pub game_turn: i64,
+    /// The player's move-point balance (movecost time
+    /// scaling, Phase 11 follow-up; model in rules.rs module
+    /// docs): upstream, a creature's moves replenish by its
+    /// speed each calendar second (`moves += get_speed()`,
+    /// 0.I-1 src/creature.cpp:388) and 100 points = 1 second
+    /// (src/calendar.h:216-222), so the balance carries the
+    /// fractional cost of expensive steps across actions.
+    /// The sim's avatar is the unmodified baseline: speed
+    /// 100, balance starts at a full 100. Only successful
+    /// movement steps spend from it (`spend_move_points`);
+    /// every other action leaves it untouched.
+    pub move_balance: i32,
+    /// Calendar seconds the action currently being flushed
+    /// spans: set by `spend_move_points` when a movement
+    /// step's cost drives the balance to <= 0 (one refill
+    /// per elapsed second), 1 for every other action.
+    /// Consumed (and reset to 1) by `flush_turn`, which runs
+    /// its per-second processing once per elapsed second.
+    turn_seconds: i32,
     /// Current weather preset (resolved numerics).
     pub weather: WeatherState,
     /// Scene weather script, in file order.
@@ -782,6 +801,8 @@ impl World {
             view_radius: scene.view_radius,
             environment: scene.environment,
             game_turn,
+            move_balance: 100,
+            turn_seconds: 1,
             weather,
             weather_script: scene.weather_script.clone(),
             lights: scene.lights.clone(),
@@ -1642,24 +1663,7 @@ impl World {
     /// player's step and creature movement — one rule, one
     /// implementation.
     pub fn passable(&self, reg: &DefRegistry, pos: [i32; 3]) -> bool {
-        let Some(terrain) = self.terrain_at(pos) else {
-            return false; // outside the scene
-        };
-        let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
-            return false; // unknown terrain id: blocked, never a panic
-        };
-        let ter_cost = def.move_cost.unwrap_or(0);
-        if ter_cost == 0 {
-            return false;
-        }
-        let furn_mod = match self.furniture_at(pos) {
-            Some(0) | None => 0, // no furniture: null furniture's mod is 0
-            Some(furn_id) => reg
-                .def_by_id(Kind::Furniture, furn_id)
-                .and_then(|d| d.move_cost)
-                .unwrap_or(0),
-        };
-        if !(furn_mod >= 0 && ter_cost + furn_mod > 0) {
+        if self.tile_move_cost(reg, pos) == 0 {
             return false;
         }
         // A vehicle part's tile is occupied (S6): upstream a
@@ -1668,6 +1672,64 @@ impl World {
         // per-part passability data, so every part blocks —
         // one rule for player and creatures alike.
         self.vehicle_part_at(pos).is_none()
+    }
+
+    /// The tile's raw movement cost in upstream's JSON cost
+    /// units (standard floor = 2), under the same rule as
+    /// `passable`: terrain `move_cost` 0 blocks, a negative
+    /// furniture modifier blocks, else the cost is the sum.
+    /// 0 = impassable (including outside the scene and
+    /// unknown defs). This is the per-tile value upstream's
+    /// `map::move_cost` returns (src/map.cpp:2331-2356,
+    /// `move_cost_internal`: terrain cost plus the
+    /// furniture contribution, blocked cases returning 0);
+    /// the step-cost formula over two tiles lives in
+    /// rules.rs (`step_move_points`).
+    pub fn tile_move_cost(&self, reg: &DefRegistry, pos: [i32; 3]) -> i32 {
+        let Some(terrain) = self.terrain_at(pos) else {
+            return 0; // outside the scene
+        };
+        let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
+            return 0; // unknown terrain id: blocked, never a panic
+        };
+        let ter_cost = def.move_cost.unwrap_or(0);
+        if ter_cost == 0 {
+            return 0;
+        }
+        let furn_mod = match self.furniture_at(pos) {
+            Some(0) | None => 0, // no furniture: null furniture's mod is 0
+            Some(furn_id) => reg
+                .def_by_id(Kind::Furniture, furn_id)
+                .and_then(|d| d.move_cost)
+                .unwrap_or(0),
+        };
+        if furn_mod >= 0 && ter_cost + furn_mod > 0 {
+            ter_cost + furn_mod
+        } else {
+            0
+        }
+    }
+
+    /// Spend `points` move points on a successful movement
+    /// step (movecost time scaling; the model and its
+    /// citations are in the rules.rs module docs). The
+    /// balance carries across actions; each refill needed
+    /// to bring it back above 0 is one elapsed calendar
+    /// second, recorded in `turn_seconds` for `flush_turn`
+    /// to consume. A step the balance covers outright
+    /// still spans the action's own single second (the
+    /// sim's 1 Input = 1 turn contract), so the result is
+    /// max(refills, 1) — upstream's average timing is
+    /// preserved exactly: cost-250 steps from a full
+    /// balance take 2 s, then 3 s, alternating.
+    pub fn spend_move_points(&mut self, points: i32) {
+        self.move_balance -= points;
+        let mut seconds = 0;
+        while self.move_balance <= 0 {
+            self.move_balance += 100;
+            seconds += 1;
+        }
+        self.turn_seconds = seconds.max(1);
     }
 
     /// Apply any weather-script entries scheduled at or before
@@ -1695,12 +1757,28 @@ impl World {
     }
 
     /// Flush one resolved turn (S2 shape, S3 contents): the
-    /// clock advances 1 s (do_turn order: `calendar::turn +=
-    /// 1_turns` happens inside the turn), due weather-script
-    /// entries apply, visibility recomputes, and the diff
-    /// against the last-sent baseline is composed into the
-    /// turn's message flush (plan §2.7: a flush is a Delta plus
-    /// optional LightUpdate / EnvironmentUpdate messages).
+    /// clock advances by the action's span in seconds —
+    /// 1 s for almost every action, more when a movement
+    /// step's movecost drove the move balance negative
+    /// (`spend_move_points`; do_turn order: `calendar::turn
+    /// += 1_turns` happens inside the turn) — due
+    /// weather-script entries apply, visibility recomputes,
+    /// and the diff against the last-sent baseline is
+    /// composed into the turn's message flush (plan §2.7: a
+    /// flush is a Delta plus optional LightUpdate /
+    /// EnvironmentUpdate messages).
+    ///
+    /// The per-second processing below runs once per elapsed
+    /// second, because upstream runs it once per do_turn and
+    /// a do_turn IS one second: fields tick once per do_turn
+    /// (`m.process_fields()`, src/do_turn.cpp:655), monsters
+    /// act once per do_turn (`monmove()`, :666), and the
+    /// calendar advances 1 turn (:475). A step that takes
+    /// 3 s of game time therefore gives the world 3 field
+    /// ticks and 3 creature rounds — the observable
+    /// consequence of crossing expensive terrain. At a span
+    /// of 1 s (every pre-scaling action) the loop body is
+    /// exactly the old single pass.
     ///
     /// If the player is now in a different submap than at the
     /// last Snapshot (a map shift), the flush is instead a fresh
@@ -1709,21 +1787,25 @@ impl World {
     pub fn flush_turn(&mut self, reg: &DefRegistry) -> Vec<MessageT> {
         // No Snapshot sent yet: the first flush IS the Snapshot.
         if self.last_blocks.is_empty() {
+            self.turn_seconds = 1;
             return vec![MessageT::Snapshot(Box::new(self.snapshot(reg)))];
         }
-        self.game_turn += 1;
-        self.apply_script_due();
-        // S5 turn processing (rules.rs), in the game's own
-        // do_turn order of concerns: the world's fields tick
-        // first (spread/decay/drift + field damage to whoever
-        // stands in them), visibility recomputes over the new
-        // field state (fire light is part of the light model),
-        // then creatures act (their sight reads the fresh
-        // cache). The player's own action already happened in
-        // `apply_key`, before this flush.
-        self.tick_fields(reg);
-        self.recompute_visibility(reg);
-        self.tick_creatures(reg);
+        let seconds = std::mem::replace(&mut self.turn_seconds, 1);
+        for _ in 0..seconds {
+            self.game_turn += 1;
+            self.apply_script_due();
+            // S5 turn processing (rules.rs), in the game's own
+            // do_turn order of concerns: the world's fields tick
+            // first (spread/decay/drift + field damage to whoever
+            // stands in them), visibility recomputes over the new
+            // field state (fire light is part of the light model),
+            // then creatures act (their sight reads the fresh
+            // cache). The player's own action already happened in
+            // `apply_key`, before this flush.
+            self.tick_fields(reg);
+            self.recompute_visibility(reg);
+            self.tick_creatures(reg);
+        }
         // Map shift?
         if let (Some(cur), Some(last)) = (
             self.player_pos().map(submap_index),
