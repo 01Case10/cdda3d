@@ -16,8 +16,21 @@ Subcommands:
              --update-known-dangling rewrites generated/known_dangling.json
              from the current findings, after human inspection)
 
-Python 3 stdlib only. See README.md for the documented deviations
-(per-kind sorted ids, fg/bg = -1 in this slice) and rules.
+Python 3 stdlib only. See README.md for the documented deviation
+(per-kind sorted ids) and rules.
+
+fg/bg refs (Phase 11 follow-up, 2026-11-24): each def's fg_ref /
+bg_ref is joined from the composed tileset `tile_config.json`
+bundled with the data tree (gfx/UltimateCataclysm — UltiCa, the
+tileset the project pins), porting the tileset crate's fg_refs
+tool semantics exactly (crates/tileset/src/bin/fg_refs.rs over
+crates/tileset/src/lib.rs `load_composed` / `SpriteRef::primary`):
+refs are section-local composed indices; the ref taken is the
+entry's primary sprite (highest weight, ties by list order); an
+id with no composed entry, or a slot with no index primary, keeps
+the -1 sentinel — indices are never invented (the fork adapter's
+rule, fork/src/voxel_ipc/voxel_refs.h). Override the config with
+--tile-config.
 """
 
 import argparse
@@ -155,6 +168,149 @@ def parse_connect_groups(connect_json):
 
 
 # --------------------------------------------------------------------------
+# fg/bg sprite refs from the composed tileset tile_config.json
+#
+# A faithful port of the tileset crate's composed parsing, restricted
+# to what its fg_refs tool emits (crates/tileset/src/bin/fg_refs.rs):
+# one (fg, bg) pair per string id, first entry wins, refs are the
+# section-local composed indices of the entry's primary sprite.
+# Sprite refs are tagged tuples mirroring tileset::SpriteRef:
+#   ("name", s) ("index", i) ("wname", s, w) ("windex", i, w)
+#   ("list", [ref, ...])
+# --------------------------------------------------------------------------
+
+def _as_u64(value):
+    """serde_json Number::as_u64: only non-negative integers."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= 0xFFFF_FFFF_FFFF_FFFF else None
+
+
+def parse_sprite_ref(value):
+    """tileset::parse_sprite_ref (lib.rs): parse an fg/bg value."""
+    if isinstance(value, str):
+        return None if value == "" else ("name", value)
+    num = _as_u64(value)
+    if num is not None:
+        return ("index", num)
+    if isinstance(value, list):
+        out = [r for r in (parse_sprite_ref(v) for v in value)
+               if r is not None]
+        if not out:
+            return None
+        return out[0] if len(out) == 1 else ("list", out)
+    if isinstance(value, dict):
+        if "sprite" not in value:
+            return None
+        w = _as_u64(value.get("weight"))
+        weight = (w if w is not None else 1) & 0xFFFF_FFFF  # as u32
+        sprite = value["sprite"]
+        if isinstance(sprite, str):
+            return ("wname", sprite, weight)
+        snum = _as_u64(sprite)
+        if snum is not None:
+            return ("windex", snum, weight)
+        if isinstance(sprite, list):
+            return parse_sprite_ref(sprite)
+        return None
+    return None
+
+
+def _ref_weight(ref):
+    """SpriteRef::weight: the weighted variants carry it, else 1."""
+    return ref[2] if ref[0] in ("wname", "windex") else 1
+
+
+def sprite_primary(ref):
+    """SpriteRef::primary: flatten to the deterministic primary
+    choice — highest weight, ties broken by list order."""
+    if ref is None:
+        return None
+    tag = ref[0]
+    if tag in ("name", "index"):
+        return ref
+    if tag == "wname":
+        return ("name", ref[1])
+    if tag == "windex":
+        return ("index", ref[1])
+    # ("list", items): first item is the initial best; a later item
+    # replaces it only on a strictly greater weight.
+    best = None
+    best_w = 0
+    for item in ref[1]:
+        w = _ref_weight(item)
+        if best is None or w > best_w:
+            best, best_w = item, w
+    return sprite_primary(best)
+
+
+def primary_index(ref):
+    """fg_refs.rs primary_index: the primary's composed index, or
+    -1 when there is no ref or its primary is a name (a composed
+    config's refs are indices; a name primary has no index)."""
+    p = sprite_primary(ref)
+    return p[1] if p is not None and p[0] == "index" else -1
+
+
+def parse_fg_bg_refs(tile_config_path):
+    """(refs, stats): string_id -> (fg_ref, bg_ref) from a composed
+    tile_config.json, mirroring load_composed's entry registration
+    (sections in order, tiles in order, first entry wins per id;
+    additional_tiles are part of their parent entry, never separate
+    rows — the fg_refs tool emits main entries only)."""
+    path = Path(tile_config_path)
+    if not path.exists():
+        raise SystemExit(
+            f"composed tile_config.json not found: {path} "
+            "(the fg/bg join needs the tileset bundled with the data "
+            "tree; pass --tile-config to override)")
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    sections = doc.get("tiles-new")
+    if not isinstance(sections, list):
+        raise SystemExit(
+            f"{path} has no tiles-new list — not a composed "
+            "tile_config.json")
+    refs = {}
+    entries_seen = 0
+    duplicate_ids = 0
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        tiles = section.get("tiles")
+        if not isinstance(tiles, list):
+            continue
+        for tile in tiles:
+            if not isinstance(tile, dict) or "id" not in tile:
+                continue
+            raw_id = tile["id"]
+            if isinstance(raw_id, str):
+                ids = [raw_id]
+            elif isinstance(raw_id, list):
+                ids = [s for s in raw_id if isinstance(s, str)]
+            else:
+                continue
+            if not ids:
+                continue
+            entries_seen += 1
+            pair = (primary_index(parse_sprite_ref(tile.get("fg"))),
+                    primary_index(parse_sprite_ref(tile.get("bg"))))
+            for string_id in ids:
+                if string_id in refs:
+                    duplicate_ids += 1
+                else:
+                    refs[string_id] = pair
+    stats = {
+        "tile_config": str(path),
+        "entries_seen": entries_seen,
+        "ids_registered": len(refs),
+        "duplicate_id_registrations_skipped": duplicate_ids,
+        "ids_with_fg": sum(1 for fg, _ in refs.values() if fg >= 0),
+        "ids_with_bg": sum(1 for _, bg in refs.values() if bg >= 0),
+    }
+    return refs, stats
+
+
+# --------------------------------------------------------------------------
 # Inheritance resolution
 # --------------------------------------------------------------------------
 
@@ -288,12 +444,18 @@ def as_str_list(value):
     return []
 
 
-def build_defs(data_dir, mapdata_h, connect_json):
+def build_defs(data_dir, mapdata_h, connect_json, tile_config):
     by_type, meta = collect_entries(data_dir)
     flag_order = parse_ter_furn_flags(mapdata_h)
     flag_index = {name: i for i, name in enumerate(flag_order)}
     connect_names = parse_connect_groups(connect_json)
     connect_index = {name: i for i, name in enumerate(connect_names)}
+    fg_bg_refs, fg_bg_stats = parse_fg_bg_refs(tile_config)
+    fg_bg_per_kind = {name: {"defs": 0, "with_fg": 0, "with_bg": 0,
+                             "no_tileset_entry": 0,
+                             "entry_without_fg": 0,
+                             "entry_without_bg": 0}
+                      for name in KIND_NAME.values()}
 
     unknown_flags = Counter()
     unknown_groups = Counter()
@@ -404,12 +566,30 @@ def build_defs(data_dir, mapdata_h, connect_json):
                 "bash_result": bash_result,
                 "looks_like": opt_str("looks_like"),
                 "roof_result": opt_str("roof") if kind == 0 else None,
-                # fg/bg join is a documented follow-up; -1 = none,
-                # never invented (the real adapter does the same
-                # when its refs table is absent).
-                "fg_ref": -1,
-                "bg_ref": -1,
+                # fg/bg join against the composed tileset config
+                # (parse_fg_bg_refs): the def's primary composed
+                # indices by string id — string ids are global in
+                # the tileset, exactly as in the fork adapter's
+                # FgBgRefs table. No entry (or a slot with no index
+                # primary) keeps the -1 sentinel; indices are never
+                # invented.
+                "fg_ref": fg_bg_refs.get(string_id, (-1, -1))[0],
+                "bg_ref": fg_bg_refs.get(string_id, (-1, -1))[1],
             })
+            cov = fg_bg_per_kind[kind_name]
+            cov["defs"] += 1
+            pair = fg_bg_refs.get(string_id)
+            if pair is None:
+                cov["no_tileset_entry"] += 1
+            else:
+                if pair[0] >= 0:
+                    cov["with_fg"] += 1
+                else:
+                    cov["entry_without_fg"] += 1
+                if pair[1] >= 0:
+                    cov["with_bg"] += 1
+                else:
+                    cov["entry_without_bg"] += 1
         # Per-kind ids: sorted string_ids, 1..N (0 = none). The real
         # adapter emits the game's own load-order int ids (and items
         # already use sorted order there — item_wire_id()); game int
@@ -429,6 +609,7 @@ def build_defs(data_dir, mapdata_h, connect_json):
         "counts_per_kind": {
             KIND_NAME[k]: sum(1 for d in all_defs if d["kind"] == k)
             for k in sorted(KIND_NAME)},
+        "fg_bg": {**fg_bg_stats, "per_kind": fg_bg_per_kind},
     }
     table = {
         "protocol_version": 1,
@@ -541,10 +722,29 @@ def spot_checks(defs):
             "actual_move_cost": d.get("move_cost"),
             "pass": isinstance(d.get("move_cost"), int)
             and d["move_cost"] > 0})
+    # fg/bg spot checks, pinned to the 0.I-1 tree's bundled UltiCa
+    # composed tile_config.json and cross-verified value-for-value
+    # against the tileset crate's fg_refs tool (12,143 ids, 0 diffs,
+    # 2026-11-24). t_door_c: fg+bg pair; mon_zombie: fg+bg pair;
+    # t_floor: fg only; pie: its composed entry carries a bg but no
+    # fg slot at all, so fg stays -1.
+    fg_expect = {
+        (0, "t_door_c"): (6076, 6077),
+        (4, "mon_zombie"): (12548, 12377),
+        (0, "t_floor"): (6317, -1),
+        (5, "pie"): (-1, 1445),
+    }
+    for key, expected in sorted(fg_expect.items()):
+        d = by_id.get(key, {})
+        actual = (d.get("fg_ref"), d.get("bg_ref"))
+        checks.append({
+            "check": f"{key[1]}.(fg_ref, bg_ref) == {expected}",
+            "actual_fg_bg": list(actual),
+            "pass": actual == expected})
     return checks
 
 
-def run_validate(data_dir, defs_path, known_dangling_path,
+def run_validate(data_dir, defs_path, known_dangling_path, tile_config,
                  update_known_dangling=False):
     census = compute_census(data_dir)
     table = json.loads(Path(defs_path).read_text(encoding="utf-8"))
@@ -630,6 +830,36 @@ def run_validate(data_dir, defs_path, known_dangling_path,
         failures.append(f"{len(stale)} known-dangling entr(ies) no longer "
                         "dangle (allowlist is stale)")
 
+    # -- fg/bg refs: recomputed from the composed tile config,
+    # never trusted from the build output. Every def's pair must
+    # equal the join's result for its string id (-1/-1 when the
+    # tileset has no entry for it).
+    fg_refs, fg_stats = parse_fg_bg_refs(tile_config)
+    fg_mismatches = []
+    fg_coverage = {name: {"defs": 0, "with_fg": 0, "with_bg": 0,
+                          "no_tileset_entry": 0}
+                   for name in KIND_NAME.values()}
+    for d in defs:
+        cov = fg_coverage[KIND_NAME[d["kind"]]]
+        cov["defs"] += 1
+        expected = fg_refs.get(d["string_id"])
+        if expected is None:
+            cov["no_tileset_entry"] += 1
+            expected = (-1, -1)
+        else:
+            if expected[0] >= 0:
+                cov["with_fg"] += 1
+            if expected[1] >= 0:
+                cov["with_bg"] += 1
+        actual = (d.get("fg_ref", -1), d.get("bg_ref", -1))
+        if actual != expected:
+            fg_mismatches.append({
+                "kind": d["kind"], "string_id": d["string_id"],
+                "expected": list(expected), "actual": list(actual)})
+    if fg_mismatches:
+        failures.append(f"{len(fg_mismatches)} def(s) with fg/bg refs "
+                        "!= the recomputed tileset join")
+
     # -- spot checks
     spots = spot_checks(defs)
     for s in spots:
@@ -648,6 +878,9 @@ def run_validate(data_dir, defs_path, known_dangling_path,
         "dangling_by_field": dict(Counter(f["field"] for f in findings)),
         "dangling_by_target": dict(Counter(f["target"] for f in findings)
                                    .most_common()),
+        "fg_bg": {**fg_stats, "per_kind": fg_coverage,
+                  "mismatches": fg_mismatches[:50],
+                  "mismatch_total": len(fg_mismatches)},
         "spot_checks": spots,
     }
     return validation
@@ -661,6 +894,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data", default=str(DEFAULT_DATA))
     ap.add_argument("--mapdata", default=str(DEFAULT_MAPDATA))
+    ap.add_argument("--tile-config", default=None,
+                    help="composed tileset tile_config.json for the "
+                         "fg/bg join (default: gfx/UltimateCataclysm/"
+                         "tile_config.json of the --data tree)")
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT))
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("census")
@@ -675,6 +912,11 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     data_dir = Path(args.data)
     connect_json = data_dir / "connect_groups.json"
+    # --data is <tree>/data/json; the composed tileset config the
+    # game bundles for UltiCa lives at <tree>/gfx/UltimateCataclysm.
+    tile_config = (Path(args.tile_config) if args.tile_config else
+                   data_dir.parents[1] / "gfx" / "UltimateCataclysm"
+                   / "tile_config.json")
 
     if args.cmd == "census":
         census = compute_census(data_dir)
@@ -690,7 +932,8 @@ def main(argv=None):
         return 0
 
     if args.cmd == "build":
-        table, report = build_defs(data_dir, args.mapdata, connect_json)
+        table, report = build_defs(data_dir, args.mapdata, connect_json,
+                                   tile_config)
         (out_dir / "defs.json").write_text(
             json.dumps(table, indent=1) + "\n", encoding="utf-8")
         (out_dir / "build_report.json").write_text(
@@ -699,19 +942,24 @@ def main(argv=None):
         print(f"unknown flags: {len(report['unknown_flags'])} distinct, "
               f"unknown connect groups: "
               f"{len(report['unknown_connect_groups'])} distinct")
+        fg = report["fg_bg"]
+        print(f"fg/bg join: {fg['ids_registered']} tileset ids "
+              f"({fg['ids_with_fg']} with fg, {fg['ids_with_bg']} with "
+              f"bg) from {fg['tile_config']}")
         return 0
 
     if args.cmd == "validate":
         validation = run_validate(
             data_dir, out_dir / "defs.json",
-            out_dir / "known_dangling.json",
+            out_dir / "known_dangling.json", tile_config,
             update_known_dangling=args.update_known_dangling)
         (out_dir / "validation.json").write_text(
             json.dumps(validation, indent=1) + "\n", encoding="utf-8")
         print(f"verdict: {validation['verdict']} "
               f"(defs={validation['total_defs']}, "
               f"dangling={validation['dangling_total']} total / "
-              f"{len(validation['dangling_unlisted'])} unlisted)")
+              f"{len(validation['dangling_unlisted'])} unlisted, "
+              f"fg/bg mismatches={validation['fg_bg']['mismatch_total']})")
         for f in validation["failures"]:
             print("FAIL:", f)
         return 0 if validation["verdict"] == "PASS" else 1
