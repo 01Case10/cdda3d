@@ -161,6 +161,22 @@ impl LightingScene {
         )
     }
 
+    /// The fake house under the *daytime* light grid
+    /// ([`lighting::fixtures::fake_house_day_light`]): daylight
+    /// lit-level ceilings, so the sky GI can actually reach the
+    /// building. The gate 10.6 visual set uses this — the night
+    /// fixture's `DARK` exterior caps the exterior to black at
+    /// every hour, which made the house sheets a black
+    /// silhouette against the sky gradient (Joey's review,
+    /// 2026-11-23).
+    pub fn fake_house_day(hour: f32, weather: lighting::WeatherKind) -> Self {
+        Self::from_grid(
+            lighting::fixtures::fake_house_day_light(),
+            lighting::Environment::new(hour, weather),
+            crate::world::HOUSE_MIN_GAME_Z,
+        )
+    }
+
     /// [`LightingScene::fake_house`] with specific tiles forced
     /// `BLANK` (never seen) and/or `MEMORIZED` (remembered) — the
     /// gate 2h.3 scene. Memorized tiles keep their occlusion flag.

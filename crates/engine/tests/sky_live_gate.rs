@@ -344,7 +344,12 @@ fn rt_frame_through_render_frame_uses_seated_sky() {
 /// same configuration its other gates use); the stub house
 /// carries the coherent bake (its Phase 7 environment is
 /// derived from the resolved sky scene, so bake and sky
-/// cannot drift).
+/// cannot drift) over the *daytime* light grid: the night
+/// fixture's `DARK` exterior capped the building to a black
+/// silhouette at every hour and the sheets could not show
+/// the GI on the house at all (Joey's review, 2026-11-23).
+/// The day grid's lit levels are ceilings, not sources —
+/// midnight still renders dark because the sky is dark.
 #[test]
 fn gate_10_6_visual_capture_set() {
     let Some((device, queue)) = gpu() else {
@@ -402,7 +407,7 @@ fn gate_10_6_visual_capture_set() {
                         // of the resolved sky scene itself.
                         let hour = sky.game_env.time_of_day_sec / 3600.0;
                         let kind = lighting::classify_weather(&sky.game_env);
-                        args.lighting = Some(LightingScene::fake_house(hour, kind));
+                        args.lighting = Some(LightingScene::fake_house_day(hour, kind));
                     } else {
                         args.camera_target = (6.5, 6.0);
                         args.yaw_deg = 45.0;
