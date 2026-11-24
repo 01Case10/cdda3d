@@ -4,11 +4,17 @@
 //!
 //! - `Snapshot.blocks` are live tiles with their exported lit/seen.
 //! - `Snapshot.memory_blocks` are remembered tiles: *terrain /
-//!   furniture only, `lit = MEMORIZED`* (schema comment on
-//!   `Snapshot.memory_blocks`). The adapter forces `MEMORIZED` for
-//!   them even if a sender wrote something else, and — because it
-//!   only reads lit/seen — live entities/items/fields in a memory
-//!   block can never leak through this path (they are not light).
+//!   furniture only* (schema comment on `Snapshot.memory_blocks`).
+//!   Their `lit` array is per-tile and authoritative: the exporter
+//!   writes `MEMORIZED` only on tiles that were actually memorized
+//!   and leaves never-memorized tiles in the block's footprint
+//!   `BLANK` (`build_memory_blocks` in the fork's
+//!   `voxel_exporter.cpp`), so the adapter honours the array —
+//!   `MEMORIZED` stays Memorized, any other value fails closed to
+//!   `BLANK`/Hidden, and a memory block can never make a tile
+//!   Visible. Because it only reads lit/seen, live
+//!   entities/items/fields in a memory block can never leak
+//!   through this path (they are not light).
 //!
 //! Occlusion: a tile occludes when its terrain (or furniture, if it
 //! fills the tile) expands to a full-height opaque block under the
@@ -98,8 +104,17 @@ fn apply_block(grid: &mut LightGrid, b: &SubmapBlockT, is_memory: bool) {
                 .and_then(|v| v.get(i).copied())
                 .unwrap_or(proto::LitLevel::BLANK);
             let s = seen.and_then(|v| v.get(i).copied()).unwrap_or(0);
-            if is_memory {
-                l = proto::LitLevel::MEMORIZED;
+            if is_memory && l != proto::LitLevel::MEMORIZED {
+                // Memory semantics are per-tile, not per-block
+                // (Phase 11 follow-up, found by S3): the exporter's
+                // memory blocks are partial by construction —
+                // `build_memory_blocks` (voxel_exporter.cpp) writes
+                // MEMORIZED only on tiles that were actually
+                // memorized and leaves the rest BLANK. A
+                // non-MEMORIZED entry in the memory layer is a
+                // never-memorized tile: fail closed to BLANK
+                // (Hidden), never Visible and never Memorized.
+                l = proto::LitLevel::BLANK;
             }
             let ter = terrain.and_then(|v| v.get(i).copied()).unwrap_or(0);
             let furn = furniture.and_then(|v| v.get(i).copied()).unwrap_or(0);

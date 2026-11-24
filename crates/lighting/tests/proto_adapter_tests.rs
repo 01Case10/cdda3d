@@ -27,19 +27,31 @@ fn snapshot_house_grid() {
 }
 
 #[test]
-fn memory_blocks_forced_memorized() {
-    // A memory block whose sender (incorrectly) wrote LIT must still
-    // enter the grid as MEMORIZED — memory semantics are enforced
-    // adapter-side, per the schema's Snapshot.memory_blocks comment.
+fn memory_blocks_do_not_force_memorized() {
+    // AMENDED 2026-11-24 (Phase 11 follow-up): this test used to
+    // assert that a memory block whose sender wrote LIT enters the
+    // grid as MEMORIZED ("the adapter forces MEMORIZED"). That
+    // pinned the bug S3 found: apply_block stamped MEMORIZED on
+    // EVERY tile of a memory block, including the BLANK tiles the
+    // exporter writes for never-memorized positions in a partial
+    // block (voxel_exporter.cpp build_memory_blocks: "Tiles in a
+    // memory block that were never memorized stay BLANK"), so
+    // never-seen tiles read Memorized instead of Hidden.
+    // Corrected semantics: within a memory block only a wire
+    // MEMORIZED is memorized; any other value fails closed to
+    // BLANK/Hidden — a memory block can never make a tile Visible
+    // or Memorized. The partial-block shape itself is gated in
+    // tests/memory_block_partial_gate.rs.
     let mut mem = sample_house_block();
     mem.origin = Some(Vec3iT { x: 24, y: 0, z: 0 });
-    // (lit already LIT in the sample; the adapter must override.)
+    // (lit is LIT in the sample; in a memory block that is a
+    // non-memorized entry and must read BLANK, not MEMORIZED.)
     let mut snap = sample_snapshot();
     snap.memory_blocks = Some(vec![mem]);
     let g = grid_from_snapshot(&snap);
     let t = g.tile_light(30, 6, 0);
-    assert_eq!(t.lit, LitLevel::MEMORIZED);
-    assert_eq!(t.visibility(), Visibility::Memorized);
+    assert_eq!(t.lit, LitLevel::BLANK);
+    assert_eq!(t.visibility(), Visibility::Hidden);
     // Live tiles are untouched.
     assert_eq!(g.tile_light(6, 6, 0).lit, LitLevel::LIT);
 }
