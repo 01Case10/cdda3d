@@ -280,7 +280,11 @@ fn mesh_filtered_fine(map: &mesher::chunk::ChunkMap, layer: &FineLayer) -> (Pass
     for coord in coords {
         let chunk = &map.chunks[&coord];
         let pm = if chunk.has_fine {
-            mesher::fine::mesh_chunk_fine(map, layer, coord, map.scale, false)
+            // Slope normals ON for the fine path
+            // (docs/fine-slope-normals.md S2): stamped
+            // heightfields shade as continuous planes
+            // instead of banded staircases.
+            mesher::fine::mesh_chunk_fine(map, layer, coord, map.scale, true)
         } else {
             map.mesh_chunk(coord, true)
         };

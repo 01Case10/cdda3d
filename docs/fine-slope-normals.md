@@ -161,3 +161,54 @@ Regression: full mesher suite green; engine golden_gate 3/3
 with the flag off everywhere (meshes unchanged), phase9 /
 puddle / raster_tex / frame / phase8 / vehicle_texture gates
 all green.
+
+## 10. S2 outcome (2026-11-24)
+
+Opted in: `scene_prep::mesh_filtered_fine` passes `true` — the
+one dispatch point for fine chunks, so the live path, the
+snapshot path and captures all shade slopes.
+
+Scope completion against §2/§3, driven by G2 evidence: with
+top faces only, the vehicle profile capture still showed the
+step lines — each tread shaded as a plane but every riser
+(the 1-cell vertical face between treads) still shaded at
+side-face level. §2's goal (banding gone) was not met by §3's
+phase-1 letter, so side faces that are slope risers joined
+the treatment: `riser_corner_normals` fires when the
+neighbouring column's surface is 1..=SLOPE_EDGE_THRESHOLD
+below this cell's top; top-edge corners take this cell's
+gradient, bottom-edge corners the lower neighbour's gradient
+at the same vertex. Walls, cliffs and same-height neighbours
+keep axis normals. G1 gained a fifth test
+(`ramp_riser_faces_carry_the_plane_normal`, verified failing
+on the top-only mesher first): 5/5.
+
+G2 (vehicle profile capture, re-rendered through the fine
+prop path): quad count identical to the S1-era capture
+(221,840 — geometry untouched); cover classification changed
+on zero pixels against the tex6 capture (silhouette
+identical); raster distinct colours 9,077 → 11,174. The
+windshield and hood now shade as continuous planes; the
+dense per-step banding is gone.
+
+G3: golden_gate / phase9_render_gate / puddle_water_gate all
+pass UNCHANGED — no golden in the set contains a shallow
+stamped slope (fixture props are flat-topped or cliff-edged),
+so there was nothing to regen or eyeball. The stair case the
+plan asked for is the G1 ramp itself (1-cell steps).
+
+Residual, recorded honestly: the roof crown's two step
+grooves remain faintly visible. Their remaining cause is not
+normals — it is the Stage H geometric occlusion term
+(`face_occlusion`, ×0.89 per occluding neighbour, flat per
+face) stepping at each 1-cell crown step, plus the steps'
+geometry itself. Removing the last trace means per-corner
+occlusion (a separate fine-mesher change, all props
+affected) or a shallower crown (geometry; already a two-pass
+tuning item for the Stage-G vehicle build). Neither is in
+this plan's scope; Joey's call if either is wanted.
+
+Regression: full mesher suite green; full engine suite green
+(lib 33 + every gate target, incl. golden 3/3, phase9 set,
+sky set, stage set, sim set, vehicle_texture 4/4).
+Not pushed (bundle route via Joey's PC, as ever).

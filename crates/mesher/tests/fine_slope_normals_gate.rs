@@ -163,3 +163,78 @@ fn flag_off_is_the_pre_fix_mesh() {
         assert!(axis, "flag-off normal {n:?} is not axis-aligned");
     }
 }
+
+/// The ramp's downhill riser faces (the +X side faces of
+/// ramp cells, exposed because the next column is one cell
+/// lower in surface terms — here the ramp rises along +x,
+/// so the risers face -X... the exposed step faces are the
+/// +X faces of each column's top cell looking down the
+/// staircase's upper side and the -X faces looking up it;
+/// both must carry the plane normal for the staircase to
+/// shade as one surface). Concretely for a ramp rising
+/// along +x: the top cell of column lx has its +X face
+/// culled by column lx+1's cell below the top... the
+/// VISIBLE step faces are the -X faces of each top cell
+/// (against the air above column lx-1's lower top) — no:
+/// face_visible checks the neighbour CELL at the same fz.
+/// Column lx-1 has no cell at fz = top(lx), so the -X face
+/// of column lx's top cell is exposed: it is the riser.
+/// All four of its corners must carry the plane normal.
+#[test]
+fn ramp_riser_faces_carry_the_plane_normal() {
+    let scene = scene(|lx, _ly| 8 + lx);
+    let mesh = mesh(&scene, true);
+    let want = [-std::f32::consts::FRAC_1_SQRT_2, std::f32::consts::FRAC_1_SQRT_2, 0.0];
+    // Riser quads: vertical quads (verts span two world y
+    // levels) whose flat normal would be -X in world terms:
+    // world x = grid x, so a grid -X face has world normal
+    // (-1, 0, 0) when flat; smoothed, its corners tilt to
+    // `want`. Identify candidates by position: interior
+    // columns only, and by the quad's world-x extent being
+    // a single plane (all four verts share one world x).
+    let bs = WorldScale::default().block_size;
+    let lo = (4 * FINE + 5) as f32 / FINE as f32 * bs;
+    let hi = (4 * FINE + 27) as f32 / FINE as f32 * bs;
+    let mut checked = 0usize;
+    for quad in mesh.indices.chunks_exact(6) {
+        let idx: Vec<usize> = quad.iter().map(|i| *i as usize).collect();
+        let p: Vec<[f32; 3]> = idx[..4].iter().map(|&i| mesh.positions[i]).collect();
+        // Vertical plane at constant world x?
+        if p.iter().any(|v| (v[0] - p[0][0]).abs() > 1e-4) {
+            continue;
+        }
+        // Spans exactly one fine cell of height?
+        let (mut ymin, mut ymax) = (f32::MAX, f32::MIN);
+        for v in &p {
+            ymin = ymin.min(v[1]);
+            ymax = ymax.max(v[1]);
+        }
+        if (ymax - ymin - bs / FINE as f32).abs() > 1e-3 {
+            continue;
+        }
+        let cx = p[0][0];
+        let gy = -(p[0][2] + p[2][2]) / 2.0 / bs;
+        if cx < lo || cx > hi || gy < lo || gy > hi {
+            continue;
+        }
+        // Only the downhill-facing risers: their flat
+        // geometric normal (winding) points -x in world.
+        let ab = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+        let ac = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+        let nx = ab[1] * ac[2] - ab[2] * ac[1];
+        if nx >= 0.0 {
+            continue;
+        }
+        checked += 1;
+        for (k, &i) in idx[..4].iter().enumerate() {
+            let n = mesh.normals[i];
+            for a in 0..3 {
+                assert!(
+                    (n[a] - want[a]).abs() < 0.02,
+                    "riser corner {k} normal {n:?}, want {want:?}"
+                );
+            }
+        }
+    }
+    assert!(checked > 100, "only {checked} interior riser quads checked");
+}

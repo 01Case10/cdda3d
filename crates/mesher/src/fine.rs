@@ -822,6 +822,47 @@ fn top_corner_normal(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dx: i32, 
     [g[0], g[2], -g[1]]
 }
 
+/// Per-corner normals for a SIDE face of the stamped cell at
+/// `(fx, fy, fz)` when the face is a slope RISER: the
+/// neighbouring column's surface is lower than this cell's
+/// top by 1..=[`SLOPE_EDGE_THRESHOLD`] cells, so the face is
+/// one step of a heightfield staircase and takes the sheet's
+/// plane normal — top-edge corners from this cell's gradient
+/// (as [`top_corner_normal`]), bottom-edge corners from the
+/// lower neighbour cell's gradient at the same vertex. Any
+/// other side face (wall, cliff, same-height neighbour)
+/// returns `None` and keeps the axis normal.
+fn riser_corner_normals(
+    sampler: &FineSampler,
+    fx: i32,
+    fy: i32,
+    fz: i32,
+    dir: [i32; 3],
+    di: usize,
+) -> Option<[[f32; 3]; 4]> {
+    let hn = surface_top(sampler, fx + dir[0], fy + dir[1], fz, SLOPE_EDGE_THRESHOLD)?;
+    let h0 = fz + 1;
+    if hn >= h0 || h0 - hn > SLOPE_EDGE_THRESHOLD {
+        return None;
+    }
+    let mut out = [[0.0f32; 3]; 4];
+    for (i, c) in FACE_CORNERS[di].iter().enumerate() {
+        out[i] = if c[2] > 0.5 {
+            top_corner_normal(sampler, fx, fy, fz, c[0] as i32, c[1] as i32)
+        } else {
+            top_corner_normal(
+                sampler,
+                fx + dir[0],
+                fy + dir[1],
+                fz - 1,
+                c[0] as i32 - dir[0],
+                c[1] as i32 - dir[1],
+            )
+        };
+    }
+    Some(out)
+}
+
 /// Mesh one chunk column at fine resolution (Phase 9, 9.4):
 /// the chunk's coarse cells naively (one quad per visible
 /// face, exactly as `mesh_naive` emits them, with the fine
@@ -940,7 +981,9 @@ pub fn mesh_chunk_fine(
                             // (and every face with the opt-in
                             // off) keeps the axis normal.
                             let corner_normals: Option<[[f32; 3]; 4]> =
-                                if slope_normals && di == 4 {
+                                if !slope_normals {
+                                    None
+                                } else if di == 4 {
                                     Some(FACE_CORNERS[di].map(|c| {
                                         top_corner_normal(
                                             &sampler,
@@ -951,6 +994,11 @@ pub fn mesh_chunk_fine(
                                             c[1] as i32,
                                         )
                                     }))
+                                } else if di <= 3 {
+                                    // Side face: the plane
+                                    // normal too when it is a
+                                    // slope riser.
+                                    riser_corner_normals(&sampler, fx, fy, fz, *dir, di)
                                 } else {
                                     None
                                 };
