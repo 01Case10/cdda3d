@@ -533,7 +533,19 @@ pub fn sky_state(env: &GameEnvironment) -> SkyState {
     // (§5.3's overcast rule, applied at the state level).
     let sun_raw = (env.sun_light / MAX_SUN_LIGHT).clamp(0.0, 1.0);
     let sun_intensity = sun_raw * (1.0 - 0.85 * cloud_cover);
-    let moon_intensity = (env.moon_light / MAX_SUN_LIGHT).clamp(0.0, 1.0);
+    // Moonlight render gain (Joey's call, 2026-11-23): CDDA's
+    // moonlight scale (max 7 units at full moon against the
+    // sun's 125) is a visibility scale, not linear luminance —
+    // in the game those 7 units are a clearly visible "can
+    // see, can't read" level. Normalized linearly by 125, a
+    // full moon became 0.056 and vanished under the §5.3
+    // collapse threshold; midnight rendered pitch black. The
+    // render normalization instead maps the moon's peak
+    // (7 units: phase 4, moon high) to 0.30. Phase and
+    // altitude still modulate from there — a new moon
+    // (1 unit) lands at ~0.043, near-dark as it should be.
+    const MOON_RENDER_GAIN: f32 = 0.30 * MAX_SUN_LIGHT / 7.0;
+    let moon_intensity = (env.moon_light * MOON_RENDER_GAIN / MAX_SUN_LIGHT).clamp(0.0, 1.0);
 
     // Sun colour warms as the sun drops toward the horizon.
     let warm = smoothstep(alt / 35.0);
