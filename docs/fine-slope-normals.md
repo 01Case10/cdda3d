@@ -253,3 +253,48 @@ channels. Golden / phase9 / puddle / raster_tex / frame /
 vehicle_texture / phase9_rt / fine_occlusion_rt gates all
 pass unchanged — still no golden fixture with a shallow
 stamped slope. Not pushed.
+
+## 12. S3 outcome — RT spike: SUCCESS, probe ships as the implementation (2026-11-24)
+
+The §5 spike succeeded and stays as the implementation; no
+fallback to "document the banding" is needed. In the RT
+render shader (`crates/treebuild/src/render.rs`), `shade()`
+now takes its lighting normal from `fine_light_normal(h)`:
+for a fine hit on an upward surface — a +z top face, or the
+side face of a column-top cell (a slope riser) — the axis
+normal is tilted by the heightfield gradient probed from
+the fine tree itself: neighbour column tops (±x/±y, one
+cell out) are found by bounded vertical walks through the
+existing `fine_descend` point query, with the mesher's
+rules — walk bound 8, any neighbour top more than 8 from
+the hit top (or unmeasurable) keeps the axis normal, as do
+walls, bottoms and coarse hits. Texture face selection and
+cone LOD keep the axis normal; only the lighting terms
+(hemisphere, sun/moon, shadow offset) take the tilt.
+
+Evidence: the vehicle RT capture's windshield and hood go
+from dense per-step striping to single continuous planes;
+2.11% of pixels change, all on the car's sloped surfaces.
+RT distinct colours 3,742 -> 3,997. The estimator is the
+1-cell difference (S1 quality), not the §11 plane fit: at
+RT's per-cell normals it shows no visible oscillation on
+this scene (windshield gradient 0.84 is near-exact for it;
+the hood's shallow slope is masked by RT grain). If a
+future scene exposes it, the upgrade path is a wider
+probe stencil in the same function — no layout changes.
+Cost: bounded ~4 column walks per fine surface hit; no
+slowdown measurable on this VM (full three-capture run
+34.7 s vs a 54.9 s compile-free baseline — run-to-run
+variance here exceeds any plausible probe cost; the real
+frame-time verdict still waits on target hardware, as
+with RT generally). Regression: treebuild 26/26; engine
+rt_gate, phase9_rt_gate, fine_occlusion_rt_gate,
+sky_rt_gate, sky_live_gate all pass (18 tests — none
+pixel-compares a fine slope scene, the same golden gap
+as the raster side). Raster output is untouched (the
+raster and top captures are byte-identical; only the RT
+capture changed). One implementation note: `wgsl_sources()`
+omits EMITTER_WGSL from its render string while the
+pipeline includes it — a pre-existing gap in that test
+accessor, unrelated to this change; the pipeline assembly
+is what the GPU gates exercise. Not pushed.

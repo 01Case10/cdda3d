@@ -719,6 +719,75 @@ fn lit_factor(lit: u32) -> f32 {
     }
 }
 
+// RT slope spike (docs/fine-slope-normals.md S5): occupancy
+// of one fine cell via the tree point query.
+fn fine_occupied(cell: vec3<i32>) -> bool {
+    let p = vec3<f32>(cell) + vec3<f32>(0.5, 0.5, 0.5);
+    if any(p < vec3<f32>(0.0, 0.0, 0.0)) || any(p >= vec3<f32>(fu.fine_size, fu.fine_size, fu.fine_size)) {
+        return false;
+    }
+    return fine_descend(p).occupied;
+}
+
+// Surface top (highest solid z + 1) of fine column (cx, cy),
+// searched from z0 with the mesher's walk rule and the same
+// 8-cell bound as SLOPE_EDGE_THRESHOLD; -1 when the top is
+// not within the bound (cliff or void).
+fn fine_column_top(cx: i32, cy: i32, z0: i32) -> i32 {
+    if fine_occupied(vec3<i32>(cx, cy, z0)) {
+        var z = z0;
+        while fine_occupied(vec3<i32>(cx, cy, z + 1)) {
+            z = z + 1;
+            if z - z0 > 8 {
+                return -1;
+            }
+        }
+        return z + 1;
+    }
+    var z = z0;
+    while !fine_occupied(vec3<i32>(cx, cy, z - 1)) {
+        z = z - 1;
+        if z0 - z > 8 {
+            return -1;
+        }
+    }
+    return z;
+}
+
+// Lighting normal for a fine hit: on an upward surface
+// (a +z top face, or the side face of a column-top cell —
+// a slope riser), tilt the axis normal by the heightfield
+// gradient probed one cell out in +-x/+-y, with the
+// mesher's threshold rule (any neighbour top more than 8
+// from the hit top, or unmeasurable, keeps the axis
+// normal). Walls, bottoms and non-fine hits are untouched;
+// texture face selection and LOD keep the axis normal —
+// only the lighting terms take the tilt.
+fn fine_light_normal(h: Hit) -> vec3<f32> {
+    let n = h.normal;
+    if !h.fine || n.z < -0.5 {
+        return n;
+    }
+    let cell = vec3<i32>(h.fvoxel_min);
+    if fine_occupied(cell + vec3<i32>(0, 0, 1)) {
+        return n;
+    }
+    let h0 = cell.z + 1;
+    let tx = fine_column_top(cell.x + 1, cell.y, cell.z);
+    let txm = fine_column_top(cell.x - 1, cell.y, cell.z);
+    let ty = fine_column_top(cell.x, cell.y + 1, cell.z);
+    let tym = fine_column_top(cell.x, cell.y - 1, cell.z);
+    if tx < 0 || txm < 0 || ty < 0 || tym < 0 {
+        return n;
+    }
+    if abs(tx - h0) > 8 || abs(txm - h0) > 8 || abs(ty - h0) > 8 || abs(tym - h0) > 8 {
+        return n;
+    }
+    let dhdx = f32(tx - txm) / 2.0;
+    let dhdy = f32(ty - tym) / 2.0;
+    return normalize(vec3<f32>(-dhdx, -dhdy, 1.0));
+}
+
 fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     // Phase 9 two-tree: a fine hit shades from the FINE tree's
     // node/side entries (same node index space, other arrays).
@@ -760,7 +829,7 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         // Emissive: unlit, feeds the Phase 2b bloom pass downstream.
         return albedo * 1.6;
     }
-    let n = h.normal;
+    let n = fine_light_normal(h);
     // Phase 10 (10.4, §5.3): sky GI from the shared SkyUniforms,
     // replacing the hardcoded `0.35 + 0.85 * ndl` model.
     //
