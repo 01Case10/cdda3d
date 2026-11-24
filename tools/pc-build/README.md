@@ -10,6 +10,25 @@ cd <your cdda-voxel clone>\tools\pc-build
 That is the whole interface. Everything below is what it does and what
 to expect.
 
+## Playing the fake engine (Phase 11 sim-server)
+
+One command builds the Rust side, starts the sim-server (the fake
+engine), and opens the renderer window connected to it:
+
+```powershell
+cd <your cdda-voxel clone>
+powershell -ExecutionPolicy Bypass -File tools\pc-build\Launch-Sim.ps1
+```
+
+Options: `-Scene <name>` (default `street_block`), `-Seed <n>`,
+`-Record <path>` (writes a replayable session log), `-SkipBuild`,
+`-DebugBuild`, `-Headless` (smoke mode: scripted keys, no window).
+The bash twin `launch-sim.sh` takes the same options with `--` flags.
+Play with the game keys (hjkl / yubn / arrows, o/c, s, g, d, i, &,
+;, ., >/<, Esc); close the window to end the session. Note: the live
+wire path currently renders the coarse-colour world -- textures and
+fine props are not seated in live mode yet (plan.md, Lane A record).
+
 ## Why this exists
 
 Gates 0.1 (the fork's curses/text build compiles and runs) and 0.2 (the
