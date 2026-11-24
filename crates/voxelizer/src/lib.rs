@@ -18,6 +18,7 @@ pub mod overrides;
 pub mod props;
 pub mod quilt;
 pub mod shore;
+pub mod vehicle;
 
 use image::{Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};

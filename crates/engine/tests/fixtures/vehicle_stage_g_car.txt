@@ -1,0 +1,27 @@
+# Stage-G S1 gate fixture: per-tile occupied-cell count + FNV-1a
+# hash of the sorted occupied voxel indices, from the Python
+# prototype's exported car models (the spec). tx ty count hash
+-3 -1 44640 1145e26b5390e0c5
+-3 0 44640 1145e26b5390e0c5
+-3 1 44640 1145e26b5390e0c5
+-3 2 44640 1145e26b5390e0c5
+-2 -1 52150 425ebb4c7f29ef59
+-2 0 50344 bbce85b1e7fe9f55
+-2 1 50344 ff24d24408663a9d
+-2 2 52150 8c07d77dc77c683d
+-1 -1 51712 b061ee79889f82e5
+-1 0 40272 908abfe075d84045
+-1 1 40272 09eff5619edea0c5
+-1 2 51712 08c90f0dc86f5e25
+0 -1 51712 b061ee79889f82e5
+0 0 46296 bded816ee73e68c5
+0 1 40400 6c75cad7f00bbac5
+0 2 51712 08c90f0dc86f5e25
+1 -1 58102 a97ed97a1fce5ef9
+1 0 57664 109d454538ceecc5
+1 1 57664 109d454538ceecc5
+1 2 58102 6ce7d5fc422af49d
+2 -1 33952 23d6c37c1ccbf4c5
+2 0 33952 23d6c37c1ccbf4c5
+2 1 33952 23d6c37c1ccbf4c5
+2 2 33952 23d6c37c1ccbf4c5
