@@ -20,8 +20,9 @@
 //!
 //! The one invented piece is the **moon direction**: CDDA exposes
 //! moon phase and moonlight strength but no moon position function
-//! (§11 Q2). The moon's direction is the antipode of the sun's —
-//! a proxy, labelled as such wherever it is used. Its *strength*
+//! (§11 Q2). The moon rides the sun's diurnal arc, lagging by its
+//! phase elongation (proxy v2, 2026-11-23 — see `moon_direction`);
+//! full moon is the exact antipode, as v1 had it. Its *strength*
 //! is game truth (`moon_light`).
 
 use crate::atmosphere::{day_night_at, weather_params, WeatherKind, WeatherParams};
@@ -147,17 +148,20 @@ impl GameEnvironment {
             moon_phase,
             ..Self::neutral()
         };
-        let (_, alt) = fallback_sun_angles(&env);
+        let (az, alt) = fallback_sun_angles(&env);
         // Shape follows the game's own curve (calendar.cpp
         // `sun_light_at`): rising with altitude, capped at the
         // 125 maximum once the sun is above ~60 degrees.
         env.sun_light =
             MAX_SUN_LIGHT * (alt.to_radians().sin() / 60f32.to_radians().sin()).clamp(0.0, 1.0);
-        // Moon: phase strength (the game's own curve) scaled by how
-        // high the antipode moon rides — fake scenes have no better
-        // source, and the shape matches the live path's range.
-        let moon_alt = -alt;
-        env.moon_light = moon_light_for_phase(moon_phase) * moon_alt.to_radians().sin().max(0.0);
+        // Moon: phase strength (the game's own curve) scaled by
+        // how high the phase-aware moon rides (proxy v2 — see
+        // `moon_direction`); fake scenes have no better source,
+        // and the shape matches the live path's range.
+        let sun_dir = sun_direction(az, alt);
+        let day_half = (env.sunrise_sec..env.sunset_sec).contains(&env.time_of_day_sec);
+        let moon_dir = moon_direction(sun_dir, moon_phase, season, day_half);
+        env.moon_light = moon_light_for_phase(moon_phase) * moon_dir[2].max(0.0);
         env
     }
 
@@ -320,6 +324,49 @@ pub fn sun_direction(azimuth_deg: f32, altitude_deg: f32) -> [f32; 3] {
     [-az.sin() * c, -az.cos() * c, alt.sin()]
 }
 
+/// Direction toward the moon — PROXY v2 (Joey's call,
+/// 2026-11-23, supersedes the v1 exact-antipode proxy): CDDA
+/// exposes moon phase and strength but no position function
+/// (§11 Q2), so the moon is placed on the sun's own diurnal
+/// arc, lagging the sun by its phase elongation
+/// `E = phase x 45 deg` (new = with the sun, first quarter =
+/// 90 deg behind along the arc, full = 180 deg = the exact
+/// antipode, last quarter = 270 deg). The v1 antipode put the
+/// moon below the horizon at every twilight for every phase;
+/// v2 gives quarter moons their real presence — a
+/// first-quarter moon high at dusk, a last-quarter moon high
+/// at dawn — while full-moon geometry is bit-identical to v1.
+///
+/// Construction: the arc is `p(t) = cos t * EAST + sin t * Q`
+/// with `Q` the arc's peak direction (in the north-up plane).
+/// `cos t` is the sun's east component; `sin t * Q` is its
+/// north-up projection, with the sign of `sin t` taken from
+/// the day/night half (sunrise..sunset). Near the horizon
+/// crossings the projection vanishes and `Q` falls back to
+/// the seasonal-peak direction.
+pub fn moon_direction(sun_dir: [f32; 3], moon_phase: u8, season: u8, day_half: bool) -> [f32; 3] {
+    let e = (moon_phase.min(8) as f32) * 45.0_f32.to_radians();
+    let cos_t = sun_dir[0].clamp(-1.0, 1.0);
+    let proj = [sun_dir[1], sun_dir[2]];
+    let proj_len = (proj[0] * proj[0] + proj[1] * proj[1]).sqrt();
+    let sin_sign = if day_half { 1.0 } else { -1.0 };
+    let sin_t = sin_sign * (1.0 - cos_t * cos_t).max(0.0).sqrt();
+    let q = if proj_len > 1e-4 {
+        let s = sin_sign / proj_len;
+        [proj[0] * s, proj[1] * s]
+    } else {
+        let a = max_elev_for_season(season).to_radians();
+        [-(a.cos()), a.sin()]
+    };
+    let tm = (sin_t.atan2(cos_t) - e).rem_euclid(std::f32::consts::TAU);
+    let (sm, cm) = tm.sin_cos();
+    [
+        cm,
+        sm * q[0],
+        sm * q[1],
+    ]
+}
+
 /// Peak sun elevation for the fake-data fallback path, by season
 /// (decision 2A's ratified numbers: 65° summer, 25° winter;
 /// spring/autumn are the linear midpoint, 45°).
@@ -445,9 +492,11 @@ pub struct SkyState {
     /// Sun colour (weather tint applied; intensity is separate).
     pub sun_color: [f32; 3],
     pub sun_intensity: f32,
-    /// Toward the moon — the antipode of the sun's direction.
-    /// PROXY: CDDA has no moon position function (§11 Q2); the
-    /// moon's *strength* (`moon_intensity`) is game truth.
+    /// Toward the moon — the phase-aware arc proxy v2 (see
+    /// `moon_direction`); at full moon this is the exact
+    /// antipode of the sun's direction. PROXY: CDDA has no
+    /// moon position function (§11 Q2); the moon's *strength*
+    /// (`moon_intensity`) is game truth.
     pub moon_dir: [f32; 3],
     pub moon_color: [f32; 3],
     pub moon_intensity: f32,
@@ -524,8 +573,10 @@ pub fn sky_state(env: &GameEnvironment) -> SkyState {
         fallback_sun_angles(&env)
     };
     let sun_dir = sun_direction(az, alt);
-    // Moon direction is the antipode proxy (see SkyState docs).
-    let moon_dir = [-sun_dir[0], -sun_dir[1], -sun_dir[2]];
+    // Moon direction is the phase-aware arc proxy v2 (see
+    // `moon_direction`); strength is game truth.
+    let day_half = (env.sunrise_sec..env.sunset_sec).contains(&env.time_of_day_sec);
+    let moon_dir = moon_direction(sun_dir, env.moon_phase, env.season, day_half);
 
     // Intensities: the wire values are already weather-folded
     // game-side; normalize from CDDA light units. Cloud cover
@@ -579,6 +630,24 @@ pub fn sky_state(env: &GameEnvironment) -> SkyState {
         }
     }
 
+    // Twilight scatter (Joey's call, 2026-11-23): with the sun
+    // within +/-14 deg of the horizon, the sky's bright band
+    // lights surfaces even though the direct sun is weak or
+    // just set. The gradient stops already showed that band;
+    // surfaces received almost none of it, because the
+    // hemisphere strength below is sun-driven and the low sun
+    // folds into it (§5.3 collapse) — RT dawn/dusk rendered
+    // near-black while the sky behind them glowed. Blend the
+    // hemisphere stops toward the horizon colour and (below)
+    // bump the hemisphere strength, both peaking at alt 0 and
+    // gone by +/-14 deg. Midnight is untouched: the moon gain
+    // is the night's light; this is the sun's.
+    let scatter = (1.0 - (alt.abs() / 14.0)).clamp(0.0, 1.0);
+    if scatter > 0.0 {
+        zenith = lerp3(zenith, horizon, 0.25 * scatter);
+        ground = lerp3(ground, horizon, 0.12 * scatter);
+    }
+
     // Fog (§5.5): density from the derived kind's table entry,
     // scaled by the wire sight penalty when it exceeds 1.
     let sight_scale = if env.sight_penalty > 1.0 {
@@ -590,7 +659,8 @@ pub fn sky_state(env: &GameEnvironment) -> SkyState {
     let fog_color = horizon;
 
     let ambient_scale = (0.15 + 0.85 * (sun_raw + moon_intensity).clamp(0.0, 1.0))
-        * (0.5 + 0.5 * params.brightness_scale);
+        * (0.5 + 0.5 * params.brightness_scale)
+        + 0.30 * scatter;
 
     let precip = PrecipState {
         kind: match kind {

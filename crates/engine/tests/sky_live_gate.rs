@@ -450,36 +450,43 @@ fn gate_10_6_visual_capture_set() {
                     );
                 }
             }
-            // Distinctness: every sky changes the frame, with
-            // one designed exception. In RT, dawn-<w> and
-            // dusk-<w> (same weather) are byte-identical BY
-            // DESIGN (§5.3 overcast collapse): at the fake
-            // day's 06:30/17:30 the sun's premultiplied
-            // luminance measures ~0.11, under the 0.18
-            // collapse threshold, so the directional term
-            // folds into the hemisphere term and the frame no
-            // longer depends on the sun's azimuth — the only
-            // field dawn and dusk differ in (east vs west;
-            // colours and intensities are symmetric). Pinned
-            // here as designed behaviour; the raster path has
-            // no collapse and stays pairwise-distinct.
+            // Distinctness: every sky changes the frame. In
+            // RT, dawn and dusk exercise the §5.3 overcast
+            // collapse: at the fake day's 06:30/17:30 the sun's
+            // premultiplied luminance measures ~0.11, under
+            // the 0.18 collapse threshold, so the directional
+            // term folds into the hemisphere term — dawn and
+            // dusk receive the SAME light level, differing
+            // only in the sun's azimuth (east vs west), which
+            // the collapsed frame does not use for surfaces.
+            //
+            // Instrument re-scoped 2026-11-23 (Joey's
+            // ratification): this pair was originally pinned
+            // BYTE-IDENTICAL, which held only because both
+            // frames were near-black (~19 mean luminance) and
+            // every real difference rounded to the same bytes.
+            // The twilight-scatter lift (same session) makes
+            // twilight readable (~33), and the sky
+            // background's warm glow legitimately sits in the
+            // east at dawn and the west at dusk — the frames
+            // are mirror images, not copies. The §5.3 claim is
+            // the equal light level, so the pin is now:
+            // dawn/dusk clear luminance agree within 2%
+            // (measured 32.83 vs 32.83 on the house scene).
             if renderer == RendererKind::Rt {
-                // The clear pair is the mechanism-clean case:
-                // at cloud cover 0.05 the sky's time-phase
-                // cloud drift rounds away, leaving the §5.3
-                // collapse as the only dawn/dusk difference —
-                // none. (The wet pairs keep a drift-phase
-                // difference in the sky background itself.)
-                assert_eq!(
-                    frames["dawn-clear"],
-                    frames["dusk-clear"],
-                    "{scene_name}/rt: dawn-clear vs dusk-clear should \
-                     collapse identically (§5.3, sun luminance ~0.11 < 0.18)"
+                let (dawn_lum, dusk_lum) = (clear_lums["dawn"], clear_lums["dusk"]);
+                let rel = (dawn_lum - dusk_lum).abs() / dawn_lum.max(dusk_lum).max(1e-6);
+                assert!(
+                    rel < 0.02,
+                    "{scene_name}/rt: dawn-clear vs dusk-clear luminance should \
+                     agree under the §5.3 collapse (sun luminance ~0.11 < 0.18): \
+                     dawn {dawn_lum:.2} dusk {dusk_lum:.2} (rel {rel:.4})"
                 );
             }
             {
-                // Distinct hash count: 16 for raster; RT loses
-                // at least the dawn/dusk-clear collapse.
+                // Distinct hash count: 16 for raster; RT is
+                // allowed fewer (frozen-weather pairs can still
+                // coincide), floor 12.
                 if renderer == RendererKind::Rt {
                     assert!(
                         hashes.len() >= 12,
