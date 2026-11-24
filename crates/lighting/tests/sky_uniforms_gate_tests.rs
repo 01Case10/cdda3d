@@ -187,9 +187,12 @@ fn gate_space_conversion_from_sky_state_output() {
         "grid-space noon sun must sit south/up: {:?}",
         grid.sun_dir3()
     );
+    // Proxy v2 (2026-11-23): neutral() is phase 0 (new moon),
+    // so the moon rides WITH the sun, not at the antipode —
+    // grid-space moon = grid-space sun here.
     assert!(
-        approx(grid.moon_dir3(), [0.0, -cos65, -sin65], 1e-6),
-        "grid-space moon (antipode): {:?}",
+        approx(grid.moon_dir3(), [0.0, cos65, sin65], 1e-6),
+        "grid-space moon (new moon, with the sun): {:?}",
         grid.moon_dir3()
     );
     // Mesher world space (east, up, north): swap Y/Z.
@@ -200,8 +203,8 @@ fn gate_space_conversion_from_sky_state_output() {
         world.sun_dir3()
     );
     assert!(
-        approx(world.moon_dir3(), [0.0, -sin65, cos65], 1e-6),
-        "mesher-world moon (antipode): {:?}",
+        approx(world.moon_dir3(), [0.0, sin65, -cos65], 1e-6),
+        "mesher-world moon (new moon, with the sun): {:?}",
         world.moon_dir3()
     );
     // The .w gates are not directions and must pass through both
@@ -295,9 +298,11 @@ fn gate_space_conversions_pin_noon_values() {
         "grid-space noon sun dir: {:?}",
         g.sun_dir3()
     );
-    // Moon is the antipode proxy: (-0, -cos, -sin) in grid space.
+    // Moon under proxy v2: neutral() is phase 0 (new moon), so
+    // the moon rides with the sun — (0, cos, sin) in grid space,
+    // same as the sun. (At phase 4 it would be the antipode.)
     assert!(
-        approx(g.moon_dir3(), [0.0, -cos, -sin], 1e-6),
+        approx(g.moon_dir3(), [0.0, cos, sin], 1e-6),
         "grid-space noon moon dir: {:?}",
         g.moon_dir3()
     );
@@ -309,7 +314,7 @@ fn gate_space_conversions_pin_noon_values() {
         m.sun_dir3()
     );
     assert!(
-        approx(m.moon_dir3(), [0.0, -sin, cos], 1e-6),
+        approx(m.moon_dir3(), [0.0, sin, -cos], 1e-6),
         "mesher-space noon moon dir: {:?}",
         m.moon_dir3()
     );

@@ -308,12 +308,15 @@ fn gate_sky_scene_uniforms_are_mesher_space() {
         -cos,
         u.sun_dir[2],
     );
-    // Moon is the antipode proxy: (0, −sin65°, +cos65°).
+    // Moon under proxy v2 (2026-11-23): neutral() is phase 0
+    // (new moon), so the moon rides with the sun — the
+    // converted sun direction (0, +sin65°, −cos65°). (At
+    // phase 4 it would be the antipode.)
     assert!(
-        (u.moon_dir[1] + sin).abs() < 1e-6 && (u.moon_dir[2] - cos).abs() < 1e-6,
-        "moon dir must be the converted antipode (0, {:.4}, {:.4}), got {:?}",
-        -sin,
-        cos,
+        (u.moon_dir[1] - sin).abs() < 1e-6 && (u.moon_dir[2] + cos).abs() < 1e-6,
+        "moon dir must be the converted new-moon direction (0, {:.4}, {:.4}), got {:?}",
+        sin,
+        -cos,
         u.moon_dir3(),
     );
     // The neutral()/calibrated default path is NOT converted:

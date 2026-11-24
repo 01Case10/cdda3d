@@ -212,6 +212,56 @@ fn gate_10_2a_midnight_is_moon_dominant() {
 }
 
 #[test]
+fn gate_10_2a_moon_arc_is_phase_aware_and_twilight_scatters() {
+    // Proxy v2: at full moon the direction is still the exact
+    // antipode (v1 geometry preserved bit-for-bit).
+    let mid = sky_state(&GameEnvironment::fake_day(MIDNIGHT, SUNRISE, SUNSET, 1, 4));
+    for i in 0..3 {
+        assert!(
+            (mid.moon_dir[i] + mid.sun_dir[i]).abs() < 1e-5,
+            "full moon must be the exact antipode: moon {:?} sun {:?}",
+            mid.moon_dir,
+            mid.sun_dir
+        );
+    }
+    // A first-quarter moon (phase 2) rides high at dusk — the
+    // v1 antipode put it below the horizon (intensity 0).
+    let dusk_q = sky_state(&GameEnvironment::fake_day(17.5 * 3600.0, SUNRISE, SUNSET, 1, 2));
+    assert!(
+        dusk_q.moon_dir[2] > 0.4 && dusk_q.moon_intensity > 0.05,
+        "first-quarter moon should be up and lit at dusk: dir {:?} int {}",
+        dusk_q.moon_dir,
+        dusk_q.moon_intensity
+    );
+    // A last-quarter moon (phase 6) rides high at dawn.
+    let dawn_q = sky_state(&GameEnvironment::fake_day(6.5 * 3600.0, SUNRISE, SUNSET, 1, 6));
+    assert!(
+        dawn_q.moon_dir[2] > 0.4 && dawn_q.moon_intensity > 0.05,
+        "last-quarter moon should be up and lit at dawn: dir {:?} int {}",
+        dawn_q.moon_dir,
+        dawn_q.moon_intensity
+    );
+    // Twilight scatter: the hemisphere strength at dawn
+    // (full moon, so the moon term is ~0 in both) sits well
+    // above its sun-driven value — measured 0.295 before the
+    // scatter term existed, 0.413 with it (dawn sun alt
+    // 8.5 deg, inside the +/-14 deg band); midnight gets no
+    // scatter.
+    let dawn = sky_state(&GameEnvironment::fake_day(6.5 * 3600.0, SUNRISE, SUNSET, 1, 4));
+    assert!(
+        dawn.ambient_scale > 0.38,
+        "dawn ambient should carry the scatter bump: {}",
+        dawn.ambient_scale
+    );
+    assert!(
+        mid.ambient_scale < dawn.ambient_scale,
+        "midnight carries no scatter: {} vs dawn {}",
+        mid.ambient_scale,
+        dawn.ambient_scale
+    );
+}
+
+#[test]
 fn gate_10_2a_clock_interpolates_and_cross_fades() {
     // Updates every 10 game-minutes (the §2.3 cadence). The clock
     // is a trailing interpolator (§3.3): after each push, evaluate
