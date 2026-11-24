@@ -2090,3 +2090,45 @@ staying dark in RT (the shadow proof).
 >
 > Status: DECIDED + source fetched + drift measured. Migration NOT
 > yet executed.
+
+> **Re-verification results (2026-11-23, parent spot-checked):** the
+> Phase 0 tools re-ran clean in a scratch mirror against the 0.I-1
+> tree (full report: `~/workspace/cdda-stable/reverify/REPORT.md`,
+> copy in goal files). Surface mostly intact: hooks 31/32 found (28
+> moved-only), probes 5 PASS / 1 FAIL, every §3 quirk holds
+> (`map::furn` by value, lit_level members exact, overlay ids,
+> FacingDirection NONE/LEFT/RIGHT, `bub_part_pos`, memorized-tile
+> getters, connect bitsets + NUM_TERCONN=256), H1–H8 patch contexts
+> verified. **Five real API gaps block a naive pin flip** — all are
+> master-side additions the stable branch never got:
+> 1. `game::do_turn` is a **free function** `bool do_turn()` in
+>    0.I-1 (do_turn.cpp:455; decl do_turn.h:6) — hook H3's text is
+>    wrong; its return-point context otherwise matches verbatim.
+> 2. **`mapdata::terrain_data`/`furniture_data` are not public** in
+>    0.I-1 (anonymous namespace in mapdata.cpp:45-46; master had
+>    header externs) — the adapter's def enumeration
+>    (`voxel_real_adapter.cpp:233/247`) will not compile; needs a
+>    designed route (H7-class: a fork accessor hook where the
+>    factories live). Items/monsters/fields/vehicle parts are fine.
+> 3. **`map::is_roofed` does not exist** in 0.I-1 — the
+>    `outside = is_outside && !is_roofed` rule (Phase 10 sky
+>    exposure, sim S3) has no source on this base; 0.I-1's own
+>    exposure conjunction is `is_outside && abs_z >= 0`
+>    (weather.cpp:81-82). A base-appropriate outside rule is a
+>    design decision, flagged to the Phase 10 / S3 work.
+> 4. **`incident_moonlight` does not exist** in 0.I-1
+>    (`incident_sunlight` does, weather.h:187) — adapter
+>    `environment()` needs another moonlight source.
+> 5. **`weather_type` has no tint fields** in 0.I-1 — adapter
+>    environment tint (:391-395) has no source; interacts with the
+>    Addendum 11 light design (flagged to the lighting thread).
+> Also: `ter_furn_flag` order changed (129 flags vs 139, strict
+> subsequence, first divergence at index 30) — a regenerated
+> defs.json is self-consistent; hot-flag bits are not comparable
+> across bases. Non-blocking: lit_level underlying type
+> uint8_t → int (members identical); probe 0.10 evidence change
+> (LICENSE.txt size, CC BY-SA intact). Pre-existing, NOT a base
+> regression: the adapter's `get_game()` exists in neither tree
+> (§4 first-compile fix candidate).
+> Status: re-verification DONE. Pin flip + defs regen + the adapter
+> 0.I-1 adaptation pass remain, on Joey's call.
