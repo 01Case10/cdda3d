@@ -824,8 +824,27 @@ fn render_rt_frame_props(
         world::build_fake_house(scale)
     };
     let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, &levels);
+    // Stage-G: vehicle fine models join the prop scene;
+    // their covered tiles' coarse stamps are suppressed.
+    let veh_fine = match (&args.vehicles, &args.textures) {
+        (Some(v), Some(dir)) => crate::scene_prep::vehicle_fine_scene(v, dir)
+            .map_err(CaptureError::Device)?,
+        _ => None,
+    };
+    let combined;
+    let props = match &veh_fine {
+        Some((vscene, _)) => {
+            combined = crate::scene_prep::merge_prop_scenes(props, vscene);
+            &combined
+        }
+        None => props,
+    };
+    let covered: std::collections::HashSet<[i32; 3]> = match &veh_fine {
+        Some((_, c)) => c.clone(),
+        None => Default::default(),
+    };
     if let Some(v) = &args.vehicles {
-        crate::scene_prep::stamp_vehicles(&mut filtered, v);
+        crate::scene_prep::stamp_vehicles_except(&mut filtered, v, &covered);
     }
     let kept: Vec<crate::snapshot_world::FurniturePlacement>;
     let placements: &[crate::snapshot_world::FurniturePlacement] = match &args.lighting {

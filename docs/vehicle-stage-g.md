@@ -181,3 +181,29 @@ blue tops hold at ~47% (the roof is untouched). Failing-
 first verified: with repaint disabled the on-paint share
 is 0/4006 and the gate fails. S1 occupancy gate still
 green — colouring does not move a single cell.
+
+## 9. S3 outcome (2026-11-24) — wiring
+
+`scene_prep::vehicle_fine_scene` composes every fully-named
+vehicle in a VehicleScene into fine PropModels
+(VEHICLE_PROP_ID_BASE 1,000,000, assistant-chosen) and
+returns the covered tile set; all three fine paths (raster
+unlit, raster lit, RT props) merge the result into the prop
+scene and stamp coarse vehicles with the covered tiles
+excluded (`vehicles::stamp_vehicle_mapped_except`). A
+vehicle with ANY unnamed part stays fully coarse — partial
+composition would mix two looks on one vehicle. Sprite
+resolution reads the MaterialTable's top layer PNGs from the
+textures dir; rotation is derived from mount deltas
+(exact match, else least-wrong by dot product). Coarse
+paths unchanged; voxelizer is now a real engine dependency.
+
+Acceptance: the profile capture renders through the engine
+composer (VehicleScene in, no prototype .bin). Quad count
+identical to the prototype path (221,840). Diff vs the S15
+capture: 0.73% of pixels (raster and RT alike), all inside
+the car's bounding box, every sampled transition the old
+per-part grey family moving onto the vehicle paint
+(41,41,41) — glass, wheels, sides and the blue roof are
+pixel-identical. Engine suite green (exit 0), vehicles +
+voxelizer 130/130.
