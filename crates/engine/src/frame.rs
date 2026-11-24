@@ -1610,6 +1610,7 @@ fn render_frame_inner(
                 w,
                 args.lighting.as_ref(),
                 args.vehicles.as_ref(),
+                args.textures.as_deref(),
             )
             .map_err(CaptureError::Device)?,
         ),

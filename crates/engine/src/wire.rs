@@ -77,6 +77,21 @@ pub struct WireScene {
     /// rule + Phase 10 GI to the wire world. `None` as for
     /// [`WireScene::environment`].
     pub lighting: Option<crate::frame::LightingScene>,
+    /// Terrain material resolution for this world (Lane H):
+    /// wire terrain id -> def string id, for exactly the
+    /// terrain defs this snapshot presents (its terrain
+    /// arrays' ids, plus each presented def's `roof_result`
+    /// target — the roof blocks the builder stamps carry the
+    /// roof def's wire id). The frame paths join it with a
+    /// seated voxelizer material table (`CaptureArgs::textures`)
+    /// to build the texture spec keyed by the map's block ids
+    /// — the wire form of the fixture paths' fake-id map.
+    /// Derived from `defs` alone in [`WireScene::from_wire`]
+    /// (no table is consulted at build time); `None` for
+    /// scenes wrapped by [`WireScene::from_map`], which has
+    /// no def table. A frame path with a textures dir but no
+    /// material ids renders exactly the untextured world.
+    pub material_ids: Option<std::collections::HashMap<u32, String>>,
 }
 
 impl WireScene {
@@ -90,7 +105,9 @@ impl WireScene {
         block_for: &dyn Fn(u32) -> Block,
     ) -> Self {
         let map = build_snapshot_world(defs, snapshot, WorldScale::default(), block_for);
-        Self::from_map(map, snapshot)
+        let mut scene = Self::from_map(map, snapshot);
+        scene.material_ids = Some(material_ids_for(defs, snapshot));
+        scene
     }
 
     /// Wrap an already-built snapshot world (built by
@@ -114,6 +131,7 @@ impl WireScene {
             props: None,
             environment: None,
             lighting: None,
+            material_ids: None,
         }
     }
 
@@ -239,6 +257,54 @@ pub fn prop_scene_for_wire(
         })
         .collect();
     Some(crate::frame::PropScene { models, placements })
+}
+
+/// The terrain material id map for a wire world (Lane H —
+/// see [`WireScene::material_ids`]): the terrain defs the
+/// snapshot presents, keyed wire id -> string id. Presentation
+/// is read off the snapshot's terrain arrays; each presented
+/// def's `roof_result` target joins too (the builder stamps
+/// roof blocks under the roof def's own wire id, and that id
+/// never appears in a terrain array). Defs without a string
+/// id cannot resolve in any table and are omitted.
+fn material_ids_for(
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+) -> std::collections::HashMap<u32, String> {
+    let mut by_id: std::collections::HashMap<u32, &proto::TileDefT> =
+        std::collections::HashMap::new();
+    let mut by_string: std::collections::HashMap<&str, u32> =
+        std::collections::HashMap::new();
+    if let Some(list) = &defs.defs {
+        for d in list {
+            if d.kind == proto::TileKind::Terrain {
+                by_id.insert(d.id, d);
+                if let Some(s) = &d.string_id {
+                    by_string.insert(s.as_str(), d.id);
+                }
+            }
+        }
+    }
+    let mut out: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+    let mut present: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    if let Some(blocks) = &snapshot.blocks {
+        for b in blocks {
+            if let Some(terrain) = &b.terrain {
+                present.extend(terrain.iter().copied().filter(|&id| id != 0));
+            }
+        }
+    }
+    for id in present {
+        let Some(def) = by_id.get(&id) else { continue };
+        let Some(sid) = &def.string_id else { continue };
+        out.insert(id, sid.clone());
+        if let Some(roof) = &def.roof_result {
+            if let Some(&roof_id) = by_string.get(roof.as_str()) {
+                out.entry(roof_id).or_insert_with(|| roof.clone());
+            }
+        }
+    }
+    out
 }
 
 /// The live wire palette (Phase 11 follow-up, Lane G): one

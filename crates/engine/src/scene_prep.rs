@@ -132,6 +132,58 @@ fn textured_spec(
     ))
 }
 
+/// Lane H: the wire form of [`textured_spec`] — the textured
+/// scene's spec + shore + blend assignments for a wire world,
+/// resolved by the scene's material id map (wire terrain id
+/// -> string id) instead of the fake tile ids. Vehicle
+/// materials do not exist here: live vehicles are unseated,
+/// and fixture vehicle scenes never ride a wire world.
+fn wire_textured_spec(
+    dir: &Path,
+    map: &mesher::chunk::ChunkMap,
+    id_map: &std::collections::HashMap<u32, String>,
+) -> Result<
+    (
+        TextureSpec,
+        Vec<crate::shore::ShoreAssignment>,
+        Vec<crate::blend::BlendAssignment>,
+    ),
+    String,
+> {
+    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let water_ids: std::collections::HashSet<u32> = id_map
+        .iter()
+        .filter(|(_, game_id)| {
+            table
+                .get(game_id)
+                .is_some_and(|m| !m.shore_layers.is_empty())
+        })
+        .map(|(num, _)| *num)
+        .collect();
+    let assignments = crate::shore::shore_assignments_for_map(map, &|id| water_ids.contains(&id));
+    let macro_spans: std::collections::HashMap<u32, u32> = id_map
+        .iter()
+        .filter_map(|(num, game_id)| {
+            table
+                .get(game_id)
+                .and_then(|m| m.macro_)
+                .map(|mc| (*num, mc.span_tiles))
+        })
+        .collect();
+    let blend_assignments =
+        crate::blend::blend_assignments_for_map(map, &|id| macro_spans.get(&id).copied());
+    let (spec, _stats) = textures::build_texture_spec_all(
+        &table,
+        dir,
+        id_map,
+        &[],
+        &assignments,
+        &blend_assignments,
+        &[],
+    )?;
+    Ok((spec, assignments, blend_assignments))
+}
+
 /// Stage F part 2: stamp shore variant tops onto a filtered
 /// map's water blocks. Each water block takes the compact
 /// `[top, side, bottom]` of its assignment's virtual entry in
@@ -969,10 +1021,21 @@ pub fn prepare_raster_house_lit_vp(
 /// level 0 is the wire window's base z — for a snapshot-seated
 /// grid that is the snapshot's own `min_game_z`).
 ///
-/// No COARSE texture spec is produced: the fixture material
-/// tables are keyed to fake tile ids, so a wire world's
-/// coarse blocks render with their resolver's flat colours
-/// (the same posture as the untextured fixture path).
+/// Coarse textures (Lane H): with a textures dir seated
+/// (`CaptureArgs::textures`, the voxelizer output) AND the
+/// scene's material id map ([`crate::wire::WireScene::material_ids`]:
+/// wire terrain id -> string id, derived at world build), the
+/// coarse blocks resolve their materials by string id from
+/// the one real table — the fixture textured path's shading,
+/// keyed by wire ids instead of fake ids. The no-props arms
+/// take the full spec (shore + blend assignments, the
+/// [`wire_textured_spec`] shape); the props arms take the
+/// base spec the prop extension then extends, as in the
+/// fixture fine order. Either input missing leaves the world
+/// exactly as Lane G built it (flat palette colours + the
+/// prop-only spec) — resolution happens here, at scene
+/// preparation, keyed by block id through the prebuilt map;
+/// nothing is resolved per frame or per tile at mesh time.
 ///
 /// Furniture fine props (Lane G): when the wire scene
 /// carries a prop scene ([`crate::wire::WireScene::props`],
@@ -994,66 +1057,115 @@ pub fn prepare_raster_wire(
     wire: &crate::wire::WireScene,
     lit: Option<&crate::frame::LightingScene>,
     vehicles: Option<&crate::frame::VehicleScene>,
+    textures_dir: Option<&Path>,
 ) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
     let scale = mesher::scale::WorldScale::default();
     let mut filtered = world::filtered_map(&wire.map, wire.min_game_z, visible_levels);
-    if let Some(v) = vehicles {
-        stamp_vehicles(&mut filtered, v);
-    }
-    let Some(lit) = lit else {
-        // Unlit: with props, stamp + fine-mesh; without, the
-        // coarse path exactly as before.
-        if let Some(props) = &wire.props {
-            let mut spec_opt = None;
-            let prep = prep_prop_spec(props, &mut spec_opt);
-            let layer =
-                stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
-            let (meshes, stats) = mesh_filtered_fine(&filtered, &layer);
-            return Ok((meshes, stats, spec_opt));
-        }
-        let (meshes, stats) = mesh_filtered(&filtered);
-        return Ok((meshes, stats, None));
+    // Lane H coarse texture seating: both halves must be
+    // present — a textures dir (the table) and the scene's
+    // material id map; either alone changes nothing.
+    let tex_ids = match (textures_dir, &wire.material_ids) {
+        (Some(dir), Some(ids)) => Some((dir, ids)),
+        _ => None,
     };
-    if let Some(props) = &wire.props {
-        // Lit with props: the fixture lit-fine order — mask
-        // first, drop placements whose slab the mask (or the
-        // cutaway) removed, stamp, fine-mesh, PerVertex bake.
+    if wire.props.is_none() {
+        // No-props arms: the full textured spec (shore +
+        // blend assignments over the filtered map).
         let mut spec_opt = None;
-        let prep = prep_prop_spec(props, &mut spec_opt);
+        if let Some((dir, ids)) = tex_ids {
+            let (spec, shore_assignments, blend_assignments) =
+                wire_textured_spec(dir, &filtered, ids)?;
+            stamp_tex_layers(&mut filtered, &spec);
+            stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
+            stamp_blend_tops(&mut filtered, &spec, &blend_assignments);
+            spec_opt = Some(spec);
+        }
+        // Vehicles stamp AFTER the texture pass here (the
+        // fixture paths stamp them before): a wire vehicle
+        // block is an unmapped stand-in whose sentinel id can
+        // collide with a real wire terrain id, so it must
+        // never pick up a terrain material's layers. (In live
+        // sessions vehicles are unseated anyway.)
+        if let Some(v) = vehicles {
+            stamp_vehicles(&mut filtered, v);
+        }
+        let Some(lit) = lit else {
+            let (meshes, stats) = mesh_filtered(&filtered);
+            return Ok((meshes, stats, spec_opt));
+        };
         apply_visibility_mask(&mut filtered, lit);
         apply_sky_exposure_alpha(&mut filtered, lit);
-        let kept: Vec<FurniturePlacement> = props
-            .placements
-            .iter()
-            .copied()
-            .filter(|p| {
-                let slab_z = scale.level_base_block(p.level) as i32;
-                !filtered.block_at(p.x, p.y, slab_z).is_air()
-            })
-            .collect();
-        let layer = stamp_props_into(&mut filtered, &kept, props, &prep, scale)?;
-        let (mut meshes, stats) = mesh_filtered_fine(&filtered, &layer);
+        if lit.bake_mode == crate::frame::BakeMode::PerBlock {
+            let baked = lighting::bake_chunk_map_with_offset(
+                &filtered,
+                &lit.grid,
+                lit.env,
+                lit.min_game_z,
+            );
+            let (mut meshes, stats) = mesh_filtered(&baked);
+            refine_sky_factor_alpha(&mut meshes, lit, scale);
+            return Ok((meshes, stats, spec_opt));
+        }
+        let (mut meshes, stats) = mesh_filtered(&filtered);
         lighting::bake_pass_meshes(&mut meshes, &lit.grid, lit.env, scale, lit.min_game_z);
         refine_sky_factor_alpha(&mut meshes, lit, scale);
         return Ok((meshes, stats, spec_opt));
     }
+    // Props arms: the base texture spec first (when seated),
+    // extended with the prop materials before any stamping —
+    // the fixture fine order.
+    let props = wire.props.as_ref().expect("props arm: props is Some");
+    let mut spec_opt = match tex_ids {
+        Some((dir, ids)) => {
+            let table =
+                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+            let (spec, _stats) = textures::build_texture_spec(&table, dir, ids)?;
+            Some(spec)
+        }
+        None => None,
+    };
+    let textured = spec_opt.is_some();
+    let prep = prep_prop_spec(props, &mut spec_opt);
+    // stamp_tex_layers runs only against a real texture spec:
+    // the prop-only spec's synthetic ids share the numeric
+    // space with wire terrain ids (base 1000), so stamping
+    // coarse blocks against it could dress a terrain block in
+    // a prop colour layer. The fixture path is safe there only
+    // because its coarse ids are small fake ids; the pre-Lane-H
+    // wire path never stamped coarse layers in the props arms.
+    if textured {
+        if let Some(spec) = &spec_opt {
+            stamp_tex_layers(&mut filtered, spec);
+        }
+    }
+    if let Some(v) = vehicles {
+        stamp_vehicles(&mut filtered, v);
+    }
+    let Some(lit) = lit else {
+        // Unlit with props: stamp + fine-mesh.
+        let layer = stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
+        let (meshes, stats) = mesh_filtered_fine(&filtered, &layer);
+        return Ok((meshes, stats, spec_opt));
+    };
+    // Lit with props: the fixture lit-fine order — mask first,
+    // drop placements whose slab the mask (or the cutaway)
+    // removed, stamp, fine-mesh, PerVertex bake.
     apply_visibility_mask(&mut filtered, lit);
     apply_sky_exposure_alpha(&mut filtered, lit);
-    if lit.bake_mode == crate::frame::BakeMode::PerBlock {
-        let baked = lighting::bake_chunk_map_with_offset(
-            &filtered,
-            &lit.grid,
-            lit.env,
-            lit.min_game_z,
-        );
-        let (mut meshes, stats) = mesh_filtered(&baked);
-        refine_sky_factor_alpha(&mut meshes, lit, scale);
-        return Ok((meshes, stats, None));
-    }
-    let (mut meshes, stats) = mesh_filtered(&filtered);
+    let kept: Vec<FurniturePlacement> = props
+        .placements
+        .iter()
+        .copied()
+        .filter(|p| {
+            let slab_z = scale.level_base_block(p.level) as i32;
+            !filtered.block_at(p.x, p.y, slab_z).is_air()
+        })
+        .collect();
+    let layer = stamp_props_into(&mut filtered, &kept, props, &prep, scale)?;
+    let (mut meshes, stats) = mesh_filtered_fine(&filtered, &layer);
     lighting::bake_pass_meshes(&mut meshes, &lit.grid, lit.env, scale, lit.min_game_z);
     refine_sky_factor_alpha(&mut meshes, lit, scale);
-    Ok((meshes, stats, None))
+    Ok((meshes, stats, spec_opt))
 }
 
 /// The sample scene's form of [`prepare_raster_house_lit_vp`].
