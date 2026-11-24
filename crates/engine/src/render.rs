@@ -22,7 +22,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
-use lighting::{SkyUniforms, SKY_WGSL};
+use lighting::{EmitterUniforms, SkyUniforms, EMITTER_WGSL, SKY_WGSL};
 use mesher::block::Pass;
 use mesher::mesh::{Mesh, PassMeshes, FLAT_LAYER};
 
@@ -147,7 +147,7 @@ struct Uniforms {
 /// Public for the slice-10.3 gate's naga validation (the shader
 /// compile check that runs without a wgpu adapter).
 pub fn world_shader_source() -> String {
-    format!("{SKY_WGSL}\n{WORLD_WGSL}")
+    format!("{SKY_WGSL}\n{EMITTER_WGSL}\n{WORLD_WGSL}")
 }
 
 /// The sky-pass shader source: the same shared sky WGSL (here
@@ -209,6 +209,11 @@ struct MacroParams { color_count: u32, debug_height: u32 };
 // Phase 10 slice 10.3: the frame's sky block (frozen layout,
 // lighting::sky_uniforms) — the GI form (see gi_uniforms_for).
 @group(2) @binding(0) var<uniform> sky: SkyUniforms;
+// Addendum 11 (emitter prototype): the frame's declared local
+// emitters (lighting::emitters) in mesher world space. The
+// struct + falloff math come from lighting::EMITTER_WGSL,
+// included ahead of this body (see world_shader_source).
+@group(3) @binding(0) var<uniform> emitters: EmitterUniforms;
 
 // Phase 10 slice 10.3 (§5.2): the raster shading factor.
 // At sky_factor 1 this is exactly §5.2's sum — hemisphere
@@ -388,6 +393,24 @@ fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
         col = col + vec3<f32>(spec, spec, spec);
         return vec4<f32>(col, 1.0);
     }
+    // Addendum 11 (emitter prototype): declared local emitters,
+    // transported per-fragment at the world position with
+    // visibility 1.0 (raster v1 casts no emitter shadow rays —
+    // the recorded asymmetry against the RT path). The term
+    // folds into the shade factor INSIDE the Phase 7 ceiling:
+    // in the flat path the vertex colour IS albedo x bake, so
+    // multiplying (shade + emit) by it caps the emitter light
+    // with the tile's baked lit factor exactly as the sky GI is
+    // capped (BLANK tiles are never meshed; MEMORIZED colours
+    // carry the pinned desaturated presentation — neither is
+    // bypassed). In the textured path the texel supplies the
+    // albedo, so the ceiling scalar is the vertex colour's mean
+    // (albedo x bake, the same data the flat path multiplies
+    // outright). The water branch above returns before this
+    // point — emitters do not touch water shading in v1.
+    // Count 0 returns exactly 0.0, so an emitter-less frame is
+    // byte-identical to the pre-Addendum-11 frame.
+    let emit = emitter_light(emitters, input.world_pos);
     if flat {
         // Flat path: the vertex colour is albedo x bake. The
         // output alpha is the pass's own: 1.0 for opaque/cutout
@@ -396,20 +419,21 @@ fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
         // the pre-10.3 outputs at the neutral GI calibration
         // (gate 2f.4's flat math is the calibration's definition).
         if transparent {
-            return vec4<f32>(input.color.rgb * shade, input.color.a);
+            return vec4<f32>(input.color.rgb * (shade + emit), input.color.a);
         }
-        return vec4<f32>(input.color.rgb * shade, 1.0);
+        return vec4<f32>(input.color.rgb * (shade + emit), 1.0);
     }
     if cutout && texel.a < 0.5 {
         discard;
     }
+    let bake_ceil = dot(input.color.rgb, vec3<f32>(0.33333334, 0.33333334, 0.33333334));
     if transparent {
-        return vec4<f32>(texel.rgb * shade, texel.a * input.color.a);
+        return vec4<f32>(texel.rgb * (shade + emit * bake_ceil), texel.a * input.color.a);
     }
     // Textured opaque/cutout: the input alpha was the sky
     // factor (consumed), not an opacity — the texel's own alpha
     // is the output, as it was pre-10.3 when the factor was 1.0.
-    return vec4<f32>(texel.rgb * shade, texel.a);
+    return vec4<f32>(texel.rgb * (shade + emit * bake_ceil), texel.a);
 }
 
 @fragment
@@ -443,6 +467,7 @@ fn create_pipeline(
     uniform_layout: &wgpu::BindGroupLayout,
     tex_layout: &wgpu::BindGroupLayout,
     sky_layout: &wgpu::BindGroupLayout,
+    emitter_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     blend: Option<wgpu::BlendState>,
     depth_write: bool,
@@ -450,7 +475,7 @@ fn create_pipeline(
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("voxel-pipeline-layout"),
-        bind_group_layouts: &[uniform_layout, tex_layout, sky_layout],
+        bind_group_layouts: &[uniform_layout, tex_layout, sky_layout, emitter_layout],
         push_constant_ranges: &[],
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -577,6 +602,13 @@ pub struct Renderer {
     sky_bind_group: wgpu::BindGroup,
     gi_buffer: wgpu::Buffer,
     gi_bind_group: wgpu::BindGroup,
+    /// Addendum 11 (emitter prototype): the emitter uniform
+    /// state — buffer + bind group at the world pipelines'
+    /// group 3, initialized to `EmitterUniforms::empty` so a
+    /// Renderer that never gets `set_emitters` draws the
+    /// pre-Addendum-11 frame.
+    emitter_buffer: wgpu::Buffer,
+    emitter_bind_group: wgpu::BindGroup,
     sky_cam_buffer: wgpu::Buffer,
     sky_cam_bind_group: wgpu::BindGroup,
     /// The frame's horizon colour — the sky pass's clear colour
@@ -641,6 +673,35 @@ impl Renderer {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: gi_buffer.as_entire_binding(),
+            }],
+        });
+        // Addendum 11 (emitter prototype): the group-3 layout has
+        // the sky layout's shape (one fragment uniform); the
+        // buffer starts at the empty block.
+        let emitter_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("emitter-uniform-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let emitter_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("emitter-uniform"),
+            contents: bytemuck::bytes_of(&EmitterUniforms::empty().as_rows()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let emitter_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("emitter-uniform-bg"),
+            layout: &emitter_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: emitter_buffer.as_entire_binding(),
             }],
         });
         let sky_cam_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -798,6 +859,7 @@ impl Renderer {
             &uniform_layout,
             &tex_layout,
             &sky_layout,
+            &emitter_layout,
             &shader,
             None,
             true,
@@ -812,6 +874,7 @@ impl Renderer {
             &uniform_layout,
             &tex_layout,
             &sky_layout,
+            &emitter_layout,
             &shader,
             None,
             true,
@@ -826,6 +889,7 @@ impl Renderer {
             &uniform_layout,
             &tex_layout,
             &sky_layout,
+            &emitter_layout,
             &shader,
             Some(wgpu::BlendState::ALPHA_BLENDING),
             false,
@@ -856,6 +920,8 @@ impl Renderer {
             sky_bind_group,
             gi_buffer,
             gi_bind_group,
+            emitter_buffer,
+            emitter_bind_group,
             sky_cam_buffer,
             sky_cam_bind_group,
             clear_color: CLEAR_COLOR,
@@ -901,6 +967,22 @@ impl Renderer {
             b: h[2] as f64,
             a: 1.0,
         };
+    }
+
+    /// Addendum 11 (emitter prototype): install the frame's
+    /// declared emitters — the block **as given, in mesher world
+    /// space** (the caller converts from game space with
+    /// `EmitterUniforms::to_mesher_world_space`, the same
+    /// caller-converts contract as `set_sky`'s block). Called
+    /// once per frame by `frame::render_frame` with the empty
+    /// block when the frame seats no emitter scene, so the world
+    /// pipelines always read a current group 3.
+    pub fn set_emitters(&self, queue: &wgpu::Queue, uniforms: &EmitterUniforms) {
+        queue.write_buffer(
+            &self.emitter_buffer,
+            0,
+            bytemuck::bytes_of(&uniforms.as_rows()),
+        );
     }
 
     /// Create a texture array plus its group-1 bind group (no data
@@ -1201,6 +1283,7 @@ impl Renderer {
             rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
             rpass.set_bind_group(1, &self.tex_bind_group, &[]);
             rpass.set_bind_group(2, &self.gi_bind_group, &[]);
+            rpass.set_bind_group(3, &self.emitter_bind_group, &[]);
             for mesh in meshes {
                 rpass.set_pipeline(&self.pipelines[mesh.pass.index()]);
                 rpass.set_vertex_buffer(0, mesh.vertices.slice(..));

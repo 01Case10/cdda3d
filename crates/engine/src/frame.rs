@@ -438,6 +438,159 @@ impl SkyScene {
     }
 }
 
+/// Emitter input for one frame (Addendum 11 emitter prototype):
+/// the frame's declared local light emitters plus the fixture
+/// companions they shine in — the vehicle that carries them, the
+/// light grid that caps them (the Phase 7 ceiling truth), and
+/// the night sky they shine under. Fixture data ONLY: no
+/// wire/protocol change; the real feed is the game side's
+/// emitter declaration (plan.md Addendum 11), which this scene
+/// stands in for. `CaptureArgs::emitters` carries it; both
+/// renderer paths convert the emitters to their own space at the
+/// upload site ([`EmitterScene::uniforms_mesher_space`] /
+/// [`EmitterScene::uniforms_grid_space`]).
+#[derive(Debug, Clone)]
+pub struct EmitterScene {
+    /// The declared emitters, authored in game space (east,
+    /// north, up) — see `lighting::Emitter`.
+    pub emitters: Vec<lighting::Emitter>,
+    /// The fixture vehicle carrying the emitters.
+    pub vehicles: VehicleScene,
+    /// The scene's light grid (the ceiling truth).
+    pub lighting: LightingScene,
+    /// The scene's sky.
+    pub sky: SkyScene,
+}
+
+impl EmitterScene {
+    /// The named emitter fixture matrix: `"headlight-car"` (the
+    /// prototype scene). One resolver shared by the `--emitters`
+    /// capture flag and the gate, so the CLI name and the gate
+    /// scene cannot drift — the `SkyScene::named` pattern.
+    pub fn named(name: &str) -> Option<Self> {
+        match name {
+            "headlight-car" => Some(Self::headlight_car()),
+            _ => None,
+        }
+    }
+
+    /// The prototype scene: the Phase 8 fixture car parked on
+    /// the sample scene's south yard at night, headlights on,
+    /// shining east across open grass; the yard's tree at game
+    /// (13, 20) stands in the beam as the occluder (the RT shadow
+    /// proof's subject). Layout (game tiles, x east / y south,
+    /// z 0):
+    ///
+    /// - car pivot (3, 18), facing 0° (east): frame tiles
+    ///   (3..=5, 18), wheels (3, 17), (5, 17), (3, 19), (5, 19),
+    ///   roof part (4, 18) at z 1 — the `VehicleScene::fixture_car`
+    ///   export, verbatim;
+    /// - headlight emitters just proud of the front face
+    ///   (x = 6.15, so the car's own front voxels cannot shadow
+    ///   the beam at its origin), at south 17.4 / 18.6, half a
+    ///   z-level up, pointing east with a slight downward tilt,
+    ///   35° half-angle, range 14 tiles, warm white;
+    /// - the light grid is an outdoor night grid: every z-0 tile
+    ///   `LIT` (the yard is seen and lit — the ceiling is not
+    ///   what limits the pool; the falloff is), EXCEPT a 3×3
+    ///   `DARK` patch at (10..=12, 17..=19) inside the beam and
+    ///   (11, 16) forced `BLANK` just north of it: the gate's
+    ///   ceiling proof. The patch is 3×3 because the raster bake
+    ///   smooths vertex light across tile borders — only the
+    ///   patch's centre tile (11, 18) has all-DARK vertex
+    ///   neighbourhoods, so only it proves the raster ceiling;
+    ///   in RT (per-tile lit, no smoothing) every patch tile is
+    ///   capped by the DARK lit factor. The BLANK tile must not
+    ///   render at all in either renderer. Z-1 is `BLANK` except
+    ///   the house roof footprint and the car's roof tile, the
+    ///   only z-1 geometry.
+    ///
+    /// The grid is a fixture simplification: the whole 24×24
+    /// yard is one outdoor grid (the house interior is scenery
+    /// here, not a lit room).
+    pub fn headlight_car() -> Self {
+        use proto::LitLevel;
+        let lit = lighting::TileLight::new(LitLevel::LIT, 255).outside(true);
+        let mut grid = lighting::LightGrid::filled([0, 0, 0], [24, 24, 2], lit);
+        // Z 1: only the house roof footprint and the car roof
+        // tile carry geometry; everything else never-seen.
+        for y in 0..24 {
+            for x in 0..24 {
+                grid.set(x, y, 1, lighting::TileLight::BLANK);
+            }
+        }
+        for y in 3..=9 {
+            for x in 3..=10 {
+                grid.set(x, y, 1, lit);
+            }
+        }
+        grid.set(4, 18, 1, lit);
+        // The ceiling-proof patch + BLANK tile, inside the beam
+        // (see above).
+        let dark = lighting::TileLight::new(LitLevel::DARK, 255).outside(true);
+        for y in 17..=19 {
+            for x in 10..=12 {
+                grid.set(x, y, 0, dark);
+            }
+        }
+        grid.set(11, 16, 0, lighting::TileLight::BLANK);
+
+        // Headlights: game space is (east, north, up), so south
+        // yard rows 17.4 / 18.6 are north −17.4 / −18.6.
+        let headlight = |north: f32| {
+            lighting::Emitter::new(
+                [6.15, north, 0.5],
+                [1.0, 0.0, -0.12],
+                35.0,
+                14.0,
+                2.2,
+                [1.0, 0.85, 0.62],
+            )
+        };
+        Self {
+            emitters: vec![headlight(-17.4), headlight(-18.6)],
+            vehicles: VehicleScene::fixture_car([3, 18, 0], 0.0),
+            lighting: LightingScene::from_grid(
+                grid,
+                lighting::Environment::new(0.0, lighting::WeatherKind::Clear),
+                crate::world::HOUSE_MIN_GAME_Z,
+            ),
+            sky: SkyScene::named("midnight-clear")
+                .expect("midnight-clear is in the SkyScene::named matrix"),
+        }
+    }
+
+    /// The frame's emitter block in **mesher world space** —
+    /// the raster renderer's consumption form.
+    pub fn uniforms_mesher_space(&self) -> lighting::EmitterUniforms {
+        lighting::EmitterUniforms::from_emitters(&self.emitters).to_mesher_world_space()
+    }
+
+    /// The frame's emitter block in **grid space** — the RT
+    /// renderer's consumption form.
+    pub fn uniforms_grid_space(&self) -> lighting::EmitterUniforms {
+        lighting::EmitterUniforms::from_emitters(&self.emitters).to_grid_space()
+    }
+
+    /// Seat this scene's companions (sky, vehicles, lighting)
+    /// into capture args that don't already carry them — an
+    /// explicit `--sky` / `--vehicle-fixture` / `--light-hour`
+    /// still wins over the fixture's own. Used by the
+    /// `--emitters` flag and the gate, so a capture of the scene
+    /// is one flag, not four.
+    pub fn seat_companions(&self, args: &mut CaptureArgs) {
+        if args.sky.is_none() {
+            args.sky = Some(self.sky.clone());
+        }
+        if args.vehicles.is_none() {
+            args.vehicles = Some(self.vehicles.clone());
+        }
+        if args.lighting.is_none() {
+            args.lighting = Some(self.lighting.clone());
+        }
+    }
+}
+
 /// Billboard input for one frame (Phase 2h.2): a sprite atlas
 /// (fixture or the voxelizer's real UltiCa output), the entities
 /// to draw (protocol `Entity` shape, via billboard's mirror type),
@@ -1292,11 +1445,25 @@ fn render_frame_inner(
         // said (the 10.4 gates called the sky entry directly
         // and never saw it). No seated sky keeps the exact
         // pre-10.6 call, so the §6 default is byte-unchanged.
-        let frame = match &args.sky {
-            Some(s) => {
-                crate::rt::render_rt_frame_sky(device, queue, args, &s.uniforms_grid_space())?
-            }
-            None => crate::rt::render_rt_frame(device, queue, args)?,
+        // Addendum 11 (emitter prototype): the frame's emitters
+        // ride the same entry, converted to grid space here like
+        // the sky block beside them. With neither a sky nor an
+        // emitter scene seated this stays exactly the pre-10.6
+        // call; with a sky only, the sky/emitters entry receives
+        // `emitters: None`, which is `render_rt_frame_sky`'s own
+        // inner path.
+        let emitter_uniforms = args.emitters.as_ref().map(|s| s.uniforms_grid_space());
+        let sky_grid_uniforms = args.sky.as_ref().map(|s| s.uniforms_grid_space());
+        let frame = if sky_grid_uniforms.is_none() && emitter_uniforms.is_none() {
+            crate::rt::render_rt_frame(device, queue, args)?
+        } else {
+            crate::rt::render_rt_frame_sky_emitters(
+                device,
+                queue,
+                args,
+                sky_grid_uniforms.as_ref(),
+                emitter_uniforms.as_ref(),
+            )?
         };
         let (width, height) = frame.size;
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1508,6 +1675,16 @@ fn render_frame_inner(
     // Phase 10 slice 10.3: the frame's sky (background pass +
     // GI uniforms), evaluated once above.
     renderer.set_sky(queue, &sky_uniforms, view_proj.inverse(), (width, height));
+    // Addendum 11 (emitter prototype): the frame's emitters,
+    // converted to mesher world space — the empty block when no
+    // emitter scene is seated, so group 3 is always current and
+    // an emitter-less frame is byte-identical.
+    let emitter_uniforms = args
+        .emitters
+        .as_ref()
+        .map(|s| s.uniforms_mesher_space())
+        .unwrap_or_else(lighting::EmitterUniforms::empty);
+    renderer.set_emitters(queue, &emitter_uniforms);
     renderer.draw(device, queue, &gpu_meshes, &color_view, &depth_view);
     stats.passes.push(FramePass::World);
 

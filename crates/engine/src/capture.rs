@@ -95,6 +95,13 @@ pub struct CaptureArgs {
     /// legacy-equivalent GI, so pre-Phase-10 captures keep their
     /// geometry shading byte-for-byte.
     pub sky: Option<crate::frame::SkyScene>,
+    /// Addendum 11 (emitter prototype): the frame's declared
+    /// local light emitters — fixture data only, no wire/protocol
+    /// change. Both renderer paths read this one field (the
+    /// raster converts it to mesher world space, the RT path to
+    /// grid space, at the upload site). `None` = the empty
+    /// emitter set: byte-for-byte the pre-Addendum-11 frame.
+    pub emitters: Option<crate::frame::EmitterScene>,
     /// Phase 2h.2: billboard scene drawn between the fields and
     /// the post. `None` = no billboard pass.
     pub billboards: Option<crate::frame::BillboardScene>,
@@ -146,6 +153,7 @@ impl Default for CaptureArgs {
             cutaway_z: 1,
             lighting: None,
             sky: None,
+            emitters: None,
             billboards: None,
             ui: None,
             vehicles: None,

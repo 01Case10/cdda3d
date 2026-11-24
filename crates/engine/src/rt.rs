@@ -418,7 +418,7 @@ pub fn render_rt_frame(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<RtFrameOut, CaptureError> {
-    render_rt_frame_inner(device, queue, args, None)
+    render_rt_frame_inner(device, queue, args, None, None)
 }
 
 /// Phase 10 (10.4): [`render_rt_frame`] with the shared sky
@@ -442,7 +442,24 @@ pub fn render_rt_frame_sky(
     args: &CaptureArgs,
     sky: &lighting::SkyUniforms,
 ) -> Result<RtFrameOut, CaptureError> {
-    render_rt_frame_inner(device, queue, args, Some(sky))
+    render_rt_frame_inner(device, queue, args, Some(sky), None)
+}
+
+/// Addendum 11 (emitter prototype): [`render_rt_frame`] with the
+/// frame's sky and/or declared emitters. Either block may be
+/// `None` (the renderer's default for that input: neutral sky /
+/// empty emitter set). Both blocks must already be in **grid
+/// space** — the sky per [`render_rt_frame_sky`]'s contract, the
+/// emitters via `lighting::EmitterUniforms::to_grid_space`. With
+/// both `None` this is exactly [`render_rt_frame`].
+pub fn render_rt_frame_sky_emitters(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
+    render_rt_frame_inner(device, queue, args, sky, emitters)
 }
 
 fn render_rt_frame_inner(
@@ -450,6 +467,7 @@ fn render_rt_frame_inner(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
     sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
 ) -> Result<RtFrameOut, CaptureError> {
     // Phase 9 (9.5): the effective prop scene — an explicit
     // `props` scene wins regardless of the flag; with only
@@ -463,7 +481,7 @@ fn render_rt_frame_inner(
             None
         };
     if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
-        return render_rt_frame_props(device, queue, args, props, sky);
+        return render_rt_frame_props(device, queue, args, props, sky, emitters);
     }
     let t0 = Instant::now();
     // Phase 2h.3: with a lighting scene, the world is built
@@ -506,6 +524,9 @@ fn render_rt_frame_inner(
     let (renderer, mut scene) = RtRenderer::with_scene(device, queue, &built);
     if let Some(sky) = sky {
         scene.set_sky(queue, sky);
+    }
+    if let Some(e) = emitters {
+        scene.set_emitters(queue, e);
     }
     let texture_stats = match &args.textures {
         Some(dir) => Some(attach_fake_textures(
@@ -687,6 +708,7 @@ fn render_rt_frame_props(
     args: &CaptureArgs,
     props: &crate::frame::PropScene,
     sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
 ) -> Result<RtFrameOut, CaptureError> {
     let t0 = Instant::now();
     let levels = capture_visible_levels(args.cutaway_z);
@@ -832,6 +854,9 @@ fn render_rt_frame_props(
     if let Some(sky) = sky {
         scene.set_sky(queue, sky);
     }
+    if let Some(e) = emitters {
+        scene.set_emitters(queue, e);
+    }
     if let Some(spec) = &attach_spec {
         scene
             .attach_textures(device, queue, spec)
@@ -880,10 +905,21 @@ pub fn capture_rt_with_device_sky(
     args: &CaptureArgs,
     sky: Option<&lighting::SkyUniforms>,
 ) -> Result<RtCapture, CaptureError> {
-    let frame = match sky {
-        Some(sky) => render_rt_frame_sky(device, queue, args, sky)?,
-        None => render_rt_frame(device, queue, args)?,
-    };
+    capture_rt_with_device_sky_emitters(device, queue, args, sky, None)
+}
+
+/// Addendum 11 (emitter prototype): [`capture_rt_with_device_sky`]
+/// with the frame's declared emitters as well (`None` = the
+/// empty set). Blocks must already be in grid space — see
+/// [`render_rt_frame_sky_emitters`].
+pub fn capture_rt_with_device_sky_emitters(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtCapture, CaptureError> {
+    let frame = render_rt_frame_sky_emitters(device, queue, args, sky, emitters)?;
     let (width, height) = frame.size;
 
     let pixels = read_texture_rgba(device, queue, &frame.color, (width, height))?;
