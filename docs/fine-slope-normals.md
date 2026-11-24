@@ -299,7 +299,7 @@ pipeline includes it — a pre-existing gap in that test
 accessor, unrelated to this change; the pipeline assembly
 is what the GPU gates exercise. Not pushed.
 
-## 12. Per-corner occlusion (2026-11-24)
+## 13. Per-corner occlusion (2026-11-24)
 
 The §10 residual's occlusion half, fixed in the mesher.
 `face_occlusion`'s counting core now takes the air position
