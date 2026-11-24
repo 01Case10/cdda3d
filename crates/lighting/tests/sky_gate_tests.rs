@@ -188,6 +188,16 @@ fn gate_10_2a_midnight_is_moon_dominant() {
         mid.moon_intensity > mid.sun_intensity,
         "moon dominates at midnight"
     );
+    // The render gain (MOON_RENDER_GAIN in sky.rs): the
+    // moon's peak maps to 0.30 render intensity, so a full
+    // moon at midnight is real light, not the 0.056 the
+    // linear 125-normalization produced. The fake day's
+    // altitude fold keeps midnight just under the peak.
+    assert!(
+        mid.moon_intensity > 0.05 && mid.moon_intensity <= 0.30,
+        "full-moon render intensity should sit near the gained peak: {}",
+        mid.moon_intensity
+    );
     assert!(
         mid.moon_dir[2] > 0.5,
         "full-ish moon high at midnight: {:?}",
