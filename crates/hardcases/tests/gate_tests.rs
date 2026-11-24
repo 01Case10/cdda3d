@@ -91,14 +91,29 @@ fn gate_8_4_close_bash_other_unchanged() {
     defs.defs = Some(vec![closed, open, broken]);
     defs.protocol_version = PROTOCOL_VERSION;
     let table = DefTable::from_tiledefs(&defs);
-    assert_eq!(classify_transition(&table, 1, 2), Transition::Open);
-    assert_eq!(classify_transition(&table, 2, 1), Transition::Close);
-    assert_eq!(classify_transition(&table, 1, 3), Transition::Bash);
-    assert_eq!(classify_transition(&table, 1, 1), Transition::Unchanged);
-    assert_eq!(classify_transition(&table, 1, 99), Transition::Other);
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Furniture, 1, 2),
+        Transition::Open
+    );
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Furniture, 2, 1),
+        Transition::Close
+    );
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Furniture, 1, 3),
+        Transition::Bash
+    );
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Furniture, 1, 1),
+        Transition::Unchanged
+    );
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Furniture, 1, 99),
+        Transition::Other
+    );
     // A wall smashing into a door id is not a door action.
     assert_eq!(
-        classify_transition(&table, TER_WALL, TER_DOOR),
+        classify_transition(&table, proto::TileKind::Terrain, TER_WALL, TER_DOOR),
         Transition::Other
     );
 }
@@ -240,9 +255,12 @@ fn gate_8_4b_roof_result_survives_the_wire() {
         panic!("expected TileDefs back");
     };
     let table = DefTable::from_tiledefs(back);
-    let f = table.def(FLR).unwrap();
+    let f = table.def(TileKind::Terrain, FLR).unwrap();
     assert_eq!(f.roof_result.as_deref(), Some("t_flat_roof"));
-    assert_eq!(table.resolve(&f.roof_result), Some(FLAT_ROOF));
+    assert_eq!(
+        table.resolve(TileKind::Terrain, &f.roof_result),
+        Some(FLAT_ROOF)
+    );
     // Sanity: TileChange positions still decode as before (the
     // change type itself is untouched by the schema addition).
     let _: &TileChangeT = &sample_delta().tile_changes.unwrap()[0];

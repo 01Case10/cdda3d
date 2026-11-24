@@ -66,13 +66,26 @@ fn gate_8_7_mod_defs_flow_through_base_rules() {
     // New connect group resolves by name and index.
     assert_eq!(table.connect_groups()[1], "mod_glowall");
     assert_eq!(
-        table.def(200).unwrap().connect_groups.as_deref(),
+        table
+            .def(TileKind::Terrain, 200)
+            .unwrap()
+            .connect_groups
+            .as_deref(),
         Some(&[1][..])
     );
     // The mod door's full transform chain classifies.
-    assert_eq!(classify_transition(&table, 203, 204), Transition::Open);
-    assert_eq!(classify_transition(&table, 204, 203), Transition::Close);
-    assert_eq!(classify_transition(&table, 203, 205), Transition::Bash);
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Terrain, 203, 204),
+        Transition::Open
+    );
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Terrain, 204, 203),
+        Transition::Close
+    );
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Terrain, 203, 205),
+        Transition::Bash
+    );
     // The mod floor roofs the level above it, via the Phase 8
     // roof export, exactly like a base-game floor.
     let col = Column {

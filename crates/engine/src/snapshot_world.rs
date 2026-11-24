@@ -541,7 +541,10 @@ pub fn stamp_terrain<'m>(
                     _ => continue,
                 }
             };
-            let Some(string_id) = table.def(def).and_then(|d| d.string_id.as_deref()) else {
+            let Some(string_id) = table
+                .def(proto::TileKind::Terrain, def)
+                .and_then(|d| d.string_id.as_deref())
+            else {
                 skipped += 1;
                 continue;
             };
@@ -596,7 +599,7 @@ pub fn stamp_terrain<'m>(
     for job in &jobs {
         let tile = (job.x, job.y);
         let string_id = table
-            .def(job.def)
+            .def(proto::TileKind::Terrain, job.def)
             .and_then(|d| d.string_id.as_deref())
             .expect("job defs resolved during validation");
         let (model, _, _) = resolve(string_id).expect("job models resolved during validation");
