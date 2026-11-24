@@ -1,6 +1,8 @@
-//! S0 gate tests: the sim server over a real Unix socket, driven by
-//! a client speaking the Phase 1 wire through `proto` framing —
-//! the same path `proto-client` uses.
+//! S0/S1 gate tests: the sim server over a real Unix socket, driven
+//! by a client speaking the Phase 1 wire through `proto` framing —
+//! the same path `proto-client` uses. S1: the server sends the
+//! FULL registry TileDefs (14,262 defs) and the stub_house scene
+//! Snapshot.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -13,8 +15,9 @@ use proto::{
     decode_message, encode_message, FrameDecoder, FrameEncoder, MessageT, PingT, ShutdownT,
     PROTOCOL_VERSION,
 };
+use sim::ServerConfig;
 
-const TIMEOUT: Duration = Duration::from_secs(10);
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 fn temp_socket(name: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!("sim-s0-{}-{name}.sock", std::process::id()));
@@ -25,7 +28,15 @@ fn temp_socket(name: &str) -> PathBuf {
 }
 
 fn spawn_server(path: PathBuf) -> JoinHandle<proto::Result<()>> {
-    std::thread::spawn(move || sim::run_server(&path))
+    let config = ServerConfig {
+        socket_path: path,
+        defs_path: Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/sim-defs/generated/defs.json"),
+        ),
+        scene_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scenes/stub_house.toml"),
+    };
+    std::thread::spawn(move || sim::run_server(&config))
 }
 
 /// Poll-connect until the server is listening (no fixed sleeps).
@@ -109,12 +120,17 @@ fn s0_handshake_snapshot_echo_ping_shutdown() {
         &MessageT::HelloAck(Box::new(sample_hello_ack())),
     );
 
-    // TileDefs (non-empty), then Snapshot (seq/epoch 1, one block,
-    // environment piggybacked).
+    // TileDefs (the FULL registry table), then Snapshot (seq/epoch
+    // 1, one block, environment piggybacked).
     match recv(&mut stream, &mut dec) {
         MessageT::TileDefs(td) => {
             let defs = td.defs.unwrap_or_default();
-            assert!(!defs.is_empty(), "TileDefs must carry defs");
+            assert_eq!(defs.len(), 14_262, "full Option C def table");
+            assert_eq!(
+                td.connect_groups.unwrap_or_default().len(),
+                40,
+                "connect-group registry"
+            );
         }
         other => panic!("expected TileDefs, got {other:?}"),
     }

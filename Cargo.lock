@@ -1973,6 +1973,8 @@ name = "sim"
 version = "0.1.0"
 dependencies = [
  "proto",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

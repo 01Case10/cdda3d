@@ -1,0 +1,91 @@
+# stub_house — the canonical Phase 1 house (plan §4 item 1).
+# Reproduces proto::samples::sample_snapshot() semantically:
+# wall perimeter, door at (5,11), window at (2,0), a table, a
+# two-field tile, an item pile, one zombie, one vehicle.
+# The sample carries NO avatar entity (its only entity is the
+# zombie, id 1), so this scene has no `player` key and no player
+# spawn. The sample piggybacks the environment and carries
+# outside[] — both enabled here.
+name = "stub_house"
+seed = 1
+time = "noon"
+weather = "clear"
+view_origin = [0, 0, 0]
+view_radius = 60
+environment = true
+emit_outside = true
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "W" = "t_window", "T" = "f_table" }
+map = [
+  "##W#########",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#####D######",
+]
+furn = [
+  "............",
+  "............",
+  "............",
+  "...T........",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+]
+
+[[field]]
+pos = [6, 6, 0]
+type = "fd_smoke"
+intensity = 2
+
+[[field]]
+pos = [6, 6, 0]
+type = "fd_fire"
+intensity = 1
+
+[[field]]
+pos = [7, 6, 0]
+type = "fd_smoke"
+intensity = 1
+
+[[items]]
+pos = [4, 4, 0]
+top = "rock"
+count = 3
+
+[[graffiti]]
+pos = [1, 1, 0]
+
+[[spawn]]
+type = "mon_zombie"
+pos = [6, 5, 0]
+hp_frac = 200
+facing = "RIGHT"
+overlays = ["overlay_wielded_rock", "overlay_worn_jacket"]
+flags = 2
+
+[[vehicle]]
+id = 7
+name = "car"
+face_deg = 37.5
+
+[[vpart]]
+vehicle = 7
+type = "wheel"
+pos = [20, 20, 0]
+mount = [0, 0, 0]
+hp_frac = 255
+flags = 4

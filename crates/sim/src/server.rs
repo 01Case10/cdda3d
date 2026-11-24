@@ -1,23 +1,41 @@
-//! Unix-socket server for the sim test game (slice S0).
-//!
-//! Behaviour mirrors the C++ stub server
-//! (`tools/stub-server/stub_server.cpp`) message for message, with
-//! ONE deliberate deviation, noted at the Snapshot send below.
+//! Unix-socket server for the sim test game (slices S0 + S1).
 //!
 //! Lifecycle: bind, accept ONE connection, serve it until Shutdown,
 //! disconnect, or a fatal protocol error, then close the listener,
 //! unlink the socket path, and return `Ok(())`. A handshake version
 //! mismatch is a clean exit, never a panic (docs/protocol.md).
+//!
+//! S1 behaviour: after the HelloAck, the server sends the FULL
+//! registry TileDefs (all 14,262 defs from the S1a generated
+//! table) and then the configured scene's Snapshot, built by
+//! [`crate::world::World`]. The rest of the loop is S0's: Input
+//! echo (the turn loop is S2), Ping/Pong, Resize/PickResult
+//! logging, Shutdown.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::PathBuf;
 
-use proto::samples::{sample_hello, sample_snapshot, sample_tiledefs};
+use proto::samples::sample_hello;
 use proto::{
     check_handshake, decode_message, encode_message, FrameDecoder, FrameEncoder, MessageT, PongT,
     PROTOCOL_VERSION,
 };
+
+use crate::defs::DefRegistry;
+use crate::scenes::Scene;
+use crate::world::World;
+
+/// Everything the server needs, resolved before binding.
+#[derive(Debug, Clone)]
+pub struct ServerConfig {
+    pub socket_path: PathBuf,
+    /// Explicit defs path; `None` = registry resolution order
+    /// (env `CDDA_SIM_DEFS`, then CWD-relative default).
+    pub defs_path: Option<PathBuf>,
+    /// Scene file to load and serve.
+    pub scene_path: PathBuf,
+}
 
 fn send(stream: &mut UnixStream, msg: &MessageT) -> proto::Result<()> {
     let framed = FrameEncoder::encode(&encode_message(msg));
@@ -40,16 +58,32 @@ fn recv(stream: &mut UnixStream, dec: &mut FrameDecoder) -> proto::Result<Option
     }
 }
 
-/// Run the server on `socket_path` until the (single) client shuts
-/// it down or disconnects. The socket file is removed on exit.
-pub fn run_server(socket_path: &Path) -> proto::Result<()> {
+/// Run the server on `config.socket_path` until the (single)
+/// client shuts it down or disconnects. The socket file is
+/// removed on exit. Registry/scene load errors are returned
+/// before binding, with messages naming what was tried.
+pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
+    let reg = DefRegistry::load_resolved(config.defs_path.as_deref())
+        .map_err(|e| proto::ProtoError::Malformed(format!("defs: {e}")))?;
+    let scene = Scene::load_file(&config.scene_path)
+        .map_err(|e| proto::ProtoError::Malformed(format!("scene: {e}")))?;
+    let mut world = World::from_scene(&reg, &scene)
+        .map_err(|e| proto::ProtoError::Malformed(format!("world: {e}")))?;
+    eprintln!(
+        "sim-server: loaded {} defs, scene '{}' ({} blocks)",
+        reg.len(),
+        scene.name,
+        world.blocks.len()
+    );
+
+    let socket_path = &config.socket_path;
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
     let listener = UnixListener::bind(socket_path)?;
     eprintln!("sim-server: listening on {}", socket_path.display());
 
-    let result = serve_one(&listener);
+    let result = serve_one(&listener, &reg, &mut world);
 
     // Clean exit path for every outcome (shutdown, disconnect,
     // version mismatch): close the listener (drop) and unlink.
@@ -60,7 +94,7 @@ pub fn run_server(socket_path: &Path) -> proto::Result<()> {
     result
 }
 
-fn serve_one(listener: &UnixListener) -> proto::Result<()> {
+fn serve_one(listener: &UnixListener, reg: &DefRegistry, world: &mut World) -> proto::Result<()> {
     let (mut stream, _) = listener.accept()?;
     let mut dec = FrameDecoder::new();
 
@@ -91,23 +125,24 @@ fn serve_one(listener: &UnixListener) -> proto::Result<()> {
         ack.engine_version, ack.screen_width, ack.screen_height
     );
 
-    // TileDefs, then the (static, S0) Snapshot.
+    // TileDefs (the full registry table), then the scene Snapshot.
     send(
         &mut stream,
-        &MessageT::TileDefs(Box::new(sample_tiledefs())),
+        &MessageT::TileDefs(Box::new(reg.tiledefs().clone())),
     )?;
     send(
         &mut stream,
-        &MessageT::Snapshot(Box::new(sample_snapshot())),
+        &MessageT::Snapshot(Box::new(world.snapshot(reg))),
     )?;
     // DEVIATION from the C++ stub server: the stub also sends one
-    // standalone EnvironmentUpdate after the Snapshot. S0 does NOT:
-    // the existing proto-client expects the Input echo as the next
-    // message after the Snapshot and would fail on an intervening
-    // EnvironmentUpdate. The Snapshot already piggybacks the current
-    // environment, so no information is lost. Standalone
-    // EnvironmentUpdates belong to the S3 environment slice, where
-    // they will be sent on change / on the 10-game-minute cadence.
+    // standalone EnvironmentUpdate after the Snapshot. The sim does
+    // NOT: the existing proto-client expects the Input echo as the
+    // next message after the Snapshot and would fail on an
+    // intervening EnvironmentUpdate. The Snapshot already
+    // piggybacks the current environment where the scene carries
+    // one, so no information is lost. Standalone EnvironmentUpdates
+    // belong to the S3 environment slice, where they will be sent
+    // on change / on the 10-game-minute cadence.
     eprintln!("sim-server: sent tiledefs + snapshot");
 
     // Main loop.
@@ -129,7 +164,7 @@ fn serve_one(listener: &UnixListener) -> proto::Result<()> {
                     "sim-server: input kind={:?} key={} pressed={}",
                     input.kind, input.key_code, input.pressed
                 );
-                // Echo the input back verbatim (S0: no turn loop yet).
+                // Echo the input back verbatim (S0/S1: no turn loop yet).
                 send(&mut stream, &MessageT::Input(input))?;
             }
             MessageT::Ping(ping) => {
