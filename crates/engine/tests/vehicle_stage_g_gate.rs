@@ -25,7 +25,7 @@ fn root() -> PathBuf {
 fn ensure_assets(root: &Path) -> PathBuf {
     let assets = root.join("target/gallery_assets");
     if !assets.join("materials.json").exists() {
-        let tileset_dir = root.join("fork-src/cdda/gfx/UltimateCataclysm");
+        let tileset_dir = root.join("fork-src/tilesets/gfx/UltimateCataclysm");
         let ts = tileset::load_decomposed(&tileset_dir).expect("tileset loads");
         let cfg = voxelizer::VoxelizerConfig {
             emit_v2: true,
@@ -129,7 +129,9 @@ fn sprite_resolver(assets: &Path) -> impl Fn(&str) -> Option<image::RgbaImage> {
         for m in arr {
             if let (Some(id), Some(layer)) = (
                 m.get("id").and_then(|i| i.as_str()),
-                m.get("top_layer").and_then(|l| l.as_u64()),
+                m.get("sprite_layer")
+                    .and_then(|l| l.as_u64())
+                    .or_else(|| m.get("top_layer").and_then(|l| l.as_u64())),
             ) {
                 top_layer.insert(id.to_string(), layer as u32);
             }

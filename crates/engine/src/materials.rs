@@ -89,6 +89,10 @@ pub struct Material {
     pub top_layer: usize,
     pub side_layer: usize,
     pub bottom_layer: usize,
+    /// The vehicle composer's sprite layer (the _rotE
+    /// element for rotation-list parts); equals top_layer
+    /// for other materials and in pre-sprite_layer assets.
+    pub sprite_layer: usize,
     pub height_voxels: u32,
     pub transparency: String,
     pub cutout: bool,
@@ -486,6 +490,11 @@ impl MaterialTable {
                 top_layer: get("top_layer"),
                 side_layer: get("side_layer"),
                 bottom_layer: get("bottom_layer"),
+                sprite_layer: if m.get("sprite_layer").is_some() {
+                    get("sprite_layer")
+                } else {
+                    get("top_layer")
+                },
                 height_voxels: m["height_voxels"].as_u64().unwrap_or(0) as u32,
                 transparency: m["transparency"].as_str().unwrap_or("opaque").to_string(),
                 cutout: m["cutout"].as_bool().unwrap_or(false),

@@ -722,7 +722,7 @@ pub fn vehicle_fine_scene(
             return hit.clone();
         }
         let img = table.get(id).and_then(|mat| {
-            image::open(dir.join(format!("blocks/layer_{:04}.png", mat.top_layer)))
+            image::open(dir.join(format!("blocks/layer_{:04}.png", mat.sprite_layer)))
                 .ok()
                 .map(|i| i.to_rgba8())
         });

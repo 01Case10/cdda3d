@@ -108,19 +108,41 @@ fn lerp(a: f64, b: f64, f: f64) -> f64 {
 /// Resolve a part's sprite through the prototype's lookup
 /// order: `vp_<base>`, `<base>`, the variant fallback.
 fn sprite_for(base: &str, sprites: &dyn Fn(&str) -> Option<RgbaImage>) -> Option<RgbaImage> {
+    resolve_part_sprite(base, sprites).map(|(_, img)| img)
+}
+
+/// Resolve a part's sprite, returning the winning
+/// material name with the image. Order: the part's own
+/// vp_ entry; for wheels the multitile front/rear entries
+/// (the bicycle wheel exists only as
+/// vp_wheel_bicycle_front/_rear — the bare name is an
+/// unrelated item icon, which this ordering must never
+/// reach first); the hand-pinned fallback map; and only
+/// then the bare part name.
+pub fn resolve_part_sprite(
+    base: &str,
+    sprites: &dyn Fn(&str) -> Option<RgbaImage>,
+) -> Option<(String, RgbaImage)> {
     if INTERNAL_PREFIXES.iter().any(|p| base.starts_with(p)) {
         return None;
     }
-    let vp = format!("vp_{base}");
-    if let Some(s) = sprites(&vp) {
-        return Some(s);
-    }
-    if let Some(s) = sprites(base) {
-        return Some(s);
+    let mut candidates = vec![format!("vp_{base}")];
+    if base.starts_with("wheel") {
+        candidates.push(format!("vp_{base}_front"));
+        candidates.push(format!("vp_{base}_rear"));
     }
     if let Some(fb) = fallback_material(base) {
-        if let Some(s) = sprites(fb) {
-            return Some(s);
+        candidates.push(fb.to_string());
+    }
+    // The bare name comes LAST: some tileset entries are
+    // genuinely keyed bare (frame, seat), but others
+    // collide with item icons (wheel_bicycle is a 20x20
+    // small.png item sprite) — the vp_ and suffixed
+    // candidates above must win first.
+    candidates.push(base.to_string());
+    for name in candidates {
+        if let Some(s) = sprites(&name) {
+            return Some((name, s));
         }
     }
     None

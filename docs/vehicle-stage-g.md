@@ -262,3 +262,65 @@ exists. Thin itself is now single-row AND no bed tiles —
 a one-row cargo cart keeps the footprint treatment (its
 sprites are top-down); the first cut profile-mapped the
 S4 gate's one-row bed layout and the gate caught it.
+
+## 12. Sprite-resolution fix (2026-11-24, Joey: "that still does not look like a bike")
+
+Root cause, measured: the profile mechanism was fine; the
+WHEELS were drawn from the wrong sprite. The bicycle
+wheel's real art is rotation-keyed (vp_wheel_bicycle_rotE/
+N/S/W — side elevation vs edge-on viewpoints); no material
+exists under vp_wheel_bicycle (the part's tileset entries
+are the multitile vp_wheel_bicycle_front/_rear, whose fg
+is the rotation list). The composer's chain missed them
+and landed on bare `wheel_bicycle` — a 20x20 item icon
+from small.png whose alpha sits in the frame's top-left
+(15px of margin beneath it), which the linear profile map
+turned into a small wheel floating ~14 units up.
+
+Audit of the 37 gallery vparts (old chain): most resolve
+to their vp_ material; suffixed-variant art exists for
+frame (vp_frame_horizontal), seat (vp_seat_rear),
+halfboard, door_trunk (already hand-pinned); bare-keyed
+entries are genuine for frame and seat; alternator_car/
+truck, battery_car, stereo and horn_bicycle resolved to
+their item sprites (under-hood parts; prototype parity,
+left as-is); xlframe and tank resolve to nothing (tank is
+internal by design; xlframe's art exists only as
+connection-suffixed sprites with no entry reaching the
+composer — the remaining frame gap on car and bike).
+
+Fix, three layers:
+- Composer (voxelizer::vehicle::resolve_part_sprite, now
+  public): order is vp_<base>, then for wheel parts
+  vp_<base>_front/_rear, then the fallback pins, then the
+  bare name LAST (it is genuine for frame/seat but an item
+  icon for wheels — order is the protection).
+- Build (voxelizer): materials gain `sprite_layer` — for
+  WHEEL entries whose fg is a rotation list, a dedicated
+  layer holding the _rotE element (the canonical side
+  elevation); every other entry's sprite_layer equals its
+  top_layer. Scoped to wheels on purpose: other parts'
+  rotation variants are same-projection redraws whose
+  primary the composition is built on (an unscoped rule
+  measurably drifted the car's doors/halfboards).
+- Engine: Material parses sprite_layer (falling back to
+  top_layer in older assets); vehicle_fine_scene's
+  resolver reads it.
+
+Gate: vehicle_sprite_gate — the wheel resolves to
+vp_wheel_bicycle_front, its art is a grounded disc at
+least 20px wide and tall, the composed wheel touches the
+ground across at least 20 columns, and no wheel part
+resolves to a bare name. Failing-first verified (icon:
+"wheel art width 4px" via the _front entry's edge-on
+primary). Car gate byte-identical throughout — the car
+was never touched by the fix. The 5.1 golden gained only
+sprite_layer fields (= top_layer on the fixture set).
+
+Note: regenerating target/gallery_assets (required —
+they were built before this change) also refreshed
+scene materials from the current tileset source; the
+committed car captures were NOT re-rendered in this
+commit, so capture-level background drift vs the stale
+assets is expected and is not vehicle drift (the car
+models are pinned exactly by the S1 gate).

@@ -32,6 +32,7 @@ fn material(multitile: bool, subtile_layers: &[(&str, usize)]) -> Material {
         top_layer: 0,
         side_layer: 7,
         bottom_layer: 1,
+        sprite_layer: 0,
         height_voxels: 3,
         transparency: "opaque".into(),
         cutout: false,
