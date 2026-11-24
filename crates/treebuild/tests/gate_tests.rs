@@ -13,8 +13,8 @@ use proptest::prelude::*;
 use treebuild::build::{build_tree, reconstruct_side_table, verify_side_table, BuildConfig, SideEntry};
 use treebuild::cpu::{cast_ray, dda_reference, occupied_at, point_node, TraceMode};
 use treebuild::world::{
-    VoxelCell, VoxelWorld, FLAG_EMISSIVE, FLAG_MEMORIZED, FLAG_TRANSPARENT, LIT_BLANK, LIT_BRIGHT,
-    LIT_LIT, LIT_MEMORIZED,
+    VoxelCell, VoxelWorld, FLAG_EMISSIVE, FLAG_MEMORIZED, FLAG_SKY_EXPOSED, FLAG_TRANSPARENT,
+    LIT_BLANK, LIT_BRIGHT, LIT_LIT, LIT_MEMORIZED,
 };
 
 // ---------------------------------------------------------------------
@@ -225,7 +225,18 @@ fn gate_2c_2_side_table_indexing() {
             let e = built.side[idx];
             assert_eq!(e.material_id, cell.material_id, "leaf {idx} at {voxel:?}");
             assert_eq!(e.lit, cell.lit as u32);
-            assert_eq!(e.flags, cell.flags);
+            // Side flags = the cell's own flags plus the bits
+            // from_cell derives from other cell fields:
+            // FLAG_MEMORIZED from lit (Phase 7) and
+            // FLAG_SKY_EXPOSED from sky_exposed (Phase 10.4).
+            let mut want_flags = cell.flags;
+            if cell.lit == LIT_MEMORIZED {
+                want_flags |= FLAG_MEMORIZED;
+            }
+            if cell.sky_exposed {
+                want_flags |= FLAG_SKY_EXPOSED;
+            }
+            assert_eq!(e.flags, want_flags);
         } else {
             assert_eq!(built.side[idx], SideEntry::EMPTY, "internal node {idx} must carry no material");
         }
@@ -633,6 +644,10 @@ fn gate_texture_hookup_samples_array_and_falls_back_flat() {
                 tile_size: tile,
                 layers: vec![layer],
                 material_layers,
+                macro_size: 0,
+                macro_layers: Vec::new(),
+                material_macros: Vec::new(),
+                material_blends: Vec::new(),
             },
         )
         .unwrap();

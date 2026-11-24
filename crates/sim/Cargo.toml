@@ -1,0 +1,22 @@
+[package]
+name = "sim"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CDDA Voxel Frontend Phase 11: sim-server library — a deterministic test game that mimics the fork over the Phase 1 IPC protocol."
+
+[dependencies]
+proto = { path = "../proto" }
+ui-share = { path = "../ui-share" }
+# S4 UI text rasteriser (plan §3.3 names fontdue / ab_glyph;
+# ab_glyph is already in the workspace lock via sctk-adwaita and
+# its .crate is in the local registry cache — fontdue is not
+# fetchable in this environment).
+ab_glyph = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# S7: the scenario gate's process mode spawns the real server
+# binary (CARGO_BIN_EXE_sim-server).
+[dev-dependencies]
+sim-server = { path = "../../tools/sim-server" }

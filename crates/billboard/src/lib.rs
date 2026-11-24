@@ -22,6 +22,7 @@
 
 pub mod atlas;
 pub mod composite;
+pub mod decor;
 pub mod instance;
 pub mod render;
 pub mod scene;

@@ -10,6 +10,10 @@ __pycache__/
 tools/stub-server/stub-server
 tools/stub-server/cpp-roundtrip
 
+# cargo-fuzz build artifacts + crash findings (corpora are committed)
+crates/proto/fuzz/target/
+crates/proto/fuzz/artifacts/
+
 # Phase 3 fork harness build artifacts
 tools/fork-harness/out/
 tools/fork-harness/rust-decode/target/

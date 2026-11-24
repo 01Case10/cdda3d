@@ -281,6 +281,8 @@ struct VsOut {
     if (f.class_id == 2u || f.class_id == 3u) { scale.y = f.size * 0.55; } // gas/liquid stay low
     if (f.class_id == 1u) { scale = vec3<f32>(f.size * 1.3, f.size * 1.7, f.size * 1.3); } // flame: wide billowing base, tall
     if (f.class_id == 0u) { scale = vec3<f32>(f.size * 1.25, f.size * 1.35, f.size * 1.25); } // smoke billows
+    if (f.class_id == 6u) { scale = vec3<f32>(f.size * 0.045, f.size * 0.62, f.size * 0.045); } // precip rain: thin tall streak
+    if (f.class_id == 7u) { scale = vec3<f32>(f.size * 0.085, f.size * 0.085, f.size * 0.085); } // precip snow: small mote
     let world = f.center + (corner - vec3<f32>(0.5, 0.0, 0.5)) * scale;
     var out: VsOut;
     out.clip = u.view_proj * vec4<f32>(world, 1.0);
@@ -430,6 +432,8 @@ fn smoke_shade(f: FieldInst, p: vec3<f32>, dir_l: vec3<f32>, t0: f32, t1: f32) -
     if (f.class_id == 2u || f.class_id == 3u) { scale.y = f.size * 0.55; }
     if (f.class_id == 1u) { scale = vec3<f32>(f.size * 1.3, f.size * 1.7, f.size * 1.3); }
     if (f.class_id == 0u) { scale = vec3<f32>(f.size * 1.25, f.size * 1.35, f.size * 1.25); }
+    if (f.class_id == 6u) { scale = vec3<f32>(f.size * 0.045, f.size * 0.62, f.size * 0.045); }
+    if (f.class_id == 7u) { scale = vec3<f32>(f.size * 0.085, f.size * 0.085, f.size * 0.085); }
     let dir_l = view_dir / scale;
     let p = input.local;
     var t_enter = -1e9;
@@ -489,6 +493,23 @@ fn smoke_shade(f: FieldInst, p: vec3<f32>, dir_l: vec3<f32>, t0: f32, t1: f32) -
         let falpha = clamp(fdens * 3.0 + ember * 0.8, 0.0, 1.0);
         if (falpha < 0.004) { return vec4<f32>(0.0); }
         return vec4<f32>(fcol, falpha);
+    }
+    if (f.class_id == 6u || f.class_id == 7u) {
+        // PRECIPITATION (Phase 10.5-early): a streak (rain) or mote
+        // (snow) is a soft solid, not a noise volume — alpha from
+        // the radial falloff across the instance's thin axes, with
+        // a gentle fade at the vertical ends so recycled instances
+        // do not pop at their caps. Color is the extracted instance
+        // color, slightly brighter at the core.
+        let cx = (local.x - 0.5) * 2.0;
+        let cz = (local.z - 0.5) * 2.0;
+        let radial = length(vec2<f32>(cx, cz));
+        let cross = clamp((1.1 - radial) / 0.7, 0.0, 1.0);
+        let soft = cross * cross * (3.0 - 2.0 * cross);
+        let endfade = smoothstep(0.0, 0.12, local.y) * (1.0 - smoothstep(0.88, 1.0, local.y));
+        let a = clamp(f.density * soft * (0.6 + 0.4 * endfade), 0.0, 1.0);
+        if (a < 0.004) { return vec4<f32>(0.0); }
+        return vec4<f32>(f.base_color * (0.85 + 0.3 * soft), a);
     }
     // Animated fbm: time-based only, scrolled by drift/buoyancy.
     let sample = local * f.noise_scale - f.drift * (u.time * f.noise_speed) + vec3<f32>(f.seed);

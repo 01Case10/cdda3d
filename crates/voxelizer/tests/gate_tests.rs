@@ -130,10 +130,14 @@ fn gate_5_3_top_face_fg_over_bg() {
 }
 
 /// 5.4 Side rules: floor side darkened within 25-40%; wall side = sprite.
+/// (Wall TOP diverged from this in Stage F part 2: the top is a
+/// generated end-cap, not the sprite — see stage_f2_caps_gate. The
+/// original form of this test asserted top == side, which encoded
+/// the sprite-as-top artifact that stage replaces.)
 #[test]
 fn gate_5_4_side_face_rules() {
     let out = tmpdir("side");
-    let (_, _, mats) = run_fixture(&out);
+    let (ts, _, mats) = run_fixture(&out);
     let floor = mat(&mats, "t_floor_wood");
     let top = layer_img(&out, floor.top_layer);
     let side = layer_img(&out, floor.side_layer);
@@ -155,7 +159,11 @@ fn gate_5_4_side_face_rules() {
     let wall = mat(&mats, "t_wall");
     let wtop = layer_img(&out, wall.top_layer);
     let wside = layer_img(&out, wall.side_layer);
-    assert_eq!(wtop, wside, "wall side must be the wall sprite directly");
+    let entry = ts.entries.get("t_wall").unwrap().clone();
+    let comp = composite_entry(&ts, &entry).unwrap();
+    let sprite_face = make_top_face(&comp, &ts, &entry, 32);
+    assert_eq!(wside, sprite_face, "wall side must be the wall sprite directly");
+    assert_ne!(wtop, wside, "wall top must be the generated end-cap, not the sprite");
 }
 
 /// 5.5 Multitile: all 16 cardinal masks + connect-group case.

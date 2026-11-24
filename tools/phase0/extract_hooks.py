@@ -3,7 +3,9 @@
 
 For every function the plan depends on, record file, line, and the exact
 source line. Output: docs/hook-points.md (human) + tools/phase0/results/
-hooks.json (machine). Run after fork-src/cdda is cloned at 6a3e59e0.
+hooks.json (machine). Run after fork-src/cdda is cloned at the pinned
+commit (fork base: CDDA 0.I-1, release tag 0.I-1, 7b2efa5c, since
+2026-11-23 — plan.md Addendum 12; originally master @ 6a3e59e0).
 """
 import json, os, re, sys
 
@@ -66,7 +68,7 @@ def main():
     with open(os.path.join(outdir, "hooks.json"), "w") as f:
         json.dump(results, f, indent=2)
     md = ["# Hook-point catalogue (Phase 0)", "",
-          "Extracted mechanically from CDDA `master` @ `6a3e59e08842de34ff3f111c7f098abeffb708a5`",
+          "Extracted mechanically from CDDA `0.I-1` (release tag 0.I-1) @ `7b2efa5cea38e4d4d97dd0e63b28b9148623da59`",
           "by `tools/phase0/extract_hooks.py`. A MISS means the pattern did not",
           "match at that file/line shape — see docs/recon.md for the resolution.", ""]
     cur = None

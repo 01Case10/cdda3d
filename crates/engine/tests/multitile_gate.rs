@@ -41,6 +41,11 @@ fn material(multitile: bool, subtile_layers: &[(&str, usize)]) -> Material {
             .iter()
             .map(|(k, v)| (k.to_string(), *v))
             .collect::<BTreeMap<_, _>>(),
+        macro_: None,
+        model: None,
+        model_kind: engine::materials::ModelKind::Standing,
+        model_surface: engine::materials::ModelSurface::None,
+        shore_layers: BTreeMap::new(),
     }
 }
 
@@ -451,14 +456,35 @@ fn gate_2d_3_wall_layouts_sample_their_variant_layers() {
                 g > r + 40 && b > r + 40,
                 "{name}: center pixel {c:?} must be the cyan end_piece variant"
             ),
-            // The tee is viewed from the south, whose face light
-            // is the dimmest (~0.30 vs ~0.55 north): white reads
-            // as a balanced mid-grey there. Balance + separation
-            // from the red base control is the signature.
-            "white" => assert!(
-                r > 45 && (r - g).abs() < 20 && (g - b).abs() < 20,
-                "{name}: center pixel {c:?} must be the white t_connection variant"
-            ),
+            // The tee is viewed from the south. Pre-Phase-10
+            // this asserted a balanced mid-grey (white under
+            // scalar face light stays balanced); §5.3's
+            // hemisphere ambient is coloured (zenith
+            // 0.30/0.48/0.78), so white now takes the
+            // illuminant's tint — measured center pixel
+            // [87, 115, 166] on lavapipe, 2026-11-23. The
+            // illuminant-relative signature: the pixel's
+            // chromaticity sits near the ambient-tinted
+            // white point (white albedo × the side-face
+            // hemisphere mix (ground+zenith)/2 =
+            // (0.175, 0.27, 0.43) → chroma (0.200, 0.309,
+            // 0.491); measured distance 0.054, tolerance
+            // 0.08) — every saturated variant is ≥ 0.19 away
+            // — and it stays bright (r > 45, as before).
+            "white" => {
+                let s = (r + g + b) as f32;
+                let chroma = [r as f32 / s, g as f32 / s, b as f32 / s];
+                let want = [0.200f32, 0.309, 0.491];
+                let d = ((chroma[0] - want[0]).powi(2)
+                    + (chroma[1] - want[1]).powi(2)
+                    + (chroma[2] - want[2]).powi(2))
+                .sqrt();
+                assert!(
+                    r > 45 && d < 0.08,
+                    "{name}: center pixel {c:?} must be the white t_connection variant \
+                     (chromaticity {chroma:?}, distance {d:.3} from ambient-tinted white)"
+                )
+            }
             _ => unreachable!(),
         }
 

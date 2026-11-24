@@ -1,0 +1,62 @@
+# T1 — go outside (plan §6 T1; behaviour proved by the S2/S3
+# gates). Walk out of the street_block house at noon: bump the
+# closed door, open it, step out onto BRIGHT grass, cross the
+# submap boundary east (fresh Snapshot, epoch + 1), come back,
+# close the door. The mirror invariant runs after every action
+# step automatically.
+scene = "street_block"
+name = "T1 go outside"
+
+steps = [
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_c" } },
+  { assert_player = [5, 5, 0] },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 7, 0] },
+  # Bump the closed door: the turn is consumed, nobody moves.
+  { do = "key", key = "j" },
+  { assert_player = [5, 7, 0] },
+  { assert_message = { kind = "Delta" } },
+  # Open it and walk out.
+  { do = "key", key = "o" },
+  { do = "key", key = "j" },
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_o" } },
+  { assert_delta_contains = { pos = [5, 8, 0], terrain = "t_door_o" } },
+  { do = "key", key = "j" },
+  { assert_player = [5, 8, 0] },
+  { do = "key", key = "j" },
+  { assert_player = [5, 9, 0] },
+  { assert_outside = { pos = [5, 9, 0], value = true } },
+  { assert_lit = { pos = [5, 9, 0], value = "BRIGHT" } },
+  # East to the submap edge, then across it: a map shift.
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { assert_player = [11, 9, 0] },
+  { do = "key", key = "l" },
+  { assert_message = { kind = "Snapshot", epoch = 2 } },
+  { assert_player = [12, 9, 0] },
+  # Back west across the boundary: another shift.
+  { do = "key", key = "h" },
+  { assert_message = { kind = "Snapshot", epoch = 3 } },
+  { assert_player = [11, 9, 0] },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { assert_player = [5, 9, 0] },
+  # In again, and close the door behind.
+  { do = "key", key = "k" },
+  { assert_player = [5, 8, 0] },
+  { do = "key", key = "k" },
+  { assert_player = [5, 7, 0] },
+  { do = "key", key = "c" },
+  { do = "key", key = "j" },
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_c" } },
+  { assert_mirror = true },
+]

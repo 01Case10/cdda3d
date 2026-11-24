@@ -1,0 +1,62 @@
+# T3 — spawn, chase, kill (plan §6 T3; behaviour proved by
+# the S5 gate). A zombie scripted into the yard chases the
+# player greedily across open ground (exactly one Chebyshev
+# step per turn while it can see the player), attacks when
+# adjacent, and dies to ten bump attacks (80 HP / 8 damage),
+# leaving a corpse item where it fell. In-process only: the
+# `spawn` step is a world event a wire client cannot inject
+# (the process-mode twin authors the zombie into its scene —
+# t3_process.toml / zombie_yard).
+scene = "street_block"
+name = "T3 spawn, chase, kill"
+
+steps = [
+  # Out of the house first: the yard is the arena.
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { do = "key", key = "o" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 9, 0] },
+  { assert_entity_absent = "mon_zombie" },
+  { do = "spawn", type = "mon_zombie", pos = [12, 11, 0] },
+  { assert_entity_visible = "mon_zombie" },
+  { assert_delta_contains = { entity = "mon_zombie" } },
+  # The chase: one greedy step per turn, closing diagonally
+  # first, then straight west along the yard row. (Positions
+  # pinned against the S5 greedy-chase rule.)
+  { assert_entity_at = { type = "mon_zombie", pos = [11, 10, 0] } },
+  { do = "key", key = "." },
+  { assert_entity_at = { type = "mon_zombie", pos = [10, 9, 0] } },
+  { do = "key", key = "." },
+  { assert_entity_at = { type = "mon_zombie", pos = [9, 9, 0] } },
+  { do = "key", key = "." },
+  { assert_entity_at = { type = "mon_zombie", pos = [8, 9, 0] } },
+  { do = "key", key = "." },
+  { assert_entity_at = { type = "mon_zombie", pos = [7, 9, 0] } },
+  { do = "key", key = "." },
+  { assert_entity_at = { type = "mon_zombie", pos = [6, 9, 0] } },
+  # Adjacent now: waiting draws an attack, not a step.
+  { do = "key", key = "." },
+  { assert_entity_at = { type = "mon_zombie", pos = [6, 9, 0] } },
+  { assert_player_hp = { lt = 255 } },
+  # Ten bump attacks east (it closed to the tile east of the
+  # player) kill it: 10 x 8 = 80 HP exactly.
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { assert_entity_visible = "mon_zombie" },
+  { do = "key", key = "l" },
+  { assert_entity_absent = "mon_zombie" },
+  { assert_delta_contains = { removed = "mon_zombie" } },
+  { assert_items = { pos = [6, 9, 0], top = "corpse", count = 1 } },
+  { assert_player_hp = { gte = 1 } },
+  { assert_mirror = true },
+]

@@ -12,6 +12,7 @@ TileVal base( uint32_t ter ) {
     t.terrain = ter;
     t.lit = Lit::LIT;
     t.seen = 255;
+    t.sky_exposed = true; // open field default; rooms/roofs clear it below
     return t;
 }
 
@@ -19,7 +20,11 @@ void room( World &w, int x0, int y0, int x1, int y1, int z, uint32_t floor_ter )
     for( int y = y0; y <= y1; ++y ) {
         for( int x = x0; x <= x1; ++x ) {
             const bool edge = x == x0 || x == x1 || y == y0 || y == y1;
-            w.set( x, y, z, base( edge ? T_WALL : floor_ter ) );
+            TileVal t = base( edge ? T_WALL : floor_ter );
+            // A walled room is indoors: no tile of it is sky-exposed
+            // (mock stand-in for is_outside && !is_roofed).
+            t.sky_exposed = false;
+            w.set( x, y, z, t );
         }
     }
 }
@@ -139,6 +144,63 @@ World make_vehicle_road( float face_deg )
     return w;
 }
 
+std::vector<EnvVal> env_sequence()
+{
+    // Step 0: noon-clear — identical values to the proto crate's
+    // canonical sample (crates/proto/src/samples.rs sample_environment).
+    EnvVal noon;
+    noon.turn = 309600;
+    noon.time_of_day_sec = 43200.0f;
+    noon.sunrise_sec = 21600.0f;
+    noon.sunset_sec = 64800.0f;
+    noon.season = 0;
+    noon.sun_light = 125.0f;
+    noon.moon_light = 1.0f;
+    noon.sun_azimuth_deg = 180.0f;
+    noon.sun_altitude_deg = 55.0f;
+    noon.moon_phase = 4;
+    noon.weather_id = "weather_clear";
+    noon.light_multiplier = 1.0f;
+    noon.light_modifier = 0.0f;
+    noon.sun_multiplier = 1.0f;
+    noon.precip_class = 0;
+    noon.rains = false;
+    noon.sight_penalty = 0.0f;
+    noon.temperature_c = 20.0f;
+    noon.windspeed_mph = 5.0f;
+    noon.wind_dir_deg = 90.0f;
+    noon.lightning_active = false;
+
+    // Step 1: thunderstorm, mid-afternoon (weather change + lightning).
+    EnvVal storm = noon;
+    storm.turn += 1800;
+    storm.time_of_day_sec = 54000.0f;
+    storm.sun_light = 40.0f;
+    storm.sun_altitude_deg = 30.0f;
+    storm.weather_id = "weather_thunderstorm";
+    storm.light_multiplier = 0.5f;
+    storm.light_modifier = -20.0f;
+    storm.sun_multiplier = 0.3f;
+    storm.precip_class = 3;
+    storm.rains = true;
+    storm.sight_penalty = 0.15f;
+    storm.temperature_c = 16.0f;
+    storm.windspeed_mph = 25.0f;
+    storm.lightning_active = true;
+
+    // Step 2: midnight, clear and moonlit.
+    EnvVal midnight = noon;
+    midnight.turn += 7200;
+    midnight.time_of_day_sec = 0.0f;
+    midnight.sun_light = 0.0f;
+    midnight.moon_light = 7.0f;
+    midnight.sun_altitude_deg = -35.0f;
+    midnight.temperature_c = 12.0f;
+    midnight.windspeed_mph = 3.0f;
+
+    return { noon, storm, midnight };
+}
+
 std::vector<DefVal> MockAdapter::tile_defs()
 {
     std::vector<DefVal> out;
@@ -181,6 +243,21 @@ std::vector<DefVal> MockAdapter::tile_defs()
     def( VP_WHEEL, "wheel", "wheel", 6 );
     def( VP_DOOR, "door", "vehicle door", 6 );
     def( VP_ROOF, "roof", "vehicle roof", 6 );
+    // fg/bg sprite refs, filled through the same FgBgRefs table
+    // the real adapter loads from CDDA_VOXEL_FG_REFS (voxel_refs.h):
+    // the mock's "composed config" maps three of its ids; every
+    // other def keeps the -1 sentinel, exactly as an unmapped id
+    // behaves in the fork build.
+    FgBgRefs refs;
+    refs.load_text( "# mock composed mapping\n"
+                    "t_floor\t0\t1\n"
+                    "t_wall\t3\t-1\n"
+                    "t_door_c\t7\t2\n" );
+    for( DefVal &d : out ) {
+        const std::pair<int32_t, int32_t> fg_bg = refs.lookup( d.string_id );
+        d.fg_ref = fg_bg.first;
+        d.bg_ref = fg_bg.second;
+    }
     return out;
 }
 

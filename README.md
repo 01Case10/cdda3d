@@ -58,5 +58,5 @@ tools/capture.sh --snapshot stub-house --camera 6,6,45,45 \
 ```
 tools/phase0/run_all.sh   # hooks + probes + UI spike, all headless
 ```
-Pinned upstream commits: CDDA `6a3e59e08842de34ff3f111c7f098abeffb708a5`,
+Pinned upstream commits: CDDA `7b2efa5cea38e4d4d97dd0e63b28b9148623da59`,
 Tilesets `5ee942f9e6601970c5da356200e7cf5061226262`.

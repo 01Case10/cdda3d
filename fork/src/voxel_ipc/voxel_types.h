@@ -7,6 +7,7 @@
 // shapes. Nothing in this header includes a CDDA header.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -54,14 +55,63 @@ struct TileVal {
     Lit lit = Lit::BLANK;
     uint8_t seen = 0;                       // quantized seen_cache float, 0..255
     bool graffiti = false;
+    // Phase 10: sky-exposed — the game's own test, resolved game-side:
+    // map::is_outside(p) && !map::is_roofed(p) (docs/phase10-sky-gi.md
+    // §3.4/§11). Drives the per-tile sky factor for sky GI.
+    bool sky_exposed = false;
     bool operator==( const TileVal &o ) const {
         return terrain == o.terrain && furniture == o.furniture && trap == o.trap &&
                fields == o.fields && displayed_type == o.displayed_type &&
                displayed_intensity == o.displayed_intensity && top_item == o.top_item &&
                item_count == o.item_count && lit == o.lit && seen == o.seen &&
-               graffiti == o.graffiti;
+               graffiti == o.graffiti && sky_exposed == o.sky_exposed;
     }
     bool operator!=( const TileVal &o ) const { return !( *this == o ); }
+};
+
+// Game time + weather at the player, in wire terms (schema
+// EnvironmentUpdate, docs/phase10-sky-gi.md §2.2). Mirrors the wire
+// fields 1:1 EXCEPT seq/epoch, which the exporter stamps. Weather is
+// string id + resolved numerics, never a closed enum: weather types
+// are JSON-defined and mod-extensible.
+struct EnvVal {
+    int64_t turn = 0;                  // turns since calendar::turn_zero
+    float time_of_day_sec = 0.0f;      // 0..86400, fractional
+    float sunrise_sec = 0.0f;          // today, game-local
+    float sunset_sec = 0.0f;
+    uint8_t season = 0;                // season_type: 0 spring .. 3 winter
+    float sun_light = 0.0f;            // incident_sunlight(wtype, turn)
+    float moon_light = 0.0f;           // incident_moonlight(wtype, turn)
+    float sun_azimuth_deg = 0.0f;      // from South, west-positive
+    float sun_altitude_deg = 0.0f;     // negative below horizon
+    uint8_t moon_phase = 0;            // get_moon_phase(turn), 0..MOON_PHASE_MAX
+    std::string weather_id;            // e.g. "weather_rain"
+    float light_multiplier = 1.0f;     // weather_type fields, resolved game-side
+    float light_modifier = 0.0f;
+    float sun_multiplier = 1.0f;
+    uint8_t precip_class = 0;          // precip_class: 0 none .. 3 heavy
+    bool rains = false;
+    float sight_penalty = 0.0f;
+    std::optional<std::array<float, 3>> tint_rgb; // weather_type tint_color; absent = no tint
+    float tint_strength = 0.0f;
+    float temperature_c = 0.0f;
+    float windspeed_mph = 0.0f;
+    float wind_dir_deg = 0.0f;
+    bool lightning_active = false;
+    bool operator==( const EnvVal &o ) const {
+        return turn == o.turn && time_of_day_sec == o.time_of_day_sec &&
+               sunrise_sec == o.sunrise_sec && sunset_sec == o.sunset_sec &&
+               season == o.season && sun_light == o.sun_light && moon_light == o.moon_light &&
+               sun_azimuth_deg == o.sun_azimuth_deg && sun_altitude_deg == o.sun_altitude_deg &&
+               moon_phase == o.moon_phase && weather_id == o.weather_id &&
+               light_multiplier == o.light_multiplier && light_modifier == o.light_modifier &&
+               sun_multiplier == o.sun_multiplier && precip_class == o.precip_class &&
+               rains == o.rains && sight_penalty == o.sight_penalty &&
+               tint_rgb == o.tint_rgb && tint_strength == o.tint_strength &&
+               temperature_c == o.temperature_c && windspeed_mph == o.windspeed_mph &&
+               wind_dir_deg == o.wind_dir_deg && lightning_active == o.lightning_active;
+    }
+    bool operator!=( const EnvVal &o ) const { return !( *this == o ); }
 };
 
 struct EntVal {

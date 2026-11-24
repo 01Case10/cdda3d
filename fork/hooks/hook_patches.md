@@ -5,7 +5,21 @@ file map). Every hook below is additive and a no-op unless
 `--frontend=ipc` was passed: one or two lines at a verified call site
 (CDDA `master` @ `6a3e59e0`; line numbers from `docs/hook-points.md`).
 Apply order: H1 (flag) → H2 (adapter construction) → H3–H6 (hooks) →
-H7 (trap accessor the real adapter needs).
+H7 (trap accessor the real adapter needs) → H8 (connect-group name
+mirror the real adapter reads).
+
+**Base change (2026-11-23, plan.md Addendum 12):** the fork base is
+now CDDA `0.I-1` (tag `0.I-1`, commit
+`7b2efa5cea38e4d4d97dd0e63b28b9148623da59`), not the master snapshot
+above. The line numbers in H1–H8 are still the master-pin numbers —
+the re-verification (`~/workspace/cdda-stable/reverify/REPORT.md`)
+found H1, H2, H4–H8 unchanged in substance on the new base, with
+targets moved only — **except H3, which is updated below** (on
+0.I-1 the send boundary is a free function, not a `game` member).
+Additionally, the backports in `backport_patches.md` (B1–B4:
+public def factories, `map::is_roofed`, moonlight, weather tints —
+master APIs the stable branch never got) **must be applied for the
+real adapter to compile on the new base**.
 
 ## H1 — `src/main.cpp`: `--frontend=ipc` flag
 
@@ -67,9 +81,19 @@ are in `docs/phase3-fork.md`.
 
 ## H3 — `src/do_turn.cpp`: send boundary (PRIMARY)
 
-`game::do_turn()` is defined at do_turn.cpp:536 (NOT game.cpp — Phase 0
-finding). At every `return` point of `do_turn()` — in practice: wrap the
-body end and the early `turn_handler::cleanup_at_end()` return — call:
+**Updated for the 0.I-1 base (2026-11-23).** On 0.I-1 the send
+boundary is the **free function** `bool do_turn()` — defined at
+do_turn.cpp:455, declared in do_turn.h:6, a `friend` of `game`
+(game.h:192), and called from the main loop at main.cpp:864
+(`while( !do_turn() ) {}`). It is NOT a `game` member on this base.
+(For the record: on the old master pin it was `game::do_turn()`,
+defined at do_turn.cpp:536 (master) — NOT game.cpp, the original
+Phase 0 finding.)
+
+At every `return` point of `do_turn()` — in practice: wrap the
+body end and the early `turn_handler::cleanup_at_end()` returns
+(do_turn.cpp:458 and do_turn.cpp:594 on 0.I-1; the final
+`return false;` is at do_turn.cpp:779) — call:
 
 ```cpp
 voxel_ipc_hook_send_boundary(); // -> Frontend::on_send_boundary(view of u)
@@ -160,3 +184,30 @@ const std::vector<trap> &get_all_traps_for_voxel() { return trap_factory.get_all
 This is the ONLY upstream-file logic addition beyond one-line hooks,
 and it exists because the alternative (inventing an accessor that
 already exists) was checked and does not.
+
+## H8 — `src/mapdata.cpp`: connect-group name mirror (1 line + include)
+
+`connect_group::load` (mapdata.cpp:355 in the pinned source) is the
+one place where a group's name and its bitset index are both known:
+`get_connect_group` maps name -> group, and upstream has no
+index -> name lookup (verified 2026-11-15). The real adapter's
+`connect_group_table()` needs the names, so the fork mirrors them
+at load. Add the include at the top of mapdata.cpp:
+
+```cpp
+#include "voxel_ipc/voxel_refs.h"
+```
+
+and one line in `connect_group::load`, after the NUM_TERCONN
+overflow check, before `ter_connects_map[...] = result;`:
+
+```cpp
+voxel_ipc::record_connect_group_name( static_cast<int>( result.index ), result.id.str() );
+```
+
+Unlike H3–H6 this line is NOT gated on `--frontend=ipc`: group
+loading happens during data init, and the mirror is inert data
+(a name table nothing reads unless the frontend runs). An index
+the mirror never recorded still exports as the stable placeholder
+`group_<index>` — the indices themselves come from the game's own
+bitsets and are exact with or without H8.

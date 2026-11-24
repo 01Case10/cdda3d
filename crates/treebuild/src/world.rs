@@ -27,6 +27,19 @@ pub const FLAG_TRANSPARENT: u32 = 1 << 0;
 pub const FLAG_CUTOUT: u32 = 1 << 1;
 pub const FLAG_EMISSIVE: u32 = 1 << 2;
 pub const FLAG_MEMORIZED: u32 = 1 << 3;
+/// Water surface (terrain item 2 follow-up, 2026-11-23):
+/// the cell is a marked water-surface cell (its block
+/// carries `mesher::block::WATER_ALPHA`); the RT shader
+/// gives its up faces the water treatment. The WGSL
+/// tests bit 4 (16u) -- keep in sync.
+pub const FLAG_WATER: u32 = 1 << 4;
+/// Phase 10 (10.4, §3.4): the cell's tile is exposed to the sky
+/// (`s = 1`); the RT shade scales its directional sun/moon terms
+/// by this factor. Roofed / underground cells carry 0. The WGSL
+/// tests bit 5 (32u) -- keep in sync. (Bit 4 was claimed by
+/// FLAG_WATER on main while 10.4 was in flight; the Wave 2
+/// merge moved sky exposure to bit 5.)
+pub const FLAG_SKY_EXPOSED: u32 = 1 << 5;
 
 /// One occupied voxel.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,6 +56,13 @@ pub struct VoxelCell {
     pub lit: u8,
     /// FLAG_* bits.
     pub flags: u32,
+    /// Phase 10 (10.4, §3.4): per-tile sky exposure for the RT
+    /// directional GI terms. Defaults to `true`: fake/unlit data
+    /// has no game truth about roofed-ness, and pre-10.4 the
+    /// directional term was global — the lit engine path
+    /// (`engine::rt::world_for_levels_lit`) clears it for roofed
+    /// cells via its column-scan feed.
+    pub sky_exposed: bool,
 }
 
 impl VoxelCell {
@@ -53,6 +73,7 @@ impl VoxelCell {
             material_id,
             lit: LIT_LIT,
             flags: 0,
+            sky_exposed: true,
         }
     }
 
@@ -137,16 +158,76 @@ impl VoxelWorld {
                             Pass::Cutout => flags |= FLAG_CUTOUT,
                             Pass::Opaque => {}
                         }
+                        if b.is_water_surface() {
+                            flags |= FLAG_WATER;
+                        }
                         out.set(
                             [origin[0] + x, origin[1] + y, origin[2] + z],
                             VoxelCell {
                                 color: [b.color[0], b.color[1], b.color[2]],
-                                alpha: b.color[3],
+                                alpha: if flags & FLAG_WATER != 0 { 1.0 } else { b.color[3] },
                                 material_id: b.id,
                                 lit: LIT_LIT,
                                 flags,
+                                sky_exposed: true,
                             },
                         );
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Phase 9 (9.5, two-tree design): the FINE tree's world —
+    /// only the stamped cells of `layer`, in FINE coordinates
+    /// `(fx, fy, fz)` (1 unit = 1 fine cell = 1/32 block; see
+    /// `mesher::fine`). The coarse tree is built from
+    /// [`VoxelWorld::from_chunk_map`] exactly as before and the
+    /// two trees are composited by hit distance, so a scene
+    /// with nothing stamped yields an empty fine world and no
+    /// fine tree at all. Material id, colour and flags come
+    /// from the stamped block (its id is the prop's synthetic
+    /// material id on the engine path); `lit` defaults to
+    /// `LIT_LIT` exactly as in `from_chunk_map` — a lit caller
+    /// rewrites it per containing tile afterwards, the same
+    /// post-pass `engine::rt::world_for_levels_lit` applies to
+    /// the coarse world (the 9.6 v1 rule, docs/phase9-fine.md).
+    pub fn from_fine_layer(layer: &mesher::fine::FineLayer) -> VoxelWorld {
+        use mesher::fine::FINE;
+        let mut out = VoxelWorld::new();
+        for tile in layer.tiles() {
+            for vol in layer.volumes_for_tile(tile) {
+                for fz in vol.z0..vol.z0 + vol.depth_z {
+                    for ly in 0..FINE {
+                        for lx in 0..FINE {
+                            let Some(b) = vol.get(lx, ly, fz) else {
+                                continue;
+                            };
+                            if b.is_air() {
+                                continue;
+                            }
+                            let mut flags = 0;
+                            match b.pass {
+                                Pass::Transparent => flags |= FLAG_TRANSPARENT,
+                                Pass::Cutout => flags |= FLAG_CUTOUT,
+                                Pass::Opaque => {}
+                            }
+                            if b.is_water_surface() {
+                                flags |= FLAG_WATER;
+                            }
+                            out.set(
+                                [tile.0 * FINE + lx, tile.1 * FINE + ly, fz],
+                                VoxelCell {
+                                    color: [b.color[0], b.color[1], b.color[2]],
+                                    alpha: if flags & FLAG_WATER != 0 { 1.0 } else { b.color[3] },
+                                    material_id: b.id,
+                                    lit: LIT_LIT,
+                                    flags,
+                                    sky_exposed: true,
+                                },
+                            );
+                        }
                     }
                 }
             }

@@ -1,0 +1,58 @@
+# passability — regression scene for the movecost fix (2026-11-23).
+# CDDA's real passability rule is map::move_cost_ter_furn: terrain
+# move_cost 0 blocks, furniture move_cost_mod < 0 blocks, else the
+# summed cost must be > 0. The S2 rule (WALL flag + open_result)
+# let the player walk through trees, windows, fences and
+# bookcases; this scene puts one of each around the player.
+#
+# Player at (5,5) on grass:
+#   north  (5,4) t_tree            move_cost 0      -> blocked
+#   south  (5,6) t_window          move_cost 0      -> blocked
+#   west   (4,5) t_chainfence      move_cost 0      -> blocked
+#   NE     (6,4) t_floor+f_bookcase  2 + (-1) = 1... bookcase mod
+#          is -1 and a negative furniture mod blocks outright
+#          (move_cost_ter_furn returns 0)            -> blocked
+#   east   (6,5) t_floor+f_table     2 + 2 = 4      -> passable
+name = "passability"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [5, 5, 0]
+environment = true
+
+[z0]
+legend = { "," = "t_grass", "Y" = "t_tree", "W" = "t_window", "F" = "t_chainfence", "." = "t_floor", "T" = "f_table", "B" = "f_bookcase" }
+map = [
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,.Y.,,,,,",
+  ",,,,F,.,,,,,",
+  ",,,,,W,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+]
+furn = [
+  "............",
+  "............",
+  "............",
+  "............",
+  "......B.....",
+  "......T.....",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+]
+
+[[spawn]]
+type = "player"
+pos = [5, 5, 0]
+hp_frac = 255
+facing = "NONE"

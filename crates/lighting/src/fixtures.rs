@@ -84,6 +84,58 @@ pub fn fake_house_night_light() -> LightGrid {
             }
         }
     }
+    // Sky exposure (Phase 10 §3.4, authored with the same rule as
+    // the proto sample's outside[] and house.h): tiles strictly
+    // inside the wall perimeter are indoors; the perimeter ring
+    // and the whole roof level (z 1) are sky-exposed.
+    for y in 0..12 {
+        for x in 0..12 {
+            for z in 0..2 {
+                let inside = z == 0 && x >= 1 && x <= 10 && y >= 1 && y <= 10;
+                let mut t = g.get(x, y, z);
+                t.outside = !inside;
+                g.set(x, y, z, t);
+            }
+        }
+    }
+    g
+}
+
+/// Light for the fake house as the game would export it in
+/// *daytime* (the gate 10.6 visual-set scene): the same
+/// authorship geometry as [`fake_house_night_light`] — same
+/// perimeter, same sky-exposure flags — but the lit levels are
+/// daylight ceilings: sky-exposed tiles (perimeter ring, roof
+/// level, exterior ground) `BRIGHT`, the roofed interior `LOW`
+/// (shade; no lamp). Lit levels are ceilings, not sources: at
+/// midnight the sky itself is dark, so the exterior still
+/// renders dark — what the day grid changes is that the sky
+/// GI is no longer capped to black at noon by a night
+/// fixture's `DARK` exterior.
+pub fn fake_house_day_light() -> LightGrid {
+    let mut g = LightGrid::filled([0, 0, 0], [12, 12, 2], lit(LitLevel::BRIGHT, 255));
+    for y in 0..12 {
+        for x in 0..12 {
+            let perimeter = x == 0 || y == 0 || x == 11 || y == 11;
+            if perimeter {
+                g.set(x, y, 0, occ(LitLevel::BRIGHT, 255));
+            } else {
+                // Roofed interior in daytime shade.
+                g.set(x, y, 0, lit(LitLevel::LOW, 255));
+            }
+        }
+    }
+    // Sky exposure: identical authorship to the night fixture.
+    for y in 0..12 {
+        for x in 0..12 {
+            for z in 0..2 {
+                let inside = z == 0 && x >= 1 && x <= 10 && y >= 1 && y <= 10;
+                let mut t = g.get(x, y, z);
+                t.outside = !inside;
+                g.set(x, y, z, t);
+            }
+        }
+    }
     g
 }
 

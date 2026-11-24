@@ -235,6 +235,18 @@ build, the 2d `open`/`broken` subtile follow-up) remains Phase
 2h's, on its frame surface — this phase deliberately stayed out
 of it, as directed.
 
+**Update (2026-11-15, later the same day):** that wiring is
+done. Vehicle models and transient emitters are scene inputs to
+`engine::frame::render_frame` (world pass and fields pass
+respectively), open-air columns resolve through `floor_at` in
+the shared `engine::snapshot_world` builder feeding both
+renderers, and the 2d `open`/`broken` follow-up is closed
+(canonical `state_subtile` selection — open wins, per the
+pinned `cata_tiles.cpp` draw paths — consumed by the vehicles
+crate and the texture spec builder's state variants). Gates:
+`crates/engine/tests/phase8_wire_gate.rs`. The blocked list
+below is unchanged.
+
 ## What is actually blocked (the complete list)
 
 Everything above is proven on dummy data. The residue is not

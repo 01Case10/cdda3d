@@ -1,0 +1,67 @@
+# T4 — bash and destroy (plan §6 T4; behaviour proved by the
+# S6 gate). `s` arms the smash, the direction key resolves it:
+# the table goes in one bash, the map board takes two (chain
+# step per bash), the sealed room's door chains t_door_c ->
+# t_door_b -> t_door_frame -> t_open_air and the room lights
+# up as the seal breaks, and the window chains the same way
+# from inside. Bashing open air afterwards changes nothing.
+scene = "destructible_street"
+name = "T4 bash and destroy"
+
+steps = [
+  { assert_player = [5, 4, 0] },
+  { assert_tile = { pos = [4, 4, 0], furniture = "f_table" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "h" },
+  { assert_tile = { pos = [4, 4, 0], furniture = "none" } },
+  { assert_delta_contains = { pos = [4, 4, 0], furniture = "none" } },
+  # The map board: two chain steps.
+  { assert_tile = { pos = [6, 4, 0], furniture = "f_board_map" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "l" },
+  { assert_tile = { pos = [6, 4, 0], furniture = "f_board_map_b" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "l" },
+  { assert_tile = { pos = [6, 4, 0], furniture = "none" } },
+  # North-east to the window stance (7,3), window at (7,2) —
+  # the gate's route, around the board tile which blocks
+  # stepping. (Open air is a hole, not a floor: the wrecked
+  # tiles below are never walked on.)
+  { do = "key", key = "j" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "k" },
+  { do = "key", key = "k" },
+  { assert_player = [7, 3, 0] },
+  { assert_tile = { pos = [7, 2, 0], terrain = "t_window" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "k" },
+  { assert_tile = { pos = [7, 2, 0], terrain = "t_window_frame" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "k" },
+  { assert_tile = { pos = [7, 2, 0], terrain = "t_window_empty" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "k" },
+  { assert_tile = { pos = [7, 2, 0], terrain = "t_open_air" } },
+  # One more bash at open air: no chain left, no change.
+  { do = "key", key = "s" },
+  { do = "key", key = "k" },
+  { assert_no_tile_change = [7, 2, 0] },
+  # South to the sealed room's doorway stance (7,5).
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [7, 5, 0] },
+  { assert_tile = { pos = [7, 6, 0], terrain = "t_door_c" } },
+  { assert_lit = { pos = [7, 7, 0], value = "BLANK" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "j" },
+  { assert_tile = { pos = [7, 6, 0], terrain = "t_door_b" } },
+  { assert_lit = { pos = [7, 7, 0], not_value = "BLANK" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "j" },
+  { assert_tile = { pos = [7, 6, 0], terrain = "t_door_frame" } },
+  { do = "key", key = "s" },
+  { do = "key", key = "j" },
+  { assert_tile = { pos = [7, 6, 0], terrain = "t_open_air" } },
+  { assert_mirror = true },
+]

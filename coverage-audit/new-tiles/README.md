@@ -47,6 +47,62 @@ monsters missing **42 → 0**, coverage **100.0%** — with terrain
 and furniture already at 0, the zero-drive is complete
 (0 / 0 / 0 on the final audit re-run).
 
+## Scope extension: all tiles (2026-11-15)
+
+On Joey's word ("when I said all tiles I meant all tiles") the
+drive continues into the audit's other five categories — items,
+overmap terrain, vehicle parts, traps, field types (4,484 ids).
+Extension batches, all parent re-verified (byte-identical
+re-runs, voxelizer all-`exact`/0-missing, overlay baselines
+reproduced):
+
+- **TRAP1** — the LIXA portal family (41 traps): green portal
+  pads, family glyphs, channel pips. Traps 121 → 80.
+  `draw_trap1.py`, `preview_trap1.png`.
+- **VEH1 + VEH2** — vehicle parts, first half (98): appliance/
+  solar cluster, weather stations, engines, frames, tanks.
+  Vehicle parts 195 → 97. `draw_veh1.py`, `draw_veh2.py`,
+  previews alongside.
+- **TRAP2** — devices and triggers (40): LIXA pads 10–16,
+  dissector/crossbow/bear-trap devices, light-pool trigger
+  markers. Traps 80 → 40. `draw_trap2.py`, `preview_trap2.png`.
+- **VEH3 + VEH4** — vehicle parts complete (97): batteries,
+  tanks, chitin plating, rail wheels, stowed appliances,
+  wheel mounts. Vehicle parts 97 → 0 of 483 — **category
+  complete**. `draw_veh3.py`, `draw_veh4.py`, previews.
+- **FIELD1 + FIELD2** — field types complete (90): the
+  zone-manager marker family plus bee swarm, biolum, graded
+  cold/hot air, the scarlet set, mi-go atmosphere, darkness
+  and shadow. Field types 90 → 0 of 172 — **category
+  complete**. `draw_field1.py`, `draw_field2.py`, previews.
+- **TRAP3** — traps complete (40): badged portal vortices,
+  stairs/shafts, moonpool, ice pair, void spider rift.
+  Traps 40 → 0 of 150 — **category complete**.
+  `draw_trap3.py`, `preview_trap3.png`.
+- **OM1** — overmap first set (48): full-tile map cells;
+  tree farm, ant colonies, alien meadow, corpse cluster,
+  base/roof pairs. Overmap 336 → 288. `draw_om1.py`,
+  `preview_om1.png`.
+- **OM2** — shops, EXO safehouses, faction camps (48):
+  palisade compounds with function pictograms, tier upgrades
+  in stone. Overmap 288 → 240. `draw_om2.py`, `preview_om2.png`.
+- **OM3** — mansion tail, farms, FEMA camp (48): room-rug
+  interiors, Isherwood farm set, pale-gravel FEMA language.
+  Overmap 240 → 192. `draw_om3.py`, `preview_om3.png`.
+- **OM4** — labyrinth complex, kelp, looted set (48): maze
+  rings, chasm maw, flooded/overgrown states, damaged
+  hospital/house. Overmap 192 → 144. `draw_om4.py`,
+  `preview_om4.png`.
+- **OM5** — microlab system, mi-go camp/portal, minefield,
+  ocean grade (48). Overmap 144 → 96. `draw_om5.py`,
+  `preview_om5.png`.
+- **OM6 + OM7 + null terrain** — overmap complete (96):
+  shop row, ravine grade, river cave, slime pits, string
+  dimension, triffid grade, and the null terrain (id "",
+  name "nothing") as a void cell. Overmap 96 → 0 of 484 —
+  **category complete**. `draw_om6.py`, `draw_om7.py`,
+  `draw_nothing.py`, previews.
+
 ## Monster batch 25: the cosmic & misc tail (Phase 2g.4, 2026-11-15)
 
 **42 of the enumerated final 84** — the seven geometric yrax

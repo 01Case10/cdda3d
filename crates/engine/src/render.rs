@@ -10,20 +10,76 @@
 //! array (group 1, bound via `Renderer::set_textures`; a dummy 1-layer
 //! white set is bound until then), while vertices with the flat
 //! sentinel layer take exactly the pre-2f flat shading path.
+//!
+//! Phase 10 slice 10.3: a fullscreen sky pass (one triangle,
+//! depth-write off, drawn first) fills the background with the
+//! shared `lighting::SKY_WGSL` `sky_color`, and the world
+//! pipelines shade with the §5.2 sky GI (hemisphere + sun + moon
+//! from the frame's `SkyUniforms`, group 2) instead of the
+//! hardcoded directional shade — see `sky_gi_factor` in the
+//! world shader and [`gi_uniforms_for`] for the neutral
+//! calibration that keeps the default frame byte-identical.
 
 use bytemuck::{Pod, Zeroable};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
+use lighting::{EmitterUniforms, SkyUniforms, EMITTER_WGSL, SKY_WGSL};
 use mesher::block::Pass;
 use mesher::mesh::{Mesh, PassMeshes, FLAT_LAYER};
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub const CAPTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+/// The pre-Phase-10 fixed clear colour. Since slice 10.3 the
+/// world pass no longer clears to it (the sky pass paints the
+/// background and clears to the frame's horizon colour, whose
+/// neutral value IS this colour — `lighting::LEGACY_HORIZON`);
+/// the constant stays as the renderer's initial clear colour
+/// before the first `set_sky`.
 pub const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     r: 0.08,
     g: 0.10,
     b: 0.14,
     a: 1.0,
 };
+
+/// The GI uniform block the WORLD pipelines bind, derived from
+/// the frame's sky block. For every non-neutral sky this is the
+/// frame's block verbatim (one sun everywhere, §5.1). For
+/// `SkyUniforms::neutral()` it is the *calibrated* expression of
+/// the pre-Phase-10 raster shade in §5.2 GI parameters —
+/// hemisphere constant 0.45, sun 0.55 × white along the legacy
+/// world-space light direction (0.3, 0.8, 0.4), moon zero — so
+/// `hemisphere·ambient + sun·ndl` ≡ `0.45 + 0.55·ndl` for every
+/// normal and the §6 neutral frame reproduces the legacy
+/// geometry shading exactly. (The sky PASS always binds the raw
+/// block: at neutral its gradient is the legacy RT sky stops,
+/// which is the §6 background change.)
+pub fn gi_uniforms_for(sky: &SkyUniforms) -> SkyUniforms {
+    if *sky != SkyUniforms::neutral() {
+        return *sky;
+    }
+    let l = glam::Vec3::new(0.3, 0.8, 0.4).normalize();
+    SkyUniforms {
+        sun_dir: [l.x, l.y, l.z, sky.sun_dir[3]],
+        sun_color: [0.55, 0.55, 0.55, sky.sun_color[3]],
+        moon_dir: sky.moon_dir,
+        moon_color: [0.0, 0.0, 0.0, sky.moon_color[3]],
+        zenith: [0.45, 0.45, 0.45, 1.0],
+        horizon: sky.horizon,
+        ground_col: [0.45, 0.45, 0.45, sky.ground_col[3]],
+        fog_color: sky.fog_color,
+    }
+}
+
+/// Sky-pass camera block: the inverse view-projection the
+/// fragment reconstructs ray directions from, plus the viewport
+/// size (for the per-pixel NDC from `@builtin(position)`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct SkyCam {
+    inv_view_proj: [[f32; 4]; 4],
+    viewport: [f32; 2],
+    _pad: [f32; 2],
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -35,6 +91,15 @@ pub struct Vertex {
     pub uv: [f32; 2],
     /// Phase 2f: texture-array layer, or `FLAT_LAYER` (u32::MAX).
     pub layer: u32,
+    /// Fine-slope-normals §14: the fine mesher's Stage H
+    /// occlusion factor for textured vertices (1.0 for flat
+    /// vertices and for meshes that record none). A colour
+    /// channel cannot carry it — the bake replaces a
+    /// textured vertex's RGB with the pure light multiplier
+    /// and the shader reads that only as the emitter
+    /// ceiling — so it rides as its own attribute and the
+    /// textured fragment multiplies its diffuse term by it.
+    pub occ: f32,
 }
 
 impl Vertex {
@@ -68,6 +133,11 @@ impl Vertex {
                     shader_location: 4,
                     format: wgpu::VertexFormat::Uint32,
                 },
+                wgpu::VertexAttribute {
+                    offset: 52,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
@@ -77,13 +147,115 @@ impl Vertex {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
+    /// Camera eye in world space (water specular /
+    /// fresnel, terrain item 2 follow-up).
+    camera_pos: [f32; 3],
+    _pad: f32,
 }
 
-const SHADER: &str = r#"
-struct Uniforms { view_proj: mat4x4<f32> };
+/// The world shader source: the frozen shared sky WGSL
+/// (`lighting::SKY_WGSL` — the `SkyUniforms` struct; the world
+/// body binds it at group 2 and calls nothing from it) followed
+/// by the raster world body. One source for the struct, by
+/// direct inclusion of the lighting constant — no copy.
+/// Public for the slice-10.3 gate's naga validation (the shader
+/// compile check that runs without a wgpu adapter).
+pub fn world_shader_source() -> String {
+    format!("{SKY_WGSL}\n{EMITTER_WGSL}\n{WORLD_WGSL}")
+}
+
+/// The sky-pass shader source: the same shared sky WGSL (here
+/// its `sky_color` IS called) plus the fullscreen-triangle
+/// reconstruction of the ray direction from the inverse
+/// view-projection.
+pub fn sky_shader_source() -> String {
+    format!("{SKY_WGSL}\n{SKY_PASS_WGSL}")
+}
+
+const SKY_PASS_WGSL: &str = r#"
+struct SkyCam { inv_view_proj: mat4x4<f32>, viewport: vec2<f32>, _pad: vec2<f32> };
+@group(0) @binding(0) var<uniform> sky_cam: SkyCam;
+@group(1) @binding(0) var<uniform> sky: SkyUniforms;
+
+struct SkyVsOut {
+    @builtin(position) clip: vec4<f32>,
+};
+
+@vertex
+fn vs_sky(@builtin(vertex_index) vi: u32) -> SkyVsOut {
+    var out: SkyVsOut;
+    let x = f32(i32(vi & 1u) * 4 - 1);
+    let y = f32(i32(vi & 2u) * 2 - 1);
+    out.clip = vec4<f32>(x, y, 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_sky(input: SkyVsOut) -> @location(0) vec4<f32> {
+    let ndc = vec2<f32>(
+        (input.clip.x / sky_cam.viewport.x) * 2.0 - 1.0,
+        1.0 - (input.clip.y / sky_cam.viewport.y) * 2.0,
+    );
+    let far4 = sky_cam.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    let near4 = sky_cam.inv_view_proj * vec4<f32>(ndc, 0.0, 1.0);
+    let rd = normalize(far4.xyz / far4.w - near4.xyz / near4.w);
+    // World space is Y-up here: rd_up = rd.y (the freeze
+    // contract for world-space callers).
+    return vec4<f32>(sky_color(rd, rd.y, sky), 1.0);
+}
+"#;
+
+const WORLD_WGSL: &str = r#"
+// Stage F part 2 (border height-blending): half-width of the
+// blend band in tiles — the Stage D weight is 0.5 at the border
+// and 0 this far into the tile. Mirror of
+// engine::blend::BLEND_HALF_BAND_TILES (and of the RT shader's
+// BLEND_HALF); keep the three in sync.
+const BLEND_HALF: f32 = 0.5;
+
+struct Uniforms { view_proj: mat4x4<f32>, camera_pos: vec3<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var tex_array: texture_2d_array<f32>;
 @group(1) @binding(1) var tex_samp: sampler;
+@group(1) @binding(2) var macro_array: texture_2d_array<f32>;
+struct MacroParams { color_count: u32, debug_height: u32 };
+@group(1) @binding(3) var<uniform> macro_params: MacroParams;
+// Phase 10 slice 10.3: the frame's sky block (frozen layout,
+// lighting::sky_uniforms) — the GI form (see gi_uniforms_for).
+@group(2) @binding(0) var<uniform> sky: SkyUniforms;
+// Addendum 11 (emitter prototype): the frame's declared local
+// emitters (lighting::emitters) in mesher world space. The
+// struct + falloff math come from lighting::EMITTER_WGSL,
+// included ahead of this body (see world_shader_source).
+@group(3) @binding(0) var<uniform> emitters: EmitterUniforms;
+
+// Phase 10 slice 10.3 (§5.2): the raster shading factor.
+// At sky_factor 1 this is exactly §5.2's sum — hemisphere
+// (ground->zenith by n.up) x ambient_scale, plus the
+// pre-multiplied sun/moon colours x their ndl terms — and the
+// caller multiplies it by the vertex colour, which is the
+// Phase 7 bake already fused with the albedo (the §5.2
+// formula's `albedo * (...) * baked_light` in this engine's
+// vertex format; the GI sum REPLACES the old shade factor, it
+// does not multiply on top of it — the §10 double-darkening
+// rule).
+// At sky_factor 0 (a sheltered tile: interior, underground)
+// the factor is the pre-Phase-10 shade, because a sheltered
+// surface's light IS its bake (the lamp in the room), and
+// §5.2's unscaled hemisphere term would move interior pixels
+// that gate 10.3b pins to the neutral render. The blend is
+// the raster v1 reading of §3.4's "terms scaled by s": the
+// sky's terms fade in with exposure, the bake's presentation
+// is the zero-exposure endpoint.
+fn sky_gi_factor(n: vec3<f32>, sky_factor: f32) -> vec3<f32> {
+    let l = normalize(vec3<f32>(0.3, 0.8, 0.4));
+    let legacy = 0.45 + 0.55 * max(dot(n, l), 0.0);
+    let hemi = mix(sky.ground_col.xyz, sky.zenith.xyz, n.y * 0.5 + 0.5);
+    var gi = hemi * sky.zenith.w;
+    gi += sky.sun_color.xyz * max(dot(n, sky.sun_dir.xyz), 0.0);
+    gi += sky.moon_color.xyz * max(dot(n, sky.moon_dir.xyz), 0.0);
+    return mix(vec3<f32>(legacy, legacy, legacy), gi, clamp(sky_factor, 0.0, 1.0));
+}
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -91,6 +263,7 @@ struct VsIn {
     @location(2) color: vec4<f32>,
     @location(3) uv: vec2<f32>,
     @location(4) layer: u32,
+    @location(5) occ: f32,
 };
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -98,6 +271,8 @@ struct VsOut {
     @location(1) color: vec4<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) @interpolate(flat) layer: u32,
+    @location(4) world_pos: vec3<f32>,
+    @location(5) occ: f32,
 };
 
 @vertex
@@ -108,37 +283,194 @@ fn vs_main(input: VsIn) -> VsOut {
     out.color = input.color;
     out.uv = input.uv;
     out.layer = input.layer;
+    out.world_pos = input.position;
+    out.occ = input.occ;
     return out;
 }
 
-fn shade_fragment(input: VsOut, cutout: bool) -> vec4<f32> {
+fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
     let n = normalize(input.normal);
-    let l = normalize(vec3<f32>(0.3, 0.8, 0.4));
-    let shade = 0.45 + 0.55 * max(dot(n, l), 0.0);
+    // Phase 10 slice 10.3: the per-tile sky factor rides the
+    // vertex colour's alpha in the opaque/cutout passes (§5.2
+    // spike); the transparent pass's alpha is material alpha,
+    // so its factor is the global 1.0 in v1.
+    let sky_factor = select(input.color.a, 1.0, transparent);
+    let shade = sky_gi_factor(n, sky_factor);
     let flat = input.layer == 4294967295u;
     // Sample unconditionally (flat vertices read layer 0 and ignore
     // the result) so textureSample's implicit derivatives stay in
     // uniform control flow; the mip chain makes auto-LOD work.
     let sample_layer = select(i32(input.layer), 0, flat);
-    let texel = textureSample(tex_array, tex_samp, input.uv, sample_layer);
+    let texel_tile = textureSample(tex_array, tex_samp, input.uv, sample_layer);
+    // Stage F: macro vertices carry the mesher's packed layer word
+    // (bit 31 set; FLAT_LAYER also has it set, hence the !flat
+    // term). Their UVs are world-based (mesher-side), and the
+    // sample comes from the separate macro array — its color half
+    // normally, its height half (offset by color_count) in the
+    // height debug view. Sampled unconditionally like the tile
+    // array, selected after.
+    let is_macro = !flat && (input.layer & 2147483648u) != 0u;
+    // Stage F part 2: blend words (bit 30, see
+    // mesher::mesh::MACRO_BLEND_BIT) pack the own color layer in
+    // the low 11 bits instead of the plain 24-bit field.
+    let is_blend = is_macro && (input.layer & 1073741824u) != 0u;
+    let macro_idx = select(
+        i32(input.layer & 16777215u),
+        i32(input.layer & 2047u),
+        is_blend,
+    );
+    let macro_layer = select(
+        macro_idx,
+        macro_idx + i32(macro_params.color_count),
+        macro_params.debug_height != 0u,
+    );
+    let texel_macro = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(macro_layer, 0, !is_macro),
+    );
+    var texel = select(texel_tile, texel_macro, is_macro);
+    // Stage F part 2 (border height-blending): for a blend
+    // vertex, run the Stage D height decision (mirror of
+    // engine::blend::neighbor_wins / blend_weight) against the
+    // neighbor material: sample the neighbor's color and both
+    // stored heights at the same world UV (both macros are
+    // world-anchored, same span), compute the weight from the
+    // fragment's distance to the border edge of its tile along
+    // the packed direction, and let the higher effective height
+    // supply the albedo. All samples are unconditional (indices
+    // fall back to layer 0 / the own layer off the blend path)
+    // so implicit derivatives stay in uniform control flow; the
+    // result is selected only for blend vertices, and never in
+    // the height debug view (which shows the own height).
+    let nbr_idx = select(macro_idx, i32((input.layer >> 11u) & 2047u), is_blend);
+    let texel_nbr = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(nbr_idx, 0, !is_macro),
+    );
+    let own_h = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(macro_idx + i32(macro_params.color_count), 0, !is_macro),
+    ).r;
+    let nbr_h = textureSample(
+        macro_array,
+        tex_samp,
+        input.uv,
+        select(nbr_idx + i32(macro_params.color_count), 0, !is_macro),
+    ).r;
+    let bspan = f32((input.layer >> 24u) & 63u);
+    let wp = input.uv * max(bspan, 1.0);
+    let bdir = (input.layer >> 22u) & 3u;
+    var bdist = 0.0;
+    if bdir == 0u {
+        bdist = floor(wp.x) + 1.0 - wp.x;
+    } else if bdir == 1u {
+        bdist = wp.x - floor(wp.x);
+    } else if bdir == 2u {
+        bdist = floor(wp.y) + 1.0 - wp.y;
+    } else {
+        bdist = wp.y - floor(wp.y);
+    }
+    let bwgt = clamp(0.5 - bdist / (2.0 * BLEND_HALF), 0.0, 1.0);
+    let nbr_wins = nbr_h + bwgt * 2.0 > own_h + (1.0 - bwgt) * 2.0;
+    texel = select(
+        texel,
+        texel_nbr,
+        is_blend && macro_params.debug_height == 0u && nbr_wins,
+    );
+    // Water surface (terrain item 2 follow-up,
+    // 2026-11-23): a vertex colour alpha in the marker
+    // range (mesher::block::WATER_ALPHA, stamped on a
+    // water model's top cells) on an up-facing fragment
+    // shades as water -- the albedo (flat colour or
+    // texel) keeps the plain diffuse term, then a
+    // Blinn specular highlight from the same fixed
+    // light and a fresnel sky sheen are added. The
+    // water read is view-dependent, which no baked
+    // colour can fake. Output alpha is 1.0: the marker
+    // is not opacity.
+    if input.color.a > 0.30 && input.color.a < 0.40 && n.y > 0.5 {
+        let base = select(texel.rgb, input.color.rgb, flat);
+        let v = normalize(u.camera_pos - input.world_pos);
+        // Merge note (Wave 2): pre-10.3 this block used the
+        // shader's fixed legacy light dir; the GI block's sun
+        // dir IS that dir at neutral (gi_uniforms_for's
+        // calibration), and follows the live sun otherwise.
+        let l = normalize(sky.sun_dir.xyz);
+        let hv = normalize(l + v);
+        let spec = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
+        let fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        var col = base * shade * select(input.occ, 1.0, flat);
+        col = mix(col, vec3<f32>(0.55, 0.65, 0.75), fres * 0.45);
+        col = col + vec3<f32>(spec, spec, spec);
+        return vec4<f32>(col, 1.0);
+    }
+    // Addendum 11 (emitter prototype): declared local emitters,
+    // transported per-fragment at the world position with
+    // visibility 1.0 (raster v1 casts no emitter shadow rays —
+    // the recorded asymmetry against the RT path). The term
+    // folds into the shade factor INSIDE the Phase 7 ceiling
+    // (BLANK tiles are never meshed; MEMORIZED tiles keep their
+    // pinned presentation — neither is bypassed). Vertex-colour
+    // contract (lighting::bake_pass_meshes): FLAT vertices
+    // carry albedo x bake in color.rgb, so multiplying
+    // (shade + emit) by the colour caps the emitter light with
+    // the tile's baked lit factor implicitly; TEXTURED vertices
+    // carry the pure bake multiplier instead (the texel
+    // supplies the albedo), and bake_ceil below is that
+    // multiplier — it caps the emitter term per channel by
+    // exactly the factor the flat path applies. (The first cut
+    // capped by the MEAN of the fused albedo x bake colour,
+    // applying albedo and bake twice; the pool vanished over
+    // textures, and the emitter gate's textured test pins the
+    // fix.) The water branch above returns before this point —
+    // emitters do not touch water shading in v1. Count 0
+    // returns exactly 0.0, so an emitter-less frame is
+    // byte-identical to the pre-Addendum-11 frame.
+    let emit = emitter_light(emitters, input.world_pos);
     if flat {
-        // Exactly the pre-2f flat shading math (gate 2f.4).
-        return vec4<f32>(input.color.rgb * shade, input.color.a);
+        // Flat path: the vertex colour is albedo x bake. The
+        // output alpha is the pass's own: 1.0 for opaque/cutout
+        // (the input alpha was the sky factor, consumed above),
+        // the material alpha for the transparent pass — exactly
+        // the pre-10.3 outputs at the neutral GI calibration
+        // (gate 2f.4's flat math is the calibration's definition).
+        if transparent {
+            return vec4<f32>(input.color.rgb * (shade + emit), input.color.a);
+        }
+        return vec4<f32>(input.color.rgb * (shade + emit), 1.0);
     }
     if cutout && texel.a < 0.5 {
         discard;
     }
-    return vec4<f32>(texel.rgb * shade, texel.a * input.color.a);
+    let bake_ceil = input.color.rgb;
+    if transparent {
+        return vec4<f32>(texel.rgb * input.occ * (shade + emit * bake_ceil), texel.a * input.color.a);
+    }
+    // Textured opaque/cutout: the input alpha was the sky
+    // factor (consumed), not an opacity — the texel's own alpha
+    // is the output, as it was pre-10.3 when the factor was 1.0.
+    return vec4<f32>(texel.rgb * input.occ * (shade + emit * bake_ceil), texel.a);
 }
 
 @fragment
 fn fs_main(input: VsOut) -> @location(0) vec4<f32> {
-    return shade_fragment(input, false);
+    return shade_fragment(input, false, false);
 }
 
 @fragment
 fn fs_cutout(input: VsOut) -> @location(0) vec4<f32> {
-    return shade_fragment(input, true);
+    return shade_fragment(input, true, false);
+}
+
+@fragment
+fn fs_transparent(input: VsOut) -> @location(0) vec4<f32> {
+    return shade_fragment(input, false, true);
 }
 "#;
 
@@ -156,6 +488,8 @@ fn create_pipeline(
     format: wgpu::TextureFormat,
     uniform_layout: &wgpu::BindGroupLayout,
     tex_layout: &wgpu::BindGroupLayout,
+    sky_layout: &wgpu::BindGroupLayout,
+    emitter_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     blend: Option<wgpu::BlendState>,
     depth_write: bool,
@@ -163,7 +497,7 @@ fn create_pipeline(
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("voxel-pipeline-layout"),
-        bind_group_layouts: &[uniform_layout, tex_layout],
+        bind_group_layouts: &[uniform_layout, tex_layout, sky_layout, emitter_layout],
         push_constant_ranges: &[],
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -263,29 +597,219 @@ fn build_mip_chain(layer: &[u8], tile_size: u32) -> Vec<(Vec<u8>, u32, u32)> {
 
 /// The shared renderer: pipelines per pass + the camera uniform +
 /// the scene texture array (group 1).
+/// Stage F macro sampling parameters (group 1, binding 3):
+/// how many color layers the macro array's first half holds (the
+/// height half starts at that offset) and whether the height
+/// debug view is on.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct MacroParams {
+    color_count: u32,
+    debug_height: u32,
+    _pad: [u32; 2],
+}
+
 pub struct Renderer {
     pipelines: [wgpu::RenderPipeline; 3],
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     tex_layout: wgpu::BindGroupLayout,
     tex_bind_group: wgpu::BindGroup,
+    /// Phase 10 slice 10.3: the sky pass (fullscreen triangle)
+    /// and the sky uniform state. `sky_bind_group` binds the RAW
+    /// frame block (the background), `gi_bind_group` the GI form
+    /// ([`gi_uniforms_for`]) at the world pipelines' group 2.
+    sky_pipeline: wgpu::RenderPipeline,
+    sky_buffer: wgpu::Buffer,
+    sky_bind_group: wgpu::BindGroup,
+    gi_buffer: wgpu::Buffer,
+    gi_bind_group: wgpu::BindGroup,
+    /// Addendum 11 (emitter prototype): the emitter uniform
+    /// state — buffer + bind group at the world pipelines'
+    /// group 3, initialized to `EmitterUniforms::empty` so a
+    /// Renderer that never gets `set_emitters` draws the
+    /// pre-Addendum-11 frame.
+    emitter_buffer: wgpu::Buffer,
+    emitter_bind_group: wgpu::BindGroup,
+    sky_cam_buffer: wgpu::Buffer,
+    sky_cam_bind_group: wgpu::BindGroup,
+    /// The frame's horizon colour — the sky pass's clear colour
+    /// (§4: uncovered pixels are still right).
+    clear_color: wgpu::Color,
     /// Keeps the texture array alive behind `tex_bind_group`'s view.
     _tex_texture: wgpu::Texture,
+    /// Stage F: keeps the macro array alive behind the same bind
+    /// group, plus the macro params buffer + current debug flag.
+    _macro_texture: wgpu::Texture,
+    macro_params_buffer: wgpu::Buffer,
+    macro_debug_height: bool,
 }
 
 impl Renderer {
     /// `format` is the surface format (windowed) or `CAPTURE_FORMAT`
     /// (headless) — the only difference between the two paths.
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        use wgpu::util::DeviceExt;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("voxel-shader"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(world_shader_source().into()),
+        });
+        // Phase 10 slice 10.3: sky layouts + buffers, initialized
+        // to the neutral frame (the §6 default) so a Renderer
+        // that never gets `set_sky` draws the legacy frame.
+        let sky_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky-uniform-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let neutral = SkyUniforms::neutral();
+        let sky_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sky-uniform"),
+            contents: bytemuck::bytes_of(&neutral.as_rows()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let gi_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sky-gi-uniform"),
+            contents: bytemuck::bytes_of(&gi_uniforms_for(&neutral).as_rows()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let sky_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky-uniform-bg"),
+            layout: &sky_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sky_buffer.as_entire_binding(),
+            }],
+        });
+        let gi_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky-gi-uniform-bg"),
+            layout: &sky_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: gi_buffer.as_entire_binding(),
+            }],
+        });
+        // Addendum 11 (emitter prototype): the group-3 layout has
+        // the sky layout's shape (one fragment uniform); the
+        // buffer starts at the empty block.
+        let emitter_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("emitter-uniform-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let emitter_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("emitter-uniform"),
+            contents: bytemuck::bytes_of(&EmitterUniforms::empty().as_rows()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let emitter_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("emitter-uniform-bg"),
+            layout: &emitter_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: emitter_buffer.as_entire_binding(),
+            }],
+        });
+        let sky_cam_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky-cam-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let sky_cam_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sky-cam-uniform"),
+            contents: bytemuck::bytes_of(&SkyCam {
+                inv_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+                viewport: [1.0, 1.0],
+                _pad: [0.0, 0.0],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let sky_cam_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky-cam-bg"),
+            layout: &sky_cam_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sky_cam_buffer.as_entire_binding(),
+            }],
+        });
+        let sky_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sky-shader"),
+            source: wgpu::ShaderSource::Wgsl(sky_shader_source().into()),
+        });
+        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sky-pipeline-layout"),
+            bind_group_layouts: &[&sky_cam_layout, &sky_layout],
+            push_constant_ranges: &[],
+        });
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky-pipeline"),
+            layout: Some(&sky_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &sky_shader,
+                entry_point: Some("vs_sky"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &sky_shader,
+                entry_point: Some("fs_sky"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                // The sky is background: it never occludes.
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview: None,
+            cache: None,
         });
         let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("camera-uniform-layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                // VERTEX for view_proj; FRAGMENT too since the
+                // water specular reads camera_pos in the fragment
+                // shader (latent on main: its GPU gates never ran
+                // on the VM; the Wave 2 merge is the first
+                // lavapipe pipeline creation with both readers).
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -327,6 +851,28 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // Stage F: the macro array + its params (see the
+                // shader's MacroParams).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let opaque = create_pipeline(
@@ -334,6 +880,8 @@ impl Renderer {
             format,
             &uniform_layout,
             &tex_layout,
+            &sky_layout,
+            &emitter_layout,
             &shader,
             None,
             true,
@@ -347,20 +895,27 @@ impl Renderer {
             format,
             &uniform_layout,
             &tex_layout,
+            &sky_layout,
+            &emitter_layout,
             &shader,
             None,
             true,
             "fs_cutout",
         );
+        // Phase 10 slice 10.3: the transparent pipeline gets its
+        // own fragment entry (its vertex alpha is material alpha,
+        // not the sky factor — see shade_fragment).
         let transparent = create_pipeline(
             device,
             format,
             &uniform_layout,
             &tex_layout,
+            &sky_layout,
+            &emitter_layout,
             &shader,
             Some(wgpu::BlendState::ALPHA_BLENDING),
             false,
-            "fs_main",
+            "fs_transparent",
         );
         // Dummy 1-layer texture set, bound until set_textures
         // installs a real scene set — the pipeline layout never
@@ -368,15 +923,88 @@ impl Renderer {
         // layer is left at wgpu's zero-initialized contents; flat
         // vertices sample it and ignore the result, and no textured
         // vertex can exist before set_textures runs.
-        let (_tex_texture, tex_bind_group) = Self::make_tex_bind_group(device, &tex_layout, 1, 1);
+        let macro_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("raster-macro-params"),
+            size: std::mem::size_of::<MacroParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let (_tex_texture, _macro_texture, tex_bind_group) =
+            Self::make_tex_bind_group(device, &tex_layout, 1, 1, 1, 1, &macro_params_buffer);
         Self {
             pipelines: [opaque, cutout, transparent],
             uniform_buffer,
             uniform_bind_group,
             tex_layout,
             tex_bind_group,
+            sky_pipeline,
+            sky_buffer,
+            sky_bind_group,
+            gi_buffer,
+            gi_bind_group,
+            emitter_buffer,
+            emitter_bind_group,
+            sky_cam_buffer,
+            sky_cam_bind_group,
+            clear_color: CLEAR_COLOR,
             _tex_texture,
+            _macro_texture,
+            macro_params_buffer,
+            macro_debug_height: false,
         }
+    }
+
+    /// Phase 10 slice 10.3: install the frame's sky — the raw
+    /// block for the background pass, its GI form
+    /// ([`gi_uniforms_for`]) for the world pipelines, the inverse
+    /// view-projection + viewport for the sky pass's ray
+    /// reconstruction, and the horizon colour as the clear
+    /// colour. Called once per frame by `frame::render_frame`
+    /// (the §5.1 "written once per frame" rule; the two buffers
+    /// are the one block's two consumers, both derived from the
+    /// same evaluated `SkyState`).
+    pub fn set_sky(
+        &mut self,
+        queue: &wgpu::Queue,
+        uniforms: &SkyUniforms,
+        inv_view_proj: Mat4,
+        viewport: (u32, u32),
+    ) {
+        queue.write_buffer(&self.sky_buffer, 0, bytemuck::bytes_of(&uniforms.as_rows()));
+        queue.write_buffer(
+            &self.gi_buffer,
+            0,
+            bytemuck::bytes_of(&gi_uniforms_for(uniforms).as_rows()),
+        );
+        let cam = SkyCam {
+            inv_view_proj: inv_view_proj.to_cols_array_2d(),
+            viewport: [viewport.0.max(1) as f32, viewport.1.max(1) as f32],
+            _pad: [0.0, 0.0],
+        };
+        queue.write_buffer(&self.sky_cam_buffer, 0, bytemuck::bytes_of(&cam));
+        let h = uniforms.horizon3();
+        self.clear_color = wgpu::Color {
+            r: h[0] as f64,
+            g: h[1] as f64,
+            b: h[2] as f64,
+            a: 1.0,
+        };
+    }
+
+    /// Addendum 11 (emitter prototype): install the frame's
+    /// declared emitters — the block **as given, in mesher world
+    /// space** (the caller converts from game space with
+    /// `EmitterUniforms::to_mesher_world_space`, the same
+    /// caller-converts contract as `set_sky`'s block). Called
+    /// once per frame by `frame::render_frame` with the empty
+    /// block when the frame seats no emitter scene, so the world
+    /// pipelines always read a current group 3.
+    pub fn set_emitters(&self, queue: &wgpu::Queue, uniforms: &EmitterUniforms) {
+        queue.write_buffer(
+            &self.emitter_buffer,
+            0,
+            bytemuck::bytes_of(&uniforms.as_rows()),
+        );
     }
 
     /// Create a texture array plus its group-1 bind group (no data
@@ -386,7 +1014,10 @@ impl Renderer {
         tex_layout: &wgpu::BindGroupLayout,
         tile_size: u32,
         layer_count: usize,
-    ) -> (wgpu::Texture, wgpu::BindGroup) {
+        macro_size: u32,
+        macro_layer_count: usize,
+        macro_params: &wgpu::Buffer,
+    ) -> (wgpu::Texture, wgpu::Texture, wgpu::BindGroup) {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("raster-texture-array"),
             size: wgpu::Extent3d {
@@ -405,11 +1036,49 @@ impl Renderer {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
+        // Stage A (procedural texture pipeline rework): Nearest
+        // magnification keeps pixel-art texels crisp up close (the
+        // pre-fix Linear mag was the raster half of the "everything
+        // is soft/blurry" symptom); Linear min + mip stay for
+        // minification. `Repeat` address mode is required by the
+        // mesher's tile-unit UVs (a merged quad spans [0, w] x
+        // [0, h] and wraps once per tile).
+        //
+        // Deviation from the Stage A draft, forced by wgpu
+        // validation (hit on the first Stage A capture run):
+        // anisotropy > 1 requires ALL filter modes to be Linear,
+        // so the draft's "Nearest mag + anisotropy 8x" cannot
+        // exist in one sampler. Crisp magnification is the
+        // headline fix, so anisotropy stays at 1 here; oblique
+        // minification is carried by the Linear mip chain alone.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("raster-texture-sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            ..Default::default()
+        });
+        // Stage F: the macro array shares the tile array's sampler
+        // (Repeat wrap is what makes world-space macro UVs tile;
+        // Nearest mag keeps the quilt crisp like the tiles).
+        let macro_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("raster-macro-array"),
+            size: wgpu::Extent3d {
+                width: macro_size.max(1),
+                height: macro_size.max(1),
+                depth_or_array_layers: macro_layer_count.max(1) as u32,
+            },
+            mip_level_count: mip_level_count(macro_size.max(1)),
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let macro_view = macro_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -424,9 +1093,17 @@ impl Renderer {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&macro_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: macro_params.as_entire_binding(),
+                },
             ],
         });
-        (texture, bind_group)
+        (texture, macro_texture, bind_group)
     }
 
     /// Upload `layers` (level 0) plus a CPU-generated mip chain
@@ -477,11 +1154,36 @@ impl Renderer {
         queue: &wgpu::Queue,
         spec: &treebuild::render::TextureSpec,
     ) {
-        let (texture, bind_group) =
-            Self::make_tex_bind_group(device, &self.tex_layout, spec.tile_size, spec.layers.len());
+        let macro_count = spec.macro_layers.len();
+        let (texture, macro_texture, bind_group) = Self::make_tex_bind_group(
+            device,
+            &self.tex_layout,
+            spec.tile_size,
+            spec.layers.len(),
+            spec.macro_size.max(1),
+            macro_count,
+            &self.macro_params_buffer,
+        );
         Self::upload_layers(queue, &texture, spec.tile_size, &spec.layers);
+        if macro_count > 0 {
+            Self::upload_layers(queue, &macro_texture, spec.macro_size, &spec.macro_layers);
+        }
+        let params = MacroParams {
+            color_count: (macro_count / 2) as u32,
+            debug_height: u32::from(self.macro_debug_height),
+            _pad: [0; 2],
+        };
+        queue.write_buffer(&self.macro_params_buffer, 0, bytemuck::bytes_of(&params));
         self._tex_texture = texture;
+        self._macro_texture = macro_texture;
         self.tex_bind_group = bind_group;
+    }
+
+    /// Stage F proof hook (`--macro-debug-height`): render macro
+    /// materials' top faces as their height-layer grayscale
+    /// instead of color. Takes effect on the next `set_textures`.
+    pub fn set_macro_debug_height(&mut self, on: bool) {
+        self.macro_debug_height = on;
     }
 
     /// Upload mesher output to GPU buffers (shared by both paths).
@@ -503,6 +1205,9 @@ impl Renderer {
                     // UV/layer data: flat sentinel, never sampled.
                     uv: mesh.uvs.get(i).copied().unwrap_or([0.0, 0.0]),
                     layer: mesh.layers.get(i).copied().unwrap_or(FLAT_LAYER),
+                    // §14: no recorded factor (or a short
+                    // array) means unoccluded.
+                    occ: mesh.tex_occlusion.get(i).copied().unwrap_or(1.0),
                 });
             }
             let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -525,9 +1230,11 @@ impl Renderer {
         out
     }
 
-    pub fn set_view_projection(&self, queue: &wgpu::Queue, view_proj: Mat4) {
+    pub fn set_view_projection(&self, queue: &wgpu::Queue, view_proj: Mat4, eye: Vec3) {
         let uniforms = Uniforms {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_pos: eye.to_array(),
+            _pad: 0.0,
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
@@ -545,14 +1252,18 @@ impl Renderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("frame-encoder"),
         });
+        // Phase 10 slice 10.3 (§4): the sky pass first — one
+        // fullscreen triangle, depth-write off, clearing colour
+        // to the frame's horizon colour and depth to 1.0; the
+        // world pass then Loads both (the sky wrote no depth).
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("voxel-pass"),
+                label: Some("sky-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: color_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -567,8 +1278,37 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            rpass.set_pipeline(&self.sky_pipeline);
+            rpass.set_bind_group(0, &self.sky_cam_bind_group, &[]);
+            rpass.set_bind_group(1, &self.sky_bind_group, &[]);
+            rpass.draw(0..3, 0..1);
+        }
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("voxel-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
             rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
             rpass.set_bind_group(1, &self.tex_bind_group, &[]);
+            rpass.set_bind_group(2, &self.gi_bind_group, &[]);
+            rpass.set_bind_group(3, &self.emitter_bind_group, &[]);
             for mesh in meshes {
                 rpass.set_pipeline(&self.pipelines[mesh.pass.index()]);
                 rpass.set_vertex_buffer(0, mesh.vertices.slice(..));

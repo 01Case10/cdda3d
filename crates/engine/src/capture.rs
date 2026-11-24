@@ -39,8 +39,24 @@ impl RendererKind {
 
 #[derive(Debug, Clone)]
 pub struct CaptureArgs {
-    /// Scene source. Phase 2 supports only "stub-house".
+    /// Scene source: "stub-house" (the Phase 2 fixture) or
+    /// "sample-scene" (the 24x24 yard + house sample world).
+    /// Ignored as a world source when `wire` is seated (the
+    /// name still keys fixture companion lookups, which the
+    /// wire branch does not consult).
     pub snapshot: String,
+    /// Wire-fed scene source (Phase 11 follow-up, Lane A): a
+    /// world built from a server's `TileDefs` + `Snapshot`
+    /// (and, for a live session, its delta-fed state) instead
+    /// of a fixture name. `Some` = both renderer paths prepare
+    /// from the wire map; the fixture dispatch is untouched
+    /// when `None`, byte-for-byte. Companions seat as usual:
+    /// `lighting` / `vehicles` apply to the wire world exactly
+    /// as to a fixture world; `textures`, `effects` and the
+    /// Phase 9 fixture prop scenes are fixture-keyed and are
+    /// not consulted for a wire world in v1 (the wire world's
+    /// blocks carry their resolver's colours/layers already).
+    pub wire: Option<crate::wire::WireScene>,
     /// Renderer selection (Phase 2c).
     pub renderer: RendererKind,
     /// Voxelizer output directory for RT textures (Phase 5
@@ -67,6 +83,18 @@ pub struct CaptureArgs {
     pub pitch_deg: f32,
     pub distance: f32,
     pub size: (u32, u32),
+    /// Stage A internal resolution: when > 1, the frame is
+    /// composed at `size / render_scale` and integer-upscaled with
+    /// nearest filtering into the full-size output (the
+    /// PresentBlit pass), for a consistent texel density and the
+    /// deliberate pixel look. 1 = render at full size (the
+    /// pre-Stage-A behavior, byte-for-byte). Sizes should be
+    /// multiples of the scale for an exact integer upscale.
+    pub render_scale: u32,
+    /// Stage F proof mode (`--macro-debug-height`): render macro
+    /// materials' top faces as their height-layer grayscale
+    /// instead of color, in both renderers. Off = normal render.
+    pub macro_debug_height: bool,
     pub out: PathBuf,
     /// Player z for the cutaway (levels <= this z are drawn).
     pub cutaway_z: i32,
@@ -74,18 +102,55 @@ pub struct CaptureArgs {
     /// for the visibility mask + bake. `None` = the pre-2h
     /// unlit render, byte-for-byte.
     pub lighting: Option<crate::frame::LightingScene>,
+    /// Phase 10 (§6): sky scene (game environment + clock) the
+    /// frame's `SkyUniforms` are evaluated from — the raster sky
+    /// pass + GI (slice 10.3) and the RT sky/GI (slice 10.4) both
+    /// read this one field. `None` = the §6 neutral default
+    /// (`SkyUniforms::neutral()`): legacy background stops and
+    /// legacy-equivalent GI, so pre-Phase-10 captures keep their
+    /// geometry shading byte-for-byte.
+    pub sky: Option<crate::frame::SkyScene>,
+    /// Addendum 11 (emitter prototype): the frame's declared
+    /// local light emitters — fixture data only, no wire/protocol
+    /// change. Both renderer paths read this one field (the
+    /// raster converts it to mesher world space, the RT path to
+    /// grid space, at the upload site). `None` = the empty
+    /// emitter set: byte-for-byte the pre-Addendum-11 frame.
+    pub emitters: Option<crate::frame::EmitterScene>,
     /// Phase 2h.2: billboard scene drawn between the fields and
     /// the post. `None` = no billboard pass.
     pub billboards: Option<crate::frame::BillboardScene>,
     /// Phase 2h.4: prepared UI frame composited last, over the
     /// post-processed world. `None` = no UI pass.
     pub ui: Option<crate::frame::UiPrepared>,
+    /// Phase 8 wiring: vehicles stamped into the world pass as
+    /// blocks (their exported absolute part positions, verbatim).
+    /// `None` = the pre-wiring render, byte-for-byte.
+    pub vehicles: Option<crate::frame::VehicleScene>,
+    /// Phase 8 wiring: transient emitters (animations /
+    /// projectiles from `Effects` messages) drawn in the fields
+    /// pass through the fx shader classes. `None` = no emitters.
+    pub transients: Option<crate::frame::TransientScene>,
+    /// Phase 9 slice 2 rollout (9.10): enable fine prop
+    /// stamping (`--fine-props`, default OFF). When true and
+    /// `props` is `None`, the frame uses
+    /// `frame::PropScene::fixture` for the snapshot. When
+    /// `props` is `Some`, that scene is used regardless of
+    /// this flag. OFF + no props = the pre-Phase-9 render,
+    /// byte-for-byte.
+    pub fine_props: bool,
+    /// Phase 9 slice 2: an explicit prop scene (models +
+    /// placements) to stamp into the raster world pass.
+    /// `None` = no props unless `fine_props` selects the
+    /// snapshot's fixture scene.
+    pub props: Option<crate::frame::PropScene>,
 }
 
 impl Default for CaptureArgs {
     fn default() -> Self {
         Self {
             snapshot: "stub-house".to_string(),
+            wire: None,
             renderer: RendererKind::Raster,
             textures: None,
             effects: None,
@@ -98,11 +163,19 @@ impl Default for CaptureArgs {
             pitch_deg: 45.0,
             distance: 28.0,
             size: (1280, 720),
+            render_scale: 1,
+            macro_debug_height: false,
             out: PathBuf::from("captures/house.png"),
             cutaway_z: 1,
             lighting: None,
+            sky: None,
+            emitters: None,
             billboards: None,
             ui: None,
+            vehicles: None,
+            transients: None,
+            fine_props: false,
+            props: None,
         }
     }
 }
@@ -124,7 +197,7 @@ impl fmt::Display for CaptureError {
             }
             CaptureError::UnsupportedSnapshot(s) => write!(
                 f,
-                "headless-capture: unsupported --snapshot source '{s}' (Phase 2 supports 'stub-house')"
+                "headless-capture: unsupported --snapshot source '{s}' (supports 'stub-house' and 'sample-scene')"
             ),
             CaptureError::Device(e) => write!(f, "headless-capture: device error: {e}"),
             CaptureError::Readback(e) => {
@@ -175,7 +248,7 @@ fn save_capture(args: &CaptureArgs, img: &image::RgbaImage) -> Result<(), Captur
 /// golden harness (2g.3) pins that the delegation is
 /// byte-stable for the pre-2h scenes.
 pub fn run_capture(args: &CaptureArgs) -> Result<CaptureOutcome, CaptureError> {
-    if args.snapshot != "stub-house" {
+    if args.wire.is_none() && args.snapshot != "stub-house" && args.snapshot != "sample-scene" {
         return Err(CaptureError::UnsupportedSnapshot(args.snapshot.clone()));
     }
     pollster::block_on(run_capture_async(args))
@@ -208,8 +281,7 @@ async fn run_capture_async(args: &CaptureArgs) -> Result<CaptureOutcome, Capture
         .map_err(|e| CaptureError::Device(e.to_string()))?;
 
     let frame = crate::frame::render_frame(&device, &queue, args)?;
-    let (img, distinct) =
-        crate::frame::readback_rgba(&device, &queue, &frame.texture, frame.size)?;
+    let (img, distinct) = crate::frame::readback_rgba(&device, &queue, &frame.texture, frame.size)?;
     save_capture(args, &img)?;
     Ok(CaptureOutcome {
         out: args.out.clone(),

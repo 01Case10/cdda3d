@@ -1,0 +1,99 @@
+# street_block — the S2 outside/inside workhorse (plan §4 item 4,
+# reduced to what S2 needs): a roofed house on grass with a road
+# strip, 24x24 = 2x2 submaps, so walking out of the house and
+# east across x=12 crosses a submap boundary (a map shift: fresh
+# Snapshot, epoch + 1).
+#
+# House: walls x 2..9 / y 2..8, floor interior, window at (4,2),
+# closed door at (5,8) in the south wall. The player starts
+# inside at (5,5): step south twice, bump the closed door
+# (blocked), `o` + south to open it, step out onto the grass,
+# walk east past x=12, come back, `c` + south to close it.
+# Road: t_pavement strip at x 20..21. Trees are decoration.
+name = "street_block"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [5, 5, 0]
+environment = true
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "W" = "t_window", "," = "t_grass", "R" = "t_pavement", "Y" = "t_tree", "T" = "f_table" }
+map = [
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,##W#####,,,,,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,#......#,,,Y,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,###D####,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,Y,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,Y,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+]
+furn = [
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "....T...................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+]
+
+[[spawn]]
+type = "player"
+pos = [5, 5, 0]
+hp_frac = 255
+facing = "NONE"
+
+# S3: a streetlamp on the yard row east of the house (the T1
+# walkway row). Warm colour, modest intensity so the midnight
+# pool shows a frac gradient instead of saturating: luminance 6
+# at the source tile, exp(-0.0383/tile) falloff through the air.
+[[light]]
+pos = [12, 9, 0]
+color = [1.0, 0.6, 0.2]
+intensity = 6.0
+
+# What the player starts out carrying (S4): the inventory UI's
+# initial contents — the text-honesty gate asserts the rendered
+# rows spell "rock" and "× 3" (plan §3.3).
+[[carried]]
+type = "rock"
+count = 3
+
+[[carried]]
+type = "stick"
+count = 1

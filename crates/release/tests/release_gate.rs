@@ -123,7 +123,10 @@ fn gate_8_7_mod_content_across_stores() {
     let mut defs = TileDefsT::default();
     defs.defs = Some(vec![door, door_o]);
     let table = DefTable::from_tiledefs(&defs);
-    assert_eq!(classify_transition(&table, 300, 301), Transition::Open);
+    assert_eq!(
+        classify_transition(&table, proto::TileKind::Terrain, 300, 301),
+        Transition::Open
+    );
 
     let mut store = VehicleStore::new();
     let mut snap = proto::SnapshotT::default();

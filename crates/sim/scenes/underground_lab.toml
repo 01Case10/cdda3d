@@ -1,0 +1,82 @@
+# underground_lab — plan §4.5 (Phase 11 follow-up): the
+# last unbuilt starter scene. A surface stairhead over a
+# sealed underground lab, for cave-factor / no-sky tests:
+# the engine's sky exposure must read 0 on every z -1 tile
+# and the decision-3C cave gradient must engage there.
+#
+# Surface (z 0): open grass with a chain-link fenced
+# stairhead — a fence ring (t_chainfence, no INDOORS flag)
+# at Chebyshev distance 2 around the stair tile, with a gap
+# on the east side as the entrance. Nothing roofs the pad
+# (no z +1 level is modelled), so the open ground reads
+# outside=true in daylight.
+#
+# The stair tile itself reads outside=FALSE, on the surface
+# exactly as it would in the real game: t_stairs_down
+# carries the INDOORS flag in its own def, and
+# build_outside_cache (0.I-1 map.cpp:9294-9305) stamps the
+# INDOORS tile and its Chebyshev-1 neighbourhood as not
+# outside. The sim's port is faithful here; the §4.5
+# sketch's "entrance outside" expectation holds for the
+# stairhead pad around the stair, not for the stair tile.
+# The lab gate pins both values.
+#
+# Below (z -1): three enclosed lab rooms cut into t_rock —
+# the entry room (NW, holds the stair), the east room
+# through the door at (6,5), the south-west room through
+# the door at (4,6). NO light sources, NO windows or
+# openings besides the stair shaft. Honest light (S8's
+# basement finding): z -1 is never outside (all 144 tiles
+# outside=false), and visible tiles read LOW
+# (inside_light_level), unseen BLANK — never DARK, which
+# apparent_light_at does not produce.
+#
+# The player starts ON the stair tile (4,4,0), so the
+# round trip needs no approach walk (multistorey
+# precedent).
+name = "underground_lab"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [4, 4, 0]
+environment = true
+
+[z0]
+legend = { "," = "t_grass", "F" = "t_chainfence", "v" = "t_stairs_down" }
+map = [
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,FFFFF,,,,,",
+  ",,F,,,F,,,,,",
+  ",,F,v,,,,,,,",
+  ",,F,,,F,,,,,",
+  ",,FFFFF,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+  ",,,,,,,,,,,,",
+]
+
+[z-1]
+legend = { "X" = "t_rock", "#" = "t_wall", "." = "t_floor", "^" = "t_stairs_up", "D" = "t_door_c" }
+map = [
+  "XXXXXXXXXXXX",
+  "X##########X",
+  "X#....#...#X",
+  "X#....#...#X",
+  "X#..^.#...#X",
+  "X#....D...#X",
+  "X###D##...#X",
+  "X#....#...#X",
+  "X#....#...#X",
+  "X#....#...#X",
+  "X##########X",
+  "XXXXXXXXXXXX",
+]
+
+[[spawn]]
+type = "player"
+pos = [4, 4, 0]
+hp_frac = 255
+facing = "NONE"

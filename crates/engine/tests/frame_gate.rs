@@ -474,16 +474,27 @@ fn gate_2h3_lighting_visibility_contract() {
     mid_args.lighting = Some(LightingScene::fake_house(0.0, lighting::WeatherKind::Clear));
     let (mid, _) = render(&device, &queue, &mid_args);
 
-    let bg = noon.get_pixel(2, 2).0;
-    let is_bg = |p: [u8; 4]| (0..3).all(|c| (p[c] as i32 - bg[c] as i32).abs() <= 4);
+    // Background mask, reworked for the §5 sky (ratified
+    // gate rework, 2026-11-23): the old mask — within ±4 of
+    // the (2,2) corner colour — identified the FLAT clear
+    // colour and covered ~85% of the frame; the sky pass now
+    // paints a gradient, of which that single colour covers
+    // only ~3.5%, and the unmasked sky flooded the ratio
+    // sample (median 1.000). The pair's sky is
+    // environment-independent (identical SkyUniforms in both
+    // frames) while every lit geometry pixel scales by the
+    // bake curve, so background = pixels identical (±1 per
+    // channel) across the pair. The mask-fraction bounds are
+    // the silhouette sanity in this form: if the world
+    // stopped rendering the fraction goes to 1.0; if the sky
+    // started responding to the bake it collapses.
     let mut ratios: [Vec<f32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    let (mut bg_agree, mut bg_total) = (0usize, 0usize);
+    let (mut bg_count, mut bg_total) = (0usize, 0usize);
     for (pn, pm) in noon.pixels().zip(mid.pixels()) {
         bg_total += 1;
-        if is_bg(pn.0) == is_bg(pm.0) {
-            bg_agree += 1;
-        }
-        if is_bg(pn.0) || is_bg(pm.0) {
+        let is_bg = (0..3).all(|c| (pn.0[c] as i32 - pm.0[c] as i32).abs() <= 1);
+        if is_bg {
+            bg_count += 1;
             continue;
         }
         for c in 0..3 {
@@ -492,9 +503,11 @@ fn gate_2h3_lighting_visibility_contract() {
             }
         }
     }
+    let bg_frac = bg_count as f64 / bg_total as f64;
+    println!("2h.3 day/night: background fraction {bg_frac:.3}");
     assert!(
-        bg_agree as f64 / bg_total as f64 > 0.999,
-        "day/night silhouettes differ — the pair must differ only in lighting"
+        bg_frac > 0.5 && bg_frac < 0.98,
+        "day/night background fraction {bg_frac:.3} — the pair must differ only in lighting"
     );
     // Encoded-space expectation: linear ratio (0.532 x tint)
     // through the sRGB encode, ^(1/2.2).
@@ -603,10 +616,57 @@ fn gate_2h3_lighting_visibility_contract() {
              memorized {memo_patch:?} (sat {sm:.3})"
         );
         assert!(sv > 0.03, "{renderer:?}: wall patch too grey to judge desaturation (sat {sv:.3})");
-        assert!(
-            sm < sv * 0.55,
-            "{renderer:?}: MEMORIZED saturation must collapse (pinned 0.30 keep): {sm:.3} vs visible {sv:.3}"
-        );
+        if renderer == RendererKind::Rt {
+            // RT MEMORIZED instrument (re-derived 2026-11-23,
+            // Joey's ratified option (a) for the wire-fed
+            // scene): the relative bound the raster half uses
+            // (sm < 0.55 sv) is not measurable here. The wire
+            // feed marks the north wall sky-exposed, so the
+            // visible patch is a pale sky-lit colour (sat
+            // 0.206), while the memorized pixels' own
+            // pre-desaturation colour is a deep hemisphere
+            // blue seen through the MEMORIZED lit factor —
+            // measured with both desaturation stages disabled
+            // in a scratch build: patch [7.9, 12.5, 18.6],
+            // sat 0.574. The pinned pipeline (albedo grey-mix
+            // 0.6, then the shaded-colour mix at the 0.30
+            // keep) collapses that to sat 0.257 — above
+            // 0.55 x the visible patch's 0.206 through no
+            // fault of the desaturation: saturation is taken
+            // against each patch's own max, and the two
+            // patches are different colours. The RT half
+            // therefore asserts the two pinned effects
+            // directly: the brightness collapse of the
+            // MEMORIZED lit factor (measured ratio 0.098,
+            // bound 0.5) and an absolute saturation ceiling
+            // derived from the mix algebra on the measured
+            // pre-desaturation colour (predicted ~0.22-0.26,
+            // measured 0.257; the disabled-stages control
+            // measures 0.574, so the 0.40 ceiling still
+            // fails a desaturation regression outright).
+            let ratio = brightness(memo_patch) / brightness(vis_patch).max(1.0);
+            println!("2h.3 Rt MEMORIZED brightness ratio {ratio:.3}");
+            assert!(
+                brightness(vis_patch) > 60.0,
+                "Rt: visible wall patch should be the bright wire-fed sky-lit wall \
+                 (brightness {:.1}) — the derivation below assumes that scene",
+                brightness(vis_patch)
+            );
+            assert!(
+                ratio < 0.5,
+                "Rt: MEMORIZED brightness must collapse (unseen lit factor): ratio {ratio:.3}"
+            );
+            assert!(
+                sm < 0.40,
+                "Rt: MEMORIZED saturation must collapse (pinned 0.30 keep): {sm:.3} \
+                 (disabled-desaturation control measures 0.574)"
+            );
+        } else {
+            assert!(
+                sm < sv * 0.55,
+                "{renderer:?}: MEMORIZED saturation must collapse (pinned 0.30 keep): {sm:.3} vs visible {sv:.3}"
+            );
+        }
         if renderer == RendererKind::Raster {
             // The bake also dims: the patch mixes the marked
             // run's vertices (pinned 0.45 presentation) with

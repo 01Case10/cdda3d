@@ -1,0 +1,56 @@
+# T9 — stairs / multi-storey (plan §6 T9). GREEN in S8.
+#
+# Runs in the `multistorey` scene (the §4.3 fork-harness
+# port: basement z -1, ground z 0, first floor z 1, roof
+# z 2). The player starts on stair B's ground tile (7,7,0),
+# a t_stairs_up.
+#
+# Two corrections to the S7 sketch of this file, both from
+# the 0.I-1 source: (1) the sketch's first step used `>` to
+# go UP — CDDA's convention is the opposite (`>` descends,
+# `<` ascends; action.cpp's move_down/move_up, mapdata.h:
+# 184-185), so the up leg uses `<` from the GOES_UP tile and
+# `>` comes back down the GOES_DOWN tile it lands on.
+# (2) The basement's lit is asserted LOW on the player's
+# tile, not DARK: the exporter reads `apparent_light_at`,
+# which never returns DARK, and a sealed basement sits at
+# inside_light_level 3.5 >= the vision threshold (see
+# stairs_gate.rs for the full grounding). The gate file
+# asserts the whole basement: outside=false everywhere and
+# no tile brighter than LOW.
+scene = "multistorey"
+name = "T9 stairs: up to the first floor, down to the basement"
+
+steps = [
+  { assert_player = [7, 7, 0] },
+  # Up: '<' on t_stairs_up -> first floor t_stairs_down.
+  { do = "key", key = "<" },
+  { assert_player = [7, 7, 1] },
+  { assert_message = { kind = "Snapshot", epoch = 2 } },
+  { assert_lit = { pos = [7, 7, 1], not_value = "BLANK" } },
+  # Back down: '>' on t_stairs_down.
+  { do = "key", key = ">" },
+  { assert_player = [7, 7, 0] },
+  { assert_message = { kind = "Snapshot", epoch = 3 } },
+  # Walk to stair A at (3,3) and descend to the basement.
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "k" },
+  { do = "key", key = "k" },
+  { do = "key", key = "k" },
+  { do = "key", key = "k" },
+  { assert_player = [3, 3, 0] },
+  { do = "key", key = ">" },
+  { assert_player = [3, 3, -1] },
+  { assert_message = { kind = "Snapshot", epoch = 4 } },
+  { assert_outside = { pos = [3, 3, -1], value = false } },
+  { assert_outside = { pos = [2, 2, -1], value = false } },
+  { assert_outside = { pos = [8, 8, -1], value = false } },
+  { assert_lit = { pos = [3, 3, -1], value = "LOW" } },
+  # And back up the basement's t_stairs_up.
+  { do = "key", key = "<" },
+  { assert_player = [3, 3, 0] },
+  { assert_mirror = true },
+]

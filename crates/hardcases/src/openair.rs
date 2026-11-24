@@ -80,10 +80,10 @@ pub fn floor_at(table: &DefTable, column: &Column, z: i32) -> Floor {
     if !emits_block(table, below) {
         return Floor::None;
     }
-    let Some(def) = table.def(below) else {
+    let Some(def) = table.def(proto::TileKind::Terrain, below) else {
         return Floor::None;
     };
-    match table.resolve(&def.roof_result) {
+    match table.resolve(proto::TileKind::Terrain, &def.roof_result) {
         Some(roof_id) => Floor::RoofOf(below, roof_id),
         None => Floor::None,
     }

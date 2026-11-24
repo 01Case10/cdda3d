@@ -20,6 +20,13 @@ pub struct Chunk {
     pub levels: usize,
     pub grid: VoxelGrid,
     pub dirty: bool,
+    /// Phase 9 (plan §11b, 9.0): this chunk column contains at
+    /// least one tile with a fine volume in the world's
+    /// `fine::FineLayer`, so it takes the fine meshing path
+    /// instead of the coarse fast path. Maintained from the
+    /// layer via `ChunkMap::refresh_chunk_fine` /
+    /// `refresh_fine_flags`; the layer is the source of truth.
+    pub has_fine: bool,
 }
 
 impl Chunk {
@@ -30,6 +37,7 @@ impl Chunk {
             levels,
             grid: VoxelGrid::new([CHUNK_W, CHUNK_H, height]),
             dirty: true,
+            has_fine: false,
         }
     }
 
@@ -57,10 +65,15 @@ impl Chunk {
         let (lo, hi) = match tile_shape(tile_id) {
             TileShape::Full => (base, base + per),
             TileShape::FloorSlab => (base, base + scale.floor_slab_blocks.min(per)),
-            TileShape::RoofSlab => (
-                base + per - scale.roof_slab_blocks.min(per),
-                base + per,
-            ),
+            // A roof tile is authored on the level ABOVE
+            // the room it closes and stamps as that
+            // level's bottom slab -- a deck seated on the
+            // wall plate below, exactly like the snapshot
+            // path's Floor::RoofOf stamping. (It used to
+            // take the level's TOP slab, which floated the
+            // roof two blocks above the walls; Joey,
+            // 2026-11-17.)
+            TileShape::RoofSlab => (base, base + scale.roof_slab_blocks.min(per)),
         };
         for z in lo..hi {
             self.grid.set(x, y, z as usize, block);

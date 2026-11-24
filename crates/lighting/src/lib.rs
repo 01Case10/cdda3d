@@ -27,12 +27,15 @@
 
 pub mod atmosphere;
 pub mod bake;
+pub mod emitters;
 pub mod fixtures;
 pub mod grid;
 pub mod mapping;
 pub mod png;
 pub mod proto_adapter;
 pub mod render;
+pub mod sky;
+pub mod sky_uniforms;
 pub mod smoothing;
 pub mod updates;
 
@@ -42,11 +45,23 @@ pub use atmosphere::{
 pub use bake::{
     bake_chunk_map, bake_chunk_map_with_offset, bake_pass_meshes, filter_levels, shade_color,
 };
+pub use emitters::{
+    emitter_light_cpu, emitter_term_cpu, Emitter, EmitterUniforms, CONE_INNER_FRACTION,
+    EMITTER_UNIFORM_ROWS, EMITTER_WGSL, MAX_EMITTERS,
+};
 pub use grid::{ClosureLightSampler, LightGrid, LightSampler, VisibilityMask};
 pub use mapping::{
     apply_visibility_rgb, base_intensity, include_in_tree, is_meshed, luminance, present_color,
     presented_sample, visibility_of, LightSample, TileLight, Visibility, MEMORIZED_BRIGHTNESS,
     MEMORIZED_SATURATION_KEEP,
+};
+pub use sky::{
+    classify_weather, fallback_sun_angles, max_elev_for_season, moon_light_for_phase, sky_state,
+    sun_direction, GameEnvironment, PrecipKind, PrecipState, SkyClock, SkyState,
+};
+pub use sky_uniforms::{
+    sky_color_cpu, SkyUniforms, CAVE_GROUND, CAVE_HORIZON, CAVE_ZENITH, LEGACY_GROUND,
+    LEGACY_HORIZON, LEGACY_SUN_DIR_GRID, LEGACY_ZENITH, SKY_WGSL,
 };
 pub use smoothing::{
     air_side_sample, face_light, smoothed_tile_sample, top_face_vertex_light, vertex_light,

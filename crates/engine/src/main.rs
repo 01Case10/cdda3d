@@ -11,6 +11,21 @@
 //!   Exits non-zero with a named error when no wgpu adapter exists.
 //! - `--scene-report`: build + mesh the full 132x132 bubble scene on
 //!   CPU and print counts/timing (the 2.13 data-level proxy). No GPU.
+//! - `--connect <unix-socket>` (Phase 11 S7): a headless live
+//!   session against a running game server (sim-server or the
+//!   fork's IPC frontend) — handshake, wire-fed world ingest,
+//!   stdin keys -> Input messages, heartbeat, clean shutdown.
+//!   See `engine::client`.
+//! - `--connect-window <unix-socket>` (Phase 11 follow-up,
+//!   Lane A): the same session, seated in the windowed app —
+//!   the session runs on its own thread and publishes its live
+//!   wire world (`CaptureArgs::wire`, the wire-source change);
+//!   the window renders that world through the one frame loop
+//!   and forwards key presses back as Input messages (camera
+//!   keys stay local; closing the window ends the session via
+//!   the client's input-close rule). The windowed run itself
+//!   needs a desktop — on this VM only the headless seating is
+//!   proven (the wire-source gate's connect test).
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -34,6 +49,41 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "--headless-capture") {
         return headless_main(&args);
     }
+    if let Some(socket) = value_after(&args, "--connect") {
+        return match engine::client::run_connect(std::path::Path::new(&socket)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("voxel-engine --connect: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    // --connect-window: spawn the live session on its thread
+    // (it owns the socket), then run the windowed app with the
+    // session's published wire scene + key channel linked in.
+    // The app holds the channel sender; when the window closes
+    // the app drops, the channel closes, and the session ends
+    // cleanly (drain + Shutdown) — joined below, bounded by
+    // the client's own drain cap.
+    let mut live_session: Option<std::thread::JoinHandle<Result<engine::client::ConnectReport, String>>> =
+        None;
+    let live_link = match value_after(&args, "--connect-window") {
+        Some(socket) => {
+            let (tx, rx) = std::sync::mpsc::channel::<u8>();
+            let share: engine::client::SharedWireScene =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            live_session = Some(engine::client::spawn_connect(
+                std::path::Path::new(&socket),
+                engine::client::ConnectConfig {
+                    input: engine::client::ConnectInput::Channel(rx),
+                    share: Some(share.clone()),
+                    captures: None,
+                },
+            ));
+            Some(LiveWindowLink { share, input: tx })
+        }
+        None => None,
+    };
     if args.iter().any(|a| a == "--scene-report") {
         let r = world::bubble_report();
         println!(
@@ -53,12 +103,13 @@ fn main() -> ExitCode {
         println!(
             "usage: voxel-engine [--headless-capture --snapshot stub-house \
              --camera x,y,yaw,pitch [--distance d] [--cutaway z] [--renderer raster|rt] \
-             [--textures voxelizer-output-dir] [--effects effects.json] \
-             [--fx-fields-off] [--fx-post-off] [--billboards fixture|<atlas-dir>] \
-             [--light-hour H] [--ui-stub] \
+             [--textures voxelizer-output-dir] [--render-scale N] [--effects effects.json] \
+             [--fx-fields-off] [--fx-post-off] [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] \
+             [--light-hour H] [--ui-stub] [--fine-props] \
              --size WxH --out file.png] [--scene-report] \
              [--renderer raster|rt] [--textures dir] [--effects effects.json] \
-             [--billboards fixture|<atlas-dir>] [--light-hour H] [--ui-stub]"
+             [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] [--light-hour H] [--ui-stub] \
+             [--fine-props] [--connect <unix-socket>] [--connect-window <unix-socket>]"
         );
         return ExitCode::SUCCESS;
     }
@@ -69,6 +120,15 @@ fn main() -> ExitCode {
     let effects = value_after(&args, "--effects").map(std::path::PathBuf::from);
     let billboards = match value_after(&args, "--billboards") {
         Some(s) if s == "fixture" => Some(BillboardScene::fixture_crowd()),
+        Some(s) if s.starts_with("sample:") => {
+            match BillboardScene::sample_crowd(std::path::Path::new(&s["sample:".len()..])) {
+                Ok(scene) => Some(scene),
+                Err(e) => {
+                    eprintln!("voxel-engine: --billboards atlas load failed: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
         Some(dir) => match BillboardScene::ultica_crowd(std::path::Path::new(&dir)) {
             Ok(scene) => Some(scene),
             Err(e) => {
@@ -79,14 +139,45 @@ fn main() -> ExitCode {
         _ => None,
     };
     let light_hour = value_after(&args, "--light-hour").and_then(|s| s.parse().ok());
-    windowed_main(WindowConfig {
+    let code = windowed_main(WindowConfig {
         renderer_kind: kind,
         textures_dir: textures,
         effects,
         billboards,
         ui_stub: args.iter().any(|a| a == "--ui-stub"),
         light_hour,
-    })
+        vehicle_fixture: args.iter().any(|a| a == "--vehicle-fixture"),
+        transient_fixture_ms: value_after(&args, "--transient-fixture")
+            .and_then(|s| s.parse().ok()),
+        render_scale: value_after(&args, "--render-scale")
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|&v| v >= 1)
+            .unwrap_or(1),
+        fine_props: args.iter().any(|a| a == "--fine-props"),
+        live: live_link,
+    });
+    // The window is closed and the app (with the key channel's
+    // sender) is dropped: the session is draining to its clean
+    // Shutdown. Join it so its report/exit is not lost.
+    if let Some(handle) = live_session {
+        match handle.join() {
+            Ok(Ok(report)) => println!(
+                "voxel-engine --connect-window: session ended — {} snapshots, {} deltas, {} inputs sent; player at {:?}",
+                report.snapshots, report.deltas, report.inputs_sent, report.player_pos
+            ),
+            Ok(Err(e)) => eprintln!("voxel-engine --connect-window: session error: {e}"),
+            Err(_) => eprintln!("voxel-engine --connect-window: session thread panicked"),
+        }
+    }
+    code
+}
+
+/// The windowed app's half of a `--connect-window` session:
+/// the shared slot the session thread publishes its live wire
+/// scene into, and the channel key presses are forwarded to.
+struct LiveWindowLink {
+    share: engine::client::SharedWireScene,
+    input: std::sync::mpsc::Sender<u8>,
 }
 
 /// Shared by the headless and windowed entry points: build the
@@ -100,6 +191,8 @@ fn apply_scene_flags(
     if let Some(s) = value_after(args, "--billboards") {
         cap.billboards = Some(if s == "fixture" {
             BillboardScene::fixture_crowd()
+        } else if let Some(dir) = s.strip_prefix("sample:") {
+            BillboardScene::sample_crowd(std::path::Path::new(dir))?
         } else {
             BillboardScene::ultica_crowd(std::path::Path::new(&s))?
         });
@@ -111,9 +204,66 @@ fn apply_scene_flags(
             lighting::WeatherKind::Clear,
         ));
     }
+    if let Some(b) = value_after(args, "--light-bake") {
+        let mode = match b.as_str() {
+            "per-vertex" => engine::frame::BakeMode::PerVertex,
+            "per-block" => engine::frame::BakeMode::PerBlock,
+            _ => return Err(format!("bad --light-bake '{b}' (per-vertex|per-block)")),
+        };
+        match &mut cap.lighting {
+            Some(lit) => lit.bake_mode = mode,
+            None => {
+                let mut lit =
+                    engine::frame::LightingScene::fake_house(12.0, lighting::WeatherKind::Clear);
+                lit.bake_mode = mode;
+                cap.lighting = Some(lit);
+            }
+        }
+    }
+    // Phase 10 (§6): named sky environments for captures, so the
+    // gate capture set is deterministic. The names resolve
+    // through `SkyScene::named` — the same resolver the gate
+    // matrix uses (slice 10.6), so the CLI and the gates cannot
+    // drift. (The live windowed path takes its environment from
+    // the client state; these names are the fake-data scripts.)
+    if let Some(s) = value_after(args, "--sky") {
+        cap.sky = Some(engine::frame::SkyScene::named(&s).ok_or_else(|| {
+            format!(
+                "bad --sky '{s}' (neutral|{{midnight,dawn,noon,dusk}}-{{clear,rain,fog,thunderstorm}})"
+            )
+        })?);
+    }
+    // Addendum 11 (emitter prototype): named emitter fixture
+    // scenes, resolved through `EmitterScene::named` — the same
+    // resolver the gate uses. The scene seats its companions
+    // (sky / vehicles / lighting) wherever the args don't
+    // already carry one, so the prototype capture is one flag.
+    if let Some(s) = value_after(args, "--emitters") {
+        let scene = engine::frame::EmitterScene::named(&s)
+            .ok_or_else(|| format!("bad --emitters '{s}' (headlight-car)"))?;
+        scene.seat_companions(cap);
+        cap.emitters = Some(scene);
+    }
     if args.iter().any(|a| a == "--ui-stub") {
         let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;
         cap.ui = Some(engine::frame::prepare_ui(&store, &note)?);
+    }
+    // Phase 8 wiring demo scenes: the fixture car parked inside
+    // the fake house, and the transient burst at a fixed clock.
+    if args.iter().any(|a| a == "--vehicle-fixture") {
+        cap.vehicles = Some(engine::frame::VehicleScene::fixture_car([4, 5, 0], 23.0));
+    }
+    if let Some(s) = value_after(args, "--transient-fixture") {
+        let now_ms: u64 = s
+            .parse()
+            .map_err(|_| format!("bad --transient-fixture '{s}'"))?;
+        cap.transients = Some(engine::frame::TransientScene::fixture_burst(now_ms));
+    }
+    // Phase 9 slice 2 rollout (9.10): fine prop stamping,
+    // default OFF; parsed here so headless and windowed both
+    // get it.
+    if args.iter().any(|a| a == "--fine-props") {
+        cap.fine_props = true;
     }
     Ok(())
 }
@@ -185,8 +335,20 @@ fn headless_main(args: &[String]) -> ExitCode {
     if let Some(t) = value_after(args, "--textures") {
         cap.textures = Some(t.into());
     }
+    if let Some(s) = value_after(args, "--render-scale") {
+        match s.parse::<u32>() {
+            Ok(v) if v >= 1 => cap.render_scale = v,
+            _ => {
+                eprintln!("headless-capture: --render-scale must be an integer >= 1 (got '{s}')");
+                return ExitCode::from(2);
+            }
+        }
+    }
     if let Some(e) = value_after(args, "--effects") {
         cap.effects = Some(e.into());
+    }
+    if args.iter().any(|a| a == "--macro-debug-height") {
+        cap.macro_debug_height = true;
     }
     if args.iter().any(|a| a == "--fx-fields-off") {
         cap.fx_fields = false;
@@ -242,6 +404,13 @@ struct WindowConfig {
     billboards: Option<engine::frame::BillboardScene>,
     ui_stub: bool,
     light_hour: Option<f32>,
+    vehicle_fixture: bool,
+    transient_fixture_ms: Option<u64>,
+    render_scale: u32,
+    fine_props: bool,
+    /// `--connect-window`: seat the live session's wire world
+    /// (see `LiveWindowLink`). `None` = the fixture app.
+    live: Option<LiveWindowLink>,
 }
 
 struct GpuState {
@@ -274,6 +443,12 @@ struct App {
     ui_store: Option<ui_share::UiShmStore>,
     router: Option<ui_share::input::InputRouter>,
     input_sink: Vec<proto::InputT>,
+    /// `--connect-window` seating: the session thread's
+    /// published live wire scene (polled per frame into
+    /// `frame_args.wire`) and the channel key presses are
+    /// forwarded to as session Inputs.
+    live_share: Option<engine::client::SharedWireScene>,
+    live_input: Option<std::sync::mpsc::Sender<u8>>,
     cursor: (f64, f64),
     drag_from: Option<(f64, f64)>,
     started: Instant,
@@ -285,13 +460,51 @@ impl App {
         let camera = OrbitCamera::new(Vec3::new(6.0, 1.0, -6.0));
         let mut frame_args = CaptureArgs {
             renderer: cfg.renderer_kind,
+            render_scale: cfg.render_scale,
+            fine_props: cfg.fine_props,
             textures: cfg.textures_dir,
             effects: cfg.effects,
             billboards: cfg.billboards,
+            // Phase 10 (10.6): the windowed app runs under a
+            // seated sky — `--light-hour`'s fake day (the same
+            // hour the bake below uses), else the §6 neutral
+            // environment. Before 10.6 the sky stayed None (raw
+            // neutral uniforms) while `--light-hour` moved only
+            // the bake, so the window showed a noon sky over a
+            // midnight bake.
+            sky: Some(match cfg.light_hour {
+                Some(h) => engine::frame::SkyScene::fake_day(h, 4),
+                None => engine::frame::SkyScene::neutral_env(),
+            }),
             lighting: cfg
                 .light_hour
                 .map(|h| engine::frame::LightingScene::fake_house(h, lighting::WeatherKind::Clear)),
+            vehicles: cfg
+                .vehicle_fixture
+                .then(|| engine::frame::VehicleScene::fixture_car([4, 5, 0], 23.0)),
+            transients: cfg
+                .transient_fixture_ms
+                .map(engine::frame::TransientScene::fixture_burst),
             ..CaptureArgs::default()
+        };
+        // Live session seating (`--connect-window`): the frame
+        // renders the session's wire world, so the fixture
+        // companions come off — a fake-house light grid or sky
+        // over a wire world would mask/shade tiles the game
+        // never reported. Lighting for the windowed session is
+        // not seated yet (the capture path seats wire + grid
+        // today; the session publishes the world only). Until
+        // the first Snapshot publishes, `wire` stays None and
+        // the frame is the default fixture.
+        let (live_share, live_input) = match cfg.live {
+            Some(link) => {
+                frame_args.sky = None;
+                frame_args.lighting = None;
+                frame_args.vehicles = None;
+                frame_args.transients = None;
+                (Some(link.share), Some(link.input))
+            }
+            None => (None, None),
         };
         // Stub UI: a fixed 640x360 synthetic frame in an in-memory
         // store (the compositor stretches it to the window).
@@ -328,6 +541,8 @@ impl App {
             ui_store,
             router,
             input_sink: Vec::new(),
+            live_share,
+            live_input,
             cursor: (0.0, 0.0),
             drag_from: None,
             started: Instant::now(),
@@ -344,6 +559,15 @@ impl App {
     /// Sync the live camera/cutaway/size/time into the frame
     /// template before a redraw.
     fn sync_frame_args(&mut self) {
+        // Live session: seat the session's latest published
+        // wire world (replaced by the session thread after
+        // every applied flush; an unchanged scene is the same
+        // Arc, so this is a pointer swap per frame).
+        if let Some(share) = &self.live_share {
+            if let Some(w) = share.lock().expect("wire share lock").clone() {
+                self.frame_args.wire = Some(w);
+            }
+        }
         let a = &mut self.frame_args;
         a.camera_target = (self.camera.target.x, -self.camera.target.z);
         a.yaw_deg = self.camera.yaw_deg;
@@ -357,6 +581,21 @@ impl App {
             .unwrap_or(a.cutaway_z);
         if let Some(gpu) = &self.gpu {
             a.size = gpu.size;
+        }
+        // Phase 10 (10.6, §4): reseat the sky's cave factor
+        // from the camera target tile — x/y from the camera,
+        // z from the cutaway's player level, exposure from the
+        // lighting scene's wire-derived set.
+        if let (Some(sky), Some(lit)) = (&mut a.sky, &a.lighting) {
+            if let Some(exposure) = &lit.sky_exposure {
+                let target = [
+                    a.camera_target.0.floor() as i32,
+                    a.camera_target.1.floor() as i32,
+                    self.cutaway.player_z,
+                ];
+                sky.cave_factor =
+                    engine::frame::SkyScene::cave_factor_for(exposure, target);
+            }
         }
         let t = self.started.elapsed().as_secs_f32();
         a.fx_time = t;
@@ -410,7 +649,10 @@ impl App {
     /// a router every press starts a camera drag.
     fn handle_click_press(&mut self) {
         let Some(gpu) = &self.gpu else { return };
-        let window = ui_share::Size2 { w: gpu.size.0, h: gpu.size.1 };
+        let window = ui_share::Size2 {
+            w: gpu.size.0,
+            h: gpu.size.1,
+        };
         let Some(router) = self.router.clone() else {
             self.drag_from = Some(self.cursor);
             return;
@@ -418,8 +660,11 @@ impl App {
         // The stub UI canvas is 640x360, stretched over the window
         // (the same mode the compositor draws it with).
         let ui_size = ui_share::Size2 { w: 640, h: 360 };
-        let viewport =
-            ui_share::scaling::compute_viewport(window, ui_size, ui_share::ScalingMode::StretchNearest);
+        let viewport = ui_share::scaling::compute_viewport(
+            window,
+            ui_size,
+            ui_share::ScalingMode::StretchNearest,
+        );
         match router.route_window_click(
             self.cursor.0 as f32,
             self.cursor.1 as f32,
@@ -603,6 +848,30 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
+                }
+                // Live session: forward the game's keys to the
+                // session as Inputs. The camera keys (WASD/E/Q
+                // physical codes, arrows, Escape) stay local —
+                // Q is also the headless session-end byte, so
+                // in the window the session ends by closing it
+                // (the app drop closes the channel, the client's
+                // input-close rule). Everything else printable
+                // (vi-keys, o/c/g/d/i, '.', '>'/'<', space)
+                // goes to the game.
+                if let Some(tx) = &self.live_input {
+                    if let Some(text) = &event.text {
+                        for ch in text.chars() {
+                            if (' '..='~').contains(&ch)
+                                && !matches!(
+                                    ch,
+                                    'w' | 'a' | 's' | 'd' | 'e' | 'q' | 'W' | 'A' | 'S' | 'D'
+                                        | 'E' | 'Q'
+                                )
+                            {
+                                let _ = tx.send(ch as u8);
+                            }
+                        }
+                    }
                 }
                 let mut camera_moved = true;
                 match event.physical_key {

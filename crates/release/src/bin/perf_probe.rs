@@ -66,6 +66,7 @@ fn main() {
     time("door classify_transition", 100_000, || {
         std::hint::black_box(classify_transition(
             &table,
+            proto::TileKind::Terrain,
             proto::samples::TER_DOOR,
             proto::samples::TER_DOOR_OPEN,
         ));

@@ -137,6 +137,13 @@ void Frontend::on_send_boundary( const ViewSpec &view )
     } else {
         send_delta();
     }
+    // Phase 10: a due environment update that did not ride the
+    // snapshot/delta above goes out as a standalone message.
+    if( auto env = exp_->build_environment_update() ) {
+        ipc::MessageUnion m;
+        m.Set( std::move( *env ) );
+        outbox_.push( frame_message( m ), false );
+    }
     if( hb_.should_ping( now ) ) {
         ipc::MessageUnion ping;
         auto p = ipc::PingT{};

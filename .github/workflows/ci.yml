@@ -40,3 +40,122 @@ jobs:
 
       - name: Rust formatting
         run: cargo fmt -p proto --check
+
+  rust-unit:
+    # Test plan §2: the whole workspace's unit + integration
+    # suites on every push/PR. GPU gates loud-skip without an
+    # adapter here; the visual-regression job below runs them
+    # for real on lavapipe.
+    # Note: no workspace fmt/clippy gate — the tree carries
+    # pre-existing rustfmt drift (49 files at the time this job
+    # was added); a formatting pass is its own change, not a
+    # rider on this one. Proto keeps its fmt gate above.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test (workspace)
+        run: cargo test --workspace
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  fork-harness:
+    # The Phase 3 exporter gates (3.1-3.22) against the mock
+    # world — the fork-side suite that does not need the game
+    # build. The in-game halves ride fork-build-and-test
+    # (nightly/manual; see ci-nightly.yml).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fork harness gates
+        working-directory: tools/fork-harness
+        run: ./run.sh
+
+  visual-regression:
+    # Golden-image gates on lavapipe (software Vulkan — the
+    # project's gates treat any real adapter as valid evidence;
+    # target-hardware numbers stay a PC step). Real-UltiCa
+    # halves loud-skip: the generated atlas is not in git.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+      - name: Golden + frame + wiring gates (single-threaded, GPU-serial)
+        run: >
+          cargo test -p engine --test golden_gate --test frame_gate
+          --test phase8_wire_gate -- --test-threads=1
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  replay-integration:
+    # Test plan §2 replay-integration, harness form: the stub
+    # server + real engine handshake and scripted session
+    # (tools/package_smoke.sh). Recorded-session replay against
+    # the game rides the fork build (ci-nightly.yml).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Package smoke (stub server + engine handshake)
+        run: tools/package_smoke.sh
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  sim-scenarios:
+    # Phase 11 S7: the §5 scenario gate — every green scenario
+    # runs in-process against the sim world and a subset drives
+    # a real sim-server subprocess over its socket — plus the
+    # engine's sim-ingest gates. Headless; lavapipe installed
+    # for the engine test binaries (they link wgpu even when a
+    # gate is CPU-side), following the visual-regression job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+      - name: Build sim-server (the scenario gate spawns it)
+        run: cargo build -p sim-server
+        env:
+          CARGO_BUILD_JOBS: 2
+      - name: Scenario gate (in-process + process modes)
+        run: cargo test -p sim --test scenario_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+      - name: S8 gates (T9 stairs, T10 server fuzz, record/replay)
+        run: >-
+          cargo test -p sim --test stairs_gate
+          --test server_fuzz_gate --test record_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+      - name: Engine sim-ingest gates
+        run: >
+          cargo test -p engine --test sim_world_parity_gate
+          --test sim_visibility_gate --test sim_ui_gate
+          --test sim_creature_gate --test sim_destruction_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  fuzz-smoke:
+    # Gate 1.5 full form: 60 s per target on PRs (longer runs
+    # nightly). Targets live in crates/proto/fuzz (detached
+    # workspace, seeded from the golden frames).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz decode_message (60s)
+        working-directory: crates/proto/fuzz
+        run: cargo fuzz run decode_message -- -max_total_time=60
+      - name: Fuzz decode_roundtrip (60s)
+        working-directory: crates/proto/fuzz
+        run: cargo fuzz run decode_roundtrip -- -max_total_time=60

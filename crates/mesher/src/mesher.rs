@@ -21,7 +21,7 @@ pub const FACE_DIRS: [[i32; 3]; 6] = [
     [0, 0, -1],
 ];
 
-const FACE_CORNERS: [[[f32; 3]; 4]; 6] = [
+pub(crate) const FACE_CORNERS: [[[f32; 3]; 4]; 6] = [
     // +X
     [[1., 0., 0.], [1., 1., 0.], [1., 1., 1.], [1., 0., 1.]],
     // -X
@@ -58,7 +58,7 @@ pub fn face_visible(src: Block, neighbor: Block) -> bool {
 /// +Z samples the top layer, -Z the bottom layer, every side face the
 /// side layer — the same selection the RT shader's `tex_albedo` makes.
 /// `None` when the block is untextured (flat shading).
-fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
+pub(crate) fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
     let layers = block.tex_layers?;
     Some(match di {
         4 => layers[0], // +Z (up): top
@@ -68,36 +68,62 @@ fn layer_for_dir(block: Block, di: usize) -> Option<u32> {
 }
 
 /// UV for a grid-space point `p` on face `di`, given the quad's
-/// per-axis grid minimum and extent (Phase 2f). Mirrors the RT
-/// shader's `tex_albedo` mapping exactly: top and bottom faces use
-/// `(x_fraction, y_fraction)`; side faces use
-/// `(horizontal_fraction, 1 - z_fraction)` so v = 0 is the texture's
-/// top row at the top of the voxel. Fractions are relative to the
-/// (possibly greedy-merged) quad, so a quad's UVs span [0,1]² across
-/// its whole extent.
-fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], quad_ext: [f32; 3]) -> [f32; 2] {
+/// per-axis grid minimum (Phase 2f; Stage A of the procedural
+/// texture pipeline rework). Mirrors the RT shader's `tex_albedo`
+/// mapping: top and bottom faces use `(x, y)` in tile units; side
+/// faces use `(horizontal, 1 - z)` in tile units so v = 0 is the
+/// texture's top row at the top of each voxel.
+///
+/// Stage A fix: UVs are in TILE UNITS, not fractions of the merged
+/// quad. The pre-fix version divided by the quad extent, so a
+/// greedy-merged quad spanned [0,1]² across its whole extent and
+/// stretched one sprite over the merged area (the smearing in the
+/// first textured screenshots). In tile units a merged quad's UVs
+/// span [0, w] x [0, h], and the engine's `Repeat` sampler wraps
+/// each integer interval to one full texture per tile. Quad minima
+/// sit on tile boundaries, so the repeat phase is anchored
+/// correctly; `quad_ext` is no longer needed and kept only so the
+/// two call sites read the same.
+fn face_uv(di: usize, p: [f32; 3], quad_min: [f32; 3], _quad_ext: [f32; 3]) -> [f32; 2] {
     let dir = FACE_DIRS[di];
     let axis = (0..3).find(|&a| dir[a] != 0).unwrap();
     if axis == 2 {
-        [
-            (p[0] - quad_min[0]) / quad_ext[0],
-            (p[1] - quad_min[1]) / quad_ext[1],
-        ]
+        [p[0] - quad_min[0], p[1] - quad_min[1]]
     } else {
         // The horizontal axis is the one that is neither the face
         // axis nor z.
         let h = (0..3).find(|&a| a != axis && a != 2).unwrap();
-        [
-            (p[h] - quad_min[h]) / quad_ext[h],
-            1.0 - (p[2] - quad_min[2]) / quad_ext[2],
-        ]
+        [p[h] - quad_min[h], 1.0 - (p[2] - quad_min[2])]
     }
+}
+
+/// Per-corner UVs for one textured quad whose face layer is
+/// `layer` (Stage F): a +Z (top) face carrying a macro-encoded
+/// layer samples the world-space macro texture, so its UVs are the
+/// corners' *absolute* grid coordinates divided by the macro span —
+/// two world points exactly `span` tiles apart share a macro phase
+/// (the macro array's Repeat sampler wraps the rest). Every other
+/// face keeps the Stage A tile-unit mapping ([`face_uv`]).
+pub(crate) fn quad_uvs(
+    di: usize,
+    grid_corners: &[[f32; 3]; 4],
+    quad_min: [f32; 3],
+    quad_ext: [f32; 3],
+    layer: u32,
+) -> [[f32; 2]; 4] {
+    if di == 4 {
+        if let Some((_, span)) = crate::mesh::decode_macro_layer(layer) {
+            let span = span.max(1) as f32;
+            return grid_corners.map(|g| [g[0] / span, g[1] / span]);
+        }
+    }
+    grid_corners.map(|g| face_uv(di, g, quad_min, quad_ext))
 }
 
 /// Grid-space point -> Y-up world point. This is a rotation about X
 /// (grid `(x, y_south, z_up)` -> world `(x, z_up, -y_south)`), NOT a plain
 /// axis swap: a swap is a reflection and would flip triangle winding.
-fn to_world(p: [f32; 3], scale: WorldScale) -> [f32; 3] {
+pub(crate) fn to_world(p: [f32; 3], scale: WorldScale) -> [f32; 3] {
     [
         p[0] * scale.block_size,
         p[2] * scale.block_size,
@@ -106,7 +132,7 @@ fn to_world(p: [f32; 3], scale: WorldScale) -> [f32; 3] {
 }
 
 /// Grid-space direction -> Y-up world direction (same rotation).
-fn normal_to_world(d: [i32; 3]) -> [f32; 3] {
+pub(crate) fn normal_to_world(d: [i32; 3]) -> [f32; 3] {
     [d[0] as f32, d[2] as f32, -d[1] as f32]
 }
 
@@ -139,8 +165,7 @@ pub fn mesh_naive(
                     match layer_for_dir(block, di) {
                         Some(layer) => {
                             let quad_min = [gx as f32, gy as f32, gz as f32];
-                            let uvs =
-                                grid_corners.map(|g| face_uv(di, g, quad_min, [1.0, 1.0, 1.0]));
+                            let uvs = quad_uvs(di, &grid_corners, quad_min, [1.0, 1.0, 1.0], layer);
                             mesh.push_quad_textured(corners, normal, block.color, uvs, layer);
                         }
                         None => mesh.push_quad(corners, normal, block.color),
@@ -315,7 +340,7 @@ fn emit_greedy_quad(
             quad_ext[u_ax] = w as f32;
             quad_min[v_ax] = (origin[v_ax] + v0) as f32;
             quad_ext[v_ax] = h as f32;
-            let uvs = grid_corners.map(|g| face_uv(di, g, quad_min, quad_ext));
+            let uvs = quad_uvs(di, &grid_corners, quad_min, quad_ext, layer);
             mesh.push_quad_textured(corners, n, block.color, uvs, layer);
         }
         None => mesh.push_quad(corners, n, block.color),

@@ -105,6 +105,70 @@ pub fn sorted_instances(fields: &[PlacedField], eye: Vec3) -> Vec<FieldInstGpu> 
     fx::passes::build_instances(&sorted, FIELD_SIZE, engine_center)
 }
 
+/// Phase 8 wiring: GPU field instances for the transient
+/// emitters alive in a frame (animations / projectiles, gate
+/// 8.5's presentation half). Each emitter becomes one soft
+/// volume in the fx shader class its parameters name — the same
+/// pass that draws field volumes, with the emitter's own color /
+/// emissive / size. Position is the emitter's *current* position
+/// (projectiles interpolated by the transient system along the
+/// exported endpoints — linear, because the protocol carries no
+/// curve), mapped through the same engine scale as field tiles:
+/// tile (x, y, z-level) -> center (x + 0.5, 1.8 + 3z, -(y + 0.5)).
+/// Sound markers (`params: None`) produce no instance. The seed
+/// is a stable hash of the effect id so captures are
+/// deterministic; noise parameters are per-class presentation
+/// constants (transient params carry color/emissive/size only).
+pub fn transient_instances(
+    emitters: &[transient::Emitter],
+    now_ms: u64,
+) -> Vec<FieldInstGpu> {
+    emitters
+        .iter()
+        .filter_map(|e| {
+            let p = e.params?;
+            let pos = e.position(now_ms);
+            // FNV-1a over the effect id: a stable per-effect seed.
+            let mut seed = 2166136261u32;
+            for b in e.effect_id.bytes() {
+                seed = (seed ^ b as u32).wrapping_mul(16777619);
+            }
+            Some(FieldInstGpu {
+                center: [pos[0] + 0.5, 1.8 + 3.0 * pos[2], -(pos[1] + 0.5)],
+                size: p.size * FIELD_SIZE,
+                base_color: p.color,
+                density: 0.85,
+                emissive: p.emissive,
+                emissive_strength: p.emissive_strength,
+                noise_scale: 3.0,
+                noise_speed: 1.5,
+                class_id: p.render_class,
+                seed: (seed % 1000) as f32 * 0.137,
+                drift: if p.render_class == transient::CLASS_SMOKE {
+                    [0.0, 0.3, 0.0]
+                } else {
+                    [0.0, 0.0, 0.0]
+                },
+                heat: 0.0,
+                link: 0.0,
+                _pad: [0.0; 3],
+            })
+        })
+        .collect()
+}
+
+/// Sort field instances back-to-front from `eye` (the field
+/// pass's alpha compositing order), stable so equal-distance
+/// instances keep their input order.
+pub fn sort_instances(instances: &mut [FieldInstGpu], eye: Vec3) {
+    instances.sort_by(|a, b| {
+        Vec3::from_array(b.center)
+            .distance_squared(eye)
+            .partial_cmp(&Vec3::from_array(a.center).distance_squared(eye))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
 /// Converts the RT tracer's linear depth buffer (ray distance
 /// per pixel, `max_dist` on a miss) into a projected-depth
 /// texture via a depth-only fullscreen pass writing

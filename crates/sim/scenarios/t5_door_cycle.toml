@@ -1,0 +1,35 @@
+# T5 — door cycle (plan §6 T5; behaviour proved by the S2
+# gate). Open, walk through, close behind; a redundant close
+# or open is a no-op that changes no tile (the turn is still
+# consumed — the attempted-action rule).
+scene = "street_block"
+name = "T5 door cycle"
+
+steps = [
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 7, 0] },
+  { do = "key", key = "o" },
+  { do = "key", key = "j" },
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_o" } },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 9, 0] },
+  # Close it behind us: the TileChange rides the Delta.
+  { do = "key", key = "c" },
+  { do = "key", key = "k" },
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_c" } },
+  { assert_delta_contains = { pos = [5, 8, 0], terrain = "t_door_c" } },
+  # Closing a closed door changes nothing.
+  { do = "key", key = "c" },
+  { do = "key", key = "k" },
+  { assert_no_tile_change = [5, 8, 0] },
+  # Reopen from outside; opening an open door changes nothing.
+  { do = "key", key = "o" },
+  { do = "key", key = "k" },
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_o" } },
+  { do = "key", key = "o" },
+  { do = "key", key = "k" },
+  { assert_no_tile_change = [5, 8, 0] },
+  { assert_mirror = true },
+]

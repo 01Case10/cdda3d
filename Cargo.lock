@@ -507,14 +507,21 @@ dependencies = [
  "bytemuck",
  "fx",
  "glam",
+ "hardcases",
  "image",
  "lighting",
  "mesher",
+ "naga",
  "pollster",
  "proto",
  "serde_json",
+ "sim",
+ "tileset",
+ "transient",
  "treebuild",
  "ui-share",
+ "vehicles",
+ "voxelizer",
  "wgpu",
  "winit",
 ]
@@ -1963,6 +1970,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "sim"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "proto",
+ "serde",
+ "serde_json",
+ "sim-server",
+ "ui-share",
+]
+
+[[package]]
+name = "sim-server"
+version = "0.1.0"
+dependencies = [
+ "sim",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2270,6 +2296,7 @@ dependencies = [
  "Sparse-Voxel-64Tree",
  "bytemuck",
  "glam",
+ "lighting",
  "mesher",
  "pollster",
  "proptest",

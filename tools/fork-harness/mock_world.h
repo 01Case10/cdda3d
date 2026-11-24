@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "voxel_adapter.h"
+#include "voxel_refs.h"
 
 namespace mock
 {
@@ -45,6 +46,7 @@ struct World {
     std::vector<EntVal> ents;
     std::vector<VehVal> vehs;
     std::vector<MemVal> memory;
+    EnvVal env;                     // current environment (Phase 10); tests mutate it
     int minx = -24, maxx = 24, miny = -24, maxy = 24;
 
     TileVal query( int x, int y, int z ) const {
@@ -52,6 +54,7 @@ struct World {
         if( it != tiles.end() ) { return it->second; }
         TileVal t = default_tile;
         if( z != 0 ) { t.terrain = T_OPEN_AIR; t.lit = Lit::BLANK; t.seen = 0; }
+        if( z < 0 ) { t.sky_exposed = false; } // underground is never outside (game rule)
         return t;
     }
     void set( int x, int y, int z, const TileVal &t ) { tiles[Key{ x, y, z }] = t; }
@@ -71,6 +74,11 @@ World make_road_field();
 World make_multistorey();
 World make_vehicle_road( float face_deg );
 
+// Scripted environment sequence (Phase 10, gate 10.1b): noon-clear ->
+// storm -> midnight. Step 0 matches the proto crate's canonical
+// sample environment (crates/proto/src/samples.rs sample_environment).
+std::vector<EnvVal> env_sequence();
+
 class MockAdapter : public IGameAdapter
 {
     public:
@@ -88,6 +96,7 @@ class MockAdapter : public IGameAdapter
         std::vector<EntVal> entities() override { return w_.ents; }
         std::vector<VehVal> vehicles() override { return w_.vehs; }
         std::vector<MemVal> memory_tiles() override { return w_.memory; }
+        EnvVal environment() override { return w_.env; }
         std::string game_version() const override { return "mock-1"; }
         std::string tileset_id() const override { return "UltiCa"; }
     private:

@@ -230,6 +230,62 @@ pub fn cast_ray(
     None
 }
 
+/// Phase 9 (9.5, two-tree design): cast a ray through the
+/// coarse tree and the fine tree together. `ro`/`rd` are in
+/// the COARSE tree's space (block units, `rd` normalized), as
+/// for [`cast_ray`]; the fine tree (built from
+/// `VoxelWorld::from_fine_layer`, fine coordinates) is entered
+/// by scaling the ray into fine space — fine origin offset in
+/// fine units, distances divided back by `FINE` (32) — so both
+/// hits are compared in block units and the NEARER hit wins.
+/// The fine hit wins an exact tie: a stamped cell is the more
+/// specific geometry for its space. The returned hit's
+/// `voxel` is in the winning tree's world coordinates (block
+/// coords for a coarse hit, fine coords for a fine hit), and
+/// the `bool` reports which tree won (`true` = fine).
+///
+/// With `fine = None` (or an empty fine tree) the result is
+/// exactly `cast_ray(coarse, …)` with `false` — the
+/// byte-identical no-props contract of plan 9.10, at trace
+/// level.
+pub fn cast_ray_two(
+    coarse: &BuiltTree,
+    fine: Option<&BuiltTree>,
+    ro: Vec3,
+    rd: Vec3,
+    max_dist: f32,
+    mode: TraceMode,
+) -> Option<(RayHit, bool)> {
+    let coarse_hit = cast_ray(coarse, ro, rd, max_dist, mode);
+    let Some(fine_tree) = fine else {
+        return coarse_hit.map(|h| (h, false));
+    };
+    if fine_tree.flat.len() <= 1 {
+        return coarse_hit.map(|h| (h, false));
+    }
+    let scale = mesher::fine::FINE as f32;
+    let grid_ro = ro
+        + Vec3::new(
+            coarse.origin[0] as f32,
+            coarse.origin[1] as f32,
+            coarse.origin[2] as f32,
+        );
+    let fine_ro = grid_ro * scale
+        - Vec3::new(
+            fine_tree.origin[0] as f32,
+            fine_tree.origin[1] as f32,
+            fine_tree.origin[2] as f32,
+        );
+    let Some(mut fine_hit) = cast_ray(fine_tree, fine_ro, rd, max_dist * scale, mode) else {
+        return coarse_hit.map(|h| (h, false));
+    };
+    fine_hit.dist /= scale;
+    match coarse_hit {
+        Some(ch) if ch.dist < fine_hit.dist => Some((ch, false)),
+        _ => Some((fine_hit, true)),
+    }
+}
+
 fn advance(ro: Vec3, rd: Vec3, min: [u32; 3], size: u32, t: f32) -> f32 {
     let exit = slab_exit(ro, rd, min, size);
     if exit > t {

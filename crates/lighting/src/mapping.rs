@@ -133,17 +133,24 @@ impl LightSample {
 }
 
 /// Per-tile light/visibility exactly as exported by the game, plus the
-/// two engine-side facts smoothing needs: the tile's tint (v1: white
+/// engine-side facts smoothing needs: the tile's tint (v1: white
 /// unless the caller supplies colored light) and whether the tile
 /// *occludes* (holds a full-height opaque block — a wall). Occlusion is
 /// geometry, not light: it is how smoothing knows a wall separates two
 /// tiles without ever propagating light through it.
+///
+/// `outside` is the Phase 10 sky-exposure fact (§3.4, decision 4A):
+/// the game's own test, `map::is_outside(p) && !map::is_roofed(p)`,
+/// carried on the wire as `SubmapBlock.outside` / `TileChange.outside`
+/// since slice 10.1 and ingested by the proto adapter since 10.6. It
+/// is not light either — it gates how much sky GI a tile may take.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TileLight {
     pub lit: LitLevel,
     pub seen: u8,
     pub tint: [f32; 3],
     pub occluding: bool,
+    pub outside: bool,
 }
 
 impl TileLight {
@@ -152,6 +159,7 @@ impl TileLight {
         seen: 0,
         tint: [1.0, 1.0, 1.0],
         occluding: false,
+        outside: false,
     };
     pub fn new(lit: LitLevel, seen: u8) -> Self {
         Self {
@@ -159,10 +167,15 @@ impl TileLight {
             seen,
             tint: [1.0, 1.0, 1.0],
             occluding: false,
+            outside: false,
         }
     }
     pub fn occluding(mut self, v: bool) -> Self {
         self.occluding = v;
+        self
+    }
+    pub fn outside(mut self, v: bool) -> Self {
+        self.outside = v;
         self
     }
     pub fn with_tint(mut self, tint: [f32; 3]) -> Self {

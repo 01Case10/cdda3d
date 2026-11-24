@@ -13,6 +13,7 @@
 use std::time::Instant;
 
 use glam::Vec3;
+use mesher::grid::VoxelSampler as _;
 use treebuild::build::{build_tree, BuildConfig, BuiltTree};
 use treebuild::render::{RtCamera, RtRenderer};
 use treebuild::world::VoxelWorld;
@@ -54,6 +55,14 @@ pub fn fake_material_ids() -> std::collections::HashMap<u32, String> {
 /// halves can never disagree about a material. Must run *before*
 /// `build_tree`: the virtual ids ride into the tree's side-table.
 /// Returns the assignments the spec builder must emit variants for.
+///
+/// Materials carrying a shore set (water) are NOT rewritten here:
+/// the shore system is water's connection system — an 8-neighbor
+/// superset of the cardinal multitile rule — and
+/// [`prepare_fake_shore_variants`] recognizes water cells by their
+/// base id. Rewriting water to multitile virtual ids first left
+/// no cell carrying the base id, so the shore pass silently
+/// matched nothing and every water tile kept its plain top.
 pub fn prepare_fake_variants(
     world: &mut VoxelWorld,
     dir: &std::path::Path,
@@ -63,7 +72,11 @@ pub fn prepare_fake_variants(
     let id_map = fake_material_ids();
     let multitile_ids: std::collections::HashSet<u32> = id_map
         .iter()
-        .filter(|(_, game_id)| table.get(game_id).is_some_and(|m| m.multitile))
+        .filter(|(_, game_id)| {
+            table
+                .get(game_id)
+                .is_some_and(|m| m.multitile && m.shore_layers.is_empty())
+        })
         .map(|(num, _)| *num)
         .collect();
     Ok(treebuild::connect::assign_variants(
@@ -73,10 +86,74 @@ pub fn prepare_fake_variants(
     ))
 }
 
+/// Stage F part 2, world half: rewrite the world's shore water
+/// voxels to virtual material ids for their 8-neighbor water
+/// masks. Which numeric ids are water comes from the voxelizer
+/// table in `dir` (materials carrying a shore set) through the
+/// same fake id map the spec builder uses. Must run *after*
+/// [`prepare_fake_variants`] (shore virtual ids allocate above
+/// the multitile ones) and *before* `build_tree`. Water cells
+/// still carry their base ids at this point because
+/// `prepare_fake_variants` excludes shore materials from its
+/// rewrite. Returns the assignments the spec builder must emit
+/// shore entries for.
+pub fn prepare_fake_shore_variants(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+) -> Result<Vec<crate::shore::ShoreAssignment>, CaptureError> {
+    let table = crate::materials::MaterialTable::load(dir)
+        .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+    let id_map = fake_material_ids();
+    let water_ids: std::collections::HashSet<u32> = id_map
+        .iter()
+        .filter(|(_, game_id)| {
+            table
+                .get(game_id)
+                .is_some_and(|m| !m.shore_layers.is_empty())
+        })
+        .map(|(num, _)| *num)
+        .collect();
+    Ok(crate::shore::assign_shore_variants(world, &|id| {
+        water_ids.contains(&id)
+    }))
+}
+
+/// Stage F part 2 (border height-blending), world half: rewrite
+/// the world's macro-border voxels to virtual material ids for
+/// their `(base, neighbor, dir)` blend triples. Which numeric
+/// ids carry a macro (and its span) comes from the voxelizer
+/// table in `dir` through the same fake id map the spec builder
+/// uses. Must run *after* [`prepare_fake_shore_variants`] (blend
+/// virtual ids allocate above the shore ones) and *before*
+/// `build_tree`. Returns the assignments the spec builder must
+/// emit blend entries for.
+pub fn prepare_fake_blend_variants(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+) -> Result<Vec<crate::blend::BlendAssignment>, CaptureError> {
+    let table = crate::materials::MaterialTable::load(dir)
+        .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+    let id_map = fake_material_ids();
+    let macro_spans: std::collections::HashMap<u32, u32> = id_map
+        .iter()
+        .filter_map(|(num, game_id)| {
+            table
+                .get(game_id)
+                .and_then(|m| m.macro_)
+                .map(|mc| (*num, mc.span_tiles))
+        })
+        .collect();
+    Ok(crate::blend::assign_blend_variants(world, &|id| {
+        macro_spans.get(&id).copied()
+    }))
+}
+
 /// Attach voxelizer textures from `dir` to `scene`, resolving the
 /// fake house's material ids. `assignments` are the Phase 2d
-/// variants [`prepare_fake_variants`] rewrote the world with
-/// (empty for an unprepared world — the spec is then exactly the
+/// variants [`prepare_fake_variants`] rewrote the world with and
+/// `shore_assignments` the Stage F part 2 shore variants
+/// [`prepare_fake_shore_variants`] rewrote it with (both empty
+/// for an unprepared world — the spec is then exactly the
 /// pre-2d base spec). Returns the build stats.
 pub fn attach_fake_textures(
     device: &wgpu::Device,
@@ -84,14 +161,28 @@ pub fn attach_fake_textures(
     scene: &mut treebuild::render::RtScene,
     dir: &std::path::Path,
     assignments: &[treebuild::connect::VariantAssignment],
+    shore_assignments: &[crate::shore::ShoreAssignment],
+    blend_assignments: &[crate::blend::BlendAssignment],
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
 ) -> Result<crate::textures::TextureStats, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let (spec, stats) = crate::textures::build_texture_spec_multitile(
+    let mut id_map = fake_material_ids();
+    if let Some(vm) = veh_mats {
+        id_map.extend(vm.id_map.iter().map(|(k, v)| (*k, v.clone())));
+    }
+    let state_assignments: &[crate::textures::StateVariantAssignment] = match veh_mats {
+        Some(vm) => &vm.state_assignments,
+        None => &[],
+    };
+    let (spec, stats) = crate::textures::build_texture_spec_all(
         &table,
         dir,
-        &fake_material_ids(),
+        &id_map,
         assignments,
+        shore_assignments,
+        blend_assignments,
+        state_assignments,
     )
     .map_err(CaptureError::Device)?;
     scene
@@ -102,9 +193,106 @@ pub fn attach_fake_textures(
 
 /// The fake-house voxel world for a set of visible game z-levels.
 pub fn world_for_levels(visible_levels: &[i32]) -> VoxelWorld {
-    let map = world::build_fake_house(mesher::scale::WorldScale::default());
-    let filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    world_for_levels_v(visible_levels, None)
+}
+
+/// [`world_for_levels`] with a vehicle scene stamped into the
+/// filtered map before conversion (Phase 8 wiring — the RT path
+/// consumes the same stamped blocks the raster path meshes).
+pub fn world_for_levels_v(
+    visible_levels: &[i32],
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> VoxelWorld {
+    world_for_levels_sv(visible_levels, vehicles, false)
+}
+
+/// [`world_for_levels_v`] over the sample scene instead of the
+/// fake house.
+pub fn world_for_levels_sv(
+    visible_levels: &[i32],
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+) -> VoxelWorld {
+    world_for_levels_svm(visible_levels, vehicles, sample, None)
+}
+
+/// [`world_for_levels_sv`] with resolved vehicle materials: the
+/// vehicles stamp with their per-vpart material block ids, so
+/// the tree carries them and the attached texture spec shades
+/// them with the vparts' sprites.
+pub fn world_for_levels_svm(
+    visible_levels: &[i32],
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
+) -> VoxelWorld {
+    let scale = mesher::scale::WorldScale::default();
+    let map = if sample {
+        world::build_sample_scene(scale)
+    } else {
+        world::build_fake_house(scale)
+    };
+    let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
+    if let Some(v) = vehicles {
+        crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, veh_mats);
+    }
     VoxelWorld::from_chunk_map(&filtered)
+}
+
+/// Phase 10 (§3.4): the RT sky-exposure feed — option (a),
+/// the game's own test (`is_outside && !is_roofed`), exported
+/// per tile on the wire since 10.1 and carried into the engine
+/// by the light grid's `outside` field since 10.6 wired the
+/// proto adapter through. A cell is sky-exposed iff its
+/// containing game tile is outside.
+///
+/// Wave 2's interim feed was an engine-side column scan over
+/// a reference world (§3.4 option (b)): exposed iff no opaque
+/// cell sits above in the column. It disagreed with the game
+/// exactly where geometry and exposure part ways — perimeter
+/// wall tiles (a roof slab sits above the wall column, but
+/// the game calls the wall tile exposed) and cover the world
+/// geometry does not model (a bridge overhead). 10.6 retired
+/// the scan; this feed is the wire's only. Exposure is a
+/// property of the game world, not of the view, so no
+/// reference world is needed: a cutaway cannot un-roof a
+/// room because the grid never knew about the cutaway.
+pub struct SkyExposure {
+    tiles: crate::frame::SkyExposure,
+    min_game_z: i32,
+    per: i32,
+}
+
+impl SkyExposure {
+    /// The feed from a scene's light grid (whose tiles carry
+    /// the wire `outside` verdicts) at the scene's minimum
+    /// game z.
+    pub fn from_grid(grid: &lighting::LightGrid, min_game_z: i32) -> Self {
+        Self {
+            tiles: crate::frame::SkyExposure::from_grid(grid),
+            min_game_z,
+            per: mesher::scale::WorldScale::default()
+                .blocks_per_z_level
+                .max(1) as i32,
+        }
+    }
+
+    /// Exposed iff the containing game tile of block coords
+    /// (`x`, `y`, `z`) is outside.
+    pub fn exposed(&self, x: i32, y: i32, z: i32) -> bool {
+        let tile = [x, y, self.min_game_z + z.div_euclid(self.per)];
+        self.tiles.factor(tile) > 0.0
+    }
+
+    /// Stamp the feed onto every cell of `world` (coarse coords).
+    pub fn apply(&self, world: &mut VoxelWorld) {
+        let cells: Vec<([i32; 3], treebuild::world::VoxelCell)> =
+            world.iter().map(|(p, c)| (*p, *c)).collect();
+        for (pos, mut cell) in cells {
+            cell.sky_exposed = self.exposed(pos[0], pos[1], pos[2]);
+            world.set(pos, cell);
+        }
+    }
 }
 
 /// Phase 2h.3: the lit form of [`world_for_levels`] — the Phase 7
@@ -132,7 +320,53 @@ pub fn world_for_levels_lit(
     visible_levels: &[i32],
     lit: &crate::frame::LightingScene,
 ) -> VoxelWorld {
-    let base = world_for_levels(visible_levels);
+    world_for_levels_lit_v(visible_levels, lit, None)
+}
+
+/// [`world_for_levels_lit`] with a vehicle scene: the vehicles
+/// are stamped into the base world first, so the visibility
+/// contract below governs their voxels exactly like terrain
+/// (a part on a BLANK tile never enters the tree).
+pub fn world_for_levels_lit_v(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> VoxelWorld {
+    world_for_levels_lit_sv(visible_levels, lit, vehicles, false)
+}
+
+/// [`world_for_levels_lit_v`] over the sample scene.
+pub fn world_for_levels_lit_sv(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+) -> VoxelWorld {
+    world_for_levels_lit_svm(visible_levels, lit, vehicles, sample, None)
+}
+
+/// [`world_for_levels_lit_sv`] with resolved vehicle materials
+/// (see [`world_for_levels_svm`]).
+pub fn world_for_levels_lit_svm(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
+) -> VoxelWorld {
+    let base = world_for_levels_svm(visible_levels, vehicles, sample, veh_mats);
+    apply_lit_contract(base, lit)
+}
+
+/// The Phase 7 §12 RT contract applied to an already-built
+/// base world (sky exposure from the grid, BLANK voxels dropped,
+/// MEMORIZED presentation pinned, visible voxels carrying the
+/// game's lit level) — source-agnostic: the fixture worlds
+/// above and the wire-fed world below both take it.
+fn apply_lit_contract(mut base: VoxelWorld, lit: &crate::frame::LightingScene) -> VoxelWorld {
+    // Phase 10 (10.6): sky exposure from the scene's light
+    // grid — the wire outside[] feed (see SkyExposure).
+    SkyExposure::from_grid(&lit.grid, lit.min_game_z).apply(&mut base);
     let mask = lighting::VisibilityMask::new(&lit.grid);
     let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
     let mut out = VoxelWorld::new();
@@ -160,6 +394,25 @@ pub fn world_for_levels_lit(
         out.set(*pos, cell);
     }
     out
+}
+
+/// Wire-fed scene source (Phase 11 follow-up, Lane A): the RT
+/// world for a [`crate::wire::WireScene`] — the same cutaway
+/// filter + vehicle stamping the fixture worlds take, over the
+/// caller's wire-built map instead of a fixture builder. The
+/// lit form is this plus [`apply_lit_contract`], exactly as
+/// the fixture pair (`world_for_levels_svm` /
+/// `world_for_levels_lit_svm`) composes.
+pub fn world_from_wire(
+    visible_levels: &[i32],
+    wire: &crate::wire::WireScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> VoxelWorld {
+    let mut filtered = world::filtered_map(&wire.map, wire.min_game_z, visible_levels);
+    if let Some(v) = vehicles {
+        crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, None);
+    }
+    VoxelWorld::from_chunk_map(&filtered)
 }
 
 /// Visible levels the capture path uses for a player z (same
@@ -212,6 +465,10 @@ pub struct RtFrameOut {
     pub size: (u32, u32),
     pub leaves: usize,
     pub nodes: usize,
+    /// Phase 9 (9.5): fine-tree leaf/node counts when the frame
+    /// carried props (0 on the coarse-only path).
+    pub fine_leaves: usize,
+    pub fine_nodes: usize,
     pub build_ms: f64,
     pub texture_stats: Option<crate::textures::TextureStats>,
 }
@@ -224,6 +481,78 @@ pub fn render_rt_frame(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<RtFrameOut, CaptureError> {
+    render_rt_frame_inner(device, queue, args, None, None)
+}
+
+/// Phase 10 (10.4): [`render_rt_frame`] with the shared sky
+/// uniforms driving the RT sky background + GI. The block must
+/// already be in **grid space** (east, south, up): pass either
+/// `lighting::SkyUniforms::neutral()` as-is (already grid-space;
+/// do NOT convert it) or
+/// `lighting::SkyUniforms::from_sky_state(...).to_grid_space()`
+/// — `from_sky_state` emits SkyState space (east, north, up),
+/// and the conversion belongs to the caller because this entry
+/// point cannot distinguish a neutral block from a converted
+/// one. The frame-level plumbing that evaluates a `SkyState`
+/// once per frame and hands it here is §6/10.6 integration work
+/// (the 10.3 slice owns `frame.rs` / `CaptureArgs`); this entry
+/// point is the RT consumption surface it will call. `None` in
+/// the inner path = the renderer's default
+/// `SkyUniforms::neutral()`.
+pub fn render_rt_frame_sky(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: &lighting::SkyUniforms,
+) -> Result<RtFrameOut, CaptureError> {
+    render_rt_frame_inner(device, queue, args, Some(sky), None)
+}
+
+/// Addendum 11 (emitter prototype): [`render_rt_frame`] with the
+/// frame's sky and/or declared emitters. Either block may be
+/// `None` (the renderer's default for that input: neutral sky /
+/// empty emitter set). Both blocks must already be in **grid
+/// space** — the sky per [`render_rt_frame_sky`]'s contract, the
+/// emitters via `lighting::EmitterUniforms::to_grid_space`. With
+/// both `None` this is exactly [`render_rt_frame`].
+pub fn render_rt_frame_sky_emitters(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
+    render_rt_frame_inner(device, queue, args, sky, emitters)
+}
+
+fn render_rt_frame_inner(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
+    // Phase 9 (9.5): the effective prop scene — an explicit
+    // `props` scene wins regardless of the flag; with only
+    // `--fine-props` set, the snapshot's fixture scene is used
+    // (the same rule as the raster dispatch in frame.rs). With
+    // neither, the coarse-only path below runs untouched.
+    let fixture_props: Option<crate::frame::PropScene> =
+        if args.props.is_none() && args.fine_props {
+            crate::frame::PropScene::fixture(&args.snapshot)
+        } else {
+            None
+        };
+    // Wire-fed source (Phase 11 follow-up, Lane A): the props
+    // path builds its worlds from fixture builders, so a wire
+    // frame takes the coarse path below regardless of the
+    // prop inputs (the fixture-name dispatch is untouched when
+    // no wire scene is seated).
+    if args.wire.is_none() {
+        if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
+            return render_rt_frame_props(device, queue, args, props, sky, emitters);
+        }
+    }
     let t0 = Instant::now();
     // Phase 2h.3: with a lighting scene, the world is built
     // through the Phase 7 visibility contract (BLANK voxels never
@@ -235,32 +564,94 @@ pub fn render_rt_frame(
     // the side-table; without textures the world is untouched and
     // the render is exactly the pre-2d one.
     let levels = capture_visible_levels(args.cutaway_z);
-    let mut voxel_world = match &args.lighting {
-        Some(lit) => world_for_levels_lit(&levels, lit),
-        None => world_for_levels(&levels),
+    let sample = args.snapshot == "sample-scene";
+    // Vehicle materials: with textures and a named vehicle
+    // scene, resolve the vparts once — the world stamps with
+    // the material block ids and the attach below gives those
+    // ids their sprite layers. Without either, veh_mats is None
+    // and the vehicles render flat, byte-identical to before.
+    // The fixture texture hookups (vehicle materials, variant
+    // / shore / blend preparation, texture attach below) are
+    // keyed to the fake tile ids; a wire world skips all of
+    // them in v1 and renders its resolver's flat colours.
+    let wire = args.wire.as_ref();
+    let veh_mats = match (wire, &args.textures, &args.vehicles) {
+        (None, Some(dir), Some(v)) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            Some(crate::scene_prep::vehicle_materials(v, &table))
+        }
+        _ => None,
     };
-    let assignments = match &args.textures {
-        Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
-        None => Vec::new(),
+    let mut voxel_world = match (wire, &args.lighting) {
+        (Some(w), Some(lit)) => {
+            apply_lit_contract(world_from_wire(&levels, w, args.vehicles.as_ref()), lit)
+        }
+        (Some(w), None) => world_from_wire(&levels, w, args.vehicles.as_ref()),
+        (None, Some(lit)) => world_for_levels_lit_svm(
+            &levels,
+            lit,
+            args.vehicles.as_ref(),
+            sample,
+            veh_mats.as_ref(),
+        ),
+        (None, None) => world_for_levels_svm(
+            &levels,
+            args.vehicles.as_ref(),
+            sample,
+            veh_mats.as_ref(),
+        ),
+    };
+    let assignments = match (wire, &args.textures) {
+        (None, Some(dir)) => prepare_fake_variants(&mut voxel_world, dir)?,
+        _ => Vec::new(),
+    };
+    // Stage F part 2: shore preparation after the multitile
+    // preparation (its virtual ids allocate above theirs); with
+    // no textures the world is untouched, byte-for-byte the
+    // pre-F2 render.
+    let shore_assignments = match (wire, &args.textures) {
+        (None, Some(dir)) => prepare_fake_shore_variants(&mut voxel_world, dir)?,
+        _ => Vec::new(),
+    };
+    // Stage F part 2 (blend): after the shore preparation (its
+    // virtual ids allocate above theirs); with no textures the
+    // world is untouched, byte-for-byte the pre-blend render.
+    let blend_assignments = match (wire, &args.textures) {
+        (None, Some(dir)) => prepare_fake_blend_variants(&mut voxel_world, dir)?,
+        _ => Vec::new(),
     };
     let built = build_tree(&voxel_world, BuildConfig::default())
         .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) = RtRenderer::with_scene(device, queue, &built);
-    let texture_stats = match &args.textures {
-        Some(dir) => Some(attach_fake_textures(
+    if let Some(sky) = sky {
+        scene.set_sky(queue, sky);
+    }
+    if let Some(e) = emitters {
+        scene.set_emitters(queue, e);
+    }
+    let texture_stats = match (wire, &args.textures) {
+        (None, Some(dir)) => Some(attach_fake_textures(
             device,
             queue,
             &mut scene,
             dir,
             &assignments,
+            &shore_assignments,
+            &blend_assignments,
+            veh_mats.as_ref(),
         )?),
-        None => None,
+        _ => None,
     };
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
     let aspect = width as f32 / height as f32;
     let camera = capture_camera(args, aspect);
-    let frame = renderer.render(device, queue, &scene, &camera, (width, height), true);
+    let frame = if args.macro_debug_height {
+        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
+    } else {
+        renderer.render(device, queue, &scene, &camera, (width, height), true)
+    };
     device.poll(wgpu::Maintain::Wait);
     Ok(RtFrameOut {
         color: frame.color,
@@ -270,6 +661,330 @@ pub fn render_rt_frame(
         size: (width, height),
         leaves: built.leaf_count(),
         nodes: built.node_count(),
+        fine_leaves: 0,
+        fine_nodes: 0,
+        build_ms,
+        texture_stats,
+    })
+}
+
+/// Geometric occlusion on the RT path (Stage H, Joey's
+/// 8c-A, 2026-11-23; the raster twin is the per-face factor
+/// in `mesher::fine::mesh_chunk_fine`). RT `lit` is the
+/// game's categorical scale, so the continuous
+/// `cell_occlusion` factor becomes a step-down: a cell
+/// whose exposed faces average below 0.85 loses one lit
+/// level, below 0.70 two levels, never below LIT_DARK.
+/// Only game-lit cells (lit <= LIT_BRIGHT) are stepped —
+/// Memorized and Blank presentations are pinned by the
+/// Phase 7 contract and pass through untouched. Invented
+/// lighting, like the raster form: it darkens cells
+/// enclosed by or tucked behind prop volumes, which the
+/// per-tile game light cannot express.
+pub fn fine_occlusion_rewrite(
+    world: &VoxelWorld,
+    coarse: &mesher::chunk::ChunkMap,
+    layer: &mesher::fine::FineLayer,
+) -> VoxelWorld {
+    let sampler = mesher::fine::FineSampler::new(coarse, layer);
+    let mut out = VoxelWorld::new();
+    for (pos, cell) in world.iter() {
+        let mut cell = *cell;
+        if cell.lit <= treebuild::world::LIT_BRIGHT {
+            let occ = mesher::fine::cell_occlusion(&sampler, pos[0], pos[1], pos[2]);
+            let step = if occ < 0.70 {
+                2
+            } else if occ < 0.85 {
+                1
+            } else {
+                0
+            };
+            cell.lit = cell.lit.saturating_sub(step);
+        }
+        out.set(*pos, cell);
+    }
+    out
+}
+
+/// The Phase 7 visibility contract as a post-pass over an
+/// already-built world (the body of [`world_for_levels_lit_sv`],
+/// reusable over the fine world): `Hidden` tiles' cells are
+/// dropped, `Memorized` cells take the pinned presentation,
+/// `Visible` cells take their tile's `LitLevel`. With `fine`,
+/// the world is in fine coordinates (`mesher::fine::FINE` cells
+/// per block): a fine cell takes its CONTAINING tile's light —
+/// the 9.6 v1 rule (docs/phase9-fine.md §1).
+fn lit_rewrite(
+    world: &VoxelWorld,
+    lit: &crate::frame::LightingScene,
+    fine: bool,
+    exposure: &SkyExposure,
+) -> VoxelWorld {
+    let mask = lighting::VisibilityMask::new(&lit.grid);
+    let per = mesher::scale::WorldScale::default().blocks_per_z_level.max(1) as i32;
+    let mut out = VoxelWorld::new();
+    for (pos, cell) in world.iter() {
+        let tile = if fine {
+            [
+                pos[0].div_euclid(mesher::fine::FINE),
+                pos[1].div_euclid(mesher::fine::FINE),
+                lit.min_game_z + pos[2] / (per * mesher::fine::FINE),
+            ]
+        } else {
+            [pos[0], pos[1], lit.min_game_z + pos[2] / per]
+        };
+        // Phase 10 (10.4): sky exposure for this cell — fine
+        // cells take their containing coarse column's exposure.
+        let mut cell = *cell;
+        cell.sky_exposed = if fine {
+            exposure.exposed(
+                pos[0].div_euclid(mesher::fine::FINE),
+                pos[1].div_euclid(mesher::fine::FINE),
+                pos[2].div_euclid(mesher::fine::FINE),
+            )
+        } else {
+            exposure.exposed(pos[0], pos[1], pos[2])
+        };
+        let vis = mask.visibility(tile[0], tile[1], tile[2]);
+        if !lighting::include_in_tree(vis) {
+            continue; // BLANK: never enters the tree
+        }
+        let tile_light = lit.grid.get(tile[0], tile[1], tile[2]);
+        match vis {
+            lighting::Visibility::Memorized => {
+                cell.color = lighting::present_color(cell.color, tile_light);
+                cell.lit = treebuild::world::LIT_MEMORIZED;
+                cell.flags &= !treebuild::world::FLAG_MEMORIZED;
+            }
+            lighting::Visibility::Visible => {
+                cell.lit = tile_light.lit.0;
+            }
+            lighting::Visibility::Hidden => unreachable!("filtered above"),
+        }
+        out.set(*pos, cell);
+    }
+    out
+}
+
+/// Shift every fine-world cell's material id by
+/// `to_base - from_base` (both are the synthetic base ids the
+/// colour set was / will be addressed at: stamped ids are
+/// `from_base + 1 + i`, the attached spec's entries are
+/// `to_base + 1 + i`).
+fn shift_fine_ids(world: &mut VoxelWorld, from_base: u32, to_base: u32) {
+    if from_base == to_base {
+        return;
+    }
+    let delta = to_base as i32 - from_base as i32;
+    let cells: Vec<([i32; 3], treebuild::world::VoxelCell)> =
+        world.iter().map(|(p, c)| (*p, *c)).collect();
+    for (pos, mut cell) in cells {
+        cell.material_id = (cell.material_id as i32 + delta) as u32;
+        world.set(pos, cell);
+    }
+}
+
+/// Phase 9 (9.5): the prop-carrying form of [`render_rt_frame`].
+/// Mirrors the raster fine preparation
+/// (`scene_prep::prepare_raster_fine_v` /
+/// `prepare_raster_lit_fine_v`) into two trees: props are
+/// stamped into a `FineLayer` over the cutaway-filtered map
+/// (suppressing the coarse furniture blocks), the coarse tree
+/// is built from the stamped map, and the fine tree from
+/// `VoxelWorld::from_fine_layer` — composited by the shader's
+/// two-tree trace. With a lighting scene the visibility mask
+/// is applied before stamping and placements on `Hidden`
+/// tiles are skipped, exactly as on the raster lit path; the
+/// fine world then takes the same per-tile lit rewrite as the
+/// coarse world (9.6 v1 rule).
+///
+/// Texture-spec order: stamping fixes synthetic ids against
+/// the base spec (or base 1000 untextured); the ATTACHED spec
+/// is the variant spec the coarse-only path builds, extended
+/// with the prop colours at its own end, and the fine ids are
+/// shifted onto it — variant virtual ids allocate above the
+/// coarse world's max id and the shift lands the synthetic
+/// ids above the whole attached spec, so the namespaces
+/// cannot collide.
+fn render_rt_frame_props(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    props: &crate::frame::PropScene,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
+    let t0 = Instant::now();
+    let levels = capture_visible_levels(args.cutaway_z);
+    let sample = args.snapshot == "sample-scene";
+    let scale = mesher::scale::WorldScale::default();
+    let map = if sample {
+        world::build_sample_scene(scale)
+    } else {
+        world::build_fake_house(scale)
+    };
+    let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, &levels);
+    if let Some(v) = &args.vehicles {
+        crate::scene_prep::stamp_vehicles(&mut filtered, v);
+    }
+    let kept: Vec<crate::snapshot_world::FurniturePlacement>;
+    let placements: &[crate::snapshot_world::FurniturePlacement] = match &args.lighting {
+        Some(lit) => {
+            crate::scene_prep::apply_visibility_mask(&mut filtered, lit);
+            kept = props
+                .placements
+                .iter()
+                .copied()
+                .filter(|p| {
+                    let slab_z = scale.level_base_block(p.level) as i32;
+                    !filtered.block_at(p.x, p.y, slab_z).is_air()
+                })
+                .collect();
+            &kept
+        }
+        None => &props.placements,
+    };
+    // Terrain models (trees, fences) join the scene;
+    // their placements append to the (possibly
+    // visibility-filtered) furniture placements.
+    let mut all_placements: Vec<crate::snapshot_world::FurniturePlacement> =
+        placements.to_vec();
+    let extended;
+    let props = match &args.textures {
+        Some(dir) => {
+            extended = crate::scene_prep::extend_prop_scene_with_terrain(
+                &mut filtered,
+                dir,
+                scale,
+                props,
+            )
+            .map_err(CaptureError::Device)?;
+            all_placements
+                .extend_from_slice(&extended.placements[props.placements.len()..]);
+            &extended
+        }
+        None => props,
+    };
+    let placements: &[crate::snapshot_world::FurniturePlacement] = &all_placements;
+    let mut spec_opt = match &args.textures {
+        Some(dir) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (spec, _stats) =
+                crate::textures::build_texture_spec(&table, dir, &fake_material_ids())
+                    .map_err(CaptureError::Device)?;
+            Some(spec)
+        }
+        None => None,
+    };
+    let prep = crate::scene_prep::prep_prop_spec(props, &mut spec_opt);
+    let layer = crate::scene_prep::stamp_props_into(&mut filtered, placements, props, &prep, scale)
+        .map_err(CaptureError::Device)?;
+    let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
+    let mut fine_world = VoxelWorld::from_fine_layer(&layer);
+    if let Some(lit) = &args.lighting {
+        // Phase 10 (10.6): exposure from the scene's light
+        // grid (the wire outside[] feed), as in
+        // world_for_levels_lit_sv.
+        let exposure = SkyExposure::from_grid(&lit.grid, lit.min_game_z);
+        coarse_world = lit_rewrite(&coarse_world, lit, false, &exposure);
+        fine_world = lit_rewrite(&fine_world, lit, true, &exposure);
+        // Geometric fine-prop occlusion (8c-A): after the
+        // game's per-tile light is applied, step down fine
+        // cells the stamped geometry encloses.
+        fine_world = fine_occlusion_rewrite(&fine_world, &filtered, &layer);
+    }
+    let assignments = match &args.textures {
+        Some(dir) => prepare_fake_variants(&mut coarse_world, dir)?,
+        None => Vec::new(),
+    };
+    let shore_assignments = match &args.textures {
+        Some(dir) => prepare_fake_shore_variants(&mut coarse_world, dir)?,
+        None => Vec::new(),
+    };
+    let blend_assignments = match &args.textures {
+        Some(dir) => prepare_fake_blend_variants(&mut coarse_world, dir)?,
+        None => Vec::new(),
+    };
+    let mut texture_stats = None;
+    let attach_spec: Option<treebuild::render::TextureSpec> = match &args.textures {
+        Some(dir) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (mut spec, stats) = crate::textures::build_texture_spec_variants(
+                &table,
+                dir,
+                &fake_material_ids(),
+                &assignments,
+                &shore_assignments,
+                &blend_assignments,
+            )
+            .map_err(CaptureError::Device)?;
+            texture_stats = Some(stats);
+            if !prep.colors.is_empty() {
+                let final_base = spec.material_layers.len() as u32;
+                crate::textures::extend_texture_spec_with_props(
+                    &mut spec,
+                    &prep.colors,
+                    final_base,
+                );
+                shift_fine_ids(&mut fine_world, prep.base_id, final_base);
+            }
+            Some(spec)
+        }
+        None => {
+            // `prep_prop_spec` already built the prop-only spec
+            // at the stamp-time base id — no shift needed.
+            if prep.colors.is_empty() {
+                None
+            } else {
+                spec_opt
+            }
+        }
+    };
+    let built = build_tree(&coarse_world, BuildConfig::default())
+        .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
+    let fine_built = if fine_world.is_empty() {
+        None
+    } else {
+        Some(
+            build_tree(&fine_world, BuildConfig::default())
+                .map_err(|e| CaptureError::Device(format!("treebuild fine: {e}")))?,
+        )
+    };
+    let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let (renderer, mut scene) =
+        RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
+    if let Some(sky) = sky {
+        scene.set_sky(queue, sky);
+    }
+    if let Some(e) = emitters {
+        scene.set_emitters(queue, e);
+    }
+    if let Some(spec) = &attach_spec {
+        scene
+            .attach_textures(device, queue, spec)
+            .map_err(CaptureError::Device)?;
+    }
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let aspect = width as f32 / height as f32;
+    let camera = capture_camera(args, aspect);
+    let frame = if args.macro_debug_height {
+        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
+    } else {
+        renderer.render(device, queue, &scene, &camera, (width, height), true)
+    };
+    device.poll(wgpu::Maintain::Wait);
+    Ok(RtFrameOut {
+        color: frame.color,
+        depth: frame.depth,
+        max_dist: frame.max_dist,
+        camera,
+        size: (width, height),
+        leaves: built.leaf_count(),
+        nodes: built.node_count(),
+        fine_leaves: fine_built.as_ref().map(|b| b.leaf_count()).unwrap_or(0),
+        fine_nodes: fine_built.as_ref().map(|b| b.node_count()).unwrap_or(0),
         build_ms,
         texture_stats,
     })
@@ -281,7 +996,34 @@ pub fn capture_rt_with_device(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<RtCapture, CaptureError> {
-    let frame = render_rt_frame(device, queue, args)?;
+    capture_rt_with_device_sky(device, queue, args, None)
+}
+
+/// Phase 10 (10.4): [`capture_rt_with_device`] with explicit sky
+/// uniforms (`None` = the renderer's neutral default). A given
+/// block must already be in grid space — see
+/// [`render_rt_frame_sky`] for the conversion contract.
+pub fn capture_rt_with_device_sky(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+) -> Result<RtCapture, CaptureError> {
+    capture_rt_with_device_sky_emitters(device, queue, args, sky, None)
+}
+
+/// Addendum 11 (emitter prototype): [`capture_rt_with_device_sky`]
+/// with the frame's declared emitters as well (`None` = the
+/// empty set). Blocks must already be in grid space — see
+/// [`render_rt_frame_sky_emitters`].
+pub fn capture_rt_with_device_sky_emitters(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtCapture, CaptureError> {
+    let frame = render_rt_frame_sky_emitters(device, queue, args, sky, emitters)?;
     let (width, height) = frame.size;
 
     let pixels = read_texture_rgba(device, queue, &frame.color, (width, height))?;

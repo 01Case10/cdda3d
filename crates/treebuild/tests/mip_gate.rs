@@ -222,19 +222,21 @@ fn gate_2e_2_cpu_analytic_lod() {
         let d = lod(t * 2.0, 1.0) - lod(t, 1.0);
         assert!((d - 1.0).abs() <= 0.15, "doubling at t={t}: LOD delta {d}");
     }
-    // Slant adds -log2(cos theta).
+    // Slant adds -NDOTV_WEIGHT * log2(cos theta) (Stage A: the
+    // weight halves the pre-Stage-A slant penalty of -log2(cos)).
     for deg in [30.0f32, 45.0, 60.0] {
         let cos = deg.to_radians().cos();
         let d = lod(200.0, cos) - lod(200.0, 1.0);
-        let want = -cos.log2();
+        let want = -treebuild::NDOTV_WEIGHT * cos.log2();
         assert!(
             (d - want).abs() <= 0.15,
             "slant {deg} deg: LOD delta {d}, want {want}"
         );
     }
-    // Delta for a 32x32 texture is 5: at w_hit == 1 the LOD is 5.
+    // Delta for a 32x32 texture is 5: at w_hit == 1 the LOD is
+    // 5 + LOD_BIAS (Stage A bias −0.5 → 4.5).
     let t_unit = 1.0 / spread;
-    assert!((lod(t_unit, 1.0) - 5.0).abs() <= 0.01);
+    assert!((lod(t_unit, 1.0) - (5.0 + treebuild::LOD_BIAS)).abs() <= 0.01);
     // Hygiene: clamps hold and NaN inputs cannot produce NaN out.
     assert_eq!(lod(1e-6, 1.0), 0.0, "close-up clamps to level 0");
     assert_eq!(lod(1e6, 0.0), max_mip, "grazing + far clamps to max mip");
@@ -387,6 +389,10 @@ fn wall_scene(gpu: &Gpu, layer: Vec<u8>, tile: u32) -> (treebuild::render::RtRen
                 tile_size: tile,
                 layers: vec![layer],
                 material_layers,
+                macro_size: 0,
+                macro_layers: Vec::new(),
+                material_macros: Vec::new(),
+                material_blends: Vec::new(),
             },
         )
         .unwrap();
@@ -584,12 +590,75 @@ fn gate_2e_3_two_pose_variance() {
         .map(|(_, px)| px[0])
         .collect();
     assert!(reds.len() > 1000, "close-up wall must fill the frame");
-    // The -y face's shading factor is ~0.60 (sun dot 0.42 -> light
-    // 0.71, times lit_factor 0.85), so a white texel lands at ~154
-    // and a black one at 0; a mip-averaged render would sit at a
-    // uniform ~77 instead. Sharp extremes = level 0 sampled.
+    // White-texel landing point, re-derived for the §5.3 sky GI
+    // (ratified rewrite, 2026-11-23 — the old derivation was
+    // legacy-light: sun dot 0.42 -> light 0.71 x lit_factor 0.85,
+    // white ~154, threshold >130). Under §5.3 at neutral, the
+    // -y face's red-channel light is the hemisphere mix at
+    // n=(0,-1,0) — mix(ground, zenith, 0.5) = (0.175, 0.27, 0.43),
+    // red 0.175 — plus the sun term dot(n, sun_dir_grid) =
+    // 0.4/|(0.3,-0.4,0.8)| = 0.424 at sky_factor 1: red light
+    // 0.599, x lit_factor 0.85 = 0.509, so a white texel lands
+    // at 255 x 0.509 = 129.8 (measured max on lavapipe: 130).
+    // A mip-averaged render would sit at a uniform ~65 instead.
+    // Threshold >120: below the 129.8 prediction with margin,
+    // still ~2x the averaged value the assertion exists to
+    // reject. Sharp extremes = level 0 sampled.
     let (min, max) = (*reds.iter().min().unwrap(), *reds.iter().max().unwrap());
     assert!(min < 40, "close-up: black texels must survive (min {min})");
-    assert!(max > 130, "close-up: white texels must survive (max {max})");
+    assert!(max > 120, "close-up: white texels must survive (max {max})");
     assert!(max - min > 100, "close-up contrast must stay sharp ({min}..{max})");
+}
+
+// ---------------------------------------------------------------------
+// Phase 9 slice 3d (9.5 LOD half): fine-leaf ray-cone LOD
+// ---------------------------------------------------------------------
+
+#[test]
+fn gate_9_5_fine_lod_analytic() {
+    use treebuild::lod::{ray_cone_lod_fine, FINE_LOD_ADJUST};
+    // The adjustment is exactly -log2(FINE), FINE = 32.
+    assert_eq!(FINE_LOD_ADJUST, -(32.0f32).log2());
+    assert_eq!(FINE_LOD_ADJUST, -5.0);
+
+    let spread = spread_angle((60.0f32.to_radians() * 0.5).tan(), 512);
+    // A tall chain for the offset checks, so neither value can
+    // clamp (the clamp cases are exercised separately below).
+    let max_mip = 20.0;
+    let coarse = |t: f32, ndv: f32| ray_cone_lod(32, 32, spread, t, ndv, max_mip);
+    let fine = |t: f32, ndv: f32| ray_cone_lod_fine(32, 32, spread, t, ndv, max_mip);
+
+    // Where neither value clamps, fine == coarse - 5 exactly:
+    // at w_hit = 32 the coarse LOD is 5 + 5 + LOD_BIAS = 9.5 and
+    // the fine LOD is 4.5 (a fine face at that footprint covers
+    // the same texel count a coarse face covers at w_hit = 1).
+    let t32 = 32.0 / spread;
+    assert!((coarse(t32, 1.0) - 9.5).abs() <= 0.01, "coarse anchor");
+    assert!((fine(t32, 1.0) - 4.5).abs() <= 0.01, "fine anchor: {}", fine(t32, 1.0));
+    for t in [t32, t32 * 1.5, t32 * 0.75] {
+        let d = fine(t, 1.0) - coarse(t, 1.0);
+        assert!((d - FINE_LOD_ADJUST).abs() <= 0.01, "t={t}: fine-coarse {d}");
+    }
+    // Slanted hits keep the same -5 offset (the slant term is
+    // scale-independent).
+    let cos60 = 60.0f32.to_radians().cos();
+    let d = fine(t32, cos60) - coarse(t32, cos60);
+    assert!((d - FINE_LOD_ADJUST).abs() <= 0.01, "slant: fine-coarse {d}");
+    // Distance doubling still raises the fine LOD by exactly 1.
+    let d = fine(t32 * 2.0, 1.0) - fine(t32, 1.0);
+    assert!((d - 1.0).abs() <= 0.15, "fine doubling delta {d}");
+    // The adjustment is applied before the clamp: a hit whose
+    // coarse LOD clamps to 0 still has a well-defined fine LOD
+    // of 0 (not -5), and far/grazing fine hits clamp to max_mip
+    // only on their own (unclamped) value.
+    assert_eq!(fine(1e-6, 1.0), 0.0, "close-up fine clamps to level 0");
+    assert_eq!(
+        ray_cone_lod_fine(32, 32, spread, 1e9, 1.0, 10.0),
+        10.0,
+        "far fine clamps to max mip"
+    );
+    for bad in [f32::NAN, f32::INFINITY, -1.0] {
+        let v = ray_cone_lod_fine(32, 32, spread, bad, 1.0, 10.0);
+        assert!(v.is_finite() && (0.0..=10.0).contains(&v), "t={bad}: fine lod {v}");
+    }
 }

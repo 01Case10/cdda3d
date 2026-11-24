@@ -1,9 +1,18 @@
 //! Gate tests for Phase 2f (plan Part II §5f), mesher half:
 //! 2f.1 — UV/layer output. A single-material chunk's faces must
-//! carry UVs spanning the full [0,1]² of the material layer for
-//! their face class (top/side/bottom), and greedy merging must
-//! never merge faces with different layers (the merge key is the
-//! whole `Block`, whose equality now includes `tex_layers`).
+//! carry UVs covering the material layer for their face class
+//! (top/side/bottom), and greedy merging must never merge faces
+//! with different layers (the merge key is the whole `Block`,
+//! whose equality now includes `tex_layers`).
+//!
+//! Stage A amendment (procedural texture pipeline rework): UVs
+//! are in TILE UNITS. A single tile's face spans [0,1]²; a
+//! greedy-merged quad spanning w x h tiles spans [0,w] x [0,h],
+//! and the engine's Repeat sampler wraps each integer interval to
+//! one full texture per tile. The original 2f.1 expectation — a
+//! merged quad's UVs span [0,1]² across its whole extent — was
+//! the sprite-stretching bug Stage A fixes, so the span checks
+//! below assert span == quad extent in tiles instead.
 
 use mesher::block::{Block, Pass};
 use mesher::grid::VoxelGrid;
@@ -60,7 +69,9 @@ fn check_mesh_uvs(meshes: &PassMeshes, label: &str) {
             for &v in &verts {
                 assert_eq!(mesh.layers[v], want, "{label}: layer for face class");
             }
-            // UVs span the full [0,1]² of the layer.
+            // UV span equals the quad's extent IN TILES (Stage A
+            // tile-unit UVs): one full texture repeat per tile,
+            // anchored on integer boundaries.
             let (mut u_min, mut u_max) = (f32::MAX, f32::MIN);
             let (mut v_min, mut v_max) = (f32::MAX, f32::MIN);
             for &v in &verts {
@@ -70,18 +81,37 @@ fn check_mesh_uvs(meshes: &PassMeshes, label: &str) {
                 v_min = v_min.min(vv);
                 v_max = v_max.max(vv);
             }
+            // In-plane world extents of the quad (block_size = 1
+            // at the default scale, so world units == tiles).
+            let n = mesh.normals[quad[0] as usize];
+            let n_axis = (0..3).max_by_key(|&a| (n[a].abs() * 1000.0) as i32).unwrap();
+            let plane: Vec<usize> = (0..3).filter(|&a| a != n_axis).collect();
+            let extent = |axis: usize| {
+                let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+                for &v in &verts {
+                    lo = lo.min(mesh.positions[v][axis]);
+                    hi = hi.max(mesh.positions[v][axis]);
+                }
+                hi - lo
+            };
+            let (eu, ev) = (extent(plane[0]), extent(plane[1]));
+            // Which plane axis feeds u depends on the face class;
+            // the pair {du, dv} must equal the pair {eu, ev}.
+            let (du, dv) = (u_max - u_min, v_max - v_min);
+            let spans_match = ((du - eu).abs() < 1e-5 && (dv - ev).abs() < 1e-5)
+                || ((du - ev).abs() < 1e-5 && (dv - eu).abs() < 1e-5);
             assert!(
-                (u_min - 0.0).abs() < 1e-6 && (u_max - 1.0).abs() < 1e-6,
-                "{label}: u spans [0,1], got [{u_min}, {u_max}]"
+                spans_match,
+                "{label}: uv span ({du}, {dv}) must equal quad extent in tiles ({eu}, {ev})"
             );
             assert!(
-                (v_min - 0.0).abs() < 1e-6 && (v_max - 1.0).abs() < 1e-6,
-                "{label}: v spans [0,1], got [{v_min}, {v_max}]"
+                (u_min - u_min.round()).abs() < 1e-6,
+                "{label}: u anchored on a tile boundary, got min {u_min}"
             );
             // Side faces stand upright (matches the RT mapping):
-            // the quad's highest vertices (world y = grid z) sample
-            // v = 0, the texture's top row; lowest sample v = 1.
-            let n = mesh.normals[quad[0] as usize];
+            // v decreases upward, one unit per tile, and both
+            // horizontal edges land on integer v (v = 0 mod 1 is
+            // the texture's top row at each tile's top).
             let gn = [n[0], -n[2], n[1]];
             if gn[2].abs() < 0.5 {
                 let y_max = verts
@@ -92,21 +122,26 @@ fn check_mesh_uvs(meshes: &PassMeshes, label: &str) {
                     .iter()
                     .map(|&v| mesh.positions[v][1])
                     .fold(f32::MAX, f32::min);
+                let mut v_top = f32::MAX;
+                let mut v_bot = f32::MIN;
                 for &v in &verts {
                     let y = mesh.positions[v][1];
+                    let vv = mesh.uvs[v][1];
+                    assert!(
+                        (vv - vv.round()).abs() < 1e-6,
+                        "{label}: side-face horizontal edges land on integer v, got {vv}"
+                    );
                     if (y - y_max).abs() < 1e-6 {
-                        assert!(
-                            mesh.uvs[v][1].abs() < 1e-6,
-                            "{label}: top edge of a side face must have v=0"
-                        );
+                        v_top = v_top.min(vv);
                     }
                     if (y - y_min).abs() < 1e-6 {
-                        assert!(
-                            (mesh.uvs[v][1] - 1.0).abs() < 1e-6,
-                            "{label}: bottom edge of a side face must have v=1"
-                        );
+                        v_bot = v_bot.max(vv);
                     }
                 }
+                assert!(
+                    v_top < v_bot,
+                    "{label}: side-face v must decrease upward (top {v_top}, bottom {v_bot})"
+                );
             }
         }
     }
@@ -121,8 +156,8 @@ fn gate_2f_1_single_material_chunk_uvs_and_layers() {
     assert!(naive.total_quads() > 0 && greedy.total_quads() > 0);
     check_mesh_uvs(&naive, "naive");
     check_mesh_uvs(&greedy, "greedy");
-    // Greedy merges the whole 3x3x3 cube into 6 quads, each still
-    // spanning [0,1]² of its layer (checked above).
+    // Greedy merges the whole 3x3x3 cube into 6 quads, each
+    // spanning 3x3 tile-unit UVs (checked above).
     assert_eq!(greedy.total_quads(), 6, "one quad per cube face");
     assert_eq!(naive.total_quads(), 6 * 9, "one quad per block face");
 }

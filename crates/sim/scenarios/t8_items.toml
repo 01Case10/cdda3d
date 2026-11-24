@@ -1,0 +1,48 @@
+# T8 — items (plan §6 T8; behaviour proved by the S6 gate).
+# The rock pile drains one unit per pickup with the top item
+# stable until the last unit clears it; the inventory screen
+# shows the carried rocks; a drop onto a different item's pile
+# is refused (turn consumed, nothing moves); drops back onto
+# the home tile restore the pile one unit at a time.
+scene = "destructible_street"
+name = "T8 items: pickup, refuse, drop"
+
+steps = [
+  { assert_player = [5, 4, 0] },
+  { assert_carried = { type = "rock", count = 0 } },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { do = "key", key = "k" },
+  { assert_player = [3, 3, 0] },
+  { assert_items = { pos = [3, 3, 0], top = "rock", count = 3 } },
+  { do = "key", key = "g" },
+  { assert_items = { pos = [3, 3, 0], top = "rock", count = 2 } },
+  { do = "key", key = "g" },
+  { assert_items = { pos = [3, 3, 0], top = "rock", count = 1 } },
+  { do = "key", key = "g" },
+  { assert_items = { pos = [3, 3, 0], top = "none", count = 0 } },
+  { assert_carried = { type = "rock", count = 3 } },
+  # The inventory screen is where the carried list shows.
+  { do = "key", key = "i" },
+  { assert_ui_screen = "inventory" },
+  { do = "key", key = "Esc" },
+  { assert_ui_screen = "gameplay" },
+  # Onto the stick pile: dropping rocks there is refused.
+  { do = "key", key = "j" },
+  { assert_player = [3, 4, 0] },
+  { assert_items = { pos = [3, 4, 0], top = "stick", count = 1 } },
+  { do = "key", key = "d" },
+  { assert_items = { pos = [3, 4, 0], top = "stick", count = 1 } },
+  { assert_carried = { type = "rock", count = 3 } },
+  # Back home: the pile rebuilds one unit per drop.
+  { do = "key", key = "k" },
+  { assert_player = [3, 3, 0] },
+  { do = "key", key = "d" },
+  { assert_items = { pos = [3, 3, 0], top = "rock", count = 1 } },
+  { do = "key", key = "d" },
+  { assert_items = { pos = [3, 3, 0], count = 2 } },
+  { do = "key", key = "d" },
+  { assert_items = { pos = [3, 3, 0], top = "rock", count = 3 } },
+  { assert_carried = { type = "rock", count = 0 } },
+  { assert_mirror = true },
+]

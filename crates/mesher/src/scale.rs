@@ -8,8 +8,12 @@
 ///
 /// Phase 2 decision on plan §14 Q1 (floor/ceiling thickness): **thin slabs**.
 /// A floor tile occupies only the bottom `floor_slab_blocks` (1 of 3) blocks
-/// of its z-level, and a roof tile only the top `roof_slab_blocks` (1 of 3)
-/// blocks of its z-level. Full-height tiles (walls, doors, windows) fill all
+/// of its z-level. A roof tile is authored on the z-level ABOVE the room it
+/// closes and occupies the bottom `roof_slab_blocks` (1 of 3) blocks of that
+/// level -- a deck seated on the wall plate, matching the snapshot path's
+/// `Floor::RoofOf` stamping. (The original reading put the roof at the TOP
+/// of its level, floating it two blocks above the walls; corrected
+/// 2026-11-17.) Full-height tiles (walls, doors, windows) fill all
 /// `blocks_per_z_level`. This keeps interiors 2 blocks of clear headroom per
 /// level and makes floors/ceilings read as slabs rather than solid storeys.
 /// It is a config value, not a constant baked into the mesher: set

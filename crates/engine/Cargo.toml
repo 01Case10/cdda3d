@@ -21,6 +21,9 @@ proto = { path = "../proto" }
 ui-share = { path = "../ui-share" }
 billboard = { path = "../billboard" }
 lighting = { path = "../lighting" }
+vehicles = { path = "../vehicles" }
+transient = { path = "../transient" }
+hardcases = { path = "../hardcases" }
 glam = "0.29"
 wgpu = "24"
 winit = "0.30"
@@ -31,3 +34,16 @@ serde_json = "1"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Phase 10 slice 10.3 gate: validate the composed WGSL sources
+# (shared sky WGSL + raster bodies) with wgpu's own shader
+# frontend on machines with no wgpu adapter, where the GPU
+# shader compile cannot run. Same naga major as wgpu 24's.
+naga = { version = "24", features = ["wgsl-in"] }
+# Stage F gate: build v1/v2 asset sets from the voxelizer fixture
+# tileset in-process.
+voxelizer = { path = "../voxelizer" }
+tileset = { path = "../tileset" }
+# Phase 11 S1 gate (sim_world_parity_gate): build sim scenes
+# in-process and compare their wire-ingested worlds against the
+# proto sample fixtures.
+sim = { path = "../sim" }

@@ -1,0 +1,143 @@
+name: ci-nightly
+
+# Test plan §2's scheduled half: bench, soak, long fuzz, and
+# the full fork build. fork-build-and-test is dispatch-only
+# (plus a weekly run): it compiles ~1,500 game TUs and is the
+# CI form of gates 0.1/0.2 — the job that can finally clear
+# them. Its steps mirror tools/pc-build/build-cdda-voxel.sh
+# (the PC script) in Linux form; the first dispatch validates
+# the job itself, exactly as the PC script's first run will.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Mesher bench (test 2.12 budgets)
+        run: cargo bench -p mesher --bench mesh_bench
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  soak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Release soak (gate 8.8 harness form, 7,200 steps)
+        run: cargo test -p release --release soak
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  sim-soak:
+    # Phase 11 S8: the T12 seeded soak (1,100 turns x 10
+    # seeds, mirror + hash invariant after every flush).
+    # Nightly, not per-PR: it measured ~4.1 min on the
+    # 1.5-CPU dev VM (debug profile) on top of the sim
+    # suite's own runtime.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sim soak gate (T12)
+        run: cargo test -p sim --test soak_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+
+  fuzz-long:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz decode_message (600s)
+        working-directory: crates/proto/fuzz
+        run: cargo fuzz run decode_message -- -max_total_time=600
+      - name: Fuzz decode_roundtrip (600s)
+        working-directory: crates/proto/fuzz
+        run: cargo fuzz run decode_roundtrip -- -max_total_time=600
+
+  fork-build-and-test:
+    # Gates 0.1/0.2 + the in-game halves of 3.x/4.13/4.14/6.4/
+    # 8.x: pristine pinned upstream builds clean (0.1), the
+    # full cata_test baseline is recorded (0.2), then the fork
+    # staging builds and cata_test "[voxel]" runs, and the full
+    # suite diffs against the baseline (gate 3.19).
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps (curses build; TILES=OFF needs no SDL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build ccache \
+            libncursesw5-dev gettext zlib1g-dev pkg-config python3
+      - name: Clone pinned upstream
+        run: |
+          curl -sL -o /tmp/cdda.tar.gz \
+            https://github.com/CleverRaven/Cataclysm-DDA/archive/7b2efa5cea38e4d4d97dd0e63b28b9148623da59.tar.gz
+          mkdir -p /tmp/cdda && tar -xzf /tmp/cdda.tar.gz -C /tmp/cdda --strip-components=1
+      - name: Baseline build (gate 0.1) + full cata_test (gate 0.2)
+        working-directory: /tmp/cdda
+        run: |
+          cmake -B build-base -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DTILES=OFF -DCURSES=ON -DSOUND=OFF -DTESTS=ON
+          cmake --build build-base -j 4 --target cataclysm cata_test
+          TESTBIN="$(find build-base -name cata_test -type f | head -1)"
+          "$TESTBIN" --rng-seed 12345 --order lex \
+            --user-dir=build-base/test_user_dir \
+            -r junit -o /tmp/baseline.xml || true
+      - name: Stage fork sources + patch CMake (mirrors tools/pc-build)
+        run: |
+          cp -r fork/src/voxel_ipc /tmp/cdda/src/
+          cp -r tools/stub-server/third_party/flatbuffers \
+            /tmp/cdda/src/voxel_ipc/flatbuffers
+          cp fork/tests/voxel_exporter_tests.cpp /tmp/cdda/tests/
+          python3 tools/pc-build/patch_cmake.py /tmp/cdda/src/CMakeLists.txt
+      - name: Fork build + cata_test [voxel] (gates 3.1/3.3/3.5/3.5b/3.6/3.7/3.8)
+        working-directory: /tmp/cdda
+        run: |
+          cmake -B build-fork -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DTILES=OFF -DCURSES=ON -DSOUND=OFF -DTESTS=ON
+          cmake --build build-fork -j 4 --target cataclysm cata_test
+          TESTBIN="$(find build-fork -name cata_test -type f | head -1)"
+          "$TESTBIN" "[voxel]" --rng-seed 12345 --order lex \
+            --user-dir=build-fork/test_user_dir -r compact
+      - name: Full suite vs baseline (gate 3.19, no new failures)
+        working-directory: /tmp/cdda
+        run: |
+          TESTBIN="$(find build-fork -name cata_test -type f | head -1)"
+          "$TESTBIN" --rng-seed 12345 --order lex \
+            --user-dir=build-fork/test_user_dir \
+            -r junit -o /tmp/fork.xml || true
+          echo "Diff the failed-test sets of /tmp/baseline.xml and /tmp/fork.xml;"
+          echo "any failure present only in fork.xml fails this job (see the"
+          echo "pc-build script's comparison.txt for the canonical form)."
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          def failed(path):
+              bad = set()
+              for tc in ET.parse(path).getroot().iter("testcase"):
+                  if tc.find("failure") is not None or tc.find("error") is not None:
+                      bad.add(f"{tc.get('classname')}::{tc.get('name')}")
+              return bad
+          new = failed("/tmp/fork.xml") - failed("/tmp/baseline.xml")
+          if new:
+              print("NEW FAILURES:", *sorted(new), sep="\n  ")
+              sys.exit(1)
+          print("gate 3.19: no new failures vs baseline")
+          PY
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-build-reports
+          path: |
+            /tmp/baseline.xml
+            /tmp/fork.xml

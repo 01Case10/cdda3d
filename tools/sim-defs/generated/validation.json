@@ -1,0 +1,407 @@
+{
+ "verdict": "PASS",
+ "failures": [],
+ "count_checks": {
+  "terrain": {
+   "census_total": 1120,
+   "abstract": 12,
+   "id_less": 12,
+   "abstract_or_id_less": 12,
+   "expected": 1108,
+   "actual": 1108,
+   "pass": true
+  },
+  "furniture": {
+   "census_total": 659,
+   "abstract": 0,
+   "id_less": 0,
+   "abstract_or_id_less": 0,
+   "expected": 659,
+   "actual": 659,
+   "pass": true
+  },
+  "trap": {
+   "census_total": 124,
+   "abstract": 0,
+   "id_less": 0,
+   "abstract_or_id_less": 0,
+   "expected": 124,
+   "actual": 124,
+   "pass": true
+  },
+  "field_type": {
+   "census_total": 144,
+   "abstract": 0,
+   "id_less": 0,
+   "abstract_or_id_less": 0,
+   "expected": 144,
+   "actual": 144,
+   "pass": true
+  },
+  "MONSTER": {
+   "census_total": 1156,
+   "abstract": 33,
+   "id_less": 33,
+   "abstract_or_id_less": 33,
+   "expected": 1123,
+   "actual": 1123,
+   "pass": true
+  },
+  "ITEM": {
+   "census_total": 10102,
+   "abstract": 190,
+   "id_less": 190,
+   "abstract_or_id_less": 190,
+   "expected": 9912,
+   "actual": 9912,
+   "pass": true
+  },
+  "vehicle_part": {
+   "census_total": 486,
+   "abstract": 24,
+   "id_less": 24,
+   "abstract_or_id_less": 24,
+   "expected": 462,
+   "actual": 462,
+   "pass": true
+  }
+ },
+ "total_defs": 13532,
+ "dangling_total": 604,
+ "dangling_allowlisted": 604,
+ "dangling_unlisted": [],
+ "dangling_stale_allowlist_entries": [],
+ "dangling_by_field": {
+  "looks_like": 386,
+  "bash_result": 215,
+  "roof_result": 3
+ },
+ "dangling_by_target": {
+  "t_null": 217,
+  "chud": 37,
+  "mon_frog": 22,
+  "f_machinery_light": 14,
+  "f_machinery_electronic": 11,
+  "t_door_metal_c": 10,
+  "armor_lightplate": 9,
+  "mon_generic_chick_tiny": 8,
+  "f_active_backup_generator": 8,
+  "fridge": 8,
+  "f_fridge": 8,
+  "t_plut_generator": 7,
+  "t_grate": 7,
+  "mre_beef_box": 7,
+  "t_machinery_electronic": 6,
+  "f_machinery_heavy": 6,
+  "t_dirtmound": 5,
+  "power_armor_light": 5,
+  "f_standing_tank": 4,
+  "f_machinery_old": 4,
+  "mobile_memory_card": 4,
+  "chainmail_hauberk": 4,
+  "f_wreckage": 3,
+  "t_wall_log": 3,
+  "t_machinery_heavy": 3,
+  "t_grass_alien": 3,
+  "t_shrub_hydrangea": 3,
+  "kitchen_unit": 3,
+  "welding_rig": 3,
+  "f_fireplace": 2,
+  "f_console": 2,
+  " ": 2,
+  "fd_web": 2,
+  "t_pontoon": 2,
+  "f_sink": 2,
+  "t_atm": 2,
+  "minifreezer": 2,
+  "t_console_broken": 2,
+  "f_sack_bw": 2,
+  "t_sewer_pipe": 2,
+  "t_machinery_light": 2,
+  "t_shrub": 2,
+  "t_rope_up": 2,
+  "t_radio_tower": 2,
+  "f_arcfurnace_empty": 2,
+  "f_arcade_machine": 2,
+  "f_ash": 2,
+  "f_catalytic_cracking_reactor": 2,
+  "chestguard_metal": 2,
+  "power_armor_heavy": 2,
+  "power_armor_basic": 2,
+  "f_hydraulic_press": 2,
+  "depowered_armor": 2,
+  "30l_barrel": 2,
+  "f_oven": 2,
+  "chainmail_suit": 2,
+  "dandelion": 2,
+  "f_floor_lamp": 2,
+  "f_water_purifier": 2,
+  "f_recycle_bin": 2,
+  "t_metal_floor": 2,
+  "f_heavy_duty_freezer": 2,
+  "f_chest_minifreezer": 2,
+  "f_compact_ASRG_containment": 2,
+  "f_forge_rock": 2,
+  "f_glass_fridge": 2,
+  "f_kiln_empty": 2,
+  "f_washer": 2,
+  "f_crate_o": 2,
+  "t_door_c": 2,
+  "t_wall_glass": 2,
+  "f_table": 2,
+  "t_foam_roof": 1,
+  "f_counter": 1,
+  "t_blue_floor": 1,
+  "f_console_broken": 1,
+  "f_atm": 1,
+  "30gal_drum": 1,
+  "55gal_drum": 1,
+  "fd_fatigue": 1,
+  "f_boulder": 1,
+  "t_trunk": 1,
+  "t_metal_railing": 1,
+  "t_console": 1,
+  "t_curtain": 1,
+  "t_curtain_o": 1,
+  "t_tree_pine": 1,
+  "t_utility_light": 1,
+  "t_broken_generator": 1,
+  "t_moss": 1,
+  "t_gelatinous_groundcover": 1,
+  "mon_fungal_wall": 1,
+  "f_display_rack": 1,
+  "tr_firewood_source": 1,
+  "t_leanto": 1,
+  "t_sewage_pipe": 1,
+  "t_ladder_up": 1,
+  "t_dirtpile": 1,
+  "t_machinery_old": 1,
+  "bucket": 1,
+  "t_crate_c": 1,
+  "f_shrub_moss": 1,
+  "t_brick_wall": 1,
+  "t_adobe_brick_wall": 1,
+  "material_cement": 1,
+  "t_monkey_bars": 1,
+  "t_scrap_wall_halfway": 1,
+  "t_grass_tall": 1,
+  "f_floor_canvas": 1,
+  "bundle_plank": 1,
+  "t_water_sh": 1,
+  "footstep": 1,
+  "water": 1,
+  "t_open_air": 1,
+  "f_rubble": 1,
+  "corpse_mon_zombie": 1,
+  "1911": 1,
+  "hoodie_brown": 1,
+  "armor_scavenger": 1,
+  "f_bigmirror": 1,
+  "trexgun": 1,
+  "knife_butcher": 1,
+  "f_wood_keg": 1,
+  "con_mix": 1,
+  "f_foot_locker": 1,
+  "f_foot_locker_aluminum": 1,
+  "glock19": 1,
+  "jacket": 1,
+  "chainmail_legs": 1,
+  "tr_rollmat": 1,
+  "ruger1022": 1,
+  "f_centrifuge": 1,
+  "powder_egg": 1,
+  "gown": 1,
+  "quarterstaff": 1,
+  "f_trashcan": 1,
+  "canvas_bag": 1,
+  "wine_cabernet ": 1,
+  "chainmail_feet": 1,
+  "f_autoclave": 1,
+  "f_freezer": 1,
+  "f_dishwasher": 1,
+  "f_display_freezer": 1,
+  "f_glass_freezer": 1,
+  "microwave": 1,
+  "f_bed": 1,
+  "frame_wood_horizontal": 1,
+  "motor_small": 1,
+  "t_floor": 1,
+  "frame_wood_cover": 1,
+  "frame_wood_light_cover": 1,
+  "frame_wood_light_cross": 1,
+  "f_locker": 1,
+  "t_carpet_red": 1,
+  "mounted_m249": 1,
+  "t_door_curtain_c": 1,
+  "binoculars": 1,
+  "frame_wood_cross": 1
+ },
+ "fg_bg": {
+  "tile_config": "/home/hatch/workspace/cdda-stable/cdda-0.I-1/gfx/UltimateCataclysm/tile_config.json",
+  "entries_seen": 9252,
+  "ids_registered": 12143,
+  "duplicate_id_registrations_skipped": 0,
+  "ids_with_fg": 12139,
+  "ids_with_bg": 2654,
+  "per_kind": {
+   "Terrain": {
+    "defs": 1108,
+    "with_fg": 623,
+    "with_bg": 337,
+    "no_tileset_entry": 485
+   },
+   "Furniture": {
+    "defs": 659,
+    "with_fg": 313,
+    "with_bg": 12,
+    "no_tileset_entry": 346
+   },
+   "Trap": {
+    "defs": 124,
+    "with_fg": 29,
+    "with_bg": 8,
+    "no_tileset_entry": 95
+   },
+   "Field": {
+    "defs": 144,
+    "with_fg": 32,
+    "with_bg": 0,
+    "no_tileset_entry": 112
+   },
+   "Monster": {
+    "defs": 1123,
+    "with_fg": 659,
+    "with_bg": 573,
+    "no_tileset_entry": 464
+   },
+   "Item": {
+    "defs": 9912,
+    "with_fg": 3308,
+    "with_bg": 249,
+    "no_tileset_entry": 6600
+   },
+   "VehiclePart": {
+    "defs": 462,
+    "with_fg": 64,
+    "with_bg": 2,
+    "no_tileset_entry": 398
+   }
+  },
+  "mismatches": [],
+  "mismatch_total": 0
+ },
+ "spot_checks": [
+  {
+   "check": "t_door_c.open_result == t_door_o",
+   "actual_open_result": "t_door_o",
+   "pass": true
+  },
+  {
+   "check": "t_door_c.roof_result non-empty",
+   "actual_roof_result": "t_wood_roof",
+   "pass": true
+  },
+  {
+   "check": "a laminated/ballistic glass door bashes to t_mdoor_frame",
+   "glass_doors_found": [
+    "t_ballistic_door_glass_c",
+    "t_door_glass_c",
+    "t_laminated_door_glass_c",
+    "t_reinforced_door_glass_c"
+   ],
+   "bash_to_t_mdoor_frame": {
+    "t_ballistic_door_glass_c": "t_mdoor_frame",
+    "t_laminated_door_glass_c": "t_mdoor_frame",
+    "t_reinforced_door_glass_c": "t_mdoor_frame"
+   },
+   "pass": true
+  },
+  {
+   "check": "t_floor.roof_result present",
+   "actual_roof_result": "t_wood_treated_roof",
+   "pass": true
+  },
+  {
+   "check": "t_chainfence.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_door_c.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_tree.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_wall.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_window.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "f_bookcase.move_cost == -1",
+   "actual_move_cost": -1,
+   "pass": true
+  },
+  {
+   "check": "t_floor.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "t_grass.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "t_door_o.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "f_table.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "t_door_c.(fg_ref, bg_ref) == (6076, 6077)",
+   "actual_fg_bg": [
+    6076,
+    6077
+   ],
+   "pass": true
+  },
+  {
+   "check": "t_floor.(fg_ref, bg_ref) == (6317, -1)",
+   "actual_fg_bg": [
+    6317,
+    -1
+   ],
+   "pass": true
+  },
+  {
+   "check": "mon_zombie.(fg_ref, bg_ref) == (12548, 12377)",
+   "actual_fg_bg": [
+    12548,
+    12377
+   ],
+   "pass": true
+  },
+  {
+   "check": "pie.(fg_ref, bg_ref) == (-1, 1445)",
+   "actual_fg_bg": [
+    -1,
+    1445
+   ],
+   "pass": true
+  }
+ ]
+}

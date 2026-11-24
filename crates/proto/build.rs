@@ -1,7 +1,10 @@
 //! Runs flatc on schema/cdda_ipc.fbs to generate the Rust bindings into
 //! OUT_DIR (cdda_ipc_generated.rs), plus a "v2" variant with one extra field
 //! on Hello (cdda_ipc_v2_generated.rs) that the forward-compatibility test
-//! (gate 1.9) uses to prove old readers ignore unknown fields.
+//! (gate 1.9) uses to prove old readers ignore unknown fields, plus a "v1"
+//! variant generated from the frozen pre-Phase-10 schema fixture
+//! (tests/fixtures/cdda_ipc_v1.fbs) that the old-reader test (gate 10.1a)
+//! uses to prove the pre-10.1 reader ignores EnvironmentUpdate.
 //!
 //! flatc 24.3.25 is located via, in order: $FLATC, the project-local copy at
 //! <repo>/tools/flatbuffers/flatc (i.e. ~/workspace/tools/flatbuffers/flatc
@@ -88,4 +91,21 @@ fn main() {
         out_dir.join("cdda_ipc_v2_generated.rs"),
     )
     .expect("rename v2 generated file");
+
+    // v1 schema for the Phase 10 old-reader test (gate 10.1a): a frozen
+    // copy of the schema as it was BEFORE the Phase 10 EnvironmentUpdate
+    // additions, kept under tests/fixtures/. Bindings from it prove the
+    // pre-10.1 reader ignores environment messages/fields. The fixture
+    // must never be edited to match the live schema — that would void
+    // the test.
+    let v1_schema = manifest_dir.join("tests/fixtures/cdda_ipc_v1.fbs");
+    println!("cargo:rerun-if-changed={}", v1_schema.display());
+    let v1_out = out_dir.join("v1");
+    fs::create_dir_all(&v1_out).unwrap();
+    run_flatc(&flatc, &v1_schema, &v1_out);
+    fs::rename(
+        v1_out.join("cdda_ipc_v1_generated.rs"),
+        out_dir.join("cdda_ipc_v1_generated.rs"),
+    )
+    .expect("rename v1 generated file");
 }

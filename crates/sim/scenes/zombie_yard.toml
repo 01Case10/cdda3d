@@ -1,0 +1,94 @@
+# zombie_yard — street_block plus a zombie already in the yard
+# (S7 support scene). Process-mode scenarios cannot use the
+# `spawn` step (a client cannot inject world events over the
+# wire), so the T3 process-mode twin authors its zombie into
+# the scene instead. Everything else is street_block verbatim:
+# same house, door at (5,8), streetlamp at (12,9), carried
+# rock x3 + stick.
+name = "zombie_yard"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [5, 5, 0]
+environment = true
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "W" = "t_window", "," = "t_grass", "R" = "t_pavement", "Y" = "t_tree", "T" = "f_table" }
+map = [
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,##W#####,,,,,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,#......#,,,Y,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,#......#,,,,,,,,,,RR,,",
+  ",,###D####,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,Y,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,Y,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+  ",,,,,,,,,,,,,,,,,,,,RR,,",
+]
+furn = [
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "....T...................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+]
+
+[[spawn]]
+type = "player"
+pos = [5, 5, 0]
+hp_frac = 255
+facing = "NONE"
+
+# The T3 zombie, standing in the open yard south-east of the
+# house where the chase plays out in the open (no walls to
+# stall the greedy chase in a local minimum).
+[[spawn]]
+type = "mon_zombie"
+pos = [12, 11, 0]
+
+[[light]]
+pos = [12, 9, 0]
+color = [1.0, 0.6, 0.2]
+intensity = 6.0
+
+[[carried]]
+type = "rock"
+count = 3
+
+[[carried]]
+type = "stick"
+count = 1

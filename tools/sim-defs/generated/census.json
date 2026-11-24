@@ -1,0 +1,93 @@
+{
+ "source": "/home/hatch/workspace/cdda-stable/cdda-0.I-1/data/json",
+ "files_read": 3013,
+ "total_entries": 52540,
+ "parse_failures": [],
+ "non_list_files": [],
+ "types": {
+  "ITEM": {
+   "kind": 5,
+   "kind_name": "Item",
+   "total": 10102,
+   "copy_from": 4925,
+   "abstract": 190,
+   "id_less": 190,
+   "abstract_or_id_less": 190,
+   "extend": 1187,
+   "relative": 277,
+   "proportional": 1274
+  },
+  "MONSTER": {
+   "kind": 4,
+   "kind_name": "Monster",
+   "total": 1156,
+   "copy_from": 794,
+   "abstract": 33,
+   "id_less": 33,
+   "abstract_or_id_less": 33,
+   "extend": 355,
+   "relative": 72,
+   "proportional": 128
+  },
+  "field_type": {
+   "kind": 3,
+   "kind_name": "Field",
+   "total": 144,
+   "copy_from": 0,
+   "abstract": 0,
+   "id_less": 0,
+   "abstract_or_id_less": 0,
+   "extend": 0,
+   "relative": 0,
+   "proportional": 0
+  },
+  "furniture": {
+   "kind": 1,
+   "kind_name": "Furniture",
+   "total": 659,
+   "copy_from": 27,
+   "abstract": 0,
+   "id_less": 0,
+   "abstract_or_id_less": 0,
+   "extend": 2,
+   "relative": 0,
+   "proportional": 0
+  },
+  "terrain": {
+   "kind": 0,
+   "kind_name": "Terrain",
+   "total": 1120,
+   "copy_from": 290,
+   "abstract": 12,
+   "id_less": 12,
+   "abstract_or_id_less": 12,
+   "extend": 47,
+   "relative": 0,
+   "proportional": 0
+  },
+  "trap": {
+   "kind": 2,
+   "kind_name": "Trap",
+   "total": 124,
+   "copy_from": 19,
+   "abstract": 0,
+   "id_less": 0,
+   "abstract_or_id_less": 0,
+   "extend": 0,
+   "relative": 0,
+   "proportional": 0
+  },
+  "vehicle_part": {
+   "kind": 6,
+   "kind_name": "VehiclePart",
+   "total": 486,
+   "copy_from": 224,
+   "abstract": 24,
+   "id_less": 24,
+   "abstract_or_id_less": 24,
+   "extend": 50,
+   "relative": 0,
+   "proportional": 20
+  }
+ }
+}

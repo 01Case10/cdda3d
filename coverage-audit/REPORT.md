@@ -781,6 +781,479 @@ scope), field types (shader effects, Phase 2b), traps (mostly
 internal triggers), overmap (own tilesets), vehicle parts
 (Phase 8).
 
+## Scope extension: all tiles means all tiles (2026-11-15)
+
+On Joey's word the drive reopens for the five categories above.
+Re-resolved with audit semantics (drawn folders in the
+universe), the exact remaining work is: **items 3,742**,
+**overmap terrain 336**, **vehicle parts 195**, **traps 121**,
+**field types 90** — 4,484 ids (46 already rescued by chains
+through the first drive's folders). Same method, same gates,
+sprites native 32×32 under `pngs_normal_32x32/` in the shipped
+subdirs (`items`, `overmap`, `vehicle`, `traps`, `fields`).
+Batch records follow below as they land; the finish line is
+0 missing in all eight audit categories.
+
+## Extension batch TRAP1: the LIXA portal family (2026-11-15)
+
+**41 trap ids** — the LIXA facility's invisible teleport
+triggers (`tr_LIXA_back_*`, `tr_LIXA_forward_*`,
+`tr_LIXA_unfold_entry_*`, numbered channel indices into the
+teleport chain, confirmed from the linked EOCs/spells). One
+parameterized renderer: green portal pads in the shipped
+`tr_portal` treatment, family glyphs (down-chevron / up-chevron
+/ nested-squares unfold) with a slight hue lean per family, and
+the channel number encoded as lit pips in a 2×8 grid.
+`new-tiles/draw_trap1.py`; `new-tiles/preview_trap1.png`.
+
+Verified per the 2g.4 gate (parent re-run): **41 materials, all
+`exact`, 0 missing** (123 layers) — the tileset loader does read
+the `traps/` subdir; every trap PNG byte-identical across the
+re-run. Coverage: traps **121 → 80**. (Bookkeeping note: the
+batch brief's hand-typed list and the alphabetical split file
+disagreed on the unfold_entry numbering; the drawn set is
+back 1–16, forward 1–16, unfold_entry 1–9, and the remaining
+trap batches were re-split from the measured still-missing
+list, so the union is exact.)
+
+## Extension batches VEH1 + VEH2: vehicle parts, first half (2026-11-15)
+
+**98 vehicle part ids**: VEH1 — the appliance/solar cluster
+(solar panels in folding/ground/reinforced/XL treatments, water
+wheels, wind turbines, three differentiated weather stations,
+the safehouse boiler's gauge-eyed pot belly, the glassblower's
+crucible, floodlights, size-graded car battery cells drawn from
+their shared abstract) and VEH2 — engines and frames (V-bank
+diesels sized by cylinder count, finned single-cylinder family,
+steam boilers with flywheels, turbine intake rings, electric
+motor cans up to the train traction motor, the dimensional
+perambulator's pram under its violet vortex, fridge/heater
+tanks told apart by cold/warm stripes, the debug jumper cable
+as a checkerboard-tagged artifact). `new-tiles/draw_veh1.py`,
+`new-tiles/draw_veh2.py`; previews alongside.
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **49 + 49 materials, all `exact`, 0 missing**
+(147 layers each) — the loader reads the `vehicle/` subdir;
+each batch's PNGs byte-identical across the parent re-run.
+Coverage (vehicle overlay, baseline 195 reproduced): 98 direct,
+no rescues — vehicle parts **195 → 97** of 483 total.
+
+## Extension batch TRAP2: devices and triggers (2026-11-15)
+
+**40 trap ids** — the LIXA unfold pads 10–16 (TRAP1's renderer
+reused verbatim, pixel-consistent with 1–9), the visible devices
+drawn as devices (dissector's arcing conduit, crossbow, buried
+bear trap, spinning blade, booby trap's shelled pipe clamp,
+dermatik burrow, the dormant corpse drawn as a corpse), and the
+invisible mapgen triggers as subtle floor markers (the
+`tr_light_on_*` light pools differentiated by edge tick and pip
+count, lab door glyphs with sensor dots). `new-tiles/draw_trap2.py`;
+`new-tiles/preview_trap2.png`.
+
+Verified per the 2g.4 gate (parent re-run): **40 materials, all
+`exact`, 0 missing** (120 layers); every PNG byte-identical
+across the re-run. Coverage (trap overlay, baseline 80
+reproduced): traps **80 → 40**.
+
+## Extension batches VEH3 + VEH4: vehicle parts complete (2026-11-15)
+
+**97 vehicle part ids** — VEH3: storage batteries and their
+mounts, pressure tanks, chitin plating (acid variant sheened),
+rail wheels, the concrete-plugged ordnance rifle, the literal
+`null` part as a red debug tile, and 18 stowed appliances unified
+by orange ratchet straps (fridges/freezers told apart by form,
+the golden monolith whole vs. cracked, the broken Yrax
+quadraphract and its leg). VEH4: the stowed tail (rope-lashed),
+the tank family graded by capacity and material, wheel mounts
+as bolt fixtures distinct from wheels (steerable = kingpin
+knuckle), the vehicle weather stations on roof racks.
+`new-tiles/draw_veh3.py`, `new-tiles/draw_veh4.py`; previews
+alongside. (One brief typo — a phantom
+`veh_mobileroof_weather_station` — was caught against the
+authoritative list file and correctly not drawn.)
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **49 + 48 materials, all `exact`, 0 missing**;
+each batch's PNGs byte-identical across the parent re-run.
+Coverage (vehicle overlay, baseline 97 reproduced): **vehicle
+parts 97 → 0 of 483 — category complete at 100%.**
+
+## Extension batches FIELD1 + FIELD2: field types complete (2026-11-15)
+
+**90 field type ids** — the two batches split the zone-manager
+family between them (~66 `*_zone` fields: one shared treatment,
+corner-bracketed area square in a per-category accent with a
+category pictogram; NPC zones get figure glyphs with slash /
+"?" / retreat-arrow marks, perishables a snowflake; the two
+batches, dispatched in parallel, independently converged on
+the same treatment) and the physical fields: FIELD1's bee
+swarm, bioluminescent motes, clairvoyant eye, full-tile
+darkness (its data is `light_override: 0.0`), construction
+site, and cold/hot air graded 1–4 in density and color depth;
+FIELD2's scarlet family (atmosphere/fog as full-tile washes,
+sea gas wisps, cresting sea wave, storm lightning over dark
+scarlet), mi-go atmosphere, nauseating smell, full-tile shadow,
+push-items arrows, last-known ghost pin. `new-tiles/draw_field1.py`,
+`new-tiles/draw_field2.py`; previews alongside.
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **45 + 45 materials, all `exact`, 0 missing** —
+the loader reads the `fields/` subdir; each batch's PNGs
+byte-identical across the parent re-run. Coverage (field
+overlay, baseline 90 reproduced): **field types 90 → 0 of
+172 — category complete at 100%.** These sprites also feed
+the Phase 2b effects sampler (palette/emissive/density), so
+the scarlet/mi-go/air sets close a downstream gap there too.
+
+## Extension batch TRAP3: traps complete (2026-11-15)
+
+**40 trap ids** — the portal/stairs/hazard tail: the dungeon
+teleporter family as badged spiral vortices (entrance/exit/
+elsewhere/next-level told apart by chevron, daylight core, and
+star badges), the scarlet and string-dimension tunnel rings,
+the microlab shift pads and shifting halls, NL stair pairs with
+circled direction chevrons, LIXA fall shafts (the climbing
+variant roped), the "mysterious hallway" trio (the
+skip-the-teleporter one carrying an amber "!" as its own mark),
+and the hazards as themselves — sinkhole, sparkling chasm,
+coiled snake, trapdoor spider den, moonpool and its exit line,
+temple flood ledge and pressure plate, thick vs. thin ice,
+the void spider rift. `new-tiles/draw_trap3.py`;
+`new-tiles/preview_trap3.png`.
+
+Verified per the 2g.4 gate (parent re-run): **40 materials, all
+`exact`, 0 missing** (120 layers); every PNG byte-identical
+across the re-run. Coverage (trap overlay, baseline 40
+reproduced): **traps 40 → 0 of 150 — category complete at
+100%.**
+
+## Extension batch OM1: overmap, first set (2026-11-15)
+
+**48 overmap terrain ids** — the first overmap batch establishes
+the category treatment: full-tile opaque map cells, ground fill
+in the entry's color with a centered pictogram. Tree farm
+orchard rows (roof = the farm building's roof plan over the
+same plot), both ant colonies on one dug-chamber renderer
+(chamber contents per function, acid set specked acid-green),
+the red alien meadow (core/end/join), base/roof building pairs
+sharing footprint and palette, the bunker trio, and the giant
+corpse cluster on one flesh ground. `new-tiles/draw_om1.py`;
+`new-tiles/preview_om1.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers) — the loader reads the
+`overmap/` subdir; every PNG byte-identical across the re-run.
+Coverage (overmap overlay, baseline 336 reproduced): overmap
+terrain **336 → 288** of 484.
+
+## Extension batch OM2: shops, EXO, faction camps (2026-11-15)
+
+**48 overmap terrain ids** — city shops with their roof plans,
+the EXO/exodii stone safehouses graded 0→2 by growing alien-tech
+nodes, and the faction-base camp system: one palisade compound
+with a per-function pictogram (anvil, tent, canteen, crop rows,
+garage, helipad, kitchen, livestock), the `_2_0` tiers upgraded
+to stone/metal palisades with the same icons, and the mansion
+components on hedged lawns (t3 drawn with a "?" — its data name
+is literally "mansion base???"). Debug tiles in the project's
+black/red treatment. `new-tiles/draw_om2.py`;
+`new-tiles/preview_om2.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 288
+reproduced): overmap terrain **288 → 240**.
+
+## Extension batch OM3: mansion tail, farms, FEMA (2026-11-15)
+
+**48 overmap terrain ids** — the mansion tower rooms (kitchen,
+library, bedroom, living room on colored rugs), the remaining
+faction surveys (saltworks pans, storehouse/workshop tiers, the
+camouflaged hide site), the farm set and its Isherwood copies
+(coop, carriage house, stable + hayloft, every roof plan — two
+ids drawn as their data names rather than their id names:
+`farm_dairy_twd_11` is "farm road", `farm_stills_11` is
+"orchard"), the FEMA camp in one pale-gravel language, fungal
+flowers/tower, the golf course cells, and storefronts
+(`full_mutagen_lab_roof` drawn as its data name, a Trans-Coast
+Logistics roof). `new-tiles/draw_om3.py`;
+`new-tiles/preview_om3.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 240
+reproduced): overmap terrain **240 → 192**.
+
+## Extension batch OM4: labyrinth, kelp, looted set (2026-11-15)
+
+**48 overmap terrain ids** — the labyrinth complex on one
+dark-floor/stone-wall system (maze rings, roof block-plans, the
+gold-sparkle chasm maw in core/end widths, flooded and
+overgrown states, stairs, safehouse, boiler exit), kelp forest
+graded core/end on open water, highway and its bridge, the
+looted hospital/house set with damage (scraped cross, broken
+windows, a faded helipad H on the hospital roof), LAN center
+pair, landfill, lighthouse, the near-black inner-cabins depths
+(its data symbol is a space on black — intentionally almost
+pure black), and the mi-go camp's resin spires. `new-tiles/draw_om4.py`;
+`new-tiles/preview_om4.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 192
+reproduced): overmap terrain **192 → 144**.
+
+## Extension batch OM5: microlab, mi-go, minefield (2026-11-15)
+
+**48 overmap terrain ids** — the microlab system on dark paneled
+floors (generic/edge/sub-entry/surface/vent variants, the
+ratkin set re-paletted green on warm floors, the nether-glass
+portal elevator as a violet shaft on black), the mi-go camp
+segments and portal (pale organic ground, pink flesh forms,
+teal glow; the portal's "=" data symbol rendered as twin energy
+bands), the minefield perimeter (fence lines on the named
+edges, mine discs, gates with swung leaves), the ocean depth
+grade (shore → surface → water cube → bed), and `omt_obsolete`
+as a debug tile carrying its own "%" glyph. `new-tiles/draw_om5.py`;
+`new-tiles/preview_om5.png`.
+
+Verified per the 2g.4 gate (parent re-run): **48 materials, all
+`exact`, 0 missing** (144 layers); every PNG byte-identical
+across the re-run. Coverage (overmap overlay, baseline 144
+reproduced): overmap terrain **144 → 96**.
+
+## Extension batches OM6 + OM7 + null terrain: overmap complete (2026-11-15)
+
+**96 overmap terrain ids** — OM6: the classic shop row on one
+storefront language (sign band in the data color, per-shop
+pictogram, fascia-striped roofs), the ravine depth grade, the
+river-cave system (food stores, nest, the kraken's tentacle
+chamber), refugee-center fence corners running on exactly the
+edges their line glyphs name, and the portal-storm teleporter
+as a nether-violet vortex. OM7: the shop tail, slime pits
+graded z0 → z−2 into darkness, string-dimension line geometry
+on void black, the triffid grade from field shoots to the
+finale's red heart, true stadium corner segments, and the
+`unexplored` cell as the classic dark `#`-hatched unknown.
+Plus a parent-drawn micro-batch: the audit's 336th overmap id
+is the game data's **null terrain** — an `overmap_terrain`
+whose id is the empty string (name "nothing", sym `%`, white).
+The decomposed format represents it (a folder whose entry JSON
+declares `"id": ""` — the voxelizer resolves a material with
+id `""` as `exact`), so it is drawn as a void cell with a faint
+white `%`. `new-tiles/draw_om6.py`, `new-tiles/draw_om7.py`,
+`new-tiles/draw_nothing.py`; previews alongside.
+
+Verified per the 2g.4 gate (parent re-run, each batch
+separately): **48 + 47 materials, all `exact`, 0 missing**, the
+null terrain 1/1 `exact` with id `""`; every PNG byte-identical
+across the parent re-runs. Coverage (overmap overlay with
+JSON-declared ids counted, baseline 96 = 48 + 47 + the null
+terrain): **overmap terrain 96 → 0 of 484 — category complete
+at 100%.**
+
+## Extension item batches (2026-11-15)
+
+The 3,742 missing items are batched by defining file (91
+batches, `/tmp`-side index; batch = one file cluster, split at
+52). Item records are grouped below as batches verify; every
+batch individually passes the full gate (parent re-run:
+byte-identical, voxelizer all-`exact`/0-missing on its own
+folders, overlay count).
+
+- **ITEM01** — bionics 1/3 (52): CBM canisters with function
+  pictograms, armor body-part shells, deployed blade/claws,
+  the Exodii cyberlimbs and Cyberframes, the brass Cree'yn
+  heart. Items 3,742 → 3,690. `draw_item01.py`.
+- **ITEM03** — bionics 3/3 (46): deployed razors/scalpels,
+  synthetic lungs, the Hub 01 XM exo interfaces as hardware,
+  faulty units cracked/glitched. Items → 3,644. `draw_item03.py`.
+- **ITEM02** — bionics 2/3 (52): emitters, sensors, power
+  storage graded by charge, probability travel half through a
+  wall. **Bionics cluster complete (150).** Items → 3,592.
+  `draw_item02.py`.
+- **ITEM04** — generic 1/3 (52): the broken_* wreck family
+  parameterized by weapon/form (drones, turrets, humanoid bots,
+  superalloy mech wrecks), faceted gems, XEDRA documents.
+  Items → 3,540. `draw_item04.py`.
+- **ITEM05** — generic 2/3 (52): appliances, gems, documents,
+  USB drives; the `metabolism`/`muscle` pseudo-items as debug
+  tiles (their descriptions say "seeing this is a bug").
+  Items → 3,488. `draw_item05.py`.
+- **ITEM06** — generic 3/3 (37): gems, nanofabricator template
+  slates, NRE printouts, the sun/wind pseudo-items as glyphs.
+  **Generic cluster complete (141).** Items → 3,451.
+  `draw_item06.py`.
+- **ITEM07** — eggs 1/2 (52): species-parameterized bird eggs,
+  fish roe, frog egg clusters per their real arrangements,
+  prepared egg dishes. Items → 3,395 measured (incl. 4
+  knock-on `looks_like` rescues — intact bot/exoskeleton items
+  whose targets ITEM04 drew). `draw_item07.py`.
+
+- **ITEM08 + ITEM09** — carnivore comestibles (52 + 28):
+  parameterized meats/hearts/stomachs/seafood, offal piles,
+  boiled stomachs, folded hides. **Carnivore cluster complete
+  (80).** Items → 3,315. `draw_item08.py`, `draw_item09.py`.
+
+- **ITEM10 + ITEM11** — meat dishes (52 + 24): canned goods
+  with visible contents, burgers graded plain/cheese/deluxe,
+  plated dishes, paella, dumplings, pemmican, sashimi, the
+  halo'd debugging SPAM. **Meat-dishes cluster complete
+  (76).** Items → 3,239. `draw_item10.py`, `draw_item11.py`.
+
+- **ITEM12 + ITEM13** — tool-armor (52 + 23): the survivor-
+  mask matrix across sizes, goggles dim vs. lit, thermal-
+  electric garments with heating coils when on, smart
+  watches, welding/PAPR helmets. **Tool-armor cluster
+  complete (75).** Items → 3,164. `draw_item12.py`,
+  `draw_item13.py`.
+
+- **ITEM14 + ITEM15** — fluff (52 + 19): board games drawn
+  as their actual boards (backgammon, go, hnefatafl, senet,
+  shogi, mahjong, Scrabble spelling PLAY) and euro-game
+  boxes with per-game cover art. **Fluff cluster complete
+  (71).** Items → 3,093. `draw_item14.py`, `draw_item15.py`.
+
+- **ITEM16 + ITEM17** — head attachments (52 + 17): NVGs
+  by tube count and state, face shields, and the 45-piece
+  chainmail family graded across five steels (tempered
+  gets gold inlay and a gem; high steel gets its mustache).
+  **Head-attachments cluster complete (69).** Items →
+  3,024. `draw_item16.py`, `draw_item17.py`.
+
+- **ITEM18 + ITEM19** — swords and blades (52 + 12): one
+  analytic diagonal renderer, profiles per weapon (estoc
+  needle, khopesh hook, kukri belly, kris wave), shading
+  per steel grade, fakes blunt and inferiors nicked.
+  **Swords cluster complete (64).** Items → 2,960.
+  `draw_item18.py`, `draw_item19.py`.
+
+- **ITEM20 + ITEM21** — metal resources (52 + 10): ingots
+  scaled by volume and graded by metal, bar stock flat vs.
+  round, I-beams, rail profile, porous slag. **Metal
+  cluster complete (62).** Items → 2,898. `draw_item20.py`,
+  `draw_item21.py`.
+
+- **ITEM22 + ITEM23** — fake items (52 + 10): the internal
+  stand-ins drawn as the objects they name — workshop
+  machines (lathe, mill, presses, arc furnace), hoists and
+  anvils graded, training dummies, spinning wheel, kiln.
+  **Fake cluster complete (62).** Items → 2,836.
+  `draw_item22.py`, `draw_item23.py`.
+
+- **ITEM24 + ITEM25** — mutagens (52 + 9): IV primers as
+  injectors and oral mutagens as flasks, one renderer per
+  form, liquid color and label motif per mutation line;
+  the mutated arm/leg drawn as limbs. **Mutagen cluster
+  complete (61).** Items → 2,775. `draw_item24.py`,
+  `draw_item25.py`.
+
+- **ITEM26 + ITEM27** — vegetable dishes (52 + 7): plated
+  roasted/fried vegetables, split beans-and-rice bowl,
+  pickles in their jars, aspic, vac-bagged salted veg.
+  **Veggy-dishes cluster complete (59).** Items → 2,716.
+  `draw_item26.py`, `draw_item27.py`.
+
+- **ITEM29** — integrated armor (52): mutation-grown body
+  features as panels and mounts — fur/scale/bark/chitin
+  graded by coverage, antlers, horns, fang mouths, the
+  back-shell growth series, a glowing reality-fragment
+  shard. Items → 2,664. `draw_item29.py`.
+- **ITEM28** — ammo components (52): bullet cores sized by
+  caliber weight, gunpowders by grain form, primer cups,
+  gas bottles with real shoulder bands, RTG/uranium with
+  trefoils. **Ammo cluster complete.** Items → 2,612.
+  `draw_item28.py`.
+
+- **ITEM30** — chemicals and resources (50): substances in
+  their containers — acid bottles by liquid color, bagged
+  and piled powders by grain style, fertilizer sacks,
+  fermentable jugs, trefoiled cobalt/uranium. Items →
+  2,562. `draw_item30.py`.
+
+- **ITEM31** — junk food (47): snacks in their packaging —
+  candy bags told apart by the candies themselves,
+  freeze-dried pouches sealed vs. hydrated, fast-food
+  cartons, the debug angel cake under a golden halo.
+  Items → 2,515. `draw_item31.py`.
+
+- **ITEM32** — medical items (45): pill bottles with per-
+  drug label motifs and loose pills, the panacea gel cap
+  as itself, birth-control dial pack, 13 contact-lens
+  cases told apart by Rx glyph and cap tint. Items →
+  2,470. `draw_item32.py`.
+
+- **ITEM33** — tailoring resources (44): fabric patches
+  with stitch borders by weave, wide sheets with hems,
+  patchwork grids, scrap handfuls, the Kevlar plate and
+  ballistic panel as themselves. Items → 2,426.
+  `draw_item33.py`.
+
+- **ITEM34** — shell casings (43): one parameterized pile
+  renderer with real cartridge proportions (bottleneck,
+  straight, rimmed, belted); fired vs. unprimed told by
+  primer state and brass brightness; alien Diyua shells
+  with glyph-ticked bases. Items → 2,383.
+  `draw_item34.py`.
+
+- **ITEM35** — jewelry (43): pieces drawn large and
+  centered — band rings by metal and stone, loop and stud
+  piercings, badges and medals, costume ears/horns/tails
+  in fur, faux fur, and leather. Items → 2,340.
+  `draw_item35.py`.
+
+- **ITEM36** — raw vegetables (40): whole produce as
+  itself — artichoke bud vs. heart, cauliflower head vs.
+  shreds, sprout vs. stalk, seaweeds by frond form, the
+  `veggy` id drawn as triffid flesh (its item entry).
+  Items → 2,300. `draw_item36.py`.
+
+- **ITEM37** — other comestibles (39): camp meals in
+  graded pouches, pet-food tins, tofu blocks, earthworms
+  boiled/fried/ground, honey three ways (jar, comb,
+  royal jelly), an embalmed brain in formaldehyde.
+  Items → 2,261. `draw_item37.py`.
+
+- **ITEM38** — bludgeons (39): hafted weapons on the
+  diagonal frame — macuahuitls with edge blades per
+  material, battle axes and war hammers graded per
+  steel line, canes/crutches/sap as themselves.
+  Items → 2,222. `draw_item38.py`.
+
+- **ITEM39** — alien resources (35): Exodii ingots shaded
+  per metal with glyph stamps, hex qt_steel chassis,
+  nether bone pieces, the pure-void ephemeral gem, Yrax
+  gold/ochre/white tech. Items → 2,187.
+  `draw_item39.py`.
+
+- **ITEM40** — MREs (35): one parameterized retort-pouch
+  renderer — tan pouch torn open on its foil layer, the
+  dish heaped in the opening, entrée identity carried by
+  the food and a printed band pictogram. Items → 2,152.
+  `draw_item40.py`.
+
+- **ITEM41** — science tools (34): lab instruments as
+  themselves — burette, rotovap, still, Stirling engine,
+  prism with rainbow fan, portal ring vs. handheld
+  teleporter. Items → 2,118. `draw_item41.py`.
+
+- **ITEM42** — inactive bots (34): dormant machines,
+  powered down — manhacks by payload, security drones by
+  hull color, turrets on folded tripods, slumped
+  humanoids and split-flesh cyborgs, Yrax gold forms.
+  Items → 2,084. `draw_item42.py`.
+
+**Process note (2026-11-15):** a VM replacement wiped `/tmp`,
+taking the item batch lists and the overlay tool with it. All
+343 drawn item folders and every commit were intact under
+`~/workspace`. The lists were recovered (01–05 from their
+commits, 06–07 by defining file), the overlay tool was rebuilt
+at `~/workspace/audit-tools/overlay_cat.py`, and the remaining
+3,395 ids were re-batched by defining file into batches 08–91
+at `~/workspace/item-batches/`. New batch scripts embed their
+id lists and read them from the durable path.
+
 ## Status
 
 Batches are committed locally as they land (butterfly/moth in

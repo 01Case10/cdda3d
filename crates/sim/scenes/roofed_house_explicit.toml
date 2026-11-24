@@ -1,0 +1,93 @@
+# roofed_house_explicit — plan §4 item 2: the bungalow whose roof
+# arrives as explicit t_shingle_flat_roof terrain at z +1.
+# Reproduces proto::samples::sample_roofed_house_snapshot()
+# semantically. The fixture predates the Phase 10 environment
+# piggyback and outside[] — both stay off here, exactly like the
+# sample (environment = false, emit_outside = false are the
+# defaults; stated for clarity).
+name = "roofed_house_explicit"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [6, 6, 0]
+view_origin = [6, 6, 0]
+view_radius = 12
+environment = false
+emit_outside = false
+
+[z-1]
+legend = { "." = "t_open_air" }
+map = [
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+]
+
+[z0]
+legend = { "g" = "t_grass", "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "W" = "t_window", "T" = "f_table" }
+map = [
+  "gggggggggggg",
+  "gggggggggggg",
+  "gggggggggggg",
+  "ggg##W###ggg",
+  "ggg#....#ggg",
+  "ggg#....#ggg",
+  "gggW....#ggg",
+  "ggg#....#ggg",
+  "ggg###D##ggg",
+  "gggggggggggg",
+  "gggggggggggg",
+  "gggggggggggg",
+]
+furn = [
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  ".....T......",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+  "............",
+]
+
+[z1]
+legend = { "." = "t_open_air", "S" = "t_shingle_flat_roof" }
+map = [
+  "............",
+  "............",
+  "............",
+  "...SSSSSS...",
+  "...SSSSSS...",
+  "...SSSSSS...",
+  "...SSSSSS...",
+  "...SSSSSS...",
+  "...SSSSSS...",
+  "............",
+  "............",
+  "............",
+]
+
+[[items]]
+pos = [4, 4, 0]
+top = "rock"
+count = 3
+
+[[spawn]]
+type = "player"
+pos = [6, 6, 0]
+hp_frac = 255
+facing = "RIGHT"
+overlays = ["mut_base"]

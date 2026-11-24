@@ -87,23 +87,94 @@ pub const FRAME_ORDER: [FramePass; 5] = [
 /// the environment state (day/night hour × weather) the bake is
 /// evaluated under, and the game z of chunk level 0 (the grid is
 /// indexed in game tile coordinates).
+/// Which lighting baker the raster world pass uses (Phase 7
+/// shipped both; the frame loop originally wired only one).
+///
+/// - `PerVertex` (default, the 2h wiring): `bake_pass_meshes`
+///   after greedy meshing — air-side sampling, leak-proof across
+///   a wall, but its resolution is the *mesh vertex density*: a
+///   light change inside one greedy-merged mega-quad (a
+///   MEMORIZED patch in the middle of a floor) has no vertices
+///   to land on and changes 0 pixels (the recorded 2h.3 limit).
+/// - `PerBlock`: `bake_chunk_map_with_offset` before meshing —
+///   each block carries its own tile's presented light, so the
+///   greedy mesher cannot merge across a light boundary and
+///   every tile renders at tile resolution. The cost is the
+///   per-block baker's known trade: a wall block takes its own
+///   tile's centre sample on both faces (no air-side split).
+///
+/// The RT path is per-voxel in both modes and ignores this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BakeMode {
+    #[default]
+    PerVertex,
+    PerBlock,
+}
+
 #[derive(Debug, Clone)]
 pub struct LightingScene {
     pub grid: lighting::LightGrid,
     pub env: lighting::Environment,
     pub min_game_z: i32,
+    pub bake_mode: BakeMode,
+    /// Phase 10 slice 10.3 (§5.2 spike, decision 4A): per-tile
+    /// sky exposure for the raster GI's `sky_factor`. `None` = no
+    /// per-tile data (the vertex alpha is left at 1.0 and the GI
+    /// applies globally — the 4B shape, reached by data absence,
+    /// never by a silent rewrite).
+    pub sky_exposure: Option<SkyExposure>,
 }
 
 impl LightingScene {
+    /// A scene seated from a wire-built light grid (slice
+    /// 10.6): the grid carries the game's per-tile `outside`
+    /// verdicts, and the raster sky exposure is derived from
+    /// them — the same feed the RT path reads off the same
+    /// grid, so the two renderers cannot disagree about which
+    /// tiles the sky reaches.
+    pub fn from_grid(
+        grid: lighting::LightGrid,
+        env: lighting::Environment,
+        min_game_z: i32,
+    ) -> Self {
+        let sky_exposure = Some(SkyExposure::from_grid(&grid));
+        Self {
+            grid,
+            env,
+            min_game_z,
+            bake_mode: BakeMode::PerVertex,
+            sky_exposure,
+        }
+    }
+
     /// The fake house under the Phase 7 night-interior light grid
     /// (exterior `DARK`, lamp falloff inside, walls occluding),
-    /// evaluated at `hour` in `weather`.
+    /// evaluated at `hour` in `weather`. The fixture grid
+    /// authors the stub-house `outside` rule, so the derived
+    /// exposure is the hand-authored `SkyExposure::fake_house`
+    /// set by construction.
     pub fn fake_house(hour: f32, weather: lighting::WeatherKind) -> Self {
-        Self {
-            grid: lighting::fixtures::fake_house_night_light(),
-            env: lighting::Environment::new(hour, weather),
-            min_game_z: crate::world::HOUSE_MIN_GAME_Z,
-        }
+        Self::from_grid(
+            lighting::fixtures::fake_house_night_light(),
+            lighting::Environment::new(hour, weather),
+            crate::world::HOUSE_MIN_GAME_Z,
+        )
+    }
+
+    /// The fake house under the *daytime* light grid
+    /// ([`lighting::fixtures::fake_house_day_light`]): daylight
+    /// lit-level ceilings, so the sky GI can actually reach the
+    /// building. The gate 10.6 visual set uses this — the night
+    /// fixture's `DARK` exterior caps the exterior to black at
+    /// every hour, which made the house sheets a black
+    /// silhouette against the sky gradient (Joey's review,
+    /// 2026-11-23).
+    pub fn fake_house_day(hour: f32, weather: lighting::WeatherKind) -> Self {
+        Self::from_grid(
+            lighting::fixtures::fake_house_day_light(),
+            lighting::Environment::new(hour, weather),
+            crate::world::HOUSE_MIN_GAME_Z,
+        )
     }
 
     /// [`LightingScene::fake_house`] with specific tiles forced
@@ -132,6 +203,394 @@ impl LightingScene {
     }
 }
 
+/// Per-tile sky exposure (Phase 10 §3.4): which game tiles the
+/// sky reaches. The wire form is one bool per tile
+/// (`SubmapBlock.outside` / `TileChange.outside`, slice 10.1 —
+/// the game's `is_outside && !is_roofed` conjunction); this is
+/// the engine-side set form the raster bake consumes: tiles in
+/// `sheltered` have factor 0, every other tile factor 1. (The
+/// §3.4 factor is continuous in principle; the wire is a bool,
+/// so the raster factor is binary in v1.)
+#[derive(Debug, Clone, Default)]
+pub struct SkyExposure {
+    /// Game tiles (x, y, game z) the sky does NOT reach.
+    pub sheltered: std::collections::HashSet<[i32; 3]>,
+}
+
+impl SkyExposure {
+    /// The §5.2 factor for one game tile.
+    pub fn factor(&self, tile: [i32; 3]) -> f32 {
+        if self.sheltered.contains(&tile) {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
+    /// The exposure set from a light grid's wire `outside`
+    /// data (slice 10.6): every stored tile the game marks not
+    /// sky-exposed is sheltered. Tiles the grid does not store
+    /// are absent from the set and so read factor 1 — the same
+    /// no-data shape as `sky_exposure: None` (absence never
+    /// shelters).
+    pub fn from_grid(grid: &lighting::LightGrid) -> Self {
+        let mut sheltered = std::collections::HashSet::new();
+        for (pos, t) in grid.iter_tiles() {
+            if !t.outside {
+                sheltered.insert(pos);
+            }
+        }
+        Self { sheltered }
+    }
+
+    /// The fake house's exposure, authored with the same
+    /// knowledge as the Phase 7 light fixture and the proto
+    /// sample's `outside` array (proto::samples): the interior
+    /// floor tiles (x/y in 1..=10 at game z 0, inside the wall
+    /// perimeter and under the roof layer) are sheltered; wall,
+    /// roof and exterior tiles are exposed.
+    pub fn fake_house() -> Self {
+        let mut sheltered = std::collections::HashSet::new();
+        for y in 1..=10 {
+            for x in 1..=10 {
+                sheltered.insert([x, y, crate::world::HOUSE_MIN_GAME_Z]);
+            }
+        }
+        Self { sheltered }
+    }
+}
+
+/// Sky input for one frame (Phase 10 §6): a game environment
+/// plus the interpolation clock that evaluates it per frame.
+/// This is the `CaptureArgs::sky` payload BOTH renderer paths
+/// consume — the raster path (slice 10.3) evaluates it here;
+/// the RT path (slice 10.4) reads the same scene from
+/// `CaptureArgs` and evaluates it through [`SkyScene::uniforms`]
+/// so there is exactly one evaluation of a frame's sky.
+#[derive(Debug, Clone)]
+pub struct SkyScene {
+    /// The environment sample the scene was seeded with (the
+    /// clock's current sample; later samples arrive via
+    /// [`SkyScene::push`] in the live loop, slice 10.6).
+    pub game_env: lighting::GameEnvironment,
+    /// §3.3 interpolation + weather cross-fade clock.
+    pub clock: lighting::SkyClock,
+    /// Decision 3C cave factor (0 = surface sky, 1 = dark cave
+    /// gradient), applied to the evaluated uniforms. Seated from
+    /// the camera target tile by the live loop (10.6); captures
+    /// leave it 0.
+    pub cave_factor: f32,
+}
+
+impl SkyScene {
+    /// A scene from one environment sample.
+    pub fn new(game_env: lighting::GameEnvironment) -> Self {
+        let clock = lighting::SkyClock::new(game_env.clone());
+        Self {
+            game_env,
+            clock,
+            cave_factor: 0.0,
+        }
+    }
+
+    /// The §6 neutral environment (Clear noon, live-path form).
+    pub fn neutral_env() -> Self {
+        Self::new(lighting::GameEnvironment::neutral())
+    }
+
+    /// Fake-data scene (stub scenes / captures without a game):
+    /// a clear day through the §3.2 fallback sun path, sunrise
+    /// 06:00, sunset 18:00, summer, at `hour` (fractional) with
+    /// the given moon phase (0..8).
+    pub fn fake_day(hour: f32, moon_phase: u8) -> Self {
+        Self::new(lighting::GameEnvironment::fake_day(
+            hour * 3600.0,
+            21_600.0,
+            64_800.0,
+            1,
+            moon_phase,
+        ))
+    }
+
+    /// Fake-data scene in a §8-matrix weather (slice 10.6):
+    /// [`Self::fake_day`]'s day with the weather numerics of
+    /// `lighting::GameEnvironment::fake_weather`.
+    pub fn fake_weather(hour: f32, moon_phase: u8, kind: lighting::WeatherKind) -> Self {
+        Self::new(lighting::GameEnvironment::fake_weather(
+            hour * 3600.0,
+            21_600.0,
+            64_800.0,
+            1,
+            moon_phase,
+            kind,
+        ))
+    }
+
+    /// The named fake-sky matrix: `"neutral"` plus
+    /// `"{midnight,dawn,noon,dusk}-{clear,rain,fog,thunderstorm}"`
+    /// (the §8 gate set). One resolver shared by the `--sky`
+    /// capture flag and the gates, so the CLI names and the
+    /// gate matrix cannot drift. The pre-10.6 clear names keep
+    /// their exact scenes (`noon-clear` IS `fake_day(12, 4)`,
+    /// `neutral` IS `neutral_env()`).
+    pub fn named(name: &str) -> Option<Self> {
+        if name == "neutral" {
+            return Some(Self::neutral_env());
+        }
+        let (time, weather) = name.split_once('-')?;
+        let hour = match time {
+            "midnight" => 0.0,
+            "dawn" => 6.5,
+            "noon" => 12.0,
+            "dusk" => 17.5,
+            _ => return None,
+        };
+        let kind = match weather {
+            "clear" => lighting::WeatherKind::Clear,
+            "rain" => lighting::WeatherKind::Rain,
+            "fog" => lighting::WeatherKind::Fog,
+            "thunderstorm" => lighting::WeatherKind::Thunderstorm,
+            _ => return None,
+        };
+        Some(if kind == lighting::WeatherKind::Clear {
+            Self::fake_day(hour, 4)
+        } else {
+            Self::fake_weather(hour, 4, kind)
+        })
+    }
+
+    /// Seat a scene from one wire `EnvironmentUpdate` (slice
+    /// 10.6 — the joint the live loop consumes: the client
+    /// converts each update through the lighting proto adapter
+    /// and either seats a fresh scene or `push`es into the
+    /// running one).
+    pub fn from_wire(u: &proto::EnvironmentUpdateT) -> Self {
+        Self::new(lighting::proto_adapter::game_environment_from_update(u))
+    }
+
+    /// Seat a scene from a `Snapshot`'s piggybacked environment
+    /// (§2.2), when the snapshot carries one.
+    pub fn from_snapshot(snap: &proto::SnapshotT) -> Option<Self> {
+        lighting::proto_adapter::game_environment_from_snapshot(snap).map(Self::new)
+    }
+
+    /// The §4 cave-factor seating rule for the live loop: the
+    /// dark cave gradient (decision 3C, §9) engages only when
+    /// the camera target tile is below ground (game z < 0) AND
+    /// the sky does not reach it (its §3.4 factor is 0). A
+    /// sheltered surface interior keeps the surface sky — the
+    /// gradient is a cave treatment, not a roof treatment —
+    /// and so does an exposed underground tile (a shaft the
+    /// game marks outside). Captures leave the factor as
+    /// authored (0); the windowed loop reseats it per frame
+    /// from the camera target.
+    pub fn cave_factor_for(exposure: &SkyExposure, target: [i32; 3]) -> f32 {
+        if target[2] < 0 && exposure.factor(target) == 0.0 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Record a newer environment sample (the §2.3 cadence).
+    pub fn push(&mut self, env: lighting::GameEnvironment) {
+        self.clock.push(env.clone());
+        self.game_env = env;
+    }
+
+    /// The frame's derived sky state at the scene's current
+    /// time of day.
+    pub fn sky_state(&self) -> lighting::SkyState {
+        self.clock.evaluate(self.game_env.time_of_day_sec)
+    }
+
+    /// The frame's uniform block: the one conversion
+    /// (`SkyUniforms::from_sky_state`) plus this scene's cave
+    /// factor. `from_sky_state` emits directions in SkyState
+    /// space (east, north, up); the raster renderer consumes
+    /// mesher world space (east, up, north), so the dirs are
+    /// converted here via `to_mesher_world_space` (10.3 fix —
+    /// unconverted, the noon sun's up component read −cos(alt),
+    /// below the horizon). This conversion applies ONLY to the
+    /// `from_sky_state` output: the no-sky default path binds
+    /// raw `SkyUniforms::neutral()` (already grid-space legacy)
+    /// and the calibrated GI form, neither of which passes
+    /// through here.
+    pub fn uniforms(&self) -> lighting::SkyUniforms {
+        let state = self.sky_state();
+        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
+            .to_mesher_world_space();
+        u.set_cave_factor(self.cave_factor);
+        u
+    }
+
+    /// The frame's uniform block in **grid space** (east,
+    /// south, up) — the RT renderer's consumption form, the
+    /// counterpart of [`Self::uniforms`] (mesher space, raster).
+    /// Same single `from_sky_state` evaluation, converted via
+    /// `to_grid_space` per the `render_rt_frame_sky` contract.
+    pub fn uniforms_grid_space(&self) -> lighting::SkyUniforms {
+        let state = self.sky_state();
+        let mut u = lighting::SkyUniforms::from_sky_state(&state, self.game_env.time_of_day_sec)
+            .to_grid_space();
+        u.set_cave_factor(self.cave_factor);
+        u
+    }
+}
+
+/// Emitter input for one frame (Addendum 11 emitter prototype):
+/// the frame's declared local light emitters plus the fixture
+/// companions they shine in — the vehicle that carries them, the
+/// light grid that caps them (the Phase 7 ceiling truth), and
+/// the night sky they shine under. Fixture data ONLY: no
+/// wire/protocol change; the real feed is the game side's
+/// emitter declaration (plan.md Addendum 11), which this scene
+/// stands in for. `CaptureArgs::emitters` carries it; both
+/// renderer paths convert the emitters to their own space at the
+/// upload site ([`EmitterScene::uniforms_mesher_space`] /
+/// [`EmitterScene::uniforms_grid_space`]).
+#[derive(Debug, Clone)]
+pub struct EmitterScene {
+    /// The declared emitters, authored in game space (east,
+    /// north, up) — see `lighting::Emitter`.
+    pub emitters: Vec<lighting::Emitter>,
+    /// The fixture vehicle carrying the emitters.
+    pub vehicles: VehicleScene,
+    /// The scene's light grid (the ceiling truth).
+    pub lighting: LightingScene,
+    /// The scene's sky.
+    pub sky: SkyScene,
+}
+
+impl EmitterScene {
+    /// The named emitter fixture matrix: `"headlight-car"` (the
+    /// prototype scene). One resolver shared by the `--emitters`
+    /// capture flag and the gate, so the CLI name and the gate
+    /// scene cannot drift — the `SkyScene::named` pattern.
+    pub fn named(name: &str) -> Option<Self> {
+        match name {
+            "headlight-car" => Some(Self::headlight_car()),
+            _ => None,
+        }
+    }
+
+    /// The prototype scene: the Phase 8 fixture car parked on
+    /// the sample scene's south yard at night, headlights on,
+    /// shining east across open grass; the yard's tree at game
+    /// (13, 20) stands in the beam as the occluder (the RT shadow
+    /// proof's subject). Layout (game tiles, x east / y south,
+    /// z 0):
+    ///
+    /// - car pivot (3, 18), facing 0° (east): frame tiles
+    ///   (3..=5, 18), wheels (3, 17), (5, 17), (3, 19), (5, 19),
+    ///   roof part (4, 18) at z 1 — the `VehicleScene::fixture_car`
+    ///   export, verbatim;
+    /// - headlight emitters just proud of the front face
+    ///   (x = 6.15, so the car's own front voxels cannot shadow
+    ///   the beam at its origin), at south 17.4 / 18.6, half a
+    ///   z-level up, pointing east with a slight downward tilt,
+    ///   35° half-angle, range 14 tiles, warm white;
+    /// - the light grid is an outdoor night grid: every z-0 tile
+    ///   `LIT` (the yard is seen and lit — the ceiling is not
+    ///   what limits the pool; the falloff is), EXCEPT a 3×3
+    ///   `DARK` patch at (10..=12, 17..=19) inside the beam and
+    ///   (11, 16) forced `BLANK` just north of it: the gate's
+    ///   ceiling proof. The patch is 3×3 because the raster bake
+    ///   smooths vertex light across tile borders — only the
+    ///   patch's centre tile (11, 18) has all-DARK vertex
+    ///   neighbourhoods, so only it proves the raster ceiling;
+    ///   in RT (per-tile lit, no smoothing) every patch tile is
+    ///   capped by the DARK lit factor. The BLANK tile must not
+    ///   render at all in either renderer. Z-1 is `BLANK` except
+    ///   the house roof footprint and the car's roof tile, the
+    ///   only z-1 geometry.
+    ///
+    /// The grid is a fixture simplification: the whole 24×24
+    /// yard is one outdoor grid (the house interior is scenery
+    /// here, not a lit room).
+    pub fn headlight_car() -> Self {
+        use proto::LitLevel;
+        let lit = lighting::TileLight::new(LitLevel::LIT, 255).outside(true);
+        let mut grid = lighting::LightGrid::filled([0, 0, 0], [24, 24, 2], lit);
+        // Z 1: only the house roof footprint and the car roof
+        // tile carry geometry; everything else never-seen.
+        for y in 0..24 {
+            for x in 0..24 {
+                grid.set(x, y, 1, lighting::TileLight::BLANK);
+            }
+        }
+        for y in 3..=9 {
+            for x in 3..=10 {
+                grid.set(x, y, 1, lit);
+            }
+        }
+        grid.set(4, 18, 1, lit);
+        // The ceiling-proof patch + BLANK tile, inside the beam
+        // (see above).
+        let dark = lighting::TileLight::new(LitLevel::DARK, 255).outside(true);
+        for y in 17..=19 {
+            for x in 10..=12 {
+                grid.set(x, y, 0, dark);
+            }
+        }
+        grid.set(11, 16, 0, lighting::TileLight::BLANK);
+
+        // Headlights: game space is (east, north, up), so south
+        // yard rows 17.4 / 18.6 are north −17.4 / −18.6.
+        let headlight = |north: f32| {
+            lighting::Emitter::new(
+                [6.15, north, 0.5],
+                [1.0, 0.0, -0.12],
+                35.0,
+                14.0,
+                2.2,
+                [1.0, 0.85, 0.62],
+            )
+        };
+        Self {
+            emitters: vec![headlight(-17.4), headlight(-18.6)],
+            vehicles: VehicleScene::fixture_car([3, 18, 0], 0.0),
+            lighting: LightingScene::from_grid(
+                grid,
+                lighting::Environment::new(0.0, lighting::WeatherKind::Clear),
+                crate::world::HOUSE_MIN_GAME_Z,
+            ),
+            sky: SkyScene::named("midnight-clear")
+                .expect("midnight-clear is in the SkyScene::named matrix"),
+        }
+    }
+
+    /// The frame's emitter block in **mesher world space** —
+    /// the raster renderer's consumption form.
+    pub fn uniforms_mesher_space(&self) -> lighting::EmitterUniforms {
+        lighting::EmitterUniforms::from_emitters(&self.emitters).to_mesher_world_space()
+    }
+
+    /// The frame's emitter block in **grid space** — the RT
+    /// renderer's consumption form.
+    pub fn uniforms_grid_space(&self) -> lighting::EmitterUniforms {
+        lighting::EmitterUniforms::from_emitters(&self.emitters).to_grid_space()
+    }
+
+    /// Seat this scene's companions (sky, vehicles, lighting)
+    /// into capture args that don't already carry them — an
+    /// explicit `--sky` / `--vehicle-fixture` / `--light-hour`
+    /// still wins over the fixture's own. Used by the
+    /// `--emitters` flag and the gate, so a capture of the scene
+    /// is one flag, not four.
+    pub fn seat_companions(&self, args: &mut CaptureArgs) {
+        if args.sky.is_none() {
+            args.sky = Some(self.sky.clone());
+        }
+        if args.vehicles.is_none() {
+            args.vehicles = Some(self.vehicles.clone());
+        }
+        if args.lighting.is_none() {
+            args.lighting = Some(self.lighting.clone());
+        }
+    }
+}
+
 /// Billboard input for one frame (Phase 2h.2): a sprite atlas
 /// (fixture or the voxelizer's real UltiCa output), the entities
 /// to draw (protocol `Entity` shape, via billboard's mirror type),
@@ -142,6 +601,18 @@ pub struct BillboardScene {
     pub entities: Vec<billboard::instance::FakeEntity>,
     pub items: Option<billboard::instance::FakeItemTiles>,
     pub time_s: f32,
+    /// Stage F part 2 (§10.2): decoration scatter placements for
+    /// this scene, derived client-side by `billboard::decor::scatter`
+    /// (see [`sample_scene_decorations`] for the sample scene's).
+    /// Drawn in the billboard pass from `decor_atlas` (or the scene
+    /// atlas when it already carries the decoration sprites);
+    /// never registered for picking — [`pick_billboard_entity`]
+    /// iterates `entities` only, by construction.
+    pub decorations: Vec<billboard::decor::Decoration>,
+    /// The voxelizer's decoration atlas (Stage F part 2), when the
+    /// caller built one. `None` = decorations address the scene
+    /// atlas directly.
+    pub decor_atlas: Option<billboard::atlas::SpriteAtlas>,
 }
 
 impl BillboardScene {
@@ -166,7 +637,40 @@ impl BillboardScene {
             ],
             items: Some(billboard::scene::crowd_items()),
             time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
         }
+    }
+
+    /// Sample-scene crowd (Joey's request, 2026-11-15), placed
+    /// against `world::build_sample_scene`'s coordinates with
+    /// the real UltiCa atlas: a zombie, a skeleton and a dog
+    /// *inside* the room (floor x 4..=9, y 4..=8); a zombie, a
+    /// hulk, a second zombie and a skeleton *outside* on the
+    /// grass. Sprite ids are the real-capture set.
+    pub fn sample_crowd(dir: &std::path::Path) -> Result<Self, String> {
+        use billboard::instance::FakeEntity;
+        let atlas = billboard::atlas::SpriteAtlas::load(dir)?;
+        let mut z1 = FakeEntity::creature(1, "mon_zombie_1", [5, 5, 0]);
+        z1.overlays = vec!["overlay_effect_bleed".into()];
+        Ok(Self {
+            atlas,
+            entities: vec![
+                // Inside the room.
+                z1,
+                FakeEntity::creature(2, "mon_skeleton", [8, 7, 0]),
+                FakeEntity::creature(3, "mon_dog", [6, 7, 0]),
+                // Outside, on the grass.
+                FakeEntity::creature(4, "mon_zombie_2", [14, 6, 0]),
+                FakeEntity::creature(5, "mon_zombie_hulk", [18, 10, 0]),
+                FakeEntity::creature(6, "mon_zombie_1", [12, 16, 0]),
+                FakeEntity::creature(7, "mon_skeleton", [21, 4, 0]),
+            ],
+            items: None,
+            time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
+        })
     }
 
     /// Real-UltiCa crowd for gate 2h.2, in the fake house's
@@ -196,7 +700,379 @@ impl BillboardScene {
             ],
             items: None,
             time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
         })
+    }
+}
+
+/// Stage F part 2 (§10.2): the sample scene's ground tiles in the
+/// scatter's terms, derived from `world::build_sample_scene`'s
+/// chunk map at data level (the same map both renderers mesh).
+/// Kind comes from the tile's level-0 base block; `under_roof` is
+/// a roof-slab block in the level above. `macro_height` is `None`
+/// for every tile here — the sample scene's macro height lives in
+/// the GPU texture array, not in CPU data this builder can sample
+/// — so the scatter's documented fallback density
+/// (`billboard::decor::FALLBACK_HEIGHT`) applies. Callers with a
+/// CPU height layer (the Stage F2 gate does this with the
+/// voxelizer's macro PNG) supply `Some` samples through
+/// `billboard::decor::GroundTile` directly.
+pub fn sample_scene_ground_tiles() -> Vec<billboard::decor::GroundTile> {
+    use billboard::decor::{GroundKind, GroundTile};
+    use mesher::block::{TILE_FLOOR_WOOD, TILE_GROUND, TILE_ROOF, TILE_WATER};
+    let scale = mesher::scale::WorldScale::default();
+    let map = crate::world::build_sample_scene(scale);
+    let per_u = scale.blocks_per_z_level;
+    // The roof deck is the first block of the level above
+    // (mesher::chunk RoofSlab placement).
+    let roof_z = per_u as i32;
+    let mut out = Vec::new();
+    let mut coords: Vec<[i32; 2]> = map.chunks.keys().copied().collect();
+    coords.sort();
+    for coord in coords {
+        let chunk = &map.chunks[&coord];
+        for ly in 0..mesher::chunk::CHUNK_H as i32 {
+            for lx in 0..mesher::chunk::CHUNK_W as i32 {
+                let base = chunk.grid.get(lx, ly, 0);
+                let kind = match base.id {
+                    TILE_GROUND => GroundKind::Grass,
+                    TILE_FLOOR_WOOD => GroundKind::Floor,
+                    TILE_WATER => GroundKind::Water,
+                    _ => GroundKind::Other,
+                };
+                let under_roof = chunk.grid.get(lx, ly, roof_z).id == TILE_ROOF;
+                out.push(
+                    GroundTile::new(
+                        [
+                            coord[0] * mesher::chunk::CHUNK_W as i32 + lx,
+                            coord[1] * mesher::chunk::CHUNK_H as i32 + ly,
+                            0,
+                        ],
+                        kind,
+                    )
+                    .under_roof(under_roof),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// Stage F part 2 (§10.2): the sample scene's decoration scatter —
+/// the perf-record population (instance count) for the built-in
+/// sample scene, and the set a caller seats into
+/// [`BillboardScene::decorations`] to draw it.
+pub fn sample_scene_decorations() -> Vec<billboard::decor::Decoration> {
+    billboard::decor::scatter(&sample_scene_ground_tiles())
+}
+
+/// Vehicle input for one frame (Phase 8 wiring): the vehicle
+/// models to stamp into the world pass, in their exported state
+/// (absolute part positions verbatim — the engine never
+/// re-derives them from facing + mounts, the Phase 8 rule).
+#[derive(Debug, Clone)]
+pub struct VehicleScene {
+    pub models: Vec<vehicles::VehicleModel>,
+    /// Wire vpart id -> base string id (the TileDefs VehiclePart
+    /// entries), for the textured path: `scene_prep` resolves
+    /// each name to the vpart's voxelizer material (`vp_<name>`,
+    /// falling back to `<name>`). Empty for scenes whose caller
+    /// has no defs (fixtures) — those render flat, exactly as
+    /// before materials were wired.
+    pub vpart_names: std::collections::HashMap<u32, String>,
+}
+
+impl VehicleScene {
+    /// Every vehicle currently in a `VehicleStore` (the live
+    /// path once the fork seats data in the loop).
+    pub fn from_store(store: &vehicles::VehicleStore) -> Self {
+        Self {
+            models: store
+                .ids()
+                .filter_map(|id| store.get(id).cloned())
+                .collect(),
+            vpart_names: std::collections::HashMap::new(),
+        }
+    }
+
+    /// The Phase 8 fixture car at `pivot`, facing `face_deg`
+    /// (mock game truth from the vehicles crate — the same
+    /// fixture its gates prove the model against).
+    pub fn fixture_car(pivot: [i32; 3], face_deg: f32) -> Self {
+        let wire = vehicles::fixtures::truth_vehicle(1, pivot, face_deg);
+        Self {
+            models: vec![vehicles::VehicleModel::from_proto(&wire)],
+            vpart_names: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// Prop input for one frame (Phase 9 slice 2, 9.10): the
+/// furniture prop models to stamp into the raster world pass
+/// as fine geometry, and where to stamp them. `models` maps a
+/// furniture def id to its voxel model; `placements` say which
+/// game tile (x, y, 0-based level from
+/// `world::HOUSE_MIN_GAME_Z`) carries which furniture id —
+/// the same placement shape `snapshot_world::stamp_furniture`
+/// consumes.
+#[derive(Debug, Clone)]
+pub struct PropScene {
+    /// `(furn_id, model)` pairs, in deterministic order.
+    pub models: Vec<(u32, crate::materials::PropModelData)>,
+    /// Where each modelled furniture item stands.
+    pub placements: Vec<crate::snapshot_world::FurniturePlacement>,
+}
+
+/// Fixture furniture ids for [`PropScene::fixture`] (above
+/// every fake-data tile id in these scenes).
+pub const FURN_FIXTURE_BOOKCASE: u32 = 200;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_COUNTER: u32 = 201;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_FRIDGE: u32 = 202;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_TABLE: u32 = 203;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_TANK: u32 = 204;
+/// See [`FURN_FIXTURE_BOOKCASE`].
+pub const FURN_FIXTURE_BED: u32 = 205;
+
+/// Build one fixture [`crate::materials::PropModelData`] from
+/// a per-voxel palette-index function (`u16::MAX` = empty),
+/// in the model's `(y * d + z) * w + x` voxel order.
+fn fixture_prop_model(
+    size: [u32; 3],
+    palette: Vec<[u8; 3]>,
+    f: impl Fn(u32, u32, u32) -> u16,
+) -> crate::materials::PropModelData {
+    let [w, h, d] = size;
+    let mut voxels = Vec::with_capacity((w * h * d) as usize);
+    for y in 0..h {
+        for z in 0..d {
+            for x in 0..w {
+                voxels.push(f(x, y, z));
+            }
+        }
+    }
+    crate::materials::PropModelData {
+        size,
+        palette,
+        voxels,
+    }
+}
+
+impl PropScene {
+    /// Hand-built deterministic fixture prop scene for a
+    /// snapshot name (Phase 9 slice 2): solid boxes / shelves /
+    /// a leg tank built from palette literals, in the
+    /// `phase9_stamp_gate` style. Every model carries 2–4
+    /// distinct palette colours; the counter body colour and
+    /// the steel colour are each shared between two models
+    /// (counter/tank and fridge/tank), so scene-wide dedupe is
+    /// exercised. Placements (tiles are `(x, y, level)`, level
+    /// 0-based from `HOUSE_MIN_GAME_Z`):
+    /// - `"sample-scene"`: bookcase (5,4,0), counter (7,4,0),
+    ///   fridge (9,4,0), table (6,6,0), tank (15,5,0);
+    /// - `"stub-house"`: bookcase (2,1,0), counter (5,1,0),
+    ///   fridge (9,1,0), table (5,5,0).
+    ///
+    /// The bed model is part of the set (it is the sixth
+    /// fixture model) but is placed in neither scene above.
+    /// Returns `None` for any other snapshot.
+    pub fn fixture(snapshot: &str) -> Option<PropScene> {
+        // Shared palette literals (exact duplicates across
+        // models are the point: they dedupe scene-wide).
+        const BODY: [u8; 3] = [200, 180, 160];
+        const STEEL: [u8; 3] = [140, 150, 160];
+        const WOOD: [u8; 3] = [120, 72, 32];
+        const EMPTY: u16 = crate::materials::PropModelData::EMPTY;
+
+        // Bookcase: solid frame + shelves; books in red/blue
+        // runs between shelf boards.
+        let bookcase = fixture_prop_model(
+            [28, 22, 8],
+            vec![WOOD, [180, 140, 90], [200, 40, 40], [40, 80, 200]],
+            |x, y, z| {
+                let _ = z;
+                if y == 0 || y == 21 || x == 0 || x == 27 || y % 6 == 5 {
+                    if y % 6 == 5 && x > 0 && x < 27 && y != 21 {
+                        1 // shelf board
+                    } else {
+                        0 // frame
+                    }
+                } else if (x / 3) % 2 == 0 {
+                    2 // red books
+                } else {
+                    3 // blue books
+                }
+            },
+        );
+        // Counter: solid body, contrasting top slab, dark kick.
+        let counter = fixture_prop_model(
+            [28, 14, 10],
+            vec![BODY, [90, 60, 40], [60, 60, 60]],
+            |_x, y, _z| {
+                if y == 13 {
+                    1
+                } else if y < 2 {
+                    2
+                } else {
+                    0
+                }
+            },
+        );
+        // Fridge: solid white box, steel top, dark handle
+        // column on the front face.
+        let fridge = fixture_prop_model(
+            [20, 26, 12],
+            vec![[220, 220, 225], STEEL, [80, 80, 90]],
+            |x, y, z| {
+                if y >= 24 {
+                    1
+                } else if x >= 18 && z == 11 {
+                    2
+                } else {
+                    0
+                }
+            },
+        );
+        // Table: top slab on four corner legs.
+        let table = fixture_prop_model(
+            [26, 10, 18],
+            vec![[150, 100, 50], [100, 65, 30]],
+            |x, y, z| {
+                if y >= 8 {
+                    0
+                } else if (x < 3 || x >= 23) && (z < 3 || z >= 15) {
+                    1
+                } else {
+                    EMPTY
+                }
+            },
+        );
+        // Tank: steel barrel on short feet (feet reuse the
+        // counter's BODY colour; barrel reuses the fridge's
+        // STEEL colour).
+        let tank = fixture_prop_model([32, 12, 12], vec![STEEL, BODY], |x, y, _z| {
+            if y < 2 {
+                if x < 3 || x >= 29 {
+                    1
+                } else {
+                    EMPTY
+                }
+            } else if (3..29).contains(&x) {
+                0
+            } else {
+                EMPTY
+            }
+        });
+        // Bed: wood frame, mattress, blanket over the front
+        // (south) half, pillow at the back.
+        let bed = fixture_prop_model(
+            [20, 10, 28],
+            vec![WOOD, [240, 240, 235], [200, 40, 40]],
+            |_x, y, z| {
+                if y < 3 {
+                    0
+                } else if y < 6 {
+                    1
+                } else if z < 4 {
+                    1 // pillow (back / north end)
+                } else {
+                    2 // blanket
+                }
+            },
+        );
+
+        let models = vec![
+            (FURN_FIXTURE_BOOKCASE, bookcase),
+            (FURN_FIXTURE_COUNTER, counter),
+            (FURN_FIXTURE_FRIDGE, fridge),
+            (FURN_FIXTURE_TABLE, table),
+            (FURN_FIXTURE_TANK, tank),
+            (FURN_FIXTURE_BED, bed),
+        ];
+        let place = |x: i32, y: i32, furn_id: u32| crate::snapshot_world::FurniturePlacement {
+            x,
+            y,
+            level: 0,
+            furn_id,
+            quarter_turns: 0,
+        };
+        let placements = match snapshot {
+            "sample-scene" => vec![
+                place(5, 4, FURN_FIXTURE_BOOKCASE),
+                place(7, 4, FURN_FIXTURE_COUNTER),
+                place(9, 4, FURN_FIXTURE_FRIDGE),
+                place(6, 6, FURN_FIXTURE_TABLE),
+                place(15, 5, FURN_FIXTURE_TANK),
+            ],
+            "stub-house" => vec![
+                place(2, 1, FURN_FIXTURE_BOOKCASE),
+                place(5, 1, FURN_FIXTURE_COUNTER),
+                place(9, 1, FURN_FIXTURE_FRIDGE),
+                place(5, 5, FURN_FIXTURE_TABLE),
+            ],
+            _ => return None,
+        };
+        Some(PropScene { models, placements })
+    }
+}
+
+/// Transient-emitter input for one frame (Phase 8 wiring,
+/// gate 8.5's presentation half): the emitters alive at
+/// `now_ms` in a `transient::TransientSystem` fed from
+/// `Effects` messages. The scene owns a snapshot of the active
+/// set, so a frame is a pure function of its inputs.
+#[derive(Debug, Clone)]
+pub struct TransientScene {
+    pub emitters: Vec<transient::Emitter>,
+    pub now_ms: u64,
+}
+
+impl TransientScene {
+    /// Feed `Effects` messages into a fresh system in order,
+    /// advance its clock to `now_ms`, and snapshot the active
+    /// emitters (advance-before-ingest ordering per the soak
+    /// driver's recorded lesson: ingest stamps emitters with
+    /// the system's current time, so each message is ingested
+    /// at the clock value the caller pairs with it — here all
+    /// messages are ingested at t=0 and the clock then advances
+    /// to `now_ms`, expiring what has finished).
+    pub fn from_effects(messages: &[proto::EffectsT], now_ms: u64) -> Self {
+        let mut system = transient::TransientSystem::new();
+        for m in messages {
+            system.ingest(m);
+        }
+        system.advance(now_ms);
+        Self {
+            emitters: system.active().to_vec(),
+            now_ms,
+        }
+    }
+
+    /// A deterministic demo burst for captures and the gate: an
+    /// explosion on the fake-house floor tile (6, 6, 0) and a
+    /// tracer projectile crossing the house, both spawned at
+    /// t=0; at `now_ms` the projectile is mid-flight.
+    pub fn fixture_burst(now_ms: u64) -> Self {
+        let mut boom = proto::EffectEventT::default();
+        boom.kind = proto::EffectKind::Explosion;
+        boom.effect_id = Some("explosion".into());
+        boom.from_pos = Some(proto::Vec3iT { x: 6, y: 6, z: 0 });
+        boom.to_pos = Some(proto::Vec3iT { x: 6, y: 6, z: 0 });
+        boom.duration_ms = 2000;
+        let mut tracer = proto::EffectEventT::default();
+        tracer.kind = proto::EffectKind::Projectile;
+        tracer.effect_id = Some("bullet_tracer".into());
+        tracer.from_pos = Some(proto::Vec3iT { x: 2, y: 2, z: 0 });
+        tracer.to_pos = Some(proto::Vec3iT { x: 10, y: 10, z: 0 });
+        tracer.duration_ms = 1000;
+        let mut fx = proto::EffectsT::default();
+        fx.seq = 1;
+        fx.events = Some(vec![boom, tracer]);
+        Self::from_effects(&[fx], now_ms)
     }
 }
 
@@ -230,15 +1106,16 @@ pub fn stub_ui_store(
     let mut canvas = ui_share::synthetic::draw_gameplay_sidebar(w, h);
     let terrain = ui_share::synthetic::synthetic_terrain_rect(w, h);
     if opaque_terrain {
-        canvas.fill_rect(terrain.x, terrain.y, terrain.w, terrain.h, [200, 30, 30, 255]);
+        canvas.fill_rect(
+            terrain.x,
+            terrain.y,
+            terrain.w,
+            terrain.h,
+            [200, 30, 30, 255],
+        );
     }
     store
-        .write_frame_tight(
-            &canvas.pixels,
-            w,
-            h,
-            ui_share::DirtyRect::full(w, h),
-        )
+        .write_frame_tight(&canvas.pixels, w, h, ui_share::DirtyRect::full(w, h))
         .map_err(|e| e.to_string())?;
     let snap = store.read_latest().map_err(|e| e.to_string())?;
     let note = ui_share::frame::frame_notification(&snap, proto::UiMode::MapInput, Some(terrain));
@@ -304,12 +1181,7 @@ pub fn fake_house_occupied() -> impl Fn(i32, i32, i32) -> bool {
             x.rem_euclid(mesher::chunk::CHUNK_W as i32),
             y.rem_euclid(mesher::chunk::CHUNK_H as i32),
         );
-        (0..per).any(|b| {
-            !chunk
-                .grid
-                .get(lx, ly, level * per + b)
-                .is_air()
-        })
+        (0..per).any(|b| !chunk.grid.get(lx, ly, level * per + b).is_air())
     }
 }
 
@@ -358,7 +1230,8 @@ pub struct FrameStats {
     /// Passes actually executed, in execution order — a subsequence
     /// of [`FRAME_ORDER`] (equal to it when every layer is on).
     pub passes: Vec<FramePass>,
-    /// Billboard instances drawn (creatures + item piles).
+    /// Billboard instances drawn (creatures + item piles +
+    /// Stage F part 2 decorations).
     pub billboards: usize,
     /// Time inside the UI stage (upload + composite + GPU wait) —
     /// gate 4.12's in-loop measurement point (Phase 2h.4).
@@ -366,6 +1239,13 @@ pub struct FrameStats {
     /// Raster mesh stats for the world pass (RT reports leaves in
     /// `FrameOutcome::quads` instead).
     pub mesh_stats: Option<MeshStats>,
+    /// Phase 8 wiring: vehicle models stamped into the world
+    /// pass, and the tiles they occupy.
+    pub vehicles: usize,
+    pub vehicle_tiles: usize,
+    /// Phase 8 wiring: transient emitters drawn in the fields
+    /// pass.
+    pub transients: usize,
 }
 
 /// One composed frame: the final color texture (post-UI), ready
@@ -489,7 +1369,55 @@ pub fn readback_rgba(
 /// Render one composed frame on an existing device/queue. This is
 /// the only frame composition in the engine: the capture path and
 /// the windowed app both call it (see the module docs).
+///
+/// Stage A internal resolution: with `args.render_scale > 1` the
+/// composition runs at `size / render_scale` (see
+/// `render_frame_inner`) and the result is integer-upscaled into a
+/// full-size texture with the PresentBlit's nearest sampler — the
+/// same blit the windowed app presents with, reused rather than a
+/// second upscale path. `render_scale == 1` calls the inner
+/// composition directly, byte-for-byte the pre-Stage-A frame.
 pub fn render_frame(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+) -> Result<FrameOutcome, CaptureError> {
+    let scale = args.render_scale.max(1);
+    if scale == 1 {
+        return render_frame_inner(device, queue, args);
+    }
+    let mut inner_args = args.clone();
+    inner_args.size = ((args.size.0 / scale).max(1), (args.size.1 / scale).max(1));
+    inner_args.render_scale = 1;
+    let inner = render_frame_inner(device, queue, &inner_args)?;
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("frame-upscaled"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: CAPTURE_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    PresentBlit::new(device, CAPTURE_FORMAT).draw(device, queue, &inner.texture, &view);
+    Ok(FrameOutcome {
+        texture,
+        size: (width, height),
+        quads: inner.quads,
+        stats: inner.stats,
+    })
+}
+
+fn render_frame_inner(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,
@@ -497,13 +1425,55 @@ pub fn render_frame(
     let defs = fx_defs(args)?;
     let mut stats = FrameStats::default();
 
+    // Phase 10 (§6): the frame's sky, evaluated ONCE here from
+    // `CaptureArgs::sky` and shared by both renderer paths (the
+    // RT branch's tracer reads the same `args.sky` scene through
+    // `SkyScene::uniforms`, slice 10.4). No sky scene = the §6
+    // neutral default (legacy stops, legacy-equivalent GI).
+    let sky_uniforms = args
+        .sky
+        .as_ref()
+        .map(|s| s.uniforms())
+        .unwrap_or_else(lighting::SkyUniforms::neutral);
+
     if args.renderer == RendererKind::Rt {
+        // Phase 9 slice 3 (9.5): fine props are wired for RT —
+        // `render_rt_frame` resolves the effective prop scene
+        // (explicit `props`, else the fixture scene under
+        // `--fine-props`) and builds the two-tree scene.
         // World (RT): trace the frame, copy its color into an
         // engine-format target, and — when a downstream pass needs
         // depth (fields depth-fade, billboard depth test, post
         // DoF) — convert the tracer's linear depth buffer into the
         // projected-depth texture those passes consume (2g.1).
-        let frame = crate::rt::render_rt_frame(device, queue, args)?;
+        // Phase 10 (10.6): a seated sky reaches the tracer
+        // through the grid-space entry point — before 10.6
+        // this branch called the no-sky entry, so an RT frame
+        // through the live loop always rendered under the
+        // renderer's built-in neutral sky whatever `args.sky`
+        // said (the 10.4 gates called the sky entry directly
+        // and never saw it). No seated sky keeps the exact
+        // pre-10.6 call, so the §6 default is byte-unchanged.
+        // Addendum 11 (emitter prototype): the frame's emitters
+        // ride the same entry, converted to grid space here like
+        // the sky block beside them. With neither a sky nor an
+        // emitter scene seated this stays exactly the pre-10.6
+        // call; with a sky only, the sky/emitters entry receives
+        // `emitters: None`, which is `render_rt_frame_sky`'s own
+        // inner path.
+        let emitter_uniforms = args.emitters.as_ref().map(|s| s.uniforms_grid_space());
+        let sky_grid_uniforms = args.sky.as_ref().map(|s| s.uniforms_grid_space());
+        let frame = if sky_grid_uniforms.is_none() && emitter_uniforms.is_none() {
+            crate::rt::render_rt_frame(device, queue, args)?
+        } else {
+            crate::rt::render_rt_frame_sky_emitters(
+                device,
+                queue,
+                args,
+                sky_grid_uniforms.as_ref(),
+                emitter_uniforms.as_ref(),
+            )?
+        };
         let (width, height) = frame.size;
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("frame-rt-color"),
@@ -547,10 +1517,9 @@ pub fn render_frame(
         queue.submit([encoder.finish()]);
         stats.passes.push(FramePass::World);
 
-        let needs_depth = defs.is_some() || args.billboards.is_some();
+        let needs_depth = defs.is_some() || args.billboards.is_some() || args.transients.is_some();
         let depth = if needs_depth {
-            let (depth_texture, depth_view) =
-                render::create_depth_texture(device, (width, height));
+            let (depth_texture, depth_view) = render::create_depth_texture(device, (width, height));
             crate::fxwire::RtDepthConvert::new(device).draw(
                 device,
                 queue,
@@ -564,6 +1533,15 @@ pub fn render_frame(
         } else {
             None
         };
+        if let Some(v) = &args.vehicles {
+            stats.vehicles = v.models.len();
+            let tiles: std::collections::BTreeSet<[i32; 3]> = v
+                .models
+                .iter()
+                .flat_map(|m| m.parts.iter().map(|p| p.abs_pos))
+                .collect();
+            stats.vehicle_tiles = tiles.len();
+        }
         let camera = capture_camera(args);
         let texture = composite_overlays(
             device,
@@ -590,16 +1568,111 @@ pub fn render_frame(
     // lit preparation (visibility mask + per-vertex bake, 2h.3).
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
     let mut renderer = Renderer::new(device, CAPTURE_FORMAT);
-    let (meshes, mstats, spec) = match &args.lighting {
-        Some(lit) => crate::scene_prep::prepare_raster_house_lit(
+    // Wire-fed source (Phase 11 follow-up, Lane A): a seated
+    // `wire` scene replaces the fixture-name dispatch below —
+    // its map was built from wire data by the caller, and its
+    // preparation is `scene_prep::prepare_raster_wire`. The
+    // fixture prop scenes are name-keyed, so a wire frame
+    // carries no fine props in v1 (see `prepare_raster_wire`).
+    // With no wire scene seated, the preparation is exactly
+    // the pre-Lane-A dispatch and the tail below is shared.
+    let wire_prepared = match &args.wire {
+        Some(w) => Some(
+            crate::scene_prep::prepare_raster_wire(
+                &visible,
+                w,
+                args.lighting.as_ref(),
+                args.vehicles.as_ref(),
+            )
+            .map_err(CaptureError::Device)?,
+        ),
+        None => None,
+    };
+    let sample = args.snapshot == "sample-scene";
+    // Phase 9 slice 2 (9.10): the effective prop scene — an
+    // explicit `props` scene wins regardless of the flag; with
+    // only `--fine-props` set, the snapshot's fixture scene is
+    // used. With neither, `effective_props` is `None` and the
+    // dispatch below is exactly the pre-Phase-9 one.
+    let fixture_props: Option<PropScene> = if args.props.is_none() && args.fine_props {
+        PropScene::fixture(&args.snapshot)
+    } else {
+        None
+    };
+    let effective_props: Option<&PropScene> = args.props.as_ref().or(fixture_props.as_ref());
+    let (meshes, mstats, spec) = match wire_prepared {
+        Some(prepared) => prepared,
+        None => match (&args.lighting, sample, effective_props) {
+        (Some(lit), false, Some(p)) => crate::scene_prep::prepare_raster_house_lit_vp(
             &visible,
             args.textures.as_deref(),
             lit,
+            args.vehicles.as_ref(),
+            Some(p),
         )
         .map_err(CaptureError::Device)?,
-        None => crate::scene_prep::prepare_raster_house(&visible, args.textures.as_deref())
-            .map_err(CaptureError::Device)?,
+        (Some(lit), true, Some(p)) => crate::scene_prep::prepare_raster_sample_lit_vp(
+            &visible,
+            args.textures.as_deref(),
+            lit,
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, false, Some(p)) => crate::scene_prep::prepare_raster_house_vp(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, true, Some(p)) => crate::scene_prep::prepare_raster_sample_vp(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+            Some(p),
+        )
+        .map_err(CaptureError::Device)?,
+        (Some(lit), false, None) => crate::scene_prep::prepare_raster_house_lit_v(
+            &visible,
+            args.textures.as_deref(),
+            lit,
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
+        (Some(lit), true, None) => crate::scene_prep::prepare_raster_sample_lit_v(
+            &visible,
+            args.textures.as_deref(),
+            lit,
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, false, None) => crate::scene_prep::prepare_raster_house_v(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
+        (None, true, None) => crate::scene_prep::prepare_raster_sample_v(
+            &visible,
+            args.textures.as_deref(),
+            args.vehicles.as_ref(),
+        )
+        .map_err(CaptureError::Device)?,
+        },
     };
+    if let Some(v) = &args.vehicles {
+        stats.vehicles = v.models.len();
+        let tiles: std::collections::BTreeSet<[i32; 3]> = v
+            .models
+            .iter()
+            .flat_map(|m| m.parts.iter().map(|p| p.abs_pos))
+            .collect();
+        stats.vehicle_tiles = tiles.len();
+    }
+    if args.macro_debug_height {
+        renderer.set_macro_debug_height(true);
+    }
     if let Some(spec) = &spec {
         renderer.set_textures(device, queue, spec);
     }
@@ -629,7 +1702,21 @@ pub fn render_frame(
 
     let camera = capture_camera(args);
     let aspect = width as f32 / height as f32;
-    renderer.set_view_projection(queue, camera.view_projection(aspect));
+    let view_proj = camera.view_projection(aspect);
+    renderer.set_view_projection(queue, view_proj, camera.eye());
+    // Phase 10 slice 10.3: the frame's sky (background pass +
+    // GI uniforms), evaluated once above.
+    renderer.set_sky(queue, &sky_uniforms, view_proj.inverse(), (width, height));
+    // Addendum 11 (emitter prototype): the frame's emitters,
+    // converted to mesher world space — the empty block when no
+    // emitter scene is seated, so group 3 is always current and
+    // an emitter-less frame is byte-identical.
+    let emitter_uniforms = args
+        .emitters
+        .as_ref()
+        .map(|s| s.uniforms_mesher_space())
+        .unwrap_or_else(lighting::EmitterUniforms::empty);
+    renderer.set_emitters(queue, &emitter_uniforms);
     renderer.draw(device, queue, &gpu_meshes, &color_view, &depth_view);
     stats.passes.push(FramePass::World);
 
@@ -676,11 +1763,34 @@ fn composite_overlays(
     let mut current = color;
 
     // -- Fields (soft-particle volumes over the world) -----------
-    if let (Some(defs), Some((depth_texture, depth_view))) = (defs, &depth) {
-        if args.fx_fields {
-            let fields = crate::fxwire::fake_house_fields(defs).map_err(CaptureError::Device)?;
-            let instances = crate::fxwire::sorted_instances(&fields, camera.eye());
+    // Field volumes (2g.1) and transient emitters (Phase 8 wiring)
+    // share this pass: both are soft volumes in the fx shader
+    // classes, depth-tested against the world. The pass runs when
+    // either source produces instances; with neither, the frame
+    // is exactly the pre-wiring one.
+    {
+        let mut instances: Vec<fx::render::FieldInstGpu> = Vec::new();
+        let mut fields_ran = false;
+        if let Some(defs) = defs {
+            if args.fx_fields {
+                let fields =
+                    crate::fxwire::fake_house_fields(defs).map_err(CaptureError::Device)?;
+                instances.extend(crate::fxwire::sorted_instances(&fields, camera.eye()));
+                fields_ran = true;
+            }
+        }
+        if let Some(ts) = &args.transients {
+            let before = instances.len();
+            instances.extend(crate::fxwire::transient_instances(&ts.emitters, ts.now_ms));
+            stats.transients = instances.len() - before;
+        }
+        if let Some((depth_texture, depth_view)) = &depth {
             if !instances.is_empty() {
+                // One combined back-to-front sort: with fields
+                // only, this reproduces the pre-wiring order
+                // exactly (the sort is stable and the field
+                // instances arrive pre-sorted by the same key).
+                crate::fxwire::sort_instances(&mut instances, camera.eye());
                 // The soft-particle pass samples a COPY of the
                 // scene depth (a pass cannot sample its own depth
                 // attachment).
@@ -699,10 +1809,9 @@ fn composite_overlays(
                     view_formats: &[],
                 });
                 let depth_copy_view = depth_copy.create_view(&Default::default());
-                let mut encoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("frame-depth-copy-encoder"),
-                    });
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("frame-depth-copy-encoder"),
+                });
                 encoder.copy_texture_to_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: depth_texture,
@@ -735,25 +1844,20 @@ fn composite_overlays(
                 let prepared = pass.prepare(device, &instances, &uniforms, &depth_copy_view);
                 pass.draw(device, queue, &prepared, &color_view, depth_view);
             }
+        }
+        if fields_ran || stats.transients > 0 {
             stats.passes.push(FramePass::Fields);
         }
     }
 
     // -- Billboards (shadows, then sprites; world-depth tested) --
     if let Some(scene) = &args.billboards {
-        let (_, depth_view) = depth.as_ref().expect(
-            "billboards require world depth (raster depth texture or converted RT depth)",
-        );
+        let (_, depth_view) = depth
+            .as_ref()
+            .expect("billboards require world depth (raster depth texture or converted RT depth)");
         let color_view = current.create_view(&Default::default());
-        stats.billboards = draw_billboards(
-            device,
-            queue,
-            scene,
-            camera,
-            &color_view,
-            depth_view,
-            size,
-        )?;
+        stats.billboards =
+            draw_billboards(device, queue, scene, camera, &color_view, depth_view, size)?;
         stats.passes.push(FramePass::Billboards);
     }
 
@@ -829,6 +1933,23 @@ fn composite_overlays(
     Ok(current)
 }
 
+/// World Y of a floor tile's top surface above its z-level
+/// base, under the engine's world scale: a floor slab occupies
+/// the bottom `floor_slab_blocks` blocks of the level, so the
+/// surface a creature stands on sits that many world units
+/// above the level base. The billboard crate anchors feet at
+/// the level base (its harness floor is a plane there); in the
+/// engine's world that leaves the quad's lower stretch inside
+/// the slab box, whose faces depth-occlude it — in the composed
+/// frame only a sliver of each creature survived (found
+/// 2026-11-15 via the sample scene; gate 2h.2 asserted pixel
+/// deltas, which the sliver satisfied). The engine therefore
+/// lifts every billboard anchor by the slab height.
+fn floor_surface_lift() -> f32 {
+    let s = mesher::scale::WorldScale::default();
+    s.floor_slab_blocks as f32 * s.block_size
+}
+
 /// Draw one billboard scene into the composed frame: creatures
 /// from their packed overlay composites first, then item piles
 /// from the raw atlas — two prepares/draws of the one pass, each
@@ -851,11 +1972,22 @@ fn draw_billboards(
         pitch_deg: camera.pitch_deg,
         distance: camera.distance,
     };
-    let built = billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
+    let mut built =
+        billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
+    // Stand the creatures on the floor surface, not the level
+    // base (see floor_surface_lift).
+    let lift = floor_surface_lift();
+    for inst in &mut built.instances {
+        inst.anchor.y += lift;
+    }
+    for sh in &mut built.shadows {
+        sh.center.y += lift;
+    }
     let aspect = size.0 as f32 / size.1.max(1) as f32;
     let view_proj = camera.view_projection(aspect);
     let eye = camera.eye();
-    let mut pass = billboard::render::BillboardPass::new(device, CAPTURE_FORMAT, render::DEPTH_FORMAT);
+    let mut pass =
+        billboard::render::BillboardPass::new(device, CAPTURE_FORMAT, render::DEPTH_FORMAT);
     let mut count = 0usize;
 
     pass.prepare_with_view_proj(
@@ -872,7 +2004,10 @@ fn draw_billboards(
     count += built.instances.len();
 
     if let Some(items) = &scene.items {
-        let inst = billboard::instance::item_instances(items, &scene.atlas, eye);
+        let mut inst = billboard::instance::item_instances(items, &scene.atlas, eye);
+        for i in &mut inst {
+            i.anchor.y += lift;
+        }
         if !inst.is_empty() {
             pass.prepare_with_view_proj(
                 device,
@@ -881,6 +2016,33 @@ fn draw_billboards(
                 eye,
                 scene.time_s,
                 &scene.atlas.image,
+                &inst,
+                &[],
+            );
+            draw_billboard_pass(device, queue, &pass, color_view, depth_view);
+            count += inst.len();
+        }
+    }
+
+    // Stage F part 2 (§10.2): decorations — same pass, same depth
+    // test, same floor-surface lift; a third prepare/draw over the
+    // decoration atlas (or the scene atlas when it carries the
+    // decoration sprites). Drawing only: these instances are
+    // never fed to the picker.
+    if !scene.decorations.is_empty() {
+        let datlas = scene.decor_atlas.as_ref().unwrap_or(&scene.atlas);
+        let mut inst = billboard::decor::decoration_instances(&scene.decorations, datlas, eye);
+        for i in &mut inst {
+            i.anchor.y += lift;
+        }
+        if !inst.is_empty() {
+            pass.prepare_with_view_proj(
+                device,
+                queue,
+                view_proj,
+                eye,
+                scene.time_s,
+                &datlas.image,
                 &inst,
                 &[],
             );
