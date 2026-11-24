@@ -2132,3 +2132,32 @@ staying dark in RT (the shadow proof).
 > (§4 first-compile fix candidate).
 > Status: re-verification DONE. Pin flip + defs regen + the adapter
 > 0.I-1 adaptation pass remain, on Joey's call.
+>
+> **Backport pack DONE (2026-11-23, Joey's call: backport the missing
+> APIs rather than adapt the adapter down; parent spot-checked +
+> scratch verification re-run):** gaps 1–5 are closed by
+> `fork/hooks/backport_patches.md` (B1–B4), written against 0.I-1
+> line numbers in the hook doc's style; the adapter is unchanged.
+> B1 makes the two def factories public (the anonymous namespace at
+> mapdata.cpp:42-48 holds only them; replaced with master's
+> `namespace mapdata` form, header gains the externs + the
+> `generic_factory` forward declaration 0.I-1 lacks). B2 copies
+> `map::is_roofed` verbatim (+70 lines map.cpp, +9 map.h) — every
+> dependency re-verified present in 0.I-1, zero adaptation points,
+> so the `outside` rule keeps its master semantics. B3 un-statics
+> `moon_light_at` and adds `incident_moonlight` (+11 lines). B4 adds
+> the weather tint fields + loader; **one adaptation point:** the
+> field type `light_color_rgb` is itself a master addition, carried
+> verbatim into lightmap.h (+32) minus its smooth-lighting-only
+> companions (documented in the pack). **JSON finding:** master's
+> only tinted weather types are the 7 scarlet-dimension weathers,
+> which do not exist in 0.I-1 — values are tabulated in the pack;
+> on this base every weather loads the no-tint defaults and the
+> tint path is inert. H3 in `hook_patches.md` is rewritten for the
+> free `do_turn()` (returns :458/:594, final :779); the hook doc
+> header records the new base. Scratch-apply verification (copies +
+> scripts in `~/workspace/cdda-stable/backport-apply/`): 13/13
+> edits at unique anchors, brace-balance deltas exact, 38/38
+> inserted identifiers resolve in the 0.I-1 tree, JSON parses —
+> first real compile remains the PC build (0.1/0.2). Remaining:
+> pin flip + defs.json regen with a fresh dangling allowlist.

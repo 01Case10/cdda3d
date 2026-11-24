@@ -8,6 +8,19 @@ Apply order: H1 (flag) → H2 (adapter construction) → H3–H6 (hooks) →
 H7 (trap accessor the real adapter needs) → H8 (connect-group name
 mirror the real adapter reads).
 
+**Base change (2026-11-23, plan.md Addendum 12):** the fork base is
+now CDDA `0.I-1` (tag `0.I-1`, commit
+`7b2efa5cea38e4d4d97dd0e63b28b9148623da59`), not the master snapshot
+above. The line numbers in H1–H8 are still the master-pin numbers —
+the re-verification (`~/workspace/cdda-stable/reverify/REPORT.md`)
+found H1, H2, H4–H8 unchanged in substance on the new base, with
+targets moved only — **except H3, which is updated below** (on
+0.I-1 the send boundary is a free function, not a `game` member).
+Additionally, the backports in `backport_patches.md` (B1–B4:
+public def factories, `map::is_roofed`, moonlight, weather tints —
+master APIs the stable branch never got) **must be applied for the
+real adapter to compile on the new base**.
+
 ## H1 — `src/main.cpp`: `--frontend=ipc` flag
 
 In `cli_opts` (main.cpp:276) add two fields:
@@ -68,9 +81,19 @@ are in `docs/phase3-fork.md`.
 
 ## H3 — `src/do_turn.cpp`: send boundary (PRIMARY)
 
-`game::do_turn()` is defined at do_turn.cpp:536 (NOT game.cpp — Phase 0
-finding). At every `return` point of `do_turn()` — in practice: wrap the
-body end and the early `turn_handler::cleanup_at_end()` return — call:
+**Updated for the 0.I-1 base (2026-11-23).** On 0.I-1 the send
+boundary is the **free function** `bool do_turn()` — defined at
+do_turn.cpp:455, declared in do_turn.h:6, a `friend` of `game`
+(game.h:192), and called from the main loop at main.cpp:864
+(`while( !do_turn() ) {}`). It is NOT a `game` member on this base.
+(For the record: on the old master pin it was `game::do_turn()`,
+defined at do_turn.cpp:536 (master) — NOT game.cpp, the original
+Phase 0 finding.)
+
+At every `return` point of `do_turn()` — in practice: wrap the
+body end and the early `turn_handler::cleanup_at_end()` returns
+(do_turn.cpp:458 and do_turn.cpp:594 on 0.I-1; the final
+`return false;` is at do_turn.cpp:779) — call:
 
 ```cpp
 voxel_ipc_hook_send_boundary(); // -> Frontend::on_send_boundary(view of u)
