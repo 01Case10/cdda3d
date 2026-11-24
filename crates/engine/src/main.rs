@@ -78,6 +78,12 @@ fn main() -> ExitCode {
                     input: engine::client::ConnectInput::Channel(rx),
                     share: Some(share.clone()),
                     captures: None,
+                    // Lane G: `--textures <voxelizer-output-dir>`
+                    // doubles as the furniture model table
+                    // source for the live world (the same dir
+                    // the fixture paths load materials from).
+                    models_dir: value_after(&args, "--textures")
+                        .map(std::path::PathBuf::from),
                 },
             ));
             Some(LiveWindowLink { share, input: tx })

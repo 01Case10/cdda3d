@@ -378,6 +378,7 @@ fn connect_session_captures_live_wire_world() {
                 end: Some(end_png.clone()),
                 size: (640, 360),
             }),
+            models_dir: None,
         },
     );
 

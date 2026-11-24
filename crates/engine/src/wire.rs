@@ -44,6 +44,14 @@ use crate::snapshot_world::build_snapshot_world;
 pub struct WireScene {
     pub map: Arc<ChunkMap>,
     pub min_game_z: i32,
+    /// Furniture fine models for this world (Lane G),
+    /// derived from the same snapshot by
+    /// [`prop_scene_for_wire`] when the caller has the
+    /// voxelizer model table. `None` = the coarse-only wire
+    /// world (the pre-Lane-G seating). The frame paths stamp
+    /// it through the same `stamp_props_into` pipeline the
+    /// fixture prop scenes take.
+    pub props: Option<crate::frame::PropScene>,
 }
 
 impl WireScene {
@@ -78,8 +86,119 @@ impl WireScene {
         Self {
             map: Arc::new(map),
             min_game_z,
+            props: None,
         }
     }
+
+    /// Attach the furniture prop scene derived from this
+    /// scene's own snapshot (see [`prop_scene_for_wire`]).
+    pub fn with_props(mut self, props: Option<crate::frame::PropScene>) -> Self {
+        self.props = props;
+        self
+    }
+}
+
+/// Derive the furniture prop scene for a wire world from its
+/// snapshot (Lane G): every non-zero furniture cell of every
+/// `SubmapBlock` becomes a placement at its world tile
+/// (block origins are tile coords of the submap's corner),
+/// at level `block.z - snapshot min z`; the furniture def's
+/// STRING id resolves the model in the one real voxelizer
+/// table (`table`, 351 furniture models) — the Lane F
+/// derivation, shared now by the live path instead of being
+/// re-implemented per gate.
+///
+/// PropScene model ids are scene-local: the modelled defs'
+/// string ids are sorted and numbered from 1, and placements
+/// carry those ids. Furniture with no model in the table is
+/// NOT placed (it stays coarse-suppressed per the 9.0
+/// contract's other half — no fabricated geometry; it is
+/// also not stamped as a coarse cube). Returns `None` when
+/// no placement resolves to a model.
+pub fn prop_scene_for_wire(
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+    table: &crate::materials::MaterialTable,
+) -> Option<crate::frame::PropScene> {
+    use std::collections::BTreeMap;
+    let strings: std::collections::HashMap<u32, String> = defs
+        .defs
+        .as_ref()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|d| d.kind == proto::TileKind::Furniture)
+        .filter_map(|d| d.string_id.clone().map(|s| (d.id, s)))
+        .collect();
+    let blocks = snapshot.blocks.as_ref().map(Vec::as_slice).unwrap_or(&[]);
+    let min_z = blocks
+        .iter()
+        .map(|b| b.origin.as_ref().map(|o| o.z).unwrap_or(0))
+        .min()
+        .unwrap_or(0);
+    // Modelled furniture defs present in the snapshot:
+    // string id -> model (BTreeMap = sorted = deterministic
+    // synthetic ids).
+    let mut modelled: BTreeMap<String, crate::materials::PropModelData> = BTreeMap::new();
+    let mut cells: Vec<(i32, i32, u32, String)> = Vec::new();
+    for block in blocks {
+        let (ox, oy, oz) = block
+            .origin
+            .as_ref()
+            .map(|o| (o.x, o.y, o.z))
+            .unwrap_or((0, 0, 0));
+        for (i, &f) in block
+            .furniture
+            .as_ref()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            if f == 0 {
+                continue;
+            }
+            let Some(sid) = strings.get(&f) else {
+                continue;
+            };
+            let Some(model) = table.get(sid).and_then(|m| m.model.as_ref()) else {
+                continue;
+            };
+            modelled
+                .entry(sid.clone())
+                .or_insert_with(|| model.clone());
+            cells.push((
+                ox + (i % 12) as i32,
+                oy + (i / 12) as i32,
+                (oz - min_z) as u32,
+                sid.clone(),
+            ));
+        }
+    }
+    if cells.is_empty() {
+        return None;
+    }
+    let ids: std::collections::HashMap<String, u32> = modelled
+        .keys()
+        .enumerate()
+        .map(|(i, s)| (s.clone(), (i + 1) as u32))
+        .collect();
+    let models: Vec<(u32, crate::materials::PropModelData)> = modelled
+        .into_iter()
+        .enumerate()
+        .map(|(i, (_s, m))| ((i + 1) as u32, m))
+        .collect();
+    let placements = cells
+        .into_iter()
+        .map(|(x, y, level, sid)| crate::snapshot_world::FurniturePlacement {
+            x,
+            y,
+            level,
+            furn_id: ids[&sid],
+            quarter_turns: 0,
+        })
+        .collect();
+    Some(crate::frame::PropScene { models, placements })
 }
 
 /// The live wire palette (Phase 11 follow-up, Lane G): one
