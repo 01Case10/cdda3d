@@ -394,6 +394,34 @@ pub fn build_texture_spec_variants(
     shore_assignments: &[crate::shore::ShoreAssignment],
     blend_assignments: &[crate::blend::BlendAssignment],
 ) -> Result<(TextureSpec, TextureStats), String> {
+    build_texture_spec_all(
+        table,
+        dir,
+        id_map,
+        assignments,
+        shore_assignments,
+        blend_assignments,
+        &[],
+    )
+}
+
+/// The variant builders plus vehicle state variants: a state
+/// assignment's virtual id keeps its base material's top/bottom
+/// layers and takes the side layer
+/// `Material::side_layer_for_state` selects (an open door's
+/// picture), exactly as in [`build_texture_spec_state_variants`]
+/// — folded into this one pass so a scene can carry multitile,
+/// shore, blend and state variants in a single spec.
+#[allow(clippy::too_many_arguments)]
+pub fn build_texture_spec_all(
+    table: &MaterialTable,
+    dir: &Path,
+    id_map: &HashMap<u32, String>,
+    assignments: &[VariantAssignment],
+    shore_assignments: &[crate::shore::ShoreAssignment],
+    blend_assignments: &[crate::blend::BlendAssignment],
+    state_assignments: &[StateVariantAssignment],
+) -> Result<(TextureSpec, TextureStats), String> {
     let mut stats = TextureStats::default();
     let mut builder = SpecBuilder::new(table, dir);
     let (mut material_layers, mut material_macros) = builder.build_base(table, id_map, &mut stats);
@@ -491,6 +519,35 @@ pub fn build_texture_spec_variants(
         material_macros[idx] = base_mm;
         material_blends[idx] = [nbr_mm[0], nbr_mm[1], a.dir as u32, 1];
         stats.blend_variants += 1;
+    }
+    // Vehicle state variants (the build_texture_spec_state_variants
+    // loop, folded in): base top/bottom, state-selected side.
+    let mut state_sorted: Vec<&StateVariantAssignment> = state_assignments.iter().collect();
+    state_sorted.sort_by_key(|a| a.virtual_id);
+    for a in state_sorted {
+        let Some(game_id) = id_map.get(&a.base_id) else {
+            continue;
+        };
+        let Some(mat) = table.get(game_id) else {
+            continue;
+        };
+        let side = mat.side_layer_for_state(a.open, a.broken);
+        match builder.entry(mat, side) {
+            Ok(entry) => {
+                let idx = a.virtual_id as usize;
+                if idx >= material_layers.len() {
+                    material_layers.resize(idx + 1, [0, 0, 0, 0]);
+                }
+                material_layers[idx] = entry;
+                stats.variants += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    "voxel-engine: state variant (base {}, open {}, broken {}) stays flat: {e}",
+                    a.base_id, a.open, a.broken
+                );
+            }
+        }
     }
     Ok((
         builder.finish(material_layers, material_macros, material_blends, &mut stats),

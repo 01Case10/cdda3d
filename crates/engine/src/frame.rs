@@ -774,6 +774,13 @@ pub fn sample_scene_decorations() -> Vec<billboard::decor::Decoration> {
 #[derive(Debug, Clone)]
 pub struct VehicleScene {
     pub models: Vec<vehicles::VehicleModel>,
+    /// Wire vpart id -> base string id (the TileDefs VehiclePart
+    /// entries), for the textured path: `scene_prep` resolves
+    /// each name to the vpart's voxelizer material (`vp_<name>`,
+    /// falling back to `<name>`). Empty for scenes whose caller
+    /// has no defs (fixtures) — those render flat, exactly as
+    /// before materials were wired.
+    pub vpart_names: std::collections::HashMap<u32, String>,
 }
 
 impl VehicleScene {
@@ -785,6 +792,7 @@ impl VehicleScene {
                 .ids()
                 .filter_map(|id| store.get(id).cloned())
                 .collect(),
+            vpart_names: std::collections::HashMap::new(),
         }
     }
 
@@ -795,6 +803,7 @@ impl VehicleScene {
         let wire = vehicles::fixtures::truth_vehicle(1, pivot, face_deg);
         Self {
             models: vec![vehicles::VehicleModel::from_proto(&wire)],
+            vpart_names: std::collections::HashMap::new(),
         }
     }
 }

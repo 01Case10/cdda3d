@@ -74,16 +74,22 @@ fn stamp_tex_layers(map: &mut mesher::chunk::ChunkMap, spec: &TextureSpec) {
 fn textured_spec(
     dir: &Path,
     map: &mesher::chunk::ChunkMap,
+    vehicles: Option<&crate::frame::VehicleScene>,
 ) -> Result<
     (
         TextureSpec,
         Vec<crate::shore::ShoreAssignment>,
         Vec<crate::blend::BlendAssignment>,
+        VehicleMaterials,
     ),
     String,
 > {
     let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
-    let id_map = crate::rt::fake_material_ids();
+    let veh_mats = vehicles.map(|v| vehicle_materials(v, &table));
+    let mut id_map = crate::rt::fake_material_ids();
+    if let Some(vm) = &veh_mats {
+        id_map.extend(vm.id_map.iter().map(|(k, v)| (*k, v.clone())));
+    }
     let water_ids: std::collections::HashSet<u32> = id_map
         .iter()
         .filter(|(_, game_id)| {
@@ -105,15 +111,25 @@ fn textured_spec(
         .collect();
     let blend_assignments =
         crate::blend::blend_assignments_for_map(map, &|id| macro_spans.get(&id).copied());
-    let (spec, _stats) = textures::build_texture_spec_variants(
+    let state_assignments: &[textures::StateVariantAssignment] = match &veh_mats {
+        Some(vm) => &vm.state_assignments,
+        None => &[],
+    };
+    let (spec, _stats) = textures::build_texture_spec_all(
         &table,
         dir,
         &id_map,
         &[],
         &assignments,
         &blend_assignments,
+        state_assignments,
     )?;
-    Ok((spec, assignments, blend_assignments))
+    Ok((
+        spec,
+        assignments,
+        blend_assignments,
+        veh_mats.unwrap_or_default(),
+    ))
 }
 
 /// Stage F part 2: stamp shore variant tops onto a filtered
@@ -539,12 +555,164 @@ pub fn stamp_vehicles(
     map: &mut mesher::chunk::ChunkMap,
     scene: &crate::frame::VehicleScene,
 ) -> (usize, usize) {
+    stamp_vehicles_mapped(map, scene, None)
+}
+
+/// [`stamp_vehicles`] with per-vpart material block ids from
+/// [`vehicle_materials`]: each tile's displayed parts stamp with
+/// their material's block id, so the texture passes (raster
+/// `stamp_tex_layers`, RT material ids) shade them with the
+/// vpart's sprite. With `mats: None` — or a part the materials
+/// didn't resolve — the block id is the flat
+/// `vehicles::VEHICLE_BLOCK_ID`, exactly the pre-materials path.
+pub fn stamp_vehicles_mapped(
+    map: &mut mesher::chunk::ChunkMap,
+    scene: &crate::frame::VehicleScene,
+    mats: Option<&VehicleMaterials>,
+) -> (usize, usize) {
     let mut tiles = 0usize;
     for model in &scene.models {
-        let (occupied, _dirtied) = vehicles::stamp_vehicle(map, model, world::HOUSE_MIN_GAME_Z);
+        let (occupied, _dirtied) = match mats {
+            Some(m) => vehicles::stamp_vehicle_mapped(map, model, world::HOUSE_MIN_GAME_Z, &|p| {
+                m.block_for(p)
+            }),
+            None => vehicles::stamp_vehicle(map, model, world::HOUSE_MIN_GAME_Z),
+        };
         tiles += occupied.len();
     }
     (scene.models.len(), tiles)
+}
+
+/// First block id of the vehicle-material allocation range.
+/// Above every fake tile id, the fixture prop ids, the flat
+/// vehicle id (1000) and the prop synthetic range's working
+/// base; the multitile/shore/blend variant allocators take
+/// `max_id + 1` over the world, so they ride above these.
+pub const VEHICLE_MATERIAL_ID_BASE: u32 = 40_000;
+
+/// A vehicle scene's resolved vpart materials: which block id
+/// each (vpart, state) stamps with, and the texture-spec inputs
+/// (base id map + state-variant assignments) that give those ids
+/// their sprite layers. Built once per scene + texture table by
+/// [`vehicle_materials`]; empty when the scene carries no vpart
+/// names or no name resolves — the scene then renders flat.
+#[derive(Debug, Default, Clone)]
+pub struct VehicleMaterials {
+    /// (vpart wire id, open, broken) -> allocated block id. The
+    /// plain entry is keyed (vpart, false, false); a state entry
+    /// exists only when the part's material actually carries
+    /// that state's subtile picture.
+    block_for_key: std::collections::HashMap<(u32, bool, bool), u32>,
+    /// Allocated base block id -> voxelizer material string id,
+    /// merged into the spec builder's id map.
+    pub id_map: std::collections::HashMap<u32, String>,
+    /// State-variant entries for the spec builder (virtual id =
+    /// the state allocation, base id = the vpart's plain one).
+    pub state_assignments: Vec<textures::StateVariantAssignment>,
+}
+
+impl VehicleMaterials {
+    /// The block id a part stamps with: its state allocation
+    /// when one exists (open wins over broken, the game's
+    /// ternary), else its vpart's plain allocation, else the
+    /// flat vehicle id.
+    pub fn block_for(&self, part: &vehicles::PartModel) -> u32 {
+        let vpart = part.key.vpart;
+        if part.open || part.broken {
+            if let Some(&id) = self
+                .block_for_key
+                .get(&(vpart, part.open, part.broken))
+            {
+                return id;
+            }
+        }
+        self.block_for_key
+            .get(&(vpart, false, false))
+            .copied()
+            .unwrap_or(vehicles::VEHICLE_BLOCK_ID)
+    }
+
+    /// True when nothing resolved (the scene renders flat).
+    pub fn is_empty(&self) -> bool {
+        self.id_map.is_empty()
+    }
+}
+
+/// Resolve a vehicle scene's vparts to voxelizer materials.
+///
+/// The tileset names a vpart's sprite `vp_<base id>` (the game's
+/// own lookup); a few parts also exist unprefixed in the
+/// voxelizer output, so the candidates are tried in that order.
+/// The wire carries no variant (the fork adapter exports the
+/// base vpart id only), so variant sprites (`vp_frame_vertical_2`
+/// and kin) are unreachable until the adapter sends the variant —
+/// base sprites are what this resolves.
+///
+/// Allocation is deterministic: distinct vparts in ascending
+/// wire-id order take consecutive block ids from
+/// [`VEHICLE_MATERIAL_ID_BASE`], each followed by its state
+/// allocations (open, then broken) when the material carries
+/// that state's subtile.
+pub fn vehicle_materials(
+    scene: &crate::frame::VehicleScene,
+    table: &materials::MaterialTable,
+) -> VehicleMaterials {
+    let mut vparts: Vec<u32> = scene
+        .models
+        .iter()
+        .flat_map(|m| m.parts.iter().map(|p| p.key.vpart))
+        .collect();
+    vparts.sort_unstable();
+    vparts.dedup();
+    // Which states each vpart actually appears in.
+    let mut states: std::collections::HashMap<u32, (bool, bool)> = Default::default();
+    for m in &scene.models {
+        for p in &m.parts {
+            let e = states.entry(p.key.vpart).or_insert((false, false));
+            e.0 |= p.open;
+            e.1 |= p.broken;
+        }
+    }
+    let mut out = VehicleMaterials::default();
+    let mut next = VEHICLE_MATERIAL_ID_BASE;
+    for vpart in vparts {
+        let Some(name) = scene.vpart_names.get(&vpart) else {
+            continue;
+        };
+        let mat_id = [format!("vp_{name}"), name.clone()]
+            .into_iter()
+            .find(|cand| table.get(cand).is_some());
+        let Some(mat_id) = mat_id else {
+            continue;
+        };
+        let base_id = next;
+        next += 1;
+        out.block_for_key.insert((vpart, false, false), base_id);
+        out.id_map.insert(base_id, mat_id.clone());
+        let mat = table.get(&mat_id).expect("resolved above");
+        let (has_open, has_broken) = states.get(&vpart).copied().unwrap_or((false, false));
+        for (open, broken) in [(true, false), (false, true)] {
+            if (open && !has_open) || (broken && !has_broken) {
+                continue;
+            }
+            let Some(subtile) = mesher::connect::state_subtile(open, broken) else {
+                continue;
+            };
+            if !mat.subtile_layers.contains_key(subtile) {
+                continue;
+            }
+            let vid = next;
+            next += 1;
+            out.block_for_key.insert((vpart, open, broken), vid);
+            out.state_assignments.push(textures::StateVariantAssignment {
+                base_id,
+                virtual_id: vid,
+                open,
+                broken,
+            });
+        }
+    }
+    out
 }
 
 /// Prepare the fake house for a raster render at the given
@@ -681,13 +849,17 @@ fn prepare_raster_v(
         Some(dir) => {
             let map = build_map(mesher::scale::WorldScale::default());
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
-            let (spec, shore_assignments, blend_assignments) = textured_spec(dir, &filtered)?;
+            let (spec, shore_assignments, blend_assignments, veh_mats) =
+                textured_spec(dir, &filtered, vehicles)?;
+            // Vehicles stamp BEFORE the texture pass so their
+            // material block ids pick up sprite layers from the
+            // spec like every other block.
+            if let Some(v) = vehicles {
+                stamp_vehicles_mapped(&mut filtered, v, Some(&veh_mats));
+            }
             stamp_tex_layers(&mut filtered, &spec);
             stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
             stamp_blend_tops(&mut filtered, &spec, &blend_assignments);
-            if let Some(v) = vehicles {
-                stamp_vehicles(&mut filtered, v);
-            }
             let (meshes, stats) = mesh_filtered(&filtered);
             Ok((meshes, stats, Some(spec)))
         }
@@ -903,7 +1075,14 @@ fn prepare_raster_lit_v(
         Some(dir) => {
             let map = build_map(scale);
             let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
-            let (spec, shore_assignments, blend_assignments) = textured_spec(dir, &filtered)?;
+            let (spec, shore_assignments, blend_assignments, veh_mats) =
+                textured_spec(dir, &filtered, vehicles)?;
+            // Vehicles stamp before the texture pass (their
+            // material ids take sprite layers from the spec);
+            // the visibility mask below still applies to them.
+            if let Some(v) = vehicles {
+                stamp_vehicles_mapped(&mut filtered, v, Some(&veh_mats));
+            }
             stamp_tex_layers(&mut filtered, &spec);
             stamp_shore_tops(&mut filtered, &spec, &shore_assignments);
             stamp_blend_tops(&mut filtered, &spec, &blend_assignments);
@@ -915,8 +1094,10 @@ fn prepare_raster_lit_v(
             (None, filtered)
         }
     };
-    if let Some(v) = vehicles {
-        stamp_vehicles(&mut filtered, v);
+    if textures_dir.is_none() {
+        if let Some(v) = vehicles {
+            stamp_vehicles(&mut filtered, v);
+        }
     }
     apply_visibility_mask(&mut filtered, lit);
     apply_sky_exposure_alpha(&mut filtered, lit);

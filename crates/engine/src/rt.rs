@@ -163,16 +163,26 @@ pub fn attach_fake_textures(
     assignments: &[treebuild::connect::VariantAssignment],
     shore_assignments: &[crate::shore::ShoreAssignment],
     blend_assignments: &[crate::blend::BlendAssignment],
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
 ) -> Result<crate::textures::TextureStats, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let (spec, stats) = crate::textures::build_texture_spec_variants(
+    let mut id_map = fake_material_ids();
+    if let Some(vm) = veh_mats {
+        id_map.extend(vm.id_map.iter().map(|(k, v)| (*k, v.clone())));
+    }
+    let state_assignments: &[crate::textures::StateVariantAssignment] = match veh_mats {
+        Some(vm) => &vm.state_assignments,
+        None => &[],
+    };
+    let (spec, stats) = crate::textures::build_texture_spec_all(
         &table,
         dir,
-        &fake_material_ids(),
+        &id_map,
         assignments,
         shore_assignments,
         blend_assignments,
+        state_assignments,
     )
     .map_err(CaptureError::Device)?;
     scene
@@ -203,6 +213,19 @@ pub fn world_for_levels_sv(
     vehicles: Option<&crate::frame::VehicleScene>,
     sample: bool,
 ) -> VoxelWorld {
+    world_for_levels_svm(visible_levels, vehicles, sample, None)
+}
+
+/// [`world_for_levels_sv`] with resolved vehicle materials: the
+/// vehicles stamp with their per-vpart material block ids, so
+/// the tree carries them and the attached texture spec shades
+/// them with the vparts' sprites.
+pub fn world_for_levels_svm(
+    visible_levels: &[i32],
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
+) -> VoxelWorld {
     let scale = mesher::scale::WorldScale::default();
     let map = if sample {
         world::build_sample_scene(scale)
@@ -211,7 +234,7 @@ pub fn world_for_levels_sv(
     };
     let mut filtered = world::filtered_map(&map, world::HOUSE_MIN_GAME_Z, visible_levels);
     if let Some(v) = vehicles {
-        crate::scene_prep::stamp_vehicles(&mut filtered, v);
+        crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, veh_mats);
     }
     VoxelWorld::from_chunk_map(&filtered)
 }
@@ -319,7 +342,19 @@ pub fn world_for_levels_lit_sv(
     vehicles: Option<&crate::frame::VehicleScene>,
     sample: bool,
 ) -> VoxelWorld {
-    let mut base = world_for_levels_sv(visible_levels, vehicles, sample);
+    world_for_levels_lit_svm(visible_levels, lit, vehicles, sample, None)
+}
+
+/// [`world_for_levels_lit_sv`] with resolved vehicle materials
+/// (see [`world_for_levels_svm`]).
+pub fn world_for_levels_lit_svm(
+    visible_levels: &[i32],
+    lit: &crate::frame::LightingScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+    sample: bool,
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
+) -> VoxelWorld {
+    let mut base = world_for_levels_svm(visible_levels, vehicles, sample, veh_mats);
     // Phase 10 (10.6): sky exposure from the scene's light
     // grid — the wire outside[] feed (see SkyExposure).
     SkyExposure::from_grid(&lit.grid, lit.min_game_z).apply(&mut base);
@@ -495,9 +530,33 @@ fn render_rt_frame_inner(
     // the render is exactly the pre-2d one.
     let levels = capture_visible_levels(args.cutaway_z);
     let sample = args.snapshot == "sample-scene";
+    // Vehicle materials: with textures and a named vehicle
+    // scene, resolve the vparts once — the world stamps with
+    // the material block ids and the attach below gives those
+    // ids their sprite layers. Without either, veh_mats is None
+    // and the vehicles render flat, byte-identical to before.
+    let veh_mats = match (&args.textures, &args.vehicles) {
+        (Some(dir), Some(v)) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            Some(crate::scene_prep::vehicle_materials(v, &table))
+        }
+        _ => None,
+    };
     let mut voxel_world = match &args.lighting {
-        Some(lit) => world_for_levels_lit_sv(&levels, lit, args.vehicles.as_ref(), sample),
-        None => world_for_levels_sv(&levels, args.vehicles.as_ref(), sample),
+        Some(lit) => world_for_levels_lit_svm(
+            &levels,
+            lit,
+            args.vehicles.as_ref(),
+            sample,
+            veh_mats.as_ref(),
+        ),
+        None => world_for_levels_svm(
+            &levels,
+            args.vehicles.as_ref(),
+            sample,
+            veh_mats.as_ref(),
+        ),
     };
     let assignments = match &args.textures {
         Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
@@ -537,6 +596,7 @@ fn render_rt_frame_inner(
             &assignments,
             &shore_assignments,
             &blend_assignments,
+            veh_mats.as_ref(),
         )?),
         None => None,
     };
