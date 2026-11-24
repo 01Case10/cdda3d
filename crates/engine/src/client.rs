@@ -38,7 +38,6 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mesher::scale::WorldScale;
-use mesher::{Block, Pass};
 use proto::samples::sample_hello_ack;
 use proto::sync::{DeltaDecision, HeartbeatTracker, SeqTracker};
 use proto::{
@@ -48,17 +47,6 @@ use proto::{
 
 use crate::capture::{CaptureArgs, CaptureError};
 use crate::wire::{apply_delta_to_snapshot, WireScene};
-
-/// One coarse block per def id (the gates' stand-in mapping;
-/// the windowed app resolves real models/textures instead).
-fn coarse_block(id: u32) -> Block {
-    Block {
-        id,
-        color: [0.5, 0.5, 0.5, 1.0],
-        pass: Pass::Opaque,
-        tex_layers: None,
-    }
-}
 
 fn now_ms(start: Instant) -> u64 {
     start.elapsed().as_millis() as u64
@@ -132,12 +120,17 @@ impl LiveWorld {
     }
 
     /// The renderable wire scene for the current live state
-    /// (coarse stand-in blocks — the same resolver the S7
-    /// session built its per-snapshot worlds with), or `None`
-    /// before the first Snapshot.
+    /// (blocks coloured by the string-id palette,
+    /// [`crate::wire::palette_resolver`] — Lane G; before it,
+    /// every def rendered the same grey), or `None` before
+    /// the first Snapshot.
     pub fn wire_scene(&self) -> Option<WireScene> {
         let (defs, snap) = (self.defs.as_ref()?, self.snapshot.as_ref()?);
-        Some(WireScene::from_wire(defs, snap, &coarse_block))
+        Some(WireScene::from_wire(
+            defs,
+            snap,
+            &crate::wire::palette_resolver(defs),
+        ))
     }
 
     /// Capture args rendering the live world to `out`: the
@@ -375,7 +368,7 @@ impl Session {
                         defs,
                         s,
                         WorldScale::default(),
-                        &coarse_block,
+                        &crate::wire::palette_resolver(defs),
                     );
                     println!(
                         "connect: snapshot seq={} epoch={} -> world ({} chunks)",

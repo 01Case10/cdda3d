@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use mesher::block::Block;
+use mesher::block::{Block, Pass};
 use mesher::chunk::ChunkMap;
 use mesher::scale::WorldScale;
 
@@ -78,6 +78,89 @@ impl WireScene {
         Self {
             map: Arc::new(map),
             min_game_z,
+        }
+    }
+}
+
+/// The live wire palette (Phase 11 follow-up, Lane G): one
+/// deterministic colour per terrain def, keyed by the def's
+/// STRING id — the only join key that means the same thing on
+/// every side of the wire (wire ids are per-kind and renumber
+/// between tables). The colour is an FNV-1a hash of the string
+/// id mapped into a constrained HSL band (saturation
+/// 0.38..0.68, lightness 0.36..0.60), so colours are stable
+/// across runs and machines, distinct per def, and never
+/// garish or near-black/near-white.
+///
+/// This is honest colour-CODING, not the game's colours: it
+/// exists so a live wire world is readable (grass vs road vs
+/// floor vs wall are different hues) until semantic colours
+/// land — CDDA's own per-def `color` field is not currently
+/// imported into the wire def table, so there is nothing
+/// truer to show yet. When that import lands, this palette
+/// is the thing it replaces.
+pub fn palette_color(string_id: &str) -> [f32; 4] {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in string_id.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let hue = (hash % 360) as f32;
+    let sat = 0.38 + ((hash >> 9) % 100) as f32 / 100.0 * 0.30;
+    let light = 0.36 + ((hash >> 17) % 100) as f32 / 100.0 * 0.24;
+    let [r, g, b] = hsl_to_rgb(hue, sat, light);
+    [r, g, b, 1.0]
+}
+
+fn hsl_to_rgb(hue: f32, sat: f32, light: f32) -> [f32; 3] {
+    let c = (1.0 - (2.0 * light - 1.0).abs()) * sat;
+    let x = c * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+    let m = light - c / 2.0;
+    let (r, g, b) = match hue {
+        h if h < 60.0 => (c, x, 0.0),
+        h if h < 120.0 => (x, c, 0.0),
+        h if h < 180.0 => (0.0, c, x),
+        h if h < 240.0 => (0.0, x, c),
+        h if h < 300.0 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    [r + m, g + m, b + m]
+}
+
+/// The `block_for` resolver form of [`palette_color`] for a
+/// whole def table: terrain wire id -> that def's palette
+/// block (the block keeps the wire id; only the colour is
+/// derived). Id 0 ("none") resolves to AIR, matching the
+/// gates' resolver convention; a terrain id with no string
+/// id (a malformed table) hashes its `#<id>` placeholder, so
+/// it still gets a stable colour instead of a hole.
+pub fn palette_resolver(defs: &proto::TileDefsT) -> impl Fn(u32) -> Block + '_ {
+    let mut colors: std::collections::HashMap<u32, [f32; 4]> =
+        std::collections::HashMap::new();
+    if let Some(list) = &defs.defs {
+        for d in list {
+            if d.kind == proto::TileKind::Terrain {
+                let key = d
+                    .string_id
+                    .clone()
+                    .unwrap_or_else(|| format!("#{}", d.id));
+                colors.insert(d.id, palette_color(&key));
+            }
+        }
+    }
+    move |id: u32| {
+        if id == 0 {
+            return Block::AIR;
+        }
+        let color = colors
+            .get(&id)
+            .copied()
+            .unwrap_or_else(|| palette_color(&format!("#{id}")));
+        Block {
+            id,
+            color,
+            pass: Pass::Opaque,
+            tex_layers: None,
         }
     }
 }
