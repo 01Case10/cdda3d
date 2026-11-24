@@ -602,6 +602,146 @@ fn fill(grid: &Grid, colorizer: &Colorizer) -> Vec<((i32, i32), PropModel)> {
     models.into_iter().collect()
 }
 
+
+/// Stage-G S7: synthesized frame tubes for thin vehicles
+/// (Joey approved the invention 2026-11-24 — the
+/// bicycle's xlframe art exists only as connection
+/// sprites no entry reaches, so without tubes the wheels
+/// and saddle stay disconnected slices). A diamond frame
+/// in the centre plane: both hubs tie to the bottom
+/// bracket and to two high points over it (seat top,
+/// head), which a top tube joins. Anchors come from the
+/// resolved sprites' alpha bboxes — hub = wheel bbox
+/// centre, bracket = pedals bbox centre — so the tubes
+/// plug into the art as drawn, not into tile centres.
+const TUBE_TOP_Z: f64 = 25.0;
+const TUBE_HALF: f64 = 1.25;
+const TUBE_SEAT_DX: f64 = -7.0;
+const TUBE_HEAD_DX: f64 = 9.0;
+
+/// A sprite's anchor in tile fine units: alpha-bbox
+/// centre as (lx, height in mockup units).
+fn sprite_anchor(spr: &RgbaImage) -> Option<(f64, f64)> {
+    let (w, h) = (spr.width(), spr.height());
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0u32, 0u32);
+    let mut any = false;
+    for yy in 0..h {
+        for xx in 0..w {
+            if spr.get_pixel(xx, yy)[3] >= 128 {
+                any = true;
+                x0 = x0.min(xx);
+                y0 = y0.min(yy);
+                x1 = x1.max(xx);
+                y1 = y1.max(yy);
+            }
+        }
+    }
+    if !any {
+        return None;
+    }
+    let cx = (x0 + x1) as f64 / 2.0 * 32.0 / w as f64;
+    let cz = (h as f64 - 1.0 - (y0 + y1) as f64 / 2.0) * 30.0 / h as f64;
+    Some((cx, cz))
+}
+
+/// The sprite's most common dark opaque colour (the
+/// frame's paint, read off the saddle/pedals art).
+fn dark_colour(spr: &RgbaImage) -> Option<[u8; 3]> {
+    let mut counts: std::collections::HashMap<[u8; 3], u32> = std::collections::HashMap::new();
+    for yy in 0..spr.height() {
+        for xx in 0..spr.width() {
+            let px = spr.get_pixel(xx, yy);
+            if px[3] < 128 {
+                continue;
+            }
+            let lum = 0.3 * px[0] as f64 + 0.5 * px[1] as f64 + 0.2 * px[2] as f64;
+            if lum < 90.0 {
+                *counts.entry([px[0], px[1], px[2]]).or_default() += 1;
+            }
+        }
+    }
+    counts.into_iter().max_by_key(|(_, c)| *c).map(|(c, _)| c)
+}
+
+fn tube(grid: &mut Grid, ty: i32, a: (f64, f64), b: (f64, f64), colour: [u8; 3]) {
+    // Paint every integer column in the run — a diagonal
+    // stepped by parameter can skip a column when the
+    // endpoints are fractional, leaving a visible gap.
+    let (gx0, gx1) = (
+        (a.0.min(b.0)).round() as i32,
+        (a.0.max(b.0)).round() as i32,
+    );
+    for gx in gx0..=gx1 {
+        let (zc, half) = if (b.0 - a.0).abs() < 0.5 {
+            ((a.1 + b.1) / 2.0, (a.1 - b.1).abs() / 2.0 + TUBE_HALF)
+        } else {
+            let f = (gx as f64 - a.0) / (b.0 - a.0);
+            (a.1 + (b.1 - a.1) * f, TUBE_HALF)
+        };
+        for ly in 15..18 {
+            put(grid, gx, ty * FINE + ly, zc - half, zc + half, colour, "pillar");
+        }
+    }
+}
+
+fn frame_tubes(
+    grid: &mut Grid,
+    z: &Zones,
+    tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>,
+    sprites: &dyn Fn(&str) -> Option<RgbaImage>,
+) {
+    if !z.thin {
+        return;
+    }
+    let mut hubs: Vec<(f64, f64)> = Vec::new();
+    let mut bracket: Option<(f64, f64)> = None;
+    let mut colour: Option<[u8; 3]> = None;
+    for ((tx, _), spots) in tiles {
+        for spot in spots {
+            let Some((_, spr)) = resolve_part_sprite(&spot.base, sprites) else {
+                continue;
+            };
+            let Some((lx, cz)) = sprite_anchor(&spr) else {
+                continue;
+            };
+            let gx = *tx as f64 * 32.0 + lx;
+            if spot.base.starts_with("wheel") {
+                hubs.push((gx, cz));
+            } else if spot.base == "foot_pedals" {
+                bracket = Some((gx, cz));
+                if colour.is_none() {
+                    colour = dark_colour(&spr);
+                }
+            } else if spot.base == "saddle" && colour.is_none() {
+                colour = dark_colour(&spr);
+            }
+        }
+    }
+    if hubs.len() < 2 {
+        return;
+    }
+    hubs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let rear = hubs[0];
+    let front = hubs[hubs.len() - 1];
+    if front.0 - rear.0 < 32.0 {
+        return;
+    }
+    let bb = bracket.unwrap_or((
+        (rear.0 + front.0) / 2.0,
+        (rear.1 + front.1) / 2.0,
+    ));
+    let colour = colour.unwrap_or([30, 30, 33]);
+    let seat_top = (bb.0 + TUBE_SEAT_DX, TUBE_TOP_Z);
+    let head = (bb.0 + TUBE_HEAD_DX, TUBE_TOP_Z);
+    let ty = z.row_lo;
+    tube(grid, ty, rear, seat_top, colour);
+    tube(grid, ty, rear, bb, colour);
+    tube(grid, ty, bb, seat_top, colour);
+    tube(grid, ty, bb, head, colour);
+    tube(grid, ty, seat_top, head, colour);
+    tube(grid, ty, head, front, colour);
+}
+
 /// Compose a vehicle's fine models, one per occupied tile,
 /// keyed by vehicle-frame tile (x, y, z-level).
 pub fn compose_vehicle(
@@ -617,6 +757,7 @@ pub fn compose_vehicle(
     for (zl, tiles) in levels {
         let (mut grid, z) = build_level(&tiles, sprites);
         crown_and_enclosure(&mut grid, &z, &tiles);
+        frame_tubes(&mut grid, &z, &tiles, sprites);
         for ((tx, ty), model) in fill(&grid, &colorizer) {
             out.push(((tx, ty, zl), model));
         }

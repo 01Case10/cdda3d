@@ -324,3 +324,31 @@ committed car captures were NOT re-rendered in this
 commit, so capture-level background drift vs the stale
 assets is expected and is not vehicle drift (the car
 models are pinned exactly by the S1 gate).
+
+## 13. S7 synthesized frame tubes (2026-11-24, Joey: "Synthisise the tubes")
+
+The approved invention from the S5 options, closing the
+xlframe gap: on thin vehicles, compose_vehicle adds a
+diamond frame in the centre plane after the part pass —
+rear hub -> seat top, rear hub -> bottom bracket,
+bracket -> seat top, bracket -> head, seat top -> head
+(top tube), head -> front hub. Anchors are measured from
+the resolved sprites' alpha bboxes (hub = wheel bbox
+centre, bracket = pedals bbox centre, falling back to
+the hub midpoint), so the tubes plug into the art as
+drawn; seat top / head sit over the bracket at
+TUBE_TOP_Z 25 (bracket -7 / +9 in x), inside the saddle
+sprite's mass. Tube colour = the saddle/pedals sprite's
+most common dark colour (the bike's reads brown off the
+saddle art), tagged "pillar" so the colourizer passes it
+through. Rasterization paints every integer column in
+the run — a parameter-stepped diagonal skipped a column
+at fractional endpoints (gate-caught).
+
+Gate: vehicle_tube_gate 3/3 (chainstay gap column, top
+tube, centre-plane containment), failing-first verified
+for both fill assertions. Car and S4/S6 gates unchanged
+and green — tubes are thin-only. With S6's wheel fix the
+bicycle now renders as one connected object: two real
+wheels, the saddle/pedals/basket slices, and the frame
+tying them together.
