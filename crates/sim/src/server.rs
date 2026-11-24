@@ -30,7 +30,10 @@
 //! recorded on the world. The shm file is removed on exit.
 
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
+#[cfg(windows)]
+use uds_windows::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
 use proto::samples::sample_hello;

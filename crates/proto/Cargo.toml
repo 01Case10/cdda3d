@@ -11,3 +11,6 @@ flatbuffers = "=24.3.25"
 [[bin]]
 name = "proto-client"
 path = "src/bin/proto_client.rs"
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1"

@@ -7,7 +7,10 @@
 //! Delta (see crates/sim/tests/turn_gate.rs for the rule gates).
 
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+#[cfg(windows)]
+use uds_windows::UnixStream;
 use std::path::PathBuf;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
