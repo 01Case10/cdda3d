@@ -21,4 +21,5 @@ pub mod scene_prep;
 pub mod shore;
 pub mod snapshot_world;
 pub mod textures;
+pub mod wire;
 pub mod world;

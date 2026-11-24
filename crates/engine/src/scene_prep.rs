@@ -955,6 +955,62 @@ pub fn prepare_raster_house_lit_vp(
     }
 }
 
+/// Wire-fed scene source (Phase 11 follow-up, Lane A): prepare
+/// a [`crate::wire::WireScene`] for a raster render — the
+/// fixture preparations above start from a fixture *name* and
+/// build their map internally; this one starts from the map a
+/// caller built out of wire data (`TileDefs` + `Snapshot`, via
+/// `snapshot_world::build_snapshot_world`). Everything after
+/// the map exists is the fixtures' own pipeline, unchanged:
+/// cutaway filter, vehicle stamping, and — with a lighting
+/// scene — the Phase 7 wiring contract (visibility mask, sky
+/// exposure alpha, bake, sky-factor refine), keyed on the
+/// lighting scene's `min_game_z` (the caller seats a grid whose
+/// level 0 is the wire window's base z — for a snapshot-seated
+/// grid that is the snapshot's own `min_game_z`).
+///
+/// No texture spec is produced: the fixture material tables
+/// are keyed to fake tile ids, so a wire world renders with
+/// its resolver's flat colours in v1 (the same posture as the
+/// untextured fixture path). Fine props are likewise not
+/// stamped here — the snapshot path's stamping lives in
+/// `snapshot_world::stamp_furniture` / `stamp_terrain` and
+/// seats into a caller-owned fine layer, a seating the frame
+/// loop does not yet carry for any source.
+pub fn prepare_raster_wire(
+    visible_levels: &[i32],
+    wire: &crate::wire::WireScene,
+    lit: Option<&crate::frame::LightingScene>,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> Result<(PassMeshes, MeshStats, Option<TextureSpec>), String> {
+    let scale = mesher::scale::WorldScale::default();
+    let mut filtered = world::filtered_map(&wire.map, wire.min_game_z, visible_levels);
+    if let Some(v) = vehicles {
+        stamp_vehicles(&mut filtered, v);
+    }
+    let Some(lit) = lit else {
+        let (meshes, stats) = mesh_filtered(&filtered);
+        return Ok((meshes, stats, None));
+    };
+    apply_visibility_mask(&mut filtered, lit);
+    apply_sky_exposure_alpha(&mut filtered, lit);
+    if lit.bake_mode == crate::frame::BakeMode::PerBlock {
+        let baked = lighting::bake_chunk_map_with_offset(
+            &filtered,
+            &lit.grid,
+            lit.env,
+            lit.min_game_z,
+        );
+        let (mut meshes, stats) = mesh_filtered(&baked);
+        refine_sky_factor_alpha(&mut meshes, lit, scale);
+        return Ok((meshes, stats, None));
+    }
+    let (mut meshes, stats) = mesh_filtered(&filtered);
+    lighting::bake_pass_meshes(&mut meshes, &lit.grid, lit.env, scale, lit.min_game_z);
+    refine_sky_factor_alpha(&mut meshes, lit, scale);
+    Ok((meshes, stats, None))
+}
+
 /// The sample scene's form of [`prepare_raster_house_lit_vp`].
 pub fn prepare_raster_sample_lit_vp(
     visible_levels: &[i32],

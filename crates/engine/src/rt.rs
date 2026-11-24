@@ -354,7 +354,16 @@ pub fn world_for_levels_lit_svm(
     sample: bool,
     veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
 ) -> VoxelWorld {
-    let mut base = world_for_levels_svm(visible_levels, vehicles, sample, veh_mats);
+    let base = world_for_levels_svm(visible_levels, vehicles, sample, veh_mats);
+    apply_lit_contract(base, lit)
+}
+
+/// The Phase 7 §12 RT contract applied to an already-built
+/// base world (sky exposure from the grid, BLANK voxels dropped,
+/// MEMORIZED presentation pinned, visible voxels carrying the
+/// game's lit level) — source-agnostic: the fixture worlds
+/// above and the wire-fed world below both take it.
+fn apply_lit_contract(mut base: VoxelWorld, lit: &crate::frame::LightingScene) -> VoxelWorld {
     // Phase 10 (10.6): sky exposure from the scene's light
     // grid — the wire outside[] feed (see SkyExposure).
     SkyExposure::from_grid(&lit.grid, lit.min_game_z).apply(&mut base);
@@ -385,6 +394,25 @@ pub fn world_for_levels_lit_svm(
         out.set(*pos, cell);
     }
     out
+}
+
+/// Wire-fed scene source (Phase 11 follow-up, Lane A): the RT
+/// world for a [`crate::wire::WireScene`] — the same cutaway
+/// filter + vehicle stamping the fixture worlds take, over the
+/// caller's wire-built map instead of a fixture builder. The
+/// lit form is this plus [`apply_lit_contract`], exactly as
+/// the fixture pair (`world_for_levels_svm` /
+/// `world_for_levels_lit_svm`) composes.
+pub fn world_from_wire(
+    visible_levels: &[i32],
+    wire: &crate::wire::WireScene,
+    vehicles: Option<&crate::frame::VehicleScene>,
+) -> VoxelWorld {
+    let mut filtered = world::filtered_map(&wire.map, wire.min_game_z, visible_levels);
+    if let Some(v) = vehicles {
+        crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, None);
+    }
+    VoxelWorld::from_chunk_map(&filtered)
 }
 
 /// Visible levels the capture path uses for a player z (same
@@ -515,8 +543,15 @@ fn render_rt_frame_inner(
         } else {
             None
         };
-    if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
-        return render_rt_frame_props(device, queue, args, props, sky, emitters);
+    // Wire-fed source (Phase 11 follow-up, Lane A): the props
+    // path builds its worlds from fixture builders, so a wire
+    // frame takes the coarse path below regardless of the
+    // prop inputs (the fixture-name dispatch is untouched when
+    // no wire scene is seated).
+    if args.wire.is_none() {
+        if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
+            return render_rt_frame_props(device, queue, args, props, sky, emitters);
+        }
     }
     let t0 = Instant::now();
     // Phase 2h.3: with a lighting scene, the world is built
@@ -535,47 +570,56 @@ fn render_rt_frame_inner(
     // the material block ids and the attach below gives those
     // ids their sprite layers. Without either, veh_mats is None
     // and the vehicles render flat, byte-identical to before.
-    let veh_mats = match (&args.textures, &args.vehicles) {
-        (Some(dir), Some(v)) => {
+    // The fixture texture hookups (vehicle materials, variant
+    // / shore / blend preparation, texture attach below) are
+    // keyed to the fake tile ids; a wire world skips all of
+    // them in v1 and renders its resolver's flat colours.
+    let wire = args.wire.as_ref();
+    let veh_mats = match (wire, &args.textures, &args.vehicles) {
+        (None, Some(dir), Some(v)) => {
             let table = crate::materials::MaterialTable::load(dir)
                 .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
             Some(crate::scene_prep::vehicle_materials(v, &table))
         }
         _ => None,
     };
-    let mut voxel_world = match &args.lighting {
-        Some(lit) => world_for_levels_lit_svm(
+    let mut voxel_world = match (wire, &args.lighting) {
+        (Some(w), Some(lit)) => {
+            apply_lit_contract(world_from_wire(&levels, w, args.vehicles.as_ref()), lit)
+        }
+        (Some(w), None) => world_from_wire(&levels, w, args.vehicles.as_ref()),
+        (None, Some(lit)) => world_for_levels_lit_svm(
             &levels,
             lit,
             args.vehicles.as_ref(),
             sample,
             veh_mats.as_ref(),
         ),
-        None => world_for_levels_svm(
+        (None, None) => world_for_levels_svm(
             &levels,
             args.vehicles.as_ref(),
             sample,
             veh_mats.as_ref(),
         ),
     };
-    let assignments = match &args.textures {
-        Some(dir) => prepare_fake_variants(&mut voxel_world, dir)?,
-        None => Vec::new(),
+    let assignments = match (wire, &args.textures) {
+        (None, Some(dir)) => prepare_fake_variants(&mut voxel_world, dir)?,
+        _ => Vec::new(),
     };
     // Stage F part 2: shore preparation after the multitile
     // preparation (its virtual ids allocate above theirs); with
     // no textures the world is untouched, byte-for-byte the
     // pre-F2 render.
-    let shore_assignments = match &args.textures {
-        Some(dir) => prepare_fake_shore_variants(&mut voxel_world, dir)?,
-        None => Vec::new(),
+    let shore_assignments = match (wire, &args.textures) {
+        (None, Some(dir)) => prepare_fake_shore_variants(&mut voxel_world, dir)?,
+        _ => Vec::new(),
     };
     // Stage F part 2 (blend): after the shore preparation (its
     // virtual ids allocate above theirs); with no textures the
     // world is untouched, byte-for-byte the pre-blend render.
-    let blend_assignments = match &args.textures {
-        Some(dir) => prepare_fake_blend_variants(&mut voxel_world, dir)?,
-        None => Vec::new(),
+    let blend_assignments = match (wire, &args.textures) {
+        (None, Some(dir)) => prepare_fake_blend_variants(&mut voxel_world, dir)?,
+        _ => Vec::new(),
     };
     let built = build_tree(&voxel_world, BuildConfig::default())
         .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
@@ -587,8 +631,8 @@ fn render_rt_frame_inner(
     if let Some(e) = emitters {
         scene.set_emitters(queue, e);
     }
-    let texture_stats = match &args.textures {
-        Some(dir) => Some(attach_fake_textures(
+    let texture_stats = match (wire, &args.textures) {
+        (None, Some(dir)) => Some(attach_fake_textures(
             device,
             queue,
             &mut scene,
@@ -598,7 +642,7 @@ fn render_rt_frame_inner(
             &blend_assignments,
             veh_mats.as_ref(),
         )?),
-        None => None,
+        _ => None,
     };
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
     let aspect = width as f32 / height as f32;

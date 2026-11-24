@@ -41,7 +41,22 @@ impl RendererKind {
 pub struct CaptureArgs {
     /// Scene source: "stub-house" (the Phase 2 fixture) or
     /// "sample-scene" (the 24x24 yard + house sample world).
+    /// Ignored as a world source when `wire` is seated (the
+    /// name still keys fixture companion lookups, which the
+    /// wire branch does not consult).
     pub snapshot: String,
+    /// Wire-fed scene source (Phase 11 follow-up, Lane A): a
+    /// world built from a server's `TileDefs` + `Snapshot`
+    /// (and, for a live session, its delta-fed state) instead
+    /// of a fixture name. `Some` = both renderer paths prepare
+    /// from the wire map; the fixture dispatch is untouched
+    /// when `None`, byte-for-byte. Companions seat as usual:
+    /// `lighting` / `vehicles` apply to the wire world exactly
+    /// as to a fixture world; `textures`, `effects` and the
+    /// Phase 9 fixture prop scenes are fixture-keyed and are
+    /// not consulted for a wire world in v1 (the wire world's
+    /// blocks carry their resolver's colours/layers already).
+    pub wire: Option<crate::wire::WireScene>,
     /// Renderer selection (Phase 2c).
     pub renderer: RendererKind,
     /// Voxelizer output directory for RT textures (Phase 5
@@ -135,6 +150,7 @@ impl Default for CaptureArgs {
     fn default() -> Self {
         Self {
             snapshot: "stub-house".to_string(),
+            wire: None,
             renderer: RendererKind::Raster,
             textures: None,
             effects: None,
@@ -232,7 +248,7 @@ fn save_capture(args: &CaptureArgs, img: &image::RgbaImage) -> Result<(), Captur
 /// golden harness (2g.3) pins that the delegation is
 /// byte-stable for the pre-2h scenes.
 pub fn run_capture(args: &CaptureArgs) -> Result<CaptureOutcome, CaptureError> {
-    if args.snapshot != "stub-house" && args.snapshot != "sample-scene" {
+    if args.wire.is_none() && args.snapshot != "stub-house" && args.snapshot != "sample-scene" {
         return Err(CaptureError::UnsupportedSnapshot(args.snapshot.clone()));
     }
     pollster::block_on(run_capture_async(args))

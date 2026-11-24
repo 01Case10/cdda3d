@@ -511,7 +511,13 @@ and a subset over a real socket. Settled points:
   applying, so the change rides that step's Delta.
 - **`capture` is rejected at parse time**, with an error naming
   the CaptureArgs limitation (pixel capture takes fixture names,
-  not wire snapshots). Green-set scenarios must not use it. The
+  not wire snapshots). Green-set scenarios must not use it.
+  *(The limitation itself was resolved after S8 by the Lane A
+  wire-source change — §5.3: `CaptureArgs.wire` now seats a
+  wire-built world in the frame loop. The runner still rejects
+  the step: capturing is an engine-side act, and the engine
+  gates assert it; the rejection's wording names the historical
+  reason.)* The
   **engine** and **render** assertion classes of the v1 vocabulary
   are likewise not implemented by the sim runner — they belong to
   the engine-side gates, which already assert them against the
@@ -579,14 +585,18 @@ and a subset over a real socket. Settled points:
   shm validated via `frame::prepare_ui`, stdin bytes → Key
   inputs (0x1b = Esc, `Q` = end), SeqTracker/HeartbeatTracker
   discipline, drain-then-Shutdown on exit. The **windowed**
-  seating of this session is NOT built: `render_frame` /
-  CaptureArgs accept fixture names only, so the windowed frame
-  loop cannot take a wire-fed world without the engine change
+  seating of this session was NOT built at S7: `render_frame` /
+  CaptureArgs accepted fixture names only, so the windowed frame
+  loop could not take a wire-fed world without the engine change
   already named as the pixel-capture-parity follow-up. The
   windowed human run is a desktop-machine step; the headless
   session is the proof available here (street_block: player
   walked (5,5) → (5,9), out of the house; clean exits both
-  ends).
+  ends). *(Both halves were built after S8 by the Lane A
+  wire-source change — §5.3: the session now seats its live
+  world in the frame loop, headless captures prove it, and
+  `--connect-window` runs the same seating in the windowed
+  app; the human windowed run remains a desktop step.)*
 
 ### 5.2 S8 settlements (soak & fuzz; T9 / T10-abuse / T12)
 
@@ -686,6 +696,81 @@ and a subset over a real socket. Settled points:
   are deterministic): 31 frames, 1,409,476 bytes,
   byte-identical.
 
+### 5.3 Lane A settlements (post-S8 follow-up: the wire-source engine change)
+
+- **The source variant:** `CaptureArgs` gains
+  `wire: Option<engine::wire::WireScene>` (new module
+  `crates/engine/src/wire.rs`). A `WireScene` is a built wire
+  world — `TileDefs` + `Snapshot` fed through
+  `snapshot_world::build_snapshot_world` with a caller-chosen
+  block resolver (gates: the S1 canonical palette; the client
+  session: the coarse stand-in; a desktop run: the voxelizer
+  materials) — carried as an `Arc<ChunkMap>` + the window's
+  `min_game_z`. When seated, both renderer paths prepare from
+  the wire map (`scene_prep::prepare_raster_wire`; the RT
+  path's `world_from_wire` + the shared lit contract) and the
+  fixture-name dispatch is untouched when it is `None` — the
+  golden gates pass without regen, which is the regression
+  fence. Companions seat as usual: `lighting` / `vehicles`
+  apply to a wire world exactly as to a fixture world.
+  Fixture-keyed inputs are not consulted for a wire world in
+  v1: `textures` / `effects` (fake-id material tables) and the
+  Phase 9 fixture prop scenes (name-keyed) — the wire world's
+  blocks carry their resolver's colours already, and wire
+  fine-prop seating remains the snapshot path's own stamping
+  (`snapshot_world::stamp_furniture` / `stamp_terrain`) into a
+  caller-owned layer the frame loop does not yet carry.
+- **Live state:** the client session folds every accepted
+  Delta into its stored Snapshot
+  (`wire::apply_delta_to_snapshot`: per-tile changes land in
+  their submap block's arrays, the sparse field list is
+  replaced per tile with `field_index` rebuilt, entities /
+  vehicles replace-by-id, removals drop, a piggybacked
+  environment replaces) and republishes the `WireScene`, so
+  the seated world is the delta-fed state, not the
+  connect-time snapshot.
+- **Pixel parity (gate `wire_source_gate.rs`):** the sim's
+  stub_house Snapshot and the fixture `sample_snapshot()`,
+  both through the wire path with the canonical palette,
+  render **byte-identical PNGs on both renderers** (raster
+  14,496 bytes; RT 11,679 bytes, lavapipe) — S1's world parity
+  now holds at pixel level. The comparison against the legacy
+  capture fixture named "stub-house"
+  (`world::build_fake_house`) is a **named finding, not a
+  parity target**: the two houses were authored separately
+  (door (6,11) vs (5,11); windows (3,0)/(0,6)/(11,6) vs (2,0))
+  and are stamped by different models (fixture `set_tile`
+  shapes — walls/doors/windows a full 3-block level, roof
+  slabs at z 3 — vs the wire builder's every-terrain-a-slab
+  rule). The gate enumerates the ENTIRE world-level diff and
+  pins it to exactly those causes: **238 cells** (144 roof
+  band + 88 perimeter height + 6 authoring), and the captures
+  differ in 17,840 of 230,400 pixels accordingly. Nothing in
+  the seating path owns that diff; closing it would mean
+  re-authoring one of the two houses or changing the wire
+  builder's stamping model, both outside this follow-up.
+- **Windowed seating:** `voxel-engine --connect-window
+  <socket>` — the session runs on its own thread
+  (`client::spawn_connect`), publishes its live scene to a
+  shared slot the windowed app polls per frame into
+  `frame_args.wire`, and receives the app's key presses over
+  a channel as Inputs (camera keys WASD/E/Q/arrows/Escape
+  stay local; closing the window ends the session via the
+  client's input-close rule, drain + Shutdown, joined at
+  exit). Fixture companions (fake-house lighting/sky,
+  vehicle/transient fixtures) are NOT seated over a wire
+  world; the windowed session's lighting is unseated in v1
+  (the capture path seats wire + grid today). The windowed
+  run itself is a desktop step — the headless proof is the
+  gate: a real sim-server (street_block) + the client over a
+  real socket, first frame captured from the live world at
+  the first Snapshot, `jjojjj` walked the player (5,5) →
+  (5,9), end frame captured from the delta-fed world after
+  the drain — 20,341 of 230,400 pixels differ (door opened,
+  camera follows the player), both frames non-blank, the
+  final live state shows the door at (5,8) as `t_door_o`,
+  clean Shutdown both ends.
+
 ## 6. Test matrix — the user's named tests, plus the ones they imply
 
 | # | Test | Scenario sketch | Key assertions |
@@ -721,7 +806,7 @@ updated in the same change.
 | **S4 — UI** | shm writer (double-buffer, header, dirty rect), UI state machine (§3.3), Resize handling | **T2 pass**; ui-share gates re-run against sim-written frames (not just synthetic-written); torn-frame reader test against the sim writer |
 | **S5 — Creatures, fields, effects** | Spawn/AI/combat/death; field spread/decay + displayed-field rule; Effects emission | **T3 + T7 pass** — DONE 2026-11-24 |
 | **S6 — Destruction, items, vehicles** | Bash chains, furniture removal, item piles + inventory list, vehicle move/damage/remove | **T4 + T8 + T11 pass**; fine-layer restamp assertions in engine gates — DONE 2026-11-24 (v1 gate T1–T4 complete) |
-| **S7 — Scenario DSL + interactive mode** | §5 runner (process + in-process), scenario files for T1–T12; `engine --connect` live session against sim-server you can play with the keyboard; CI job (headless, lavapipe) | All scenarios green in CI; a human can run the windowed engine against the sim and walk out of the house — **DONE 2026-11-24 with the windowed half named, not built**: scenarios green in-process + process subset over real sockets (locally validated CI commands; CI itself runs on push via Joey's PC route), `engine --connect` proven headless (walk out of the house, clean shutdown); the windowed seating waits on the CaptureArgs wire-source engine change (see §5.1) |
+| **S7 — Scenario DSL + interactive mode** | §5 runner (process + in-process), scenario files for T1–T12; `engine --connect` live session against sim-server you can play with the keyboard; CI job (headless, lavapipe) | All scenarios green in CI; a human can run the windowed engine against the sim and walk out of the house — **DONE 2026-11-24 with the windowed half named, not built**: scenarios green in-process + process subset over real sockets (locally validated CI commands; CI itself runs on push via Joey's PC route), `engine --connect` proven headless (walk out of the house, clean shutdown); the windowed seating waits on the CaptureArgs wire-source engine change (see §5.1) — **that change landed as the post-S8 Lane A follow-up (§5.3): pixel parity byte-identical on both renderers, windowed seating built as `--connect-window`** |
 | **S8 — Soak & fuzz (optional, after v1)** ✅ DONE 2026-11-24 | Random-input soak, malformed-frame fuzz on the sim's own server side, record/replay of a session log | **T9/T10/T12 pass**; decode fuzz clean (parity with the existing proto fuzz gates) — z-move rule + multistorey scene (T9, with the basement-lit correction in §5.2), soak 1,100 × 10 as-run (T12), server fuzz with one real bug found + fixed (T10 abuse half), `--record` session logs replaying byte-identical (§5.2) |
 
 Rough size: S0–S2 is the critical path to first value (a walkable,
