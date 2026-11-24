@@ -52,6 +52,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# The proto crate's build.rs needs flatc exactly 24.3.25 (located via
+# $FLATC, project-local copies, then PATH). Fail early with the fix
+# instead of dying inside the cargo build.
+if [ -z "${FLATC:-}" ] && ! command -v flatc >/dev/null 2>&1 \
+   && [ ! -x ../tools/flatbuffers/flatc ] && [ ! -x /tmp/flatc ]; then
+  echo "launch-sim.sh: flatc 24.3.25 not found." >&2
+  echo "  Install flatbuffers 24.3.25, or set FLATC=/path/to/flatc." >&2
+  echo "  (The PowerShell twin downloads the pinned Windows binary automatically.)" >&2
+  exit 1
+fi
+
 BIN_DIR="target/$PROFILE"
 SERVER_LOG="target/sim-launch/server.log"
 mkdir -p target/sim-launch
