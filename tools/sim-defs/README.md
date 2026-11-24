@@ -37,8 +37,19 @@ defs}` where each def is one wire `TileDef`
 (`schema/cdda_ipc.fbs`): `{id, string_id, name, kind, flags,
 hot_flags, connect_groups, connects_to_groups, rotate_to_groups,
 open_result, close_result, bash_result, looks_like, roof_result,
-fg_ref, bg_ref}`. Kinds: Terrain=0, Furniture=1, Trap=2, Field=3,
+fg_ref, bg_ref}` plus a sim-internal `move_cost` (below; not a
+wire field). Kinds: Terrain=0, Furniture=1, Trap=2, Field=3,
 Monster=4, Item=5, VehiclePart=6.
+
+- `move_cost` (terrain/furniture only, added 2026-11-23): the
+  game's passability input — terrain JSON `move_cost`
+  (`ter_t::load`, optional, default 0 = impassable) and furniture
+  JSON `move_cost_mod` (`furn_t::load`; a negative modifier makes
+  the tile impassable). The sim's registry carries it and
+  `crates/sim` passability mirrors `map::move_cost_ter_furn`
+  exactly. Validate spot-checks the ground truth (walls, trees,
+  closed doors, windows, fences = 0; floor/grass/open door = 2;
+  `f_bookcase` = −1; `f_table` = +2).
 
 - `hot_flags` (terrain/furniture only): the `ter_furn_flag` enum
   order is **parsed from `fork-src/cdda/src/mapdata.h`** (139 flags

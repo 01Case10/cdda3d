@@ -19,30 +19,30 @@
 //!   releases and non-Key inputs are not turns at all: no state
 //!   change, no reply.
 //!
-//! Passability (§3.2): a step succeeds iff the target terrain
-//! (a) does NOT carry the WALL flag, (b) has no `open_result`
-//! (a closed openable — door/window — blocks; bumping does NOT
-//! auto-open, per the §5 example: the step is blocked but the
-//! turn is still consumed), and (c) no creature occupies the
-//! tile. Furniture never blocks in S2.
+//! Passability: CDDA's own rule, `map::move_cost_ter_furn`
+//! (src/map.cpp at the pinned commit): terrain `move_cost` == 0
+//! blocks; furniture `move_cost_mod` < 0 blocks; otherwise the
+//! tile is passable iff terrain cost + furniture modifier > 0.
+//! Plus the sim's creature rule: no stepping onto an occupied
+//! tile. Bumping a closed door therefore blocks (t_door_c has
+//! move_cost 0) and does NOT auto-open, per the §5 example —
+//! the step is blocked but the turn is still consumed.
 //!
-//! The WALL test uses the def's resolved `hot_flags` bitset —
-//! the engine-facing form (§2.6: the engine never parses flag
-//! strings). `WALL` is `ter_furn_flag::TFLAG_WALL`, index 25 in
-//! the enum order declared in `src/mapdata.h` at the pinned
-//! commit (TRANSPARENT = 0 ... UNSTABLE = 24, WALL = 25), and
-//! 25 < 64 so the S1a importer keeps it in `hot_flags` (verified
-//! against the generated table: `t_wall` has bit 25 set;
-//! `t_floor`/`t_door_c`/`t_window`/`t_grass` do not).
+//! History: S2 originally used the WALL hot-flag + `open_result`
+//! + creature rule, which diverged from the game — `t_tree`,
+//! `t_window` and `t_chainfence` carry neither a WALL flag nor
+//! an open_result in the real data, so all three were walk-
+//! through. The movecost rule replaced it 2026-11-23 (Joey's
+//! call); the regression gate is `movecost_passability` in
+//! tests/turn_gate.rs, which fails on the old rule. The cost
+//! itself does not yet scale turn length (every step is one
+//! turn regardless of cost) — that is a later refinement, not
+//! part of passability.
 
 use proto::{InputKind, InputT, MessageT};
 
 use crate::defs::{Def, DefRegistry, Kind};
 use crate::world::World;
-
-/// `ter_furn_flag` index of WALL (see module docs).
-pub const WALL_HOT_BIT: u32 = 25;
-const WALL_HOT_MASK: u64 = 1 << WALL_HOT_BIT;
 
 /// An armed Open/Close awaiting its direction key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,14 +126,25 @@ impl World {
         let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
             return; // unknown terrain id: blocked, never a panic
         };
-        if def.hot_flags & WALL_HOT_MASK != 0 {
-            return; // (a) WALL flag
+        // map::move_cost_ter_furn, mirrored exactly (see module
+        // docs). A def with no move_cost in the table counts as
+        // the game's member default, 0 = impassable.
+        let ter_cost = def.move_cost.unwrap_or(0);
+        if ter_cost == 0 {
+            return;
         }
-        if transform(def, |d| &d.open_result).is_some() {
-            return; // (b) closed openable: bump does not open
+        let furn_mod = match self.furniture_at(target) {
+            Some(0) | None => 0, // no furniture: null furniture's mod is 0
+            Some(furn_id) => reg
+                .def_by_id(Kind::Furniture, furn_id)
+                .and_then(|d| d.move_cost)
+                .unwrap_or(0),
+        };
+        if furn_mod < 0 || ter_cost + furn_mod <= 0 {
+            return;
         }
         if self.creature_at(target) {
-            return; // (c) creature in the way
+            return; // creature in the way
         }
         self.set_player_pos(target);
     }

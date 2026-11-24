@@ -343,6 +343,22 @@ def build_defs(data_dir, mapdata_h, connect_json):
                 val = entry.get(field)
                 return val if isinstance(val, str) and val else None
 
+            # Movement cost, CDDA's real passability input
+            # (map::move_cost_ter_furn, src/map.cpp): terrain carries
+            # "move_cost" (ter_t::load, optional, member default 0 =
+            # impassable); furniture carries "move_cost_mod"
+            # (furn_t::load, mandatory there; a negative modifier
+            # makes the tile impassable). Sim-internal: TileDef has
+            # no movecost field on the wire, so this never leaves
+            # the registry. Non-ter/furn kinds: None.
+            move_cost = None
+            if kind == 0:
+                val = entry.get("move_cost")
+                move_cost = val if isinstance(val, int) else 0
+            elif kind == 1:
+                val = entry.get("move_cost_mod")
+                move_cost = val if isinstance(val, int) else 0
+
             defs.append({
                 "id": 0,  # assigned below
                 "string_id": string_id,
@@ -350,6 +366,7 @@ def build_defs(data_dir, mapdata_h, connect_json):
                 "kind": kind,
                 "flags": flags,
                 "hot_flags": hot,
+                "move_cost": move_cost,
                 "connect_groups": group_indices("connect_groups") if kind in TER_FURN_KINDS else [],
                 "connects_to_groups": group_indices("connects_to") if kind in TER_FURN_KINDS else [],
                 "rotate_to_groups": group_indices("rotates_to") if kind in TER_FURN_KINDS else [],
@@ -477,6 +494,28 @@ def spot_checks(defs):
         "check": "t_floor.roof_result present",
         "actual_roof_result": floor.get("roof_result"),
         "pass": bool(floor.get("roof_result"))})
+    # Movement-cost spot checks (CDDA passability ground truth,
+    # src/map.cpp move_cost_ter_furn): solid things cost 0,
+    # walkable ground costs > 0, f_bookcase's modifier is negative.
+    mc_expect = {
+        (0, "t_wall"): 0, (0, "t_tree"): 0, (0, "t_door_c"): 0,
+        (0, "t_window"): 0, (0, "t_chainfence"): 0,
+        (1, "f_bookcase"): -1,
+    }
+    for key, expected in sorted(mc_expect.items()):
+        d = by_id.get(key, {})
+        checks.append({
+            "check": f"{key[1]}.move_cost == {expected}",
+            "actual_move_cost": d.get("move_cost"),
+            "pass": d.get("move_cost") == expected})
+    for key in ((0, "t_floor"), (0, "t_grass"), (0, "t_door_o"),
+                (1, "f_table")):
+        d = by_id.get(key, {})
+        checks.append({
+            "check": f"{key[1]}.move_cost > 0",
+            "actual_move_cost": d.get("move_cost"),
+            "pass": isinstance(d.get("move_cost"), int)
+            and d["move_cost"] > 0})
     return checks
 
 

@@ -76,6 +76,14 @@ pub struct Def {
     pub flags: Vec<String>,
     #[serde(default)]
     pub hot_flags: u64,
+    /// CDDA movement cost: terrain `move_cost` (0 = impassable),
+    /// furniture `move_cost_mod` (negative = impassable). Present
+    /// only for terrain/furniture in the generated table.
+    /// Sim-internal — TileDef has no such field on the wire; the
+    /// passability rule (rules.rs) mirrors the game's
+    /// `map::move_cost_ter_furn`.
+    #[serde(default)]
+    pub move_cost: Option<i32>,
     #[serde(default)]
     pub connect_groups: Vec<u16>,
     #[serde(default)]

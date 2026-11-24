@@ -263,6 +263,45 @@ fn t1_outside_then_back_inside() {
     assert_eq!(drv.terrain_str(DOOR), "t_door_c");
 }
 
+/// Regression gate for the movecost passability fix (2026-11-23):
+/// CDDA's rule is `map::move_cost_ter_furn` — terrain move_cost 0
+/// blocks, a negative furniture move_cost_mod blocks, otherwise
+/// the summed cost must be > 0. The original S2 rule (WALL flag +
+/// open_result) let the player walk through all four blockers in
+/// the passability scene; this test fails on that rule.
+#[test]
+fn movecost_passability() {
+    let (mut drv, _snap) = Driver::new("passability");
+    assert_eq!(drv.player(), [5, 5, 0]);
+
+    // North: t_tree, move_cost 0 — blocked (turn still consumed:
+    // a Delta arrives, the player does not move).
+    let d = drv.delta('k');
+    assert_eq!(drv.player(), [5, 5, 0], "tree blocks");
+    assert!(change_at(&d, [5, 4, 0]).is_none(), "no tile mutated");
+
+    // South: t_window, move_cost 0 — blocked.
+    drv.delta('j');
+    assert_eq!(drv.player(), [5, 5, 0], "closed window blocks");
+
+    // West: t_chainfence, move_cost 0 — blocked.
+    drv.delta('a');
+    assert_eq!(drv.player(), [5, 5, 0], "chain fence blocks");
+
+    // Northeast: t_floor (2) + f_bookcase (mod -1) — a negative
+    // furniture modifier blocks outright.
+    drv.delta('u');
+    assert_eq!(drv.player(), [5, 5, 0], "bookcase blocks");
+
+    // East: t_floor (2) + f_table (mod +2) — passable.
+    drv.delta('d');
+    assert_eq!(drv.player(), [6, 5, 0], "table tile is passable");
+
+    // And back west onto the grass.
+    drv.delta('a');
+    assert_eq!(drv.player(), [5, 5, 0]);
+}
+
 #[test]
 fn t5_door_cycle_and_noops() {
     let (mut drv, _snap) = Driver::new("street_block");

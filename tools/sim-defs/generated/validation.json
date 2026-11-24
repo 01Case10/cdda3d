@@ -272,6 +272,56 @@
    "check": "t_floor.roof_result present",
    "actual_roof_result": "t_wood_treated_roof",
    "pass": true
+  },
+  {
+   "check": "t_chainfence.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_door_c.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_tree.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_wall.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "t_window.move_cost == 0",
+   "actual_move_cost": 0,
+   "pass": true
+  },
+  {
+   "check": "f_bookcase.move_cost == -1",
+   "actual_move_cost": -1,
+   "pass": true
+  },
+  {
+   "check": "t_floor.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "t_grass.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "t_door_o.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
+  },
+  {
+   "check": "f_table.move_cost > 0",
+   "actual_move_cost": 2,
+   "pass": true
   }
  ]
 }

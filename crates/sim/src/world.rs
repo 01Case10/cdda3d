@@ -426,6 +426,12 @@ impl World {
         Some(self.blocks[b].tiles[i].terrain)
     }
 
+    /// Furniture wire id at an absolute pos (0 = none).
+    pub fn furniture_at(&self, pos: [i32; 3]) -> Option<u32> {
+        let (b, i) = self.tile_at(pos)?;
+        Some(self.blocks[b].tiles[i].furniture)
+    }
+
     /// Set the terrain at an absolute pos and mark its submap
     /// dirty. Returns false if the pos is outside the scene.
     pub fn set_terrain(&mut self, pos: [i32; 3], terrain: u32) -> bool {
