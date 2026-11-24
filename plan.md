@@ -2033,3 +2033,60 @@ staying dark in RT (the shadow proof).
 > §2.3/§7, amended in the same change); the fork adapter follows
 > when 0.1/0.2 unblock it. Status: DESIGN RECORDED, NOT
 > IMPLEMENTED — no schema, fork, sim, or engine code changed.
+
+## Addendum 2026-11-23 (12): fork base moves to the latest stable release (Joey's decision)
+
+> **Decision (Joey, 2026-11-23): the fork is based on the latest stable
+> release of CDDA, not on a `master` snapshot.** This supersedes the
+> Phase 0 decision "fork base pinned `master` @ 6a3e59e0" (§5 Phase 0
+> record; `docs/recon.md` fork-base row, which already conditioned all
+> Appendix A evidence on the base never changing — it now has).
+>
+> **Target: 0.I-1 "Ito-1"** — tag `0.I-1` → commit
+> `7b2efa5cea38e4d4d97dd0e63b28b9148623da59` (= the `0.I-branch` tip at
+> decision time), released 2026-09-20; the releases page names 0.I-1
+> the latest stable. (Plain 0.I = `27939e29`.) Honest nuance: our
+> current pin (master @ 6a3e59e0, 2026-11-15) is *newer in commit
+> time* than 0.I-1 — the switch trades master's extra months of
+> content for the stable branch's bugfix-only, supported line. 0.I
+> headline relevant here: tree tops on separate z-levels.
+>
+> **Source fetched + verified 2026-11-23:** shallow clone at
+> `~/workspace/cdda-stable/cdda-0.I-1` — `git rev-parse HEAD` =
+> `7b2efa5c…`, `git describe` = `0.I-1`, 1.1 GB full tree. The
+> existing `fork-src/cdda` checkout is UNTOUCHED; no pin in the repo
+> has flipped yet.
+>
+> **Data drift measured (importer run against the 0.I-1 tree into a
+> scratch out-dir, generated table NOT regenerated in-repo):**
+> 13,532 defs vs 14,262 on the master pin (−730: Terrain 1,108/1,271,
+> Furniture 659/713, Trap 124/150, Field 144/172, Monster 1,123/1,203,
+> Item 9,912/10,270, VehiclePart 462/483); 329 string ids exist only
+> in 0.I-1, 1,056 only in the master pin; 604 dangling refs on 0.I-1
+> data (vs 668 allowlisted on master) — the allowlist needs its own
+> investigation pass on the new base, not a copy-over. 13 unknown
+> flag strings (importer tolerates, as on master).
+>
+> **Migration scope (the base flips only when this lands):**
+> 1. Re-verify Appendix A claims + the 32 hook points + H1–H7 line
+>    numbers against the 0.I-1 source (`tools/phase0` probes +
+>    `extract_hooks.py` re-run); update `docs/recon.md`,
+>    `docs/hook-points.md`, `docs/licensing.md`.
+> 2. Grep-verify every real API `fork/src/voxel_ipc/
+>    voxel_real_adapter.cpp` uses against 0.I-1 headers; fix drift.
+> 3. Regenerate `tools/sim-defs/generated/defs.json` from 0.I-1 data
+>    + fresh dangling-allowlist investigation + validate PASS; sim
+>    parity gates re-run (scenes are string-id based, expected to
+>    hold; any break is a finding).
+> 4. Pin flips: `tools/pc-build/build-cdda-voxel.sh` PINNED_COMMIT,
+>    `tools/package_smoke.sh` VERSION stamp, `README.md` pins,
+>    `tools/sim-defs/sim_defs.py` source string.
+> 5. Coverage/voxelizer records (zero drive, item drive, UltiCa
+>    coverage) stay labelled as master-pin records until re-run; the
+>    Tilesets pin (UltiCa `5ee942f9`) is a SEPARATE decision — not
+>    changed by this addendum.
+> 6. The 0.1/0.2 `cata_test` baseline is re-taken on 0.I-1 when Joey
+>    runs the PC build; the master baseline is not comparable.
+>
+> Status: DECIDED + source fetched + drift measured. Migration NOT
+> yet executed.
