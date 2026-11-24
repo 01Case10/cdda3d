@@ -25,7 +25,7 @@ mkdir -p "$PKG/bin"
 cp "$ROOT/tools/stub-server/stub-server" "$PKG/bin/game"
 cp "$ROOT/target/debug/proto-client" "$PKG/bin/frontend"
 # The install stamp (crates/release::PackageStamp's text format).
-printf 'frontend=0.1.0\nfork=6a3e59e08842de34ff3f111c7f098abeffb708a5\nprotocol=2\n' > "$PKG/VERSION"
+printf 'frontend=0.1.0\nfork=7b2efa5cea38e4d4d97dd0e63b28b9148623da59\nprotocol=2\n' > "$PKG/VERSION"
 
 echo "--- installed layout ---"
 find "$PKG" -type f | sort
@@ -58,5 +58,5 @@ grep -q "TILEDEFS" "$WORK/client.log" || { echo "FAIL: no TileDefs"; exit 1; }
 grep -q "SNAPSHOT seq=" "$WORK/client.log" || { echo "FAIL: no snapshot (never reached gameplay)"; exit 1; }
 grep -q "INPUT round-trip ok" "$WORK/client.log" || { echo "FAIL: input did not round-trip"; exit 1; }
 grep -q "SHUTDOWN sent; client done" "$WORK/client.log" || { echo "FAIL: no clean shutdown"; exit 1; }
-grep -q "fork=6a3e59e0" "$PKG/VERSION" || { echo "FAIL: VERSION stamp missing fork commit"; exit 1; }
+grep -q "fork=7b2efa5c" "$PKG/VERSION" || { echo "FAIL: VERSION stamp missing fork commit"; exit 1; }
 echo "PACKAGE SMOKE PASS (install -> handshake -> TileDefs -> snapshot -> input -> clean shutdown)"

@@ -1,7 +1,12 @@
 // CDDA Voxel Frontend — Phase 3: REAL game adapter (fork-only build).
 // Every game API below was grep-verified against the pinned source
 // (CDDA master @ 6a3e59e0, fork-src/cdda) on 2026-11-15; file:line for
-// each is in docs/phase3-fork.md. This file does NOT compile in the
+// each is in docs/phase3-fork.md. Base moved to CDDA 0.I-1 (release
+// tag 0.I-1, 7b2efa5c) on 2026-11-23 (plan.md Addendum 12): every API
+// re-verified against the 0.I-1 tree (~/workspace/cdda-stable/
+// reverify/REPORT.md); the five master-only APIs this file uses are
+// restored by fork/hooks/backport_patches.md (B1-B4), so this file
+// is unchanged apart from this comment. This file does NOT compile in the
 // standalone harness and has never been compiled anywhere — see the
 // Phase 3 record: tests 0.1/0.2 must run first on a build-capable
 // machine, then this file gets its first real compile.

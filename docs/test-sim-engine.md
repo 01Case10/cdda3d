@@ -43,6 +43,17 @@ verifier, `SeqTracker` and shm header the engine already tests against.
 
 Verified against pinned CDDA `master @ 6a3e59e0` in
 `fork-src/cdda/`, `docs/hook-points.md`, `docs/recon.md`,
+[Base note, 2026-11-23: the fork base moved to CDDA **0.I-1**
+(release tag `0.I-1`, `7b2efa5c`) per plan.md Addendum 12; the
+contract facts below were re-verified against the 0.I-1 tree in the
+re-verification pass and hold unchanged. The generated def table
+was regenerated from 0.I-1 data the same day: **13,532 defs**
+(Terrain 1,108, Furniture 659, Trap 124, Field 144, Monster 1,123,
+Item 9,912, VehiclePart 462), 36 connect groups, validate PASS
+with 604 dangling refs investigated + allowlisted fresh for this
+base; sim suite 12/12 and the engine world/mesh parity gate 3/3
+re-run green on the new table. The 14,262-def census cited in the
+Phase 11 record is the master-pin figure.]
 `fork/src/voxel_ipc/voxel_real_adapter.cpp`, and
 `schema/cdda_ipc.fbs`. The sim must mimic *this*, not invent a
 friendlier protocol:

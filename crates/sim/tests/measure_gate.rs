@@ -23,7 +23,7 @@ fn measure_handshake_cost() {
         m.def_count, m.registry_load, m.tiledefs_frame_bytes, m.scene_snapshot_build,
         m.connect_to_tiledefs
     );
-    assert_eq!(m.def_count, 14_262);
+    assert_eq!(m.def_count, 13_532);
     assert!(
         m.tiledefs_frame_bytes > 1_000_000,
         "the full table is a multi-MB handshake, got {} bytes",

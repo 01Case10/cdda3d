@@ -39,7 +39,7 @@
 # fork gate compares against that record.
 set -u
 
-PINNED_COMMIT="6a3e59e08842de34ff3f111c7f098abeffb708a5"
+PINNED_COMMIT="7b2efa5cea38e4d4d97dd0e63b28b9148623da59"
 UPSTREAM_URL="https://github.com/CleverRaven/Cataclysm-DDA.git"
 UPSTREAM_TARBALL="https://github.com/CleverRaven/Cataclysm-DDA/archive/${PINNED_COMMIT}.tar.gz"
 BUILD_TYPE="RelWithDebInfo"

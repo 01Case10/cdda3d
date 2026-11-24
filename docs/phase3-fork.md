@@ -43,6 +43,13 @@ only; FlatBuffers is header-only as vendored).
 
 ## 3. Real APIs the adapter uses (all grep-verified 2026-11-15 @ 6a3e59e0)
 
+> **Base note (2026-11-23):** the fork base moved to CDDA **0.I-1**
+> (release tag `0.I-1`, `7b2efa5c`) per plan.md Addendum 12. Every
+> API below was re-verified against the 0.I-1 tree
+> (`~/workspace/cdda-stable/reverify/REPORT.md`); the five
+> master-only APIs are restored by `fork/hooks/backport_patches.md`
+> (B1–B4). File:line numbers below remain the master-pin numbers.
+
 - Tiles: `map::ter(const tripoint_bub_ms&)` map.h:1045 ·
   `map::furn(tripoint_bub_ms)` **by value** map.h:1020 ·
   `map::tr_at` map.h:1614 · `map::field_at` (full field map) map.h:1660 ·

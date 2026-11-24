@@ -1,6 +1,15 @@
 # Hook-point catalogue (Phase 0)
 
 Extracted mechanically from CDDA `master` @ `6a3e59e08842de34ff3f111c7f098abeffb708a5`
+
+> **Base note (2026-11-23):** the fork base moved to CDDA **0.I-1**
+> (release tag `0.I-1`, `7b2efa5c`) per plan.md Addendum 12. This
+> catalogue was re-verified against the 0.I-1 tree (31/32 hooks
+> found, 28 moved-only; full report
+> `~/workspace/cdda-stable/reverify/REPORT.md`). The file/line
+> entries below remain the master-pin extraction; H3's target
+> changed shape (free `do_turn()` on 0.I-1 — see
+> `fork/hooks/hook_patches.md`).
 by `tools/phase0/extract_hooks.py`. A MISS means the pattern did not
 match at that file/line shape — see docs/recon.md for the resolution.
 

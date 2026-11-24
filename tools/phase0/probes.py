@@ -3,6 +3,12 @@
 
 Every probe runs against the *actual pinned source* in fork-src/ (CDDA
 6a3e59e0, Tilesets 5ee942f9) — source facts are extracted by parsing the
+[Base note, 2026-11-23: the fork base moved to CDDA 0.I-1 (release tag
+0.I-1, 7b2efa5c) per plan.md Addendum 12. These probes were re-run
+against the 0.I-1 tree in the re-verification scratch mirror
+(~/workspace/cdda-stable/reverify/): 5 PASS / 1 FAIL (0.3 do_turn —
+free function on 0.I-1). fork-src/ still holds the master checkout
+the original Phase 0 run above used.]
 cloned files, never hard-coded from the plan. The behavioural probes
 (0.3/0.4/0.5/0.7) run the design's logic as a harness over data derived
 from that source, because the full fork build is blocked in this

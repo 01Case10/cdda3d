@@ -56,6 +56,12 @@ clean exit with both versions logged.
   generated table: **14,262 defs**, and the server sends all of
   them as the connect-time `TileDefs`, with the 40-entry
   connect-group registry.
+  [Base note, 2026-11-23: the table was regenerated from CDDA
+  0.I-1 data (plan.md Addendum 12 migration): **13,532 defs**,
+  36-entry connect-group registry, TileDefs frame **1,382,468
+  bytes** (measure_gate re-run on the new table; timings are
+  run-specific). The 14,262 / 40 / 1,472,644 figures above are
+  the master-pin record.]
 - **Measured handshake cost** (this VM, debug build, parent
   re-run 2026-11-23; `cargo test -p sim --test measure_gate`):
   TileDefs frame **1,472,644 bytes** (~1.47 MB — the FlatBuffers

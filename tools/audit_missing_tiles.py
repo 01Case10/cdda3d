@@ -25,6 +25,11 @@ Resolution chain (crates/tileset/src/resolve.rs, mirroring cata_tiles):
 
 Game universe: fork-src/cdda/data/json/** (core only, not data/mods),
 pinned CDDA 6a3e59e0. Tileset: Tilesets 5ee942f9, gfx/UltimateCataclysm.
+[Base note, 2026-11-23: the fork base moved to CDDA 0.I-1 (7b2efa5c)
+per plan.md Addendum 12, but this tool reads fork-src/cdda, which
+still holds the master checkout — its output remains a master-pin
+coverage record until fork-src is replaced and the audit re-run
+(Addendum 12 step 5).]
 
 vehicle_part ids have no prefix in game JSON; their tileset entries are
 `vp_<id>` plus facing/edge suffixes (see CDDA's own
@@ -214,6 +219,7 @@ os.makedirs(OUT, exist_ok=True)
 missing_shipped, useall_only = [], []
 lines = ["# CDDA base-game coverage vs UltiCa tileset (v2)", "",
          "Pinned: CDDA 6a3e59e0 / Tilesets 5ee942f9 (UltiCa).",
+         "Base note 2026-11-23: master-pin record — fork base is now CDDA 0.I-1 (7b2efa5c), but this audit reads fork-src/cdda (still the master checkout); re-run after fork-src is replaced (plan.md Addendum 12 step 5).",
          "`json` universe = tile-entry JSON ids (what our voxelizer loader saw before the 2026-11-15 --use-all fix).",
          "`shipped` universe = json ids + stems of PNGs no entry references (compose.py --use-all, the official UltiCa build; our loader now synthesizes the same entries).",
          "Resolution: exact -> variant -> season -> looks_like (copy-from inherited, jump limit 10) -> filler. Filler = NOT represented.", ""]

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """sim-defs — Phase 11 slice S1a: full CDDA def importer for the sim-server.
 
-Reads the pinned CDDA JSON data (fork-src/cdda/data/json, CDDA
-6a3e59e0) and produces the full TileDefs table in wire terms
+Reads the pinned CDDA JSON data (CDDA 0.I-1, release tag 0.I-1,
+7b2efa5c — pass --data/--mapdata for the tree to read) and produces the full TileDefs table in wire terms
 (schema/cdda_ipc.fbs `TileDef`), mirroring the semantics of the
 fork's real adapter (fork/src/voxel_ipc/voxel_real_adapter.cpp
 `tile_defs()` / `hot_flags_of()` / `item_wire_id()`).
@@ -403,7 +403,7 @@ def build_defs(data_dir, mapdata_h, connect_json):
     }
     table = {
         "protocol_version": 1,
-        "source": "CDDA master @ 6a3e59e0 (fork-src/cdda/data/json)",
+        "source": "CDDA 0.I-1 (release tag 0.I-1, 7b2efa5c)",
         "connect_groups": connect_names,
         "defs": all_defs,
     }
@@ -449,16 +449,12 @@ def find_dangling(defs):
                           "is the null terrain sentinel, id 0 = none); "
                           "it has no JSON def by design")
             else:
-                reason = ("target not present in any imported kind. "
-                          "Inspected 2026-11-23: genuine dangling "
-                          "references in the pinned upstream data — "
-                          "legacy/removed ids (t_machinery_electronic, "
-                          "t_plut_generator, t_foam_roof), tileset-only "
-                          "sprite names used as monster looks_like "
-                          "(chud, mon_frog), ids that now exist only as "
-                          "MIGRATION entries (fridge, armor_lightplate), "
-                          "and one whitespace looks_like (\" \") on the "
-                          "t_deck_coating_no_roof_* terrains")
+                reason = ("target not present in any imported kind; "
+                          "classified per-target with evidence in "
+                          "generated/known_dangling.json (genuine "
+                          "dangling references in the pinned upstream "
+                          "data — legacy/removed ids, tileset-only "
+                          "sprite names, migration-only ids)")
             findings.append({
                 "kind": d["kind"], "kind_name": KIND_NAME[d["kind"]],
                 "string_id": d["string_id"], "field": field,

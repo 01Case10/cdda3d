@@ -5,6 +5,13 @@ Generated from the `LICENSE.txt` files of the two pinned repos (CDDA
 plus the manual extraction below. **This file is the Phase 0 licensing
 decision record.**
 
+> **Base note (2026-11-23):** the fork base moved to CDDA **0.I-1**
+> (release tag `0.I-1`, `7b2efa5c`) per plan.md Addendum 12. The
+> record below stands for the master pin it was generated from.
+> 0.I-1's `LICENSE.txt` was checked in the re-verification (probe
+> 0.10 evidence change only: 9,144 → 4,570 bytes, CC BY-SA intact),
+> so the licensing decision is unaffected.
+
 ## Base licenses
 - **CDDA** (`LICENSE.txt`, 174 lines): Creative Commons
   Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0).

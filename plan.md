@@ -793,6 +793,7 @@ A stateful, deterministic Rust test game that stands in for the fork over the re
 - **S2 DONE 2026-11-23 (parent re-verified, sim suite 11/11):** turn loop in `crates/sim/src/rules.rs` (`World::apply_input`, also the in-process entry point for S7's runner). **Input echo REMOVED** — stub semantics replaced by real-game semantics: a pressed Key = one turn, answered by exactly one Delta (or a fresh Snapshot on map shift); key releases ignored; Ping/Pong unchanged. Keys: vi-keys + WASD cardinals, `.`/space wait, `o`/`c` arm a pending Open/Close and the next direction key applies it to the adjacent tile (arming itself is not a turn — it's a prompt, as in CDDA; the direction key consumes the turn). Deltas are diff-shaped like the real exporter: dirty-submap diff vs last-sent state, TileChanges for changed tiles only, entity updates via `entity_updates` (schema note: DeltaT has no separate added-entities field). Player crossing a submap boundary = epoch+1 + fresh Snapshot. Passability: WALL hot-flag bit (bit 25, `TFLAG_WALL`) + has-`open_result` + creature occupancy; bump into a closed door blocks and consumes the turn. New scene `street_block` (24×24, 2×2 submaps). Gates: **T1 world/wire half PASS** (bump blocked with empty Delta, `o`+`s` TileChange `t_door_c → t_door_o`, out, submap crossing → epoch 2 Snapshot, back → epoch 3, close behind; seq +1 asserted every turn; lit/outside assertions are S3's), **T5 PASS** (door cycle; no-op open/close emits NO TileChange for the door tile), **200-turn mirror invariant PASS** (fixed patrol pattern, mirror == fresh snapshot after every turn). S0/S1 gates all preserved (parity 3/3 — initial snapshots unchanged). **KNOWN FIDELITY GAP (finding, follow-up):** passability does not use CDDA's real rule — `movecost` (0 = impassable), which the S1a importer does not extract. Consequences under the current rule: `t_tree` is walk-through (no WALL flag in its data; CDDA blocks it via movecost 0), `t_window` and `t_chainfence` are passable at no cost (CDDA: climb-through with high movecost / climb check — directionally right, cost-free). Fix path: importer extracts `movecost` for terrain/furniture → registry → passability = movecost > 0 (plus the open_result/creature rules); small slice, not yet scheduled.
 - **Movecost passability FIXED 2026-11-23 (Joey's call; parent-implemented + verified, sim suite 12/12):** grounded in the pinned source first — JSON keys are terrain `move_cost` (`ter_t::load`, optional, member default 0) and furniture `move_cost_mod` (`furn_t::load`, mandatory); the rule is `map::move_cost_ter_furn` (src/map.cpp): ter cost 0 → impassable, furn mod < 0 → impassable, else passable iff sum > 0. Importer now extracts both into defs.json as sim-internal `move_cost` (TileDef has no such wire field; registry-only), validate gained ground-truth spot checks (t_wall/t_tree/t_door_c/t_window/t_chainfence = 0, t_floor/t_grass/t_door_o = 2, f_bookcase = −1, f_table = +2 — all pass; counts/dangling unchanged, validate PASS). Sim passability now mirrors `move_cost_ter_furn` + the creature-occupancy rule; the WALL-bit and open_result conditions are gone (closed doors/windows block via their real move_cost 0). Regression discipline per Joey's rule: new `movecost_passability` gate (new `passability` scene: tree/window/fence/bookcase block, table tile passes) was run against the old rule first and FAILED on "tree blocks", then passes with the fix; T1/T5/200-turn mirror invariant all still green. Not yet modelled: move_cost scaling turn length (every step is still one turn).
 - **Engine world/mesh parity DONE + DefTable kind-collision FIXED 2026-11-23 (Joey picked parity over S3; gate parent re-verified at every step):** new `crates/engine/tests/sim_world_parity_gate.rs` (engine dev-dep on `sim`, test-only; NO engine source change for the gate itself) feeds both sides — sim registry TileDefs + scene Snapshot vs the `proto::samples` fixtures — through the engine's real wire-ingest `snapshot_world::build_snapshot_world` with `block_for` canonicalised via string ids, then compares the full ChunkMaps cell-by-cell (Block id/colour/pass/tex_layers), the `HideAbove(0)` cutaway maps, the RT form (`treebuild::VoxelWorld::from_chunk_map`, full VoxelCell compare), and `mesh_world` output (per-pass quad counts + FNV-1a hash over all mesh arrays). **First run: stub_house 0 diffs, roofed explicit 0 diffs, roofed implicit FAILED — 76 diffs, every one a missing implicit-roof slab on the sim side** (36 ChunkMap + 36 RT cells at the z+1 slab over the 6×6 footprint; mesh-outside 34 vs 54 quads). **Root cause (engine-side latent bug, verified in source + data):** `hardcases::DefTable::from_tiledefs` keyed defs by raw numeric id across ALL kinds, last-wins — but wire ids are per-kind (the real adapter's convention, and the sim's), so terrain ids collided with later Item/VehiclePart defs (`t_floor` 345 → `seat_wood_bench`, `t_wall` 1132 → `barrette`, `t_door_c` 231 → `hand_rims`, all `roof_result: None`) and `floor_at`'s roof lookup silently found no roof. The fixture tables' globally unique hand-assigned ids are why no earlier gate saw it; **the real fork would hit this identically.** Second layer: 147 string ids exist in two kinds at once, so string resolution must also be kind-scoped. **Fix:** `DefTable` is now keyed by `(kind, id)` and `(kind, string_id)`; `def`/`resolve`/`classify_transition` take a `TileKind`; call sites updated (`openair::floor_at` = Terrain, `snapshot_world` prop-stamp lookups = Terrain, `TileWorld::apply_change` passes Terrain/Furniture per slot, hardcases/release tests + perf_probe updated — one gate_tests fixture was furniture doors mislabelled by the mechanical edit and is now correctly Furniture). **After the fix: parity 3/3, 0 diffs everywhere** (mesh hashes equal); hardcases + release suites green; roof/terrain/phase8-wire/phase9-stamp engine gates green; sim suite 12/12. Side benefit: `report::defs()` now yields ALL defs (colliding defs were previously dropped silently). **Still open:** pixel-capture parity (needs the CaptureArgs wire-snapshot source — engine change, unscheduled) and furniture fine-prop parity (the gate covers the coarse terrain/roof world; furniture enters via the Phase 9 stamp path with its own resolver).
+- **Base migration note (2026-11-23, Addendum 12 executed):** the S1a/S1 records above state the master-pin census (14,262 defs, 40 connect groups, 1,472,644-byte TileDefs frame) — that record stands as history. The generated table has been regenerated from CDDA 0.I-1 data: **13,532 defs** (Terrain 1,108, Furniture 659, Trap 124, Field 144, Monster 1,123, Item 9,912, VehiclePart 462), **36 connect groups**, TileDefs frame **1,382,468 bytes**, validate PASS with a fresh 604-entry dangling allowlist investigated for this base; sim suite 12/12 + engine parity gate 3/3 re-run green on the new table (see Addendum 12's migration-executed record for the full account).
 - **S3 scope AMENDED 2026-11-23 (Addendum 11 light amendment, Joey's decision; full design `docs/addendum-11-light.md`):** S3's visibility recompute must produce not only `lit`/`seen`/`outside` but also the two new additive wire fields **`light_frac`** (continuous falloff inside `LOW`/`LIT`, upstream `light_above_threshold` definition) and **`light_tint`** (normalised per-tile hue, upstream `illumination_hue` definition) — the sim is their first producer, computing them by the same definitions the fork adapter will use, and T1/T6 gain frac/tint assertions. No code changed by the amendment; S3 remains next.
 
 ---
@@ -2161,3 +2162,49 @@ staying dark in RT (the shadow proof).
 > inserted identifiers resolve in the 0.I-1 tree, JSON parses —
 > first real compile remains the PC build (0.1/0.2). Remaining:
 > pin flip + defs.json regen with a fresh dangling allowlist.
+>
+> **Migration EXECUTED (2026-11-23, on Joey's "Run it"; parent to
+> verify + commit):** (1) **Pins flipped** — `build-cdda-voxel.sh`
+> PINNED_COMMIT, `package_smoke.sh` VERSION stamp + its grep check,
+> `sim_defs.py` docstring + defs.json source string ("CDDA 0.I-1
+> (release tag 0.I-1, 7b2efa5c)"), `README.md` pins, ci-nightly's
+> upstream tarball URL, pc-build README, `crates/release`
+> FORK_COMMIT crash-report stamp, phase0 tools (probes / hook
+> extractor / probe patch — flipped with base notes). **Finding:
+> `patch_cmake.py`'s anchor was the master multi-line CMake glob
+> (with `cata_allocator_c.c`); 0.I-1's glob is a single line, so
+> the anchor was updated and verified applying to the real 0.I-1
+> `src/CMakeLists.txt`.** Docs annotated (hook-points, licensing,
+> recon fork-base row, phase3-fork §3, test-sim-engine §2);
+> `tools/audit_missing_tiles.py` annotated but its pin left —
+> it reads `fork-src/cdda` (still the master checkout), so its
+> output stays a master-pin record per step 5; coverage-audit
+> records untouched. Adapter: comment-only update (APIs
+> re-verified; B1–B4 backports carry the code delta).
+> (2) **defs.json regenerated** from the 0.I-1 tree — counts
+> reproduce the drift run exactly: **13,532 defs** (Terrain 1,108,
+> Furniture 659, Trap 124, Field 144, Monster 1,123, Item 9,912,
+> VehiclePart 462), 36 connect groups, defs byte-identical to
+> the drift run apart from the source string. (3) **Fresh
+> dangling allowlist** — 604 refs investigated from scratch (not
+> copied from master's 668; 579 tuples overlap, 25 new, 89 master
+> entries gone): 217× `t_null` sentinel (incl. 20 fence/gate
+> terrains that bashed to posts on master and bash straight to
+> `t_null` in 0.I-1 data), 196× cross-kind `looks_like`, 80×
+> tileset sprite names (`chud` 37, `mon_frog` 22, machinery/atm/
+> console family 21), 39× MIGRATION-only ids (chainmail/power-
+> armor family, `fridge`, `gown` — a real item on master, only a
+> migration alias here), 67× genuine upstream stale, 3× malformed
+> (whitespace `looks_like`, trailing-space `wine_cabernet `),
+> 1× mod-only (`f_shrub_moss`), 1× ascii_art-only (`ruger1022`);
+> zero unexplained. **Validate PASS** (0 unlisted, 0 stale).
+> (4) **Gates re-run green on the new table:** sim suite 12/12
+> (parity 3/3, turn 4/4, registry/server/measure), engine
+> world/mesh parity gate 3/3, release suite green. Census-pinned
+> test assertions updated to the new base (def count 14,262 →
+> 13,532 in measure/registry/server gates; connect groups 40 →
+> 36 in registry/server gates) — the assertions now state the
+> 0.I-1 census, flagged here rather than hidden. TileDefs frame
+> on the new table: 1,382,468 bytes. Still outstanding per the
+> scope above: step 6 (0.1/0.2 baseline re-taken on Joey's PC)
+> and the fork's first compile (B1–B4 + H1–H8 on the PC build).

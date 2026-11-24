@@ -127,11 +127,11 @@ fn s0_handshake_snapshot_turn_ping_shutdown() {
     match recv(&mut stream, &mut dec) {
         MessageT::TileDefs(td) => {
             let defs = td.defs.unwrap_or_default();
-            assert_eq!(defs.len(), 14_262, "full Option C def table");
+            assert_eq!(defs.len(), 13_532, "full Option C def table (0.I-1 base census)");
             assert_eq!(
                 td.connect_groups.unwrap_or_default().len(),
-                40,
-                "connect-group registry"
+                36,
+                "connect-group registry (0.I-1 base census)"
             );
         }
         other => panic!("expected TileDefs, got {other:?}"),

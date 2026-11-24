@@ -2,7 +2,7 @@
 //! gets a plain message and a log file carrying the version facts
 //! needed to reproduce — frontend version, protocol version, and
 //! the pinned fork commit the build was made against (plan §1:
-//! the fork is pinned to `6a3e59e0…`; a crash report that doesn't
+//! the fork is pinned to `7b2efa5c…`; a crash report that doesn't
 //! name it can't be matched to game-side behavior).
 
 use std::io::Write;
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The pinned CDDA fork commit (plan §1 / docs/recon.md §6).
-pub const FORK_COMMIT: &str = "6a3e59e08842de34ff3f111c7f098abeffb708a5";
+pub const FORK_COMMIT: &str = "7b2efa5cea38e4d4d97dd0e63b28b9148623da59";
 
 /// This frontend build's version (the release crate's version is
 /// the workspace's release version).

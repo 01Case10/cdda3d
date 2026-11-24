@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Add the voxel_ipc module to the fork's src/CMakeLists.txt.
 
-The pinned upstream file (CDDA master @ 6a3e59e0) collects game sources
+The pinned upstream file (CDDA 0.I-1, release tag 0.I-1) collects game sources
 with a NON-recursive glob:
 
     file(GLOB CATACLYSM_DDA_SOURCES
@@ -27,9 +27,10 @@ import sys
 
 MARKER = "# cdda-voxel: voxel_ipc module (tools/pc-build)"
 
-ANCHOR = """file(GLOB CATACLYSM_DDA_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/cata_allocator_c.c)
+# 0.I-1's glob is a single line (the master pin's multi-line form with
+# cata_allocator_c.c does not exist on this base — verified against
+# 0.I-1 src/CMakeLists.txt:16, 2026-11-23).
+ANCHOR = """file(GLOB CATACLYSM_DDA_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 """
 
 INSERT = ANCHOR + """

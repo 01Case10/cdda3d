@@ -30,7 +30,7 @@ seating.
    tiles build is out of scope for this project (Phase 0 clarification);
    `TILES=OFF` never links it.
 2. **Clone** — a *full* checkout of `CleverRaven/Cataclysm-DDA` at the
-   pinned commit `6a3e59e08842de34ff3f111c7f098abeffb708a5` into
+   pinned commit `7b2efa5cea38e4d4d97dd0e63b28b9148623da59` into
    `Documents\cdda-voxel-build\Cataclysm-DDA`. The repo's
    `fork-src/cdda` is a sparse recon checkout and cannot build or run
    tests (no `data/`, `lang/`, full `tests/`), so it is not used. If

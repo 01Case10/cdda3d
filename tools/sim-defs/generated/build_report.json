@@ -1,34 +1,31 @@
 {
  "source_meta": {
-  "files_read": 3353,
-  "total_entries": 58407,
+  "files_read": 3013,
+  "total_entries": 52540,
   "parse_failures": [],
   "non_list_files": []
  },
- "ter_furn_flag_count": 139,
- "connect_group_count": 40,
+ "ter_furn_flag_count": 129,
+ "connect_group_count": 36,
  "unknown_flags": {
   "BANK_NETWORKED": 2,
   "BARRICADABLE_DOOR_REINFORCED_DAMAGED": 1,
   "BARRICADABLE_WINDOW": 32,
   "BRIDGE": 1,
   "CHIP": 12,
-  "EASY_NO_DECONSTRUCTDECONSTRUCT": 1,
-  "EMPTY_SPACE": 18,
+  "DONT_REMOVE ROTTEN": 8,
+  "EMPTY_SPACE": 13,
   "EXAMINE_FROM_ABOVE": 3,
-  "FREE_TO_EXAMINE": 11,
-  "LINEAR": 1,
+  "FREE_TO_EXAMINE": 9,
   "MUTANT_TREE": 1,
-  "NO_DECONSTRUCT": 43,
   "OBSTACLE": 3,
-  "PAINFUL": 11,
-  "PSEUDO": 1,
-  "RUG": 38
+  "PAINFUL": 10,
+  "RUG": 46
  },
  "unknown_connect_groups": {},
  "name_fallback_to_string_id": {
-  "trap": 56,
-  "vehicle_part": 226
+  "trap": 54,
+  "vehicle_part": 26
  },
  "per_kind": {
   "terrain": {
@@ -68,12 +65,12 @@
   }
  },
  "counts_per_kind": {
-  "Terrain": 1271,
-  "Furniture": 713,
-  "Trap": 150,
-  "Field": 172,
-  "Monster": 1203,
-  "Item": 10270,
-  "VehiclePart": 483
+  "Terrain": 1108,
+  "Furniture": 659,
+  "Trap": 124,
+  "Field": 144,
+  "Monster": 1123,
+  "Item": 9912,
+  "VehiclePart": 462
  }
 }

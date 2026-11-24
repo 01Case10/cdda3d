@@ -2,7 +2,11 @@
 
 These are the exact, minimal, additive instrumentation points the Phase 0
 harness results in `docs/recon.md` are based on. They are written against
-CDDA `6a3e59e0` file/symbol locations from `docs/hook-points.md`. None of
+CDDA `6a3e59e0` file/symbol locations from `docs/hook-points.md`.
+[Base note, 2026-11-23: the fork base moved to 0.I-1 (release tag
+0.I-1, 7b2efa5c) per plan.md Addendum 12; hook-point contexts were
+re-verified against the 0.I-1 tree (31/32 found) — re-derive exact
+locations from the re-verification report before applying.] None of
 them change simulation behaviour; all logging is behind the environment
 variable `CDDA_VOXEL_PROBE=1`. Apply them on the `voxel-frontend` branch,
 run the scripted sequences, then remove the log lines (the hook *points*

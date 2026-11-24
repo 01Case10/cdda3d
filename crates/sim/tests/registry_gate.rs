@@ -18,8 +18,8 @@ pub fn scene_path(name: &str) -> PathBuf {
 #[test]
 fn registry_loads_full_table() {
     let reg = DefRegistry::load(&defs_path()).expect("defs.json must load");
-    assert_eq!(reg.len(), 14_262, "full Option C def count");
-    assert_eq!(reg.connect_groups().len(), 40, "connect-group registry");
+    assert_eq!(reg.len(), 13_532, "full Option C def count (0.I-1 base census)");
+    assert_eq!(reg.connect_groups().len(), 36, "connect-group registry (0.I-1 base census)");
 
     // Spot lookups (hand-checked against the real JSON in S1a).
     let door = reg
@@ -44,8 +44,8 @@ fn registry_loads_full_table() {
 
     // Wire table: every def + the registry strings.
     let td = reg.tiledefs();
-    assert_eq!(td.defs.as_ref().unwrap().len(), 14_262);
-    assert_eq!(td.connect_groups.as_ref().unwrap().len(), 40);
+    assert_eq!(td.defs.as_ref().unwrap().len(), 13_532);
+    assert_eq!(td.connect_groups.as_ref().unwrap().len(), 36);
     let wire_door = td
         .defs
         .as_ref()

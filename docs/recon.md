@@ -8,6 +8,10 @@ with the exact unblock path).
 - CDDA `master` @ `6a3e59e08842de34ff3f111c7f098abeffb708a5` — sparse,
   blobless clone: `src/`, `tools/gfx_tools/`, `tests/`, `LICENSE.txt`,
   `CMakeLists.txt`, `Makefile`
+  [Base note, 2026-11-23: the fork base moved to CDDA **0.I-1**
+  (release tag `0.I-1`, `7b2efa5c`) per plan.md Addendum 12; the
+  0.I-1 tree lives at `~/workspace/cdda-stable/cdda-0.I-1` and this
+  checkout remains as the master-pin record.]
 - CDDA-Tilesets `master` @ `5ee942f9e6601970c5da356200e7cf5061226262` —
   sparse clone: `gfx/UltimateCataclysm` JSON + metadata, `LICENSE.txt`,
   `readme.md`
@@ -129,7 +133,7 @@ Options from the plan, resolved:
 | UI route | **Route B primary** (catacurses-level), Route A fallback | §1 Q3 |
 | Headless route | **Null `catacurses` backend** | §2 |
 | First tileset | **UltiCa only** | default tileset; Altica/Chibi_Ultica characters deferred (§14.4 narrowed, not closed) |
-| Fork base | **`master` @ 6a3e59e0, pinned** — not a release branch | all Appendix A evidence is from master; re-check Appendix A if this ever changes |
+| Fork base | **CDDA 0.I-1 (release tag `0.I-1`, `7b2efa5c`)** — moved 2026-11-23 per plan.md Addendum 12 (was `master` @ 6a3e59e0) | Appendix A re-verified against 0.I-1 (reverify report); the five master-only APIs the adapter uses are backported (fork/hooks/backport_patches.md B1–B4) |
 | Target platform v1 | **Linux first** (Windows packaging in Phase 8) | plan §10/§12 already Linux-first; §14.5 narrowed accordingly |
 
 ## 4. Annotated source map (what Phase 0 actually read)
