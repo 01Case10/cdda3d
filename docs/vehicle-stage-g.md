@@ -157,3 +157,27 @@ Sensitivity verified: a 1-unit deck change (26 → 25) fails
 the gate with per-tile drift; restored, it passes.
 Voxelizer suite 116/116 undisturbed. Colours in S1 are the
 segments' raw colours; S2 replaces them with the §4 spec.
+
+## 8. S2 outcome (2026-11-24)
+
+Done. `voxelizer::vehicle::Colorizer` ports the tex6 rules
+(per-part tables from the sprites, cleaned tops, trim row,
+side unification onto SIDE_PAINT/SIDE_TRIM, downward
+gradient, underbody ×0.3) and applies the prototype's
+unapplied `repaint()` to panel tops. Two porting traps
+recorded: Python's `min` takes the FIRST of equal minima
+(Rust's `min_by_key` takes the last — the clean() lookup
+iterates by hand), and `round()` is half-even throughout.
+
+Gates: `vehicle_color_gate` (voxelizer, synthetic sprites,
+hand-computed values) 6/6 — paint median, cross-part top
+unification with deltas preserved, chromatic exclusion,
+side paint/trim, glass/wheel bypass, underbody. Engine
+gate gains `car_colours_follow_tex6_plus_top_unification`:
+the real car's PAINT is (41,41,41); 66% of achromatic
+front-top voxels sit exactly on it (the hood mass — it sat
+on halfboard's (153,153,153) before the fix); strongly
+blue tops hold at ~47% (the roof is untouched). Failing-
+first verified: with repaint disabled the on-paint share
+is 0/4006 and the gate fails. S1 occupancy gate still
+green — colouring does not move a single cell.

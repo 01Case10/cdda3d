@@ -213,3 +213,59 @@ fn car_occupancy_matches_the_prototype() {
     }
     assert!(bad.is_empty(), "occupancy drift vs the prototype:\n{}", bad.join("\n"));
 }
+
+#[test]
+fn car_colours_follow_tex6_plus_top_unification() {
+    let root = root();
+    let assets = ensure_assets(&root);
+    let resolver = sprite_resolver(&assets);
+    let cz = voxelizer::vehicle::Colorizer::new(&resolver);
+    // The real car's paint, from its sprites' dominants
+    // (median of the achromatic PAINT_PARTS dominants).
+    assert_eq!(cz.paint(), Some([41, 41, 41]));
+
+    let layout = car_layout(&root);
+    let models = compose_vehicle(&layout, &resolver);
+    let front_x = models.iter().map(|((x, _, _), _)| *x).max().unwrap();
+    let paint = cz.paint().unwrap();
+    let (mut achro_total, mut achro_at_paint) = (0usize, 0usize);
+    let (mut tops, mut blue) = (0usize, 0usize);
+    for ((tx, _, _), model) in &models {
+        for ly in 0..32u32 {
+            for lx in 0..32u32 {
+                let mut top = None;
+                for y in (0..96u32).rev() {
+                    if let Some(c) = model.get(lx, y, ly) {
+                        top = Some([c[0], c[1], c[2]]);
+                        break;
+                    }
+                }
+                let Some(c) = top else { continue };
+                tops += 1;
+                if (c[2] as i32) - (c[0] as i32) >= 60 {
+                    blue += 1;
+                }
+                if *tx == front_x && c.iter().max().unwrap() - c.iter().min().unwrap() <= 12 {
+                    achro_total += 1;
+                    if c == paint {
+                        achro_at_paint += 1;
+                    }
+                }
+            }
+        }
+    }
+    // The hood fix, measured: most achromatic front-top
+    // voxels sit exactly on the vehicle paint. Without the
+    // top unification the mass sits on halfboard's own
+    // (153,153,153) and this share collapses.
+    assert!(
+        achro_at_paint * 5 >= achro_total * 3,
+        "achromatic front tops on the vehicle paint: {achro_at_paint}/{achro_total} (< 60%)"
+    );
+    // Chromatic preservation: the blue roof survives
+    // (measured ~47% of all top voxels strongly blue).
+    assert!(
+        blue * 5 >= tops * 2,
+        "strongly blue tops: {blue}/{tops} (< 40%)"
+    );
+}

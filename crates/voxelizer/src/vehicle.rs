@@ -20,6 +20,12 @@
 //! Part state (`open`, `broken`) is carried on the layout but
 //! not yet acted on — the prototype composed the closed,
 //! undamaged vehicle, and state presentation is later work.
+//!
+//! Colouring ([`Colorizer`]) ports the prototype's tex6 rules
+//! plus one fix the prototype computed but never applied: its
+//! `repaint()` vehicle-paint unification now covers panel
+//! TOPS, not just sides (the hood squiggle root cause,
+//! docs/vehicle-stage-g.md §4).
 
 use crate::props::PropModel;
 use image::{Rgba, RgbaImage};
@@ -430,8 +436,9 @@ fn crown_and_enclosure(grid: &mut Grid, z: &Zones, tiles: &BTreeMap<(i32, i32), 
 
 /// Fill the segment grid into per-tile dense models
 /// (prototype exporter's fill: rows `round(z0*2)..round(z1*2)`,
-/// later segments win a shared voxel).
-fn fill(grid: &Grid) -> Vec<((i32, i32), PropModel)> {
+/// later segments win a shared voxel; each row's colour is
+/// the Colorizer's, from the segment's part and depth).
+fn fill(grid: &Grid, colorizer: &Colorizer) -> Vec<((i32, i32), PropModel)> {
     let mut models: BTreeMap<(i32, i32), PropModel> = BTreeMap::new();
     for ((gx, gy), segs) in grid {
         let (tx, ty) = (gx.div_euclid(FINE), gy.div_euclid(FINE));
@@ -442,7 +449,8 @@ fn fill(grid: &Grid) -> Vec<((i32, i32), PropModel)> {
         for s in segs {
             for y in py_round(s.z0 * 2.0)..py_round(s.z1 * 2.0) {
                 if (0..LEVEL_ROWS as i32).contains(&y) {
-                    model.set(lx, y as u32, ly, Some(Rgba([s.color[0], s.color[1], s.color[2], 255])));
+                    let c = colorizer.voxel_color(s.z0, s.z1, s.color, &s.part, y);
+                    model.set(lx, y as u32, ly, Some(Rgba([c[0], c[1], c[2], 255])));
                 }
             }
         }
@@ -460,13 +468,228 @@ pub fn compose_vehicle(
     for ((x, y, zl), spots) in &layout.tiles {
         levels.entry(*zl).or_default().insert((*x, *y), spots.clone());
     }
+    let colorizer = Colorizer::new(sprites);
     let mut out = Vec::new();
     for (zl, tiles) in levels {
         let (mut grid, z) = build_level(&tiles, sprites);
         crown_and_enclosure(&mut grid, &z, &tiles);
-        for ((tx, ty), model) in fill(&grid) {
+        for ((tx, ty), model) in fill(&grid, &colorizer) {
             out.push(((tx, ty, zl), model));
         }
     }
     out
+}
+
+// ----------------------------------------------------------------
+// Colouring: the prototype's tex6 rules (export_models.py),
+// plus the repaint() top unification it computed but never
+// applied. All float/int semantics mirror the Python: round()
+// is half-even, int() truncates, // floors.
+// ----------------------------------------------------------------
+
+/// Parts whose sprites are separate icons of one painted
+/// surface: their colours unify onto the vehicle paint.
+const PAINT_PARTS: [&str; 6] = ["door", "door_trunk", "halfboard", "trunk", "cargo_space", "windshield"];
+/// Parts that carry a trim row under their top.
+const PANELS: [&str; 9] = [
+    "halfboard", "door", "door_trunk", "trunk", "cargo_space", "roof", "frame", "windshield",
+    "xlframe",
+];
+
+fn lum(c: [u8; 3]) -> f64 {
+    0.3 * c[0] as f64 + 0.5 * c[1] as f64 + 0.2 * c[2] as f64
+}
+
+fn shade(c: [u8; 3], f: f64) -> [u8; 3] {
+    let m = |v: u8| py_round(v as f64 * f).clamp(0, 255) as u8;
+    [m(c[0]), m(c[1]), m(c[2])]
+}
+
+/// One part's colour table from its sprite.
+#[derive(Debug, Clone)]
+struct PartTable {
+    /// The 12 most frequent opaque colours (count order,
+    /// first-seen wins ties — Python `Counter.most_common`).
+    common: Vec<[u8; 3]>,
+    dominant: [u8; 3],
+    trim: [u8; 3],
+}
+
+fn part_table(spr: &RgbaImage) -> Option<PartTable> {
+    let mut counts: Vec<([u8; 3], u32)> = Vec::new();
+    for sy in 0..spr.height() {
+        for sx in 0..spr.width() {
+            let px = spr.get_pixel(sx, sy);
+            if px[3] < 128 {
+                continue;
+            }
+            let c = [px[0], px[1], px[2]];
+            match counts.iter_mut().find(|(k, _)| *k == c) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((c, 1)),
+            }
+        }
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1)); // stable: first-seen wins ties
+    let common: Vec<[u8; 3]> = counts.iter().take(12).map(|(c, _)| *c).collect();
+    let dominant = common[0];
+    let trim = counts
+        .iter()
+        .take(40)
+        .map(|(c, _)| *c)
+        .find(|c| lum(*c) < 95.0)
+        .unwrap_or_else(|| {
+            let t = |v: u8| (v as f64 * 0.55) as u8; // int() truncates
+            [t(dominant[0]), t(dominant[1]), t(dominant[2])]
+        });
+    Some(PartTable { common, dominant, trim })
+}
+
+/// The tex6 colorizer: per-part tables, the unified side
+/// paint, and the vehicle paint for top unification.
+pub struct Colorizer<'a> {
+    sprites: &'a dyn Fn(&str) -> Option<RgbaImage>,
+    cache: std::cell::RefCell<std::collections::HashMap<String, Option<PartTable>>>,
+    /// Median achromatic dominant among PAINT_PARTS.
+    paint: Option<[u8; 3]>,
+    side_paint: [u8; 3],
+    side_trim: [u8; 3],
+}
+
+impl<'a> Colorizer<'a> {
+    pub fn new(sprites: &'a dyn Fn(&str) -> Option<RgbaImage>) -> Self {
+        let mut cz = Colorizer {
+            sprites,
+            cache: Default::default(),
+            paint: None,
+            side_paint: [115, 115, 115],
+            side_trim: [38, 38, 38],
+        };
+        // Vehicle paint: median of the achromatic PAINT_PARTS
+        // dominants, by luminance (prototype's selection).
+        let mut doms: Vec<[u8; 3]> = PAINT_PARTS
+            .iter()
+            .filter_map(|p| cz.table_for(p))
+            .map(|t| t.dominant)
+            .filter(|d| d.iter().max().unwrap() - d.iter().min().unwrap() <= 12)
+            .collect();
+        doms.sort_by(|a, b| lum(*a).partial_cmp(&lum(*b)).unwrap());
+        cz.paint = doms.get(doms.len() / 2).copied();
+        // Side paint: mean of the door and halfboard
+        // dominants; side trim: the door's most common
+        // non-dominant colour.
+        if let (Some(door), Some(half)) = (cz.table_for("door"), cz.table_for("halfboard")) {
+            cz.side_paint = [
+                ((door.dominant[0] as u16 + half.dominant[0] as u16) / 2) as u8,
+                ((door.dominant[1] as u16 + half.dominant[1] as u16) / 2) as u8,
+                ((door.dominant[2] as u16 + half.dominant[2] as u16) / 2) as u8,
+            ];
+            cz.side_trim = door
+                .common
+                .iter()
+                .find(|c| **c != door.dominant)
+                .copied()
+                .unwrap_or([38, 38, 38]);
+        }
+        cz
+    }
+
+    fn table_for(&self, part: &str) -> Option<PartTable> {
+        if let Some(hit) = self.cache.borrow().get(part) {
+            return hit.clone();
+        }
+        let tab = sprite_for(part, self.sprites).and_then(|spr| part_table(&spr));
+        self.cache.borrow_mut().insert(part.to_string(), tab.clone());
+        tab
+    }
+
+    /// The vehicle paint (None when no PAINT_PART is
+    /// achromatic).
+    pub fn paint(&self) -> Option<[u8; 3]> {
+        self.paint
+    }
+
+    /// Shift an achromatic paint part's colour onto the
+    /// vehicle paint, preserving its delta from the part's
+    /// own dominant (the prototype's `repaint()`).
+    fn repaint(&self, part: &str, c: [u8; 3]) -> [u8; 3] {
+        let Some(paint) = self.paint else { return c };
+        if !PAINT_PARTS.contains(&part) {
+            return c;
+        }
+        let Some(tab) = self.table_for(part) else { return c };
+        let dom = tab.dominant;
+        if dom.iter().max().unwrap() - dom.iter().min().unwrap() > 12 {
+            return c; // chromatic part: keeps its own colour
+        }
+        let f = |ch: usize| (paint[ch] as i32 + c[ch] as i32 - dom[ch] as i32).clamp(0, 255) as u8;
+        [f(0), f(1), f(2)]
+    }
+
+    /// Colour of fine row `y` of one segment (prototype
+    /// `voxel_color`): depth is in mockup units below the
+    /// segment's top.
+    pub fn voxel_color(&self, z0: f64, z1: f64, top_color: [u8; 3], part: &str, y: i32) -> [u8; 3] {
+        let depth = z1 - (y + 1) as f64 / 2.0;
+        let mut col;
+        if part == "glass" {
+            return GLASS;
+        } else if part == "wheel" || part == "pillar" {
+            return top_color;
+        }
+        let tab = self.table_for(part);
+        if depth < 1.0 {
+            col = match &tab {
+                // Nearest table colour; first wins ties
+                // (Python `min` semantics — Rust's
+                // `min_by_key` would take the last).
+                Some(t) => {
+                    let mut best = t.common[0];
+                    let mut best_d = i32::MAX;
+                    for k in &t.common {
+                        let d = (k[0] as i32 - top_color[0] as i32).pow(2)
+                            + (k[1] as i32 - top_color[1] as i32).pow(2)
+                            + (k[2] as i32 - top_color[2] as i32).pow(2);
+                        if d < best_d {
+                            best_d = d;
+                            best = *k;
+                        }
+                    }
+                    best
+                }
+                None => top_color,
+            };
+            // THE FIX: panel tops unify onto the vehicle
+            // paint too, not just the sides.
+            col = self.repaint(part, col);
+        } else if tab.is_none() {
+            col = shade(top_color, 0.8);
+        } else {
+            let t = tab.unwrap();
+            let (mut dominant, mut trim) = (t.dominant, t.trim);
+            if PAINT_PARTS.contains(&part) {
+                dominant = self.side_paint;
+                trim = self.side_trim;
+            }
+            if depth < 2.0 && PANELS.contains(&part) {
+                col = trim;
+            } else {
+                let span = ((z1 - z0) - 2.0).max(1.0);
+                let mut f = 1.0 - 0.3 * ((depth - 2.0) / span).clamp(0.0, 1.0);
+                if depth >= (z1 - z0) - 1.0 {
+                    f *= 0.85;
+                }
+                col = shade(dominant, f);
+            }
+        }
+        // Underbody: below the body floor, non-wheel mass
+        // reads as shadow, not grey boxes.
+        if part != "wheel" && (y as f64) / 2.0 < 8.5 {
+            col = shade(col, 0.3);
+        }
+        col
+    }
 }
