@@ -1941,3 +1941,43 @@ to bring the remote current. Remaining terrain batch: item 2 puddles (water-
 shader rework in its thread), then item 4 ultica_run1 regen as close-out.
 
 > **Terrain-fixes addendum 11 (2026-11-23, item 4 / 8b — ultica_run1 regen DONE; terrain-fixes batch CLOSED):** full v2 emission re-run from current main (voxelizer CLI, `--tileset fork-src/tilesets/gfx/UltimateCataclysm --v2`, release build; 12,206 materials, 39,856 layers, 14,450 sprites, 0 missing, ~258 s) and installed into `assets/ultica_run1`, replacing the stale Phase 5 v1 table that had been sitting there (7,717 materials, no models). NOTE: `/assets/*` is gitignored — ultica_run1 is a local emission dir by design; this regen is an on-disk state change, not a commit. Verification: counts match the last verified emission (12,206 materials / 1,422 models / 904 macros / 255 shores); all 1,422 model entries structurally validated (hex length == 4*w*h*d, palette indices in range, material_index in range); seating kinds present on all terrain models (745 standing / 246 ground / 80 fence; 351 furniture kindless); exactly 4 `surface: "water"` entries (the puddle seasons); batch spot-checks in the emitted table — f_standing_tank solid count 23,716 (straps in), egg-sack solid counts identical to the pre-fix table (fix A moved cells only), t_bamboo_dead(_season_winter) 6 culm components at y=20, live t_bamboo size [32,40,32] (current-code shape), hand-build ids present as standing. `effects.json` in the dir is untouched by the v2 run and preserved. The 1,076-entry diff vs the Nov 17-18 `target/gallery_assets` emission is format/code evolution since that emission (kind field added 2026-11-18, fd_* transparency reclassification, builder changes through the terrain drive), not regen error — the producing code is what the gates pin. With this, every terrain-fixes item (1 trees record-only, 2 bamboo, 3 puddles, 4 hand-builds, 5a/5b seating, 6 egg sacks, 7 gasper record-only, 8a tank straps, 8b this regen, 8c fine occlusion) is closed.
+
+## Addendum 2026-11-23 (11): local light emitters — the combined model (Joey's design)
+
+Decision (Joey, 2026-11-23, after the Phase 10 sky work): local light
+sources — vehicle headlights are the motivating case, lamps and
+flashlights follow the same shape — are NOT baked into the per-tile
+light grid, and are NOT free-floating renderer inventions either. The
+model is a combination:
+
+- **The game side declares emitters as data**: position, direction,
+  cone angle, range, intensity, colour ("this car has headlights, here,
+  pointing this way"). Declaring what should be lit is game truth.
+- **The renderer transports the light**: per-pixel cone and distance
+  falloff in both renderers; in the ray-traced path, one shadow ray per
+  emitter, so occluders inside the beam (a wall, a tree, the car's own
+  body) cast real shadows and the pool of light is shaped by geometry,
+  not painted per tile. The raster path applies the same falloff math
+  with no traced shadows in v1 — a recorded asymmetry, consistent with
+  raster being the cheap path elsewhere.
+- **The light grid keeps its existing job**: visibility and the ceiling
+  rule. Emitter light is multiplied by the tile's lit factor like every
+  other light, so an emitter cannot reveal a tile the game marks dark
+  or unseen, and memorized tiles keep their desaturated treatment. The
+  game does not bake the cone into the grid; where the grid speaks
+  about a beam region it says "visible", and the renderer decides how
+  the light actually falls there.
+
+Scope boundaries, explicit: the prototype carries emitters as
+capture/fixture data (an empty emitter set must render byte-identical
+to today — every existing gate is the check). How emitters eventually
+arrive over the wire from the fork (a protocol addition alongside
+EnvironmentUpdate) is a future decision and is NOT made here.
+
+Status: design recorded only — NOT implemented. A first delegated
+prototype attempt (night street scene, fixture car, textured, both
+renderers) produced no verified result and nothing from it is in the
+tree. The build remains to be done, against the acceptance shape
+agreed in the thread: beam pool measurably brighter than the same
+scene unlit in both renderers, and an occluded region inside the cone
+staying dark in RT (the shadow proof).
