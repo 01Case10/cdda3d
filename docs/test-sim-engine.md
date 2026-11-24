@@ -1,0 +1,601 @@
+# CDDA Voxel — Test Game Engine (Sim Server) Plan
+Date: 2026-11-23 · Status: S0 + S1a DONE 2026-11-23 (see plan.md Phase 11 record); S1 next
+Repo home: `crates/sim/` (library) + `tools/sim-server/` (binary)
+in `~/workspace/cdda-voxel/`; this doc also lives in the repo as `docs/test-sim-engine.md`.
+
+**Decisions made 2026-11-23 (Joey):** (1) **Rust** — yes. (2) Name
+**sim-server** — yes. (4) UI text = **real font rendering** — yes
+(see revised §3.3). (5) **Phase 11** in `plan.md` — yes, added.
+(3) Def universe — **C, full real import, everything** (Joey's
+pick 2026-11-23, §8.3). S1a built the full importer (Python stdlib
+tool `tools/sim-defs`, output language-neutral JSON — done 2026-11-23).
+
+## 0. The problem, in one paragraph
+
+Every engine gate today runs on *static* fake data. There is no stateful
+stand-in for the game that holds a mutable world, reacts to input, and
+emits the next Snapshot/Delta the way the real fork would. That is why
+live behaviour — going outside then back inside, opening the UI,
+spawning/destroying things, a door changing the light — can only be
+tested either (a) in pieces, against fixtures that never change, or
+(b) in the real fork, which still cannot be compiled here (0.1/0.2
+blocked on a build-capable machine since 2026-11-15). A small,
+deterministic, protocol-faithful *test game* closes that gap: the
+engine can be driven end-to-end, headless and in CI, before the fork
+ever runs.
+
+## 1. What exists today — three partial doubles, none of them a game
+
+| Double | Where | What it does | What it cannot do |
+|---|---|---|---|
+| Stub server | `tools/stub-server/` (C++, `house.h`, `stub_server.cpp`) | Handshake, TileDefs + **one** fake-house Snapshot, echoes `Input` verbatim, Ping→Pong, Shutdown. `--env-script`: each Input cycles noon-clear → storm → midnight `EnvironmentUpdate` | No state. Input changes nothing in the world. No Delta, no LightUpdate, no Effects, no UI shared memory, no movement |
+| Fork harness mock | `tools/fork-harness/mock_world.{h,cpp}` | 5 static worlds (shelter, house, road+field, multi-storey+basement, vehicle-on-road) behind the fork's real `IGameAdapter` (`fork/src/voxel_ipc/voxel_adapter.h`); proves the *exporter's* diff/serialiser (gate 3.9: mirror == fresh snapshot, 1,100 turns × 10 seeds) | World does not evolve in response to input — tests mutate it directly in C++. Tests the C++ exporter, not the Rust engine's live loop |
+| Rust samples + fixtures | `crates/proto/src/samples.rs`, `crates/engine/src/world.rs` (`build_fake_house`), `frame.rs` (`PropScene/BillboardScene/VehicleScene::fixture*`, `SkyScene::named`, `LightingScene::fake_house`), `crates/ui-share/src/synthetic.rs` | Canonical house, roofed-house (explicit + implicit roof), terrain snapshot; synthetic UI frames for main menu / character creation / inventory / crafting / gameplay sidebar | All frozen. UI frames are pictures, not a UI state machine; scenes are selected by CLI flag, not played |
+
+**Conclusion:** do not extend the C++ stub into a game (it must stay
+the minimal cross-language golden source, and `house.h` already has to
+be kept in sync with `samples.rs` by hand). Do not extend the fork
+harness either (its job is exporter evidence). Build a **new Rust
+simulator** that reuses `crates/proto` — the same object API, framing,
+verifier, `SeqTracker` and shm header the engine already tests against.
+
+## 2. What "what CDDA would give us" actually is — source-derived contract
+
+Verified against pinned CDDA `master @ 6a3e59e0` in
+`fork-src/cdda/`, `docs/hook-points.md`, `docs/recon.md`,
+`fork/src/voxel_ipc/voxel_real_adapter.cpp`, and
+`schema/cdda_ipc.fbs`. The sim must mimic *this*, not invent a
+friendlier protocol:
+
+### 2.1 Geometry / world shape
+- Submap = 12×12 (`SEEX/SEEY`, `src/map_scale_constants.h`); reality
+  bubble = 11×11 submaps = **132×132 tiles** (`MAPSIZE`); max view
+  distance **60**; z-levels **−10…+10**; 3D FOV z-range 10.
+- Snapshot window (fork exporter, `voxel_exporter.h` ViewSpec):
+  centre = player tile, z = player z −1 / +1 by default. One
+  `SubmapBlock` per (submap, z), 144-entry row-major arrays.
+- World scale already decided: 1 tile = 1 block, 1 z-level = 3 blocks.
+
+### 2.2 Per-tile state (`map.h` / `submap.h` → `SubmapBlock` / `TileChange`)
+- Exactly 1 each of: terrain (`map::ter`, map.h:1045), furniture
+  (`map::furn`, by value, map.h:1020), trap (`map::tr_at`, map.h:1614).
+- **Fields are a sparse list, not an id:** a tile can hold smoke + fire
+  at once, each with intensity (`map::field_at`, full field map,
+  map.h:1660). Plus `displayed_field` — the one field the game itself
+  would draw, with its intensity. A Delta's `TileChange` replaces the
+  tile's whole field list *and* carries the new `displayed_field`.
+- **Items are lossy by design on the wire:** `top_item` =
+  `maptile::get_uppermost_item()` (submap.h:439) + `item_count` =
+  stack size from `map::i_at` (map.h:1424). Nothing else about items
+  crosses.
+- `has_graffiti`, `lit`, `seen`, `outside[]` (see 2.3/2.5).
+
+### 2.3 Light, visibility, memory
+- `lit` is the game's **`lit_level` enum, verbatim** (`src/lightmap.h`):
+  `DARK, LOW, BRIGHT_ONLY, LIT, BRIGHT, MEMORIZED, BLANK` — not a
+  0–255 brightness. Read via `map::apparent_light_at(p, cache)`
+  (map.h:585) after `map::update_visibility_cache(z)` (map.h:2520).
+- `seen` = quantised 0–255 visibility. No public seen-cache getter
+  exists in pinned source — the real adapter quantises from
+  `lit_level` (BLANK=0, MEMORIZED=64, visible=255); the sim should
+  follow the same convention so engine thresholds mean the same thing.
+- **Memory blocks are a separate layer:** avatar map memory
+  (`avatar::get_memorized_tile`) carries terrain/furniture only,
+  `lit = MEMORIZED`, never live entities/items/fields.
+- Phase 7 ceiling rule the engine applies on top: `lit_level` caps
+  how much sky/ambient light a tile can take.
+
+### 2.4 Entities and vehicles — not stored in submaps
+- Entities come from creature tracking (`creature_tracker`,
+  `game::all_npcs()`, avatar first, id 1, `sprite_id="player"` in the
+  real adapter), **not** from tiles. Fields per entity: type def,
+  sprite id, absolute pos, `facing` (**NONE/LEFT/RIGHT only** —
+  `creature.h` FacingDirection, horizontal flip, no 8-way), overlays
+  in `get_overlay_ids()` order (character.h:2553 / monster.h:630 —
+  never re-sorted), `hp_frac` 0–255, flags.
+- Vehicles: parts carry **game-computed absolute positions**
+  (`vehicle::bub_part_pos(map, idx)`, vehicle.h:1555 — mounts are
+  pre-rotated game-side) and `face_deg` is a **continuous float**
+  (`vehicle::face.dir()`), never quantised. Part flags: open/broken/roof.
+
+### 2.5 Time, weather, sky exposure (Phase 10)
+- `EnvironmentUpdate` is the game's resolved state, not raw inputs:
+  `calendar` turn, time-of-day / sunrise / sunset (sec), season,
+  `sun_azimuth_altitude(turn)`, `incident_sunlight / incident_moonlight
+  (wtype, turn)`, moon phase, plus weather as **string id + resolved
+  numerics** (`light_multiplier/modifier`, `sun_multiplier`,
+  `precip_class`, `rains`, `sight_penalty`, tint, temperature, wind,
+  `lightning_active`) — weather types are JSON/mod-defined, so no
+  closed enum.
+- Cadence ratified in Phase 10: environment sent on change, time-only
+  updates every **10 game-minutes**. Snapshot always piggybacks the
+  current environment.
+- `outside[]` / `TileChange.outside` = the game's own test,
+  resolved game-side: `map::is_outside(p) && !map::is_roofed(p)`;
+  z < 0 is never outside.
+
+### 2.6 TileDefs and transforms
+- Sent once at connect: string id, kind (Terrain/Furniture/Trap/
+  Field/Monster/Item/VehiclePart), authored flag strings + resolved
+  `hot_flags` bitset, connect-group *indices* into a registry table
+  (never per-def group name strings), `fg_ref/bg_ref` composed-tile
+  indices (−1 = none), and the transform string ids the engine must
+  honour: `open_result` (`ter_t::open`), `close_result`,
+  `bash_result` (bash → `ter_set`/`furn_set`), `looks_like`, and
+  `roof_result` (`ter_t::roof` — the floor above an open-air tile).
+- Real values already in fixtures, e.g. `t_floor → t_wood_treated_roof`,
+  `t_wall/t_window → t_flat_roof`, `t_door_c → t_wood_roof`,
+  `t_door_c.open_result = t_door_o`, `t_grass →` no roof.
+
+### 2.7 Sync, lifecycle, input, UI — the rules of the conversation
+- Transport: local stream socket, **u32 LE length + one FlatBuffers
+  `Envelope`**, 32 MiB cap, `CDDA` file identifier, verifier before
+  any table access. Game is server; engine is client and spawns it
+  (`--frontend=ipc --ipc-path=<path>`).
+- Handshake: `Hello`/`HelloAck`, `PROTOCOL_VERSION` must match
+  exactly (currently 1) or both sides exit cleanly.
+- Sync by monotonic **`seq` + `epoch`**, never by game turn. Fresh
+  Snapshot bumps `epoch`; a skipped `seq` ⇒ engine requests a fresh
+  snapshot; duplicate `seq` discarded; old-`epoch` delta discarded
+  (`proto::sync::SeqTracker`).
+- **There is no per-tile "map changed" hook in CDDA.** Real delta
+  export is: coarse invalidation (`map::invalidate_map_cache(z)`,
+  `set_seen_cache_dirty`, `set_transparency_cache_dirty`) collects
+  dirty submaps, then the exporter *diffs* them. The sim should
+  generate its Deltas the same way (mutate world → mark submap dirty
+  → diff → Delta), so the engine is tested against diff-shaped
+  deltas, not hand-written ones. `map::shift` (bubble recentring) ⇒
+  new epoch + fresh Snapshot.
+- Send boundary in the real game: `game::do_turn()` exit
+  (do_turn.cpp:536) + `game::draw()` redraw point (game.cpp:3364).
+  The sim's equivalent: **one input = one turn boundary = one flush**
+  (Delta + optional LightUpdate/Effects/EnvironmentUpdate/UiFrame).
+- Heartbeat: Ping/Pong, 1 s cadence, 3 s silence = dead. Shutdown:
+  either side, clean exit < 2 s. Dropped connection = Shutdown.
+- Input (engine → game): `Input` (Key/Text/MouseButton/MouseMove/
+  Wheel/Focus, platform-independent key code, modifier bitmask
+  1/2/4/8 = shift/ctrl/alt/meta), `Resize` (physical px + DPI),
+  `PickResult` (request id, hit, tile pos). In the real game these
+  are injected at `input_context::get_raw_input()`
+  (input_context.h:427).
+- UI: pixels **never** travel on the socket. The game renders all
+  `catacurses` windows except the terrain window into shared memory
+  (48-byte `UiShmHeader`, magic `0x43444155`, double-buffered,
+  dirty rect, seq + checksum — `proto::shm`, `crates/ui-share`);
+  the socket only carries the `UiFrame` notification: buffer index,
+  size/stride, seq, dirty rect, **`mode` (`MapInput`/`UiInput`)**,
+  and the **terrain rect** in UI pixels (reported per frame, never
+  assumed — it depends on terminal size/panel layout). In `UiInput`,
+  clicks stay in UI space and camera drags are ignored; in
+  `MapInput`, a click inside the terrain rect is a world pick.
+- Effects: `Effects` message (Animation/Projectile/Sound/HitFlash/
+  Explosion/Other, from/to, duration) — the fork hook is
+  `src/animation.cpp` dispatch.
+
+## 3. Design of the test game
+
+### 3.1 Shape
+```
+crates/sim/            # library: world, rules, FOV/light, UI state, scenes, scenarios
+  src/world.rs         # sparse tile world, def registry, entity/vehicle stores
+  src/rules.rs         # turn resolution: move, open/close, bash, pickup, fields, combat
+  src/visibility.rs    # lit/seen/memory/outside recompute (LOS + roof scan)
+  src/environment.rs   # calendar advance, sun/moon, weather presets + scripts
+  src/ui.rs            # UI state machine -> RGBA frames into ui-share store format
+  src/scenes.rs        # ASCII-map scene loader + built-in scenes (§4)
+  src/scenario.rs      # scripted test DSL (§5)
+  src/server.rs        # socket server: framing, handshake, diff->Delta, heartbeat
+tools/sim-server/      # binary: sim-server <socket> --scene <name> [--scenario <file>] [--seed n]
+crates/engine/tests/sim_gate.rs   # engine-side gates driving a live sim (§6)
+```
+- **Language: Rust** (recommendation — needs Joey's nod, §8). One
+  implementation of the wire, no second `samples.rs`↔`house.h`
+  hand-sync, deterministic tests run under `cargo test`, and it can
+  be linked *in-process* for fast gates as well as run as a separate
+  process over a real socket for honest IPC gates.
+- **Deterministic:** seeded RNG (same xorshift family as the fork
+  harness mock), fixed turn step, no wall-clock anywhere except
+  heartbeat. Same seed + same inputs ⇒ byte-identical message log.
+- **Two driving modes, same world code:**
+  1. *Process mode* — `sim-server` on a Unix socket; the real engine
+     binary / `proto-client` connects exactly as it will to the fork.
+  2. *In-process mode* — tests construct the world, feed `InputT`s,
+     and assert on the emitted `MessageT`s and on the engine's
+     ingested state, with no socket.
+- **The engine is not modified to accommodate the sim.** If the sim
+  needs an engine change, that is a finding about the live-loop
+  wiring (Phase 2h/10.6), reported as such — the sim's whole value
+  is that it speaks only the documented protocol.
+
+### 3.2 The minimal rule set (simulate the *contract*, not CDDA)
+Deliberately small, each rule chosen because an engine system
+consumes its output:
+
+| Rule | Behaviour in the sim | Engine system it exercises |
+|---|---|---|
+| Movement | 8-way step per movement key; blocked by wall / closed door / closed window / vehicle part / creature; costs 1 turn | Delta ingest, billboard move, camera follow |
+| Open / close | Stepping into / activating a tile with `open_result` swaps terrain to that def (and back via `close_result`); recomputes transparency | TileChange restamp, LOS/light change through a doorway |
+| Bash / destroy | Bash action on adjacent tile: terrain/furniture follows `bash_result` chain (door → bashed door → rubble/air per def table); furniture with no bash result is removed; emits HitFlash + Sound effects | Fine-prop restamp removal (Phase 9), hardcases state=id-change (8.4), transient effects |
+| Stairs / z-move | `>`/`<` on a stair tile moves player z ±1, snapshot window recentres | Multi-storey seating, cutaway, cave factor |
+| Items | Pickup removes top item / decrements `item_count`; drop reverses it. Piles only — no inventory simulation beyond a list for the UI | top_item billboard/item layer, UI inventory contents |
+| Fields | Fire spreads to adjacent flammable tiles, intensity ±, burns out to smoke; smoke drifts with wind and decays. `displayed_field` recomputed by the game's rule (highest intensity, fire over smoke on tie — as in the sample house) | fx field volumes, heat/smoke coupling, displayed-field correctness from Delta alone |
+| Creatures | Spawn (script or scenario), simple AI per turn: idle → wander (seeded) → chase player if visible (LOS + lit != BLANK) → attack in range (hp_frac drops, HitFlash). Death ⇒ `entity_removed` + optional corpse item | Billboard spawn/move/despawn, occlusion, picking, entity delta handling |
+| Vehicles | Static by default; scenario can translate/rotate (parts' absolute positions recomputed sim-side, `face_deg` continuous), damage a part (hp_frac, broken flag), remove it | Vehicle stamping, roof-part split, restamp on damage/removal |
+| Time / weather | Every turn advances the calendar (6 s/turn default, scenario-settable); sun/moon recomputed; weather is a named preset or script (clear/rain/fog/thunderstorm, matching `SkyScene::named` vocabulary) with resolved numerics | SkyState, Phase 10 GI, fog/precip, EnvironmentUpdate cadence (10-min rule) |
+| Visibility | After any world/player change: LOS flood from player (radius ≤ 60, blocked by opaque defs, 3D z-range rule), lit from sun/moon + field light, `outside` = no roof/explicit roof tile overhead, previously-seen → MEMORIZED memory tiles | Lighting bake, VisibilityMask (BLANK excluded in both renderers), sky-exposure channel (wire, not column scan) |
+| Map shift | Player crossing a submap edge recentres the bubble: epoch++, fresh Snapshot | SeqTracker epoch handling, resync (8.12) |
+| UI state | See §3.3 | UI compositing, input routing, 4.12 latency path |
+
+Explicit **non-goals**: no save/load, no JSON mod loading (except
+the def-universe import in §8.3, if Joey picks B or C), no NPC
+dialogue, no crafting simulation (the crafting *screen* opens; its
+contents are a list), no hunger/health simulation beyond hp_frac,
+no roof collapse when a wall is destroyed, no pathfinding beyond
+greedy chase, no SDL/curses — the sim's UI is drawn CPU-side into
+the shm store with real font rendering (§3.3, Joey's decision).
+
+### 3.3 UI simulation — real font rendering + a state machine (Joey's decision, 2026-11-23)
+Layout starts from the five existing synthetic frames (main menu,
+character creation, inventory, crafting, gameplay sidebar) — same
+panel geometry and terrain rect — but the text is **real rendered
+text, not the synthetic bar-glyph stand-ins**: S4 now includes a
+font rasteriser in the sim (a Rust glyph crate, e.g. `fontdue` /
+`ab_glyph`), a bundled monospace font matching CDDA's own choice
+(CDDA's font loader always ensures Unifont as fallback,
+`src/font_loader.cpp`; a bundled OFL monospace is the fallback if
+Unifont's licence/embedding is awkward — font choice is an S4
+implementation detail, recorded when made), and a catacurses-style
+character-cell grid (cell size from the font, foreground/background
+colour pairs per cell, dirty rect computed per changed cell row).
+That is what makes the inventory test honest: the item names are
+readable text in the frame, and a capture can be checked for the
+actual string "rock × 3", not for a bar of the right length.
+Cost accepted with the decision: S4 grows (glyph cache, text
+layout/wrapping, wide chars deferred) and UI goldens become
+font-version-sensitive — goldens must pin the bundled font file's
+hash. Add a state machine on top:
+
+- States: `Gameplay` (mode=MapInput, sidebar frame, terrain rect =
+  left portion as in `synthetic_terrain_rect`), `Inventory`,
+  `Crafting`, `LookAround`, `MainMenu` (all mode=UiInput, full-frame).
+- Transitions on the real key bindings the engine will send:
+  `i` → Inventory, `&`/craft key → Crafting, `;` → LookAround,
+  `Esc`/`q` → back to Gameplay. While in UiInput, movement keys are
+  consumed by the UI (list cursor moves, world does **not** change) —
+  this is the single most valuable UI assertion the sim enables.
+- Every transition (and cursor move) writes the inactive shm buffer,
+  publishes with bumped seq + dirty rect covering the changed panel,
+  and sends one `UiFrame`. Inventory frame lists the sim's actual
+  carried-item list, so pickup → open inventory is an end-to-end check.
+- Resize: on `Resize`, redraw at the new size, terrain rect scales
+  with the layout rule, next `UiFrame` carries the new geometry.
+
+### 3.4 Scene format
+One text file per scene, loadable by both the sim and (for fixture
+parity) the engine gates:
+
+```toml
+# scenes/roofed_house.toml
+name = "roofed_house"
+seed = 1
+time = "noon"            # or turn = 309600
+weather = "clear"
+player = [6, 6, 0]
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c",
+           "W" = "t_window", "," = "t_grass", "T" = "f_table" }
+map = [ "............", ".##########.", ... ]
+[z1]                     # explicit roof level; omit for implicit-roof variant
+...
+[[spawn]]  type = "mon_zombie", pos = [9, 6, 0], hp_frac = 200
+[[vehicle]] name = "car", face_deg = 37.5, parts = [...]
+```
+ASCII layers per z keep scenes reviewable in a diff and close to
+CDDA's own mapgen mental model. Furniture/fields/items are legend
+characters on an overlay layer or explicit `[[place]]` entries.
+
+## 4. Starter scene set (each one is a port or a named gap)
+
+1. **stub_house** — the canonical Phase 1 house. Acceptance: the
+   sim's first Snapshot is semantically equal to
+   `proto::samples::sample_snapshot()` (this pins the sim to the
+   existing goldens instead of drifting from them).
+2. **roofed_house_explicit / roofed_house_implicit** — ports of
+   `sample_roofed_house_snapshot` / `sample_implicit_roof_snapshot`
+   (bungalow footprint, `roof_result` values from real game data).
+3. **shelter, road_field, multistorey, vehicle_road** — ports of the
+   fork harness's five mock worlds, so exporter fixtures and engine
+   fixtures finally describe the same places.
+4. **street_block** *(new — the outside/inside workhorse)*: two
+   roofed houses on a road, trees, chain-link fence run, parked car,
+   street items. Big enough that walking out a door crosses submaps.
+5. **underground_lab** *(new)*: z 0 entrance + z −1 rooms, DARK lit,
+   never outside — for cave-factor / no-sky tests.
+6. **field_fire** *(new)*: grass + a cabin, one lit fire tile —
+   field spread, smoke drift, night light pool.
+7. **destructible_street** *(new)*: bashable doors/windows/furniture
+   and a damageable vehicle, arranged for the destruction tests.
+
+## 5. Scenario DSL — how tests are written
+
+A scenario is an ordered step list (TOML, same file style as scenes).
+The runner executes it in either driving mode and fails on the first
+unmet assertion, printing the message log up to that step.
+
+```toml
+scene = "street_block"
+steps = [
+  { do = "key", key = "s" },                    # walk to the door
+  { do = "key", key = "s" },
+  { assert_tile = [6, 11, 0], terrain = "t_door_o" },   # auto-opened? no —
+  { assert_player = [6, 10, 0] },               # closed door blocked the step
+  { do = "key", key = "o" }, { do = "key", key = "s" },
+  { assert_tile = [6, 11, 0], terrain = "t_door_o" },
+  { do = "key", key = "s" },
+  { assert_outside = [6, 12, 0], value = true },        # stepped outside
+  { assert_lit = [6, 12, 0], value = "BRIGHT" },
+  { do = "spawn", type = "mon_zombie", pos = [8, 12, 0] },
+  { assert_entity_visible = "mon_zombie" },
+  { do = "key", key = "i" },
+  { assert_ui_mode = "UiInput" }, { assert_ui_screen = "inventory" },
+  { do = "key", key = "s" },                    # cursor move, NOT a step south
+  { assert_player = [6, 12, 0] },
+  { do = "key", key = "Esc" }, { assert_ui_mode = "MapInput" },
+  { do = "bash", pos = [6, 11, 0] },
+  { assert_tile = [6, 11, 0], terrain = "t_door_bashed" },
+  { do = "advance_time", minutes = 720 },       # to midnight
+  { assert_env = { weather = "clear", sun_altitude_lt = 0.0 } },
+  { do = "capture", name = "street_midnight" }, # headless frame + golden diff
+]
+```
+
+Step vocabulary (v1): `key`, `text`, `click` (UI px or tile),
+`resize`, `advance_turns`, `advance_time`, `set_weather`,
+`spawn`, `damage_tile`, `damage_entity`, `remove_vehicle_part`,
+`snapshot` (force resync), `disconnect`/`reconnect`, `ping`.
+Assertion vocabulary (v1): **wire** (`assert_message` type/seq/epoch,
+`assert_delta_contains`, mirror==snapshot invariant), **world**
+(`assert_tile`, `assert_player`, `assert_lit/seen/outside`,
+`assert_entity_*`, `assert_ui_mode/screen`), **engine** (ingested
+grid cell, fine-layer volume present/absent, sky exposure at tile),
+**render** (`capture` + region/golden checks, reusing the 2g.3
+image-diff harness).
+
+## 6. Test matrix — the user's named tests, plus the ones they imply
+
+| # | Test | Scenario sketch | Key assertions |
+|---|---|---|---|
+| T1 | **Go outside, then go back inside** | roofed house, noon; exit via door, walk the yard, re-enter, close door | `outside[]` flips false→true→false on the player tile and via Delta; lit LIT→BRIGHT→LIT; sky factor / cave factor follow the *wire* grid in both renderers; interior capture dims vs exterior; tiles left behind become MEMORIZED, not BLANK |
+| T2 | **Open the UI** | gameplay → `i` → navigate → Esc; also crafting + look-around | UiMode MapInput→UiInput→MapInput; shm frame actually changes (seq++, dirty rect inside the panel); movement key in UiInput moves cursor, not player; terrain-rect masking still correct; click in UiInput produces no PickResult; click in MapInput terrain rect does |
+| T3 | **Spawn enemies** | script spawn in view / behind a wall / in the dark; hostile chase over N turns; kill it | Entity appears in Delta (not just next Snapshot); billboard renders in view, is occluded behind wall, absent in BLANK; chase path updates pos per turn; death ⇒ `entity_removed` + corpse item on tile |
+| T4 | **Destroy objects** | bash door, window, table; damage vehicle door/wheel | Terrain follows `bash_result` chain per TileChange; destroyed furniture's fine prop volume is *removed* by restamp (no ghost prop); LOS + lit recompute through the new opening; Effects HitFlash/Sound emitted once; vehicle part broken flag + restamp |
+| T5 | Door open/close cycle | open, step through, close behind | `t_door_c → t_door_o → t_door_c`; transparency/LOS blocked again after close; no duplicate delta on a no-op close |
+| T6 | Time & weather sweep | advance 24 h; storm script (mirrors stub `--env-script`) | EnvironmentUpdate cadence = on-change + 10-min time-only; sun altitude sign flips at dawn/dusk; storm: precip_class 3, `lightning_active`, fog/sight penalty reaches the frame; captures at dawn/noon/dusk/midnight × clear/storm differ in the Phase 10 §8 pattern |
+| T7 | Fields: fire & smoke | light the cabin floor / grass | Field list grows/shrinks per tile; `displayed_field` correct from Delta alone; smoke drifts downwind; fire lights its tiles at night (lit bump) and damages a standing creature |
+| T8 | Items: pickup & drop | rock pile (count 3) | `item_count` 3→2→… with `top_item` stable, last pickup clears `top_item`; drop restores; inventory UI lists the rocks (ties T2 shut) |
+| T9 | Stairs & multi-storey | multistorey scene, go up, then to basement | Player z changes; snapshot window recentres (z −1/+1 around new z); basement: outside=false everywhere, lit DARK, cave gradient in capture |
+| T10 | Resync & lifecycle | move across submap edge; kill/restart sim; send garbage seq | Shift ⇒ epoch++ + fresh Snapshot; duplicate delta applied zero times; skipped seq ⇒ engine requests snapshot; Ping/Pong; Shutdown < 2 s; reconnect gets TileDefs + Snapshot + piggybacked environment |
+| T11 | Vehicles | rotate/translate the fixture car 23°→90°; remove a part | Part absolute positions move rigidly; `face_deg` stays float-exact; roof parts stay on the top block; removed part leaves no stamped tile |
+| T12 | Soak / invariant | seeded random-input run, 1,100 turns × 10 seeds (fork-harness 3.9 parity) | After every Delta, engine mirror == a fresh Snapshot from the sim (hash compare); no seq regression; RSS/step cost flat (8.8-style) |
+
+T1–T4 are the acceptance set for v1; T5–T12 can land slice by slice.
+
+## 7. Build slices, gates, and order
+
+Each slice: failing test first (Joey's rule — the test must fail on
+the pre-slice code), then the sim work, gate re-run, `plan.md`
+updated in the same change.
+
+| Slice | Scope | Gate |
+|---|---|---|
+| **S0 — Decisions + skeleton** | §8 decisions recorded; `crates/sim` + `tools/sim-server` scaffold; framing/handshake/heartbeat/shutdown over the real socket, reusing `proto` | Engine `proto-client` connects, handshakes, disconnects cleanly; version-mismatch exits cleanly |
+| **S1a — Full def importer (Option C, Joey's pick)** | `tools/sim-defs`: census of `fork-src/cdda/data/json`, `copy-from`/abstract resolution, connect-group indices from load order, nested bash/open/close/roof extraction, `hot_flags` from the `ter_furn_flag` order, fg/bg join from the tileset crate; generated table checked in + census/closure validation | Generated counts match the source census per kind; zero dangling transform strings; zero abstracts emitted; spot-parity vs the fork harness's mock defs and vs hand-checked real entries (glass door bash chain, `t_door_c` open/roof) |
+| **S1 — Static scenes over the wire** | Def registry from S1a's generated table, scene loader, Snapshot builder with diff infrastructure in place (all-dirty first send) | stub_house Snapshot ≡ `sample_snapshot()`; roofed-house pair matches the existing fixtures; engine capture of a sim scene ≡ capture of the same scene as a fixture (both renderers); **TileDefs connect time + message size measured and recorded** |
+| **S2 — Turn loop: movement, doors, Delta** | Input→turn→dirty-submap diff→Delta; movement/collision; open/close transforms | **T1 (world/wire half) + T5 pass**; mirror invariant holds for a scripted 200-turn walk |
+| **S3 — Visibility & environment** | LOS/lit/seen/memory/outside recompute; calendar + weather presets/scripts; EnvironmentUpdate cadence; LightUpdate folding | **T1 (full, incl. render) + T6 pass**; outside/lit grids match a hand-computed expectation for street_block at noon and midnight |
+| **S4 — UI** | shm writer (double-buffer, header, dirty rect), UI state machine (§3.3), Resize handling | **T2 pass**; ui-share gates re-run against sim-written frames (not just synthetic-written); torn-frame reader test against the sim writer |
+| **S5 — Creatures, fields, effects** | Spawn/AI/combat/death; field spread/decay + displayed-field rule; Effects emission | **T3 + T7 pass** |
+| **S6 — Destruction, items, vehicles** | Bash chains, furniture removal, item piles + inventory list, vehicle move/damage/remove | **T4 + T8 + T11 pass**; fine-layer restamp assertions in engine gates |
+| **S7 — Scenario DSL + interactive mode** | §5 runner (process + in-process), scenario files for T1–T12; `engine --connect` live session against sim-server you can play with the keyboard; CI job (headless, lavapipe) | All scenarios green in CI; a human can run the windowed engine against the sim and walk out of the house |
+| **S8 — Soak & fuzz (optional, after v1)** | Random-input soak, malformed-frame fuzz on the sim's own server side, record/replay of a session log | **T9/T10/T12 pass**; decode fuzz clean (parity with the existing proto fuzz gates) |
+
+Rough size: S0–S2 is the critical path to first value (a walkable,
+door-opening world the engine renders live). S3–S6 are each
+independent once S2's diff/turn loop exists and can be parallelised
+in worktrees, one merge at a time, per the usual rule.
+
+## 8. Decisions
+
+### 8.1 Made 2026-11-23 (Joey)
+1. **Language / location: Rust**, `crates/sim` + `tools/sim-server`. ✅
+2. **Name: sim-server** (crate `sim`). ✅
+4. **UI fidelity: real font rendering** (see §3.3). ✅
+5. **Phase 11 in `plan.md`, T1–T4 as its v1 gate.** ✅ Added
+   2026-11-23 (progress-log row, dependency row, Phase 11 section).
+
+### 8.2 Def universe — DECIDED 2026-11-23 (Joey): Option C
+**Full real import, everything** (§8.3, Option C). The sim's
+TileDefs are generated from the real CDDA JSON at the pinned
+commit — all terrain/furniture/traps/fields/monsters/vehicle
+parts and all items — by an importer that resolves
+`copy-from`/abstract inheritance, connect-group load order,
+nested bash objects, and `hot_flags`, and joins fg/bg refs.
+Consequences accepted with the decision and now in scope:
+(1) the importer is a pre-S1 slice of its own (S1a in §7,
++2–3 slices, open tail on item JSON); (2) TileDefs is a
+multi-MB handshake message — connect-time cost is measured in
+the S1 gate, not assumed away; (3) every upstream rebase is a
+regen + golden review; (4) validation gates are load-bearing:
+every transform string must resolve to a sent def, every
+abstract must be excluded, and the generated table's counts
+must match a census of the source JSON. No other decision
+remains open before S0.
+
+### 8.3 Decision 3 in detail — where the sim's TileDefs come from
+
+First, what a "def" actually is here, because the options differ
+field by field. A def is one `TileDef` the sim sends once at
+connect (§2.6): numeric id (sim-assigned, per-kind ranges like the
+stub's), `string_id` (`"t_door_c"`), name, kind, authored flag
+strings, the resolved `hot_flags` bitset (the game's
+`ter_furn_flag` enum resolved to bits — this is what the engine
+actually tests for TRANSPARENT etc., it never parses flag strings),
+connect-group indices, `fg_ref/bg_ref` (indices into the composed
+UltiCa tile config; −1 = no sprite), and the transform strings
+`open_result / close_result / bash_result / looks_like /
+roof_result`. **Every transform string must name another def in
+the same table** or the chain dangles — open a door whose
+`t_door_o` was never sent and the engine gets a tile id it cannot
+resolve. Likewise a def with no voxelizer material renders as a
+fallback block: a def is only *visible* if `assets/` has a model
+for its string id (terrain/furniture/monster coverage is 100%
+from the zero-drive, but only for ids the voxelizer has run on).
+
+What the real game's JSON looks like (measured in
+`fork-src/cdda/data/json` at the pinned commit): terrain 1,189 +
+furniture 686 entries in `furniture_and_terrain/` alone, ~1,237
+monsters, ~106 field types, ~93 vehicle parts there plus the
+`vehicleparts/` tree, and **10,289 items**. And it is not flat
+JSON you can just read: **401** of the terrain/furniture entries
+use `copy-from` (inherit every field from another entry, override
+some), 24 are `abstract` (templates, never instantiated), and
+items use `copy-from` 4,991 times. Resolving that inheritance —
+plus nested objects like `"bash": { "str_min":…, "ter_set":…,
+"items":[…] }`, `"open"/"close"` as plain string fields, connect
+groups given as *names* (`"connect_groups": "WALL"`) that become
+bitset indices only through the load order of
+`data/json/connect_groups.json`, and `hot_flags` which requires
+reproducing the C++ `ter_furn_flag` enum order — is exactly what
+CDDA's C++ `generic_factory` loader does, and what the fork's
+real adapter (`voxel_real_adapter.cpp`, 418 lines) gets *for free*
+by calling `get_all()` on the already-loaded game data. **Any
+Rust importer is a second, partial reimplementation of that
+loader.** That asymmetry is the whole decision.
+
+**Option A — Hand-built subset (~40 defs).**
+Write the defs in Rust code, like `samples.rs` / `house.h` do
+today, expanding the sample set to cover the starter scenes:
+grass/dirt/road/floor, wall/window/door_c/door_o (+ one bashed
+variant each), tree, chain fence, stairs up/down, the roof set
+(`t_flat_roof`, `t_wood_roof`, `t_wood_treated_roof`,
+`t_shingle_flat_roof`), open air; table/bed/chair/bookcase;
+spike trap; smoke/fire fields; rock/can items; zombie/dog;
+car frame/wheel/door/roof parts. Every field is set explicitly:
+flags chosen to match the real def, `hot_flags` computed from the
+same flag list, transforms wired by hand, `fg_ref/bg_ref` copied
+from the existing fixtures where they exist, else −1.
+- *Fidelity:* exact for the ~40 ids, and the values are checked
+  against the real JSON by eye when written. Zero coverage beyond
+  them — a scene cannot use a def nobody wrote.
+- *Cost:* smallest. Part of S1, no new tool, no JSON parsing.
+- *Risk:* hand-drift — if upstream changes `t_door_c`'s bash
+  result, the sim silently keeps the old one. The S1 parity gate
+  (stub_house ≡ samples) does not catch this; a spot-check test
+  against a handful of real JSON entries would, cheaply.
+- *Tests it can run:* all of T1–T12 as designed — they were
+  scoped to these defs.
+
+**Option B — Curated real import (~150–300 defs).**
+A small offline tool (`tools/sim-defs`, run manually, output
+checked in as a generated Rust/JSON table — same pattern as the
+fg_refs TSV) that reads the real JSON, resolves `copy-from` *for
+a named allowlist only* (the starter-scene ids + their transform
+closure: if `t_door_c` is in, its open/bash/roof targets are
+pulled in automatically, recursively, so no chain dangles), maps
+connect-group names to indices from `connect_groups.json`,
+computes `hot_flags` from the flag strings via a Rust copy of the
+`ter_furn_flag` order, and joins `fg_ref/bg_ref` from the
+tileset crate's existing fg_refs output. The allowlist grows
+when a new scene needs a new def — one line plus a regen.
+- *Fidelity:* real values for everything imported — real bash
+  chains (a laminated glass door really does bash to
+  `t_mdoor_frame` and drop glass shards), real roofs, real flags.
+  Still zero coverage outside the allowlist, by design.
+- *Cost:* the importer itself is the work — `copy-from`
+  resolution (chains, abstract bases, field override semantics),
+  the nested bash object, connect-group ordering, and a
+  validation gate (every transform resolves, every id has a
+  material or is reported). Estimate: one extra slice before S1
+  proper, and the tool lives forever (regen on rebase).
+- *Risk:* partial-loader bugs — a mis-resolved inheritance looks
+  like a game bug in a test failure. Mitigated by the closure +
+  resolution gates and by keeping the allowlist small enough to
+  eyeball the generated output.
+- *Tests it can run:* T1–T12, plus scenes built from real
+  mapgen-adjacent def sets (e.g. a real house's worth of
+  furniture) without hand-writing each def.
+
+**Option C — Full real import (everything).**
+Same tool as B, no allowlist: all terrain/furniture/traps/
+fields/monsters/vehicle parts — and, if it is to match what the
+real adapter sends, **all 10,289 items too**, since the real
+`TileDefs` includes every itype. Wire defs would number in the
+~14,000s.
+- *Fidelity:* maximal on paper. In practice the engine consumes
+  almost none of it: an item def beyond its id is never read
+  (the wire only ever carries `top_item` + count), a monster def
+  beyond sprite/flags is never read, and 95% of terrain defs
+  would never appear in any scene. The fidelity that *matters*
+  (transforms/flags of defs actually placed) is identical to B.
+- *Cost:* B's importer plus the long tail: item JSON is the
+  messiest (4,991 `copy-from`s, migrations, item groups),
+  `hot_flags` for furniture/terrain only exists for ter/furn —
+  other kinds need a defined default, trap defs have no public
+  registry in the pinned source (the fork adds a 3-line hook,
+  H7 — a Rust importer has no equivalent problem but must find
+  traps in `data/json/traps.json` + mod folders), and the
+  handshake now ships a multi-MB TileDefs message, slowing every
+  test's connect and making goldens churn on *any* upstream data
+  change, even in content no scene uses.
+- *Risk:* highest drift *surface* — every upstream rebase is a
+  regen + a golden review, forever, for coverage no test uses.
+  And a subtle one: it makes the sim look authoritative about
+  the full def universe, when the authority is the fork's C++
+  loader, which will produce the real table when it runs.
+- *Tests it can run:* the same T1–T12. No planned test needs a
+  def outside B's closure.
+
+**Option D — Staged hybrid (A now, B later, C never).**
+S1 ships on A so the turn loop, UI, and T1–T4 land first; the
+B importer is scheduled as its own slice (say S6b) when a scene
+first needs a def set too big to hand-write, migrating the
+hand-built table to generated output with the same ids. C is
+explicitly not planned: when the real fork runs, its adapter
+supplies the full table and the sim's job is done.
+- This is the original plan's recommendation, now with B's
+  trigger named instead of "S8+": the first scene whose def
+  count exceeds what fits comfortably in one reviewed file
+  (~60–80 defs) triggers the importer slice.
+
+**Summary table**
+
+| | A hand-built | B curated import | C full import | D staged A→B |
+|---|---|---|---|---|
+| Defs | ~40 | ~150–300, closure-complete | ~14,000 | 40 → 150–300 |
+| Values | hand-checked copies | real JSON, resolved | real JSON, resolved | copies → real |
+| New tooling | none | importer + gates | importer + long-tail fixes | importer, deferred |
+| Extra cost before S1 | none | +1 slice | +2–3 slices, open tail | none |
+| Upstream rebase pain | silent drift on ~40 ids | regen + review allowlist | regen + review everything | drift, then regen |
+| Unlocks a test A can't run | — | real-def scenes at scale | none over B | same as B, later |
+
+
+## 9. Risks and honest limits
+
+- **A sim proves the engine honours the contract; it does not prove
+  the fork *produces* the contract.** 0.1/0.2 and the in-game halves
+  of Phases 3/4 remain blocked exactly as before. The sim de-risks
+  the engine side so that when the fork runs, a failure localises
+  to the fork instead of "somewhere in the loop".
+- **Drift risk:** the sim is a second implementation of game rules
+  (LOS, displayed-field, roof/outside). Mitigation: every rule cites
+  its CDDA source (§2), fixtures are shared with the existing
+  samples/mock worlds (S1 gates pin byte/semantic parity), and any
+  rule the pinned source contradicts gets fixed in the sim, with
+  the finding recorded — same discipline as Phase 0's corrections.
+- **Scope creep risk:** it is tempting to grow the sim toward a
+  real game. The §3.2 table is the ceiling for v1; anything not
+  consumed by an engine system stays out.
+- **Windows:** socket transport is Unix-first like the stub; the
+  named-pipe transport is already a known fork TODO and the sim
+  inherits it unchanged — in-process mode covers Windows-side
+  engine testing until then.
