@@ -1,9 +1,13 @@
 //! Unix-socket server for the sim test game (slices S0 + S1).
 //!
-//! Lifecycle: bind, accept ONE connection, serve it until Shutdown,
-//! disconnect, or a fatal protocol error, then close the listener,
-//! unlink the socket path, and return `Ok(())`. A handshake version
-//! mismatch is a clean exit, never a panic (docs/protocol.md).
+//! Lifecycle: bind, build the world ONCE, then accept connections
+//! one at a time, serving each until it ends. The world persists
+//! across connections (S7: a client that disconnects and
+//! reconnects resumes the same world — the resync behaviour T10
+//! scripts). The server exits on a Shutdown message or a
+//! handshake version mismatch (both clean exits, never a panic —
+//! docs/protocol.md), then closes the listener, unlinks the
+//! socket path, and returns `Ok(())`.
 //!
 //! S1 behaviour: after the HelloAck, the server sends the FULL
 //! registry TileDefs (all 14,262 defs from the S1a generated
@@ -61,6 +65,9 @@ pub struct ServerConfig {
     /// Initial UI state override (S4; `--ui-start`); `None` =
     /// the scene's `ui_start` key, else gameplay.
     pub ui_start: Option<String>,
+    /// World RNG seed override (S7; `--seed n`, the §3.1 CLI
+    /// shape); `None` = the scene's own `seed` key.
+    pub seed: Option<i64>,
 }
 
 fn send(stream: &mut UnixStream, msg: &MessageT) -> proto::Result<()> {
@@ -84,8 +91,10 @@ fn recv(stream: &mut UnixStream, dec: &mut FrameDecoder) -> proto::Result<Option
     }
 }
 
-/// Run the server on `config.socket_path` until the (single)
-/// client shuts it down or disconnects. The socket file is
+/// Run the server on `config.socket_path`: build the world
+/// once, then serve connections one at a time (the world
+/// persists across them) until a client sends Shutdown or a
+/// handshake fails the version check. The socket file is
 /// removed on exit. Registry/scene load errors are returned
 /// before binding, with messages naming what was tried.
 pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
@@ -98,6 +107,9 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     }
     if let Some(start) = &config.ui_start {
         scene.ui_start = Some(start.clone());
+    }
+    if let Some(seed) = config.seed {
+        scene.seed = seed;
     }
     let mut world = World::from_scene(&reg, &scene)
         .map_err(|e| proto::ProtoError::Malformed(format!("world: {e}")))?;
@@ -123,7 +135,31 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     let listener = UnixListener::bind(socket_path)?;
     eprintln!("sim-server: listening on {}", socket_path.display());
 
-    let result = serve_one(&listener, &reg, &mut world, &ui_shm_path);
+    let mut result = Ok(());
+    loop {
+        match serve_one(&listener, &reg, &mut world, &ui_shm_path) {
+            Ok(ServeEnd::Shutdown) | Ok(ServeEnd::Fatal) => break,
+            Ok(ServeEnd::ClientGone) => {
+                eprintln!("sim-server: waiting for the next connection");
+                continue;
+            }
+            Err(e) => {
+                // A client that vanishes mid-flush (broken
+                // pipe on send, reset on read) ends its own
+                // session, not the server: the accept loop
+                // takes the next connection. Structural errors
+                // (a corrupt frame, a bad handshake) stay fatal.
+                if matches!(e, proto::ProtoError::Io(_)) {
+                    eprintln!(
+                        "sim-server: connection died ({e}); waiting for the next connection"
+                    );
+                    continue;
+                }
+                result = Err(e);
+                break;
+            }
+        }
+    }
 
     // Clean exit path for every outcome (shutdown, disconnect,
     // version mismatch): close the listener (drop) and unlink
@@ -138,12 +174,24 @@ pub fn run_server(config: &ServerConfig) -> proto::Result<()> {
     result
 }
 
+/// How one connection ended, from the server's point of view.
+enum ServeEnd {
+    /// The client sent Shutdown: exit the server.
+    Shutdown,
+    /// A fatal session error (the handshake version check):
+    /// exit the server, cleanly.
+    Fatal,
+    /// The client went away (or sent nonsense): the world
+    /// persists; accept the next connection.
+    ClientGone,
+}
+
 fn serve_one(
     listener: &UnixListener,
     reg: &DefRegistry,
     world: &mut World,
     ui_shm_path: &Path,
-) -> proto::Result<()> {
+) -> proto::Result<ServeEnd> {
     let (mut stream, _) = listener.accept()?;
     let mut dec = FrameDecoder::new();
 
@@ -153,11 +201,11 @@ fn serve_one(
         Some(MessageT::HelloAck(ack)) => ack,
         Some(other) => {
             eprintln!("sim-server: expected HelloAck, got {other:?}; closing");
-            return Ok(());
+            return Ok(ServeEnd::ClientGone);
         }
         None => {
             eprintln!("sim-server: client disconnected before HelloAck");
-            return Ok(());
+            return Ok(ServeEnd::ClientGone);
         }
     };
     if let Err(e) = check_handshake(ack.protocol_version) {
@@ -167,7 +215,7 @@ fn serve_one(
             "sim-server: protocol mismatch: ours={} theirs={} ({e}); closing",
             PROTOCOL_VERSION, ack.protocol_version
         );
-        return Ok(());
+        return Ok(ServeEnd::Fatal);
     }
     eprintln!(
         "sim-server: helloack engine={:?} screen={}x{}",
@@ -219,11 +267,11 @@ fn serve_one(
             Ok(Some(msg)) => msg,
             Ok(None) => {
                 eprintln!("sim-server: client disconnected");
-                return Ok(());
+                return Ok(ServeEnd::ClientGone);
             }
             Err(e) => {
                 eprintln!("sim-server: receive error ({e}); closing");
-                return Ok(());
+                return Ok(ServeEnd::ClientGone);
             }
         };
         match msg {
@@ -266,7 +314,7 @@ fn serve_one(
             }
             MessageT::Shutdown(s) => {
                 eprintln!("sim-server: shutdown reason={:?}", s.reason);
-                return Ok(());
+                return Ok(ServeEnd::Shutdown);
             }
             other => {
                 eprintln!("sim-server: unexpected message {other:?}; ignoring");

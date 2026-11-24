@@ -22,12 +22,19 @@
 //! S5 (creatures, fields, effects: runtime spawns, chase /
 //! wander / attack AI, bump attacks, corpse drops, fire
 //! spread / smoke drift field ticks, fd_fire light in the
-//! visibility model, Effects emission — see `rules`).
+//! visibility model, Effects emission — see `rules`), S6
+//! (destruction, items, dynamic vehicles — see `rules`), and
+//! S7 (the §5 scenario DSL: one scenario file drives the world
+//! in-process or a real server subprocess over its socket,
+//! with the mirror invariant checked after every step — see
+//! `scenario` and `mirror`).
 
 pub mod defs;
 pub mod environment;
 pub mod measure;
+pub mod mirror;
 pub mod rules;
+pub mod scenario;
 pub mod scenes;
 pub mod server;
 pub mod ui;
@@ -35,6 +42,7 @@ pub mod visibility;
 pub mod world;
 
 pub use defs::{DefRegistry, Kind};
+pub use mirror::Mirror;
 pub use scenes::Scene;
 pub use server::{run_server, ServerConfig};
 pub use world::World;

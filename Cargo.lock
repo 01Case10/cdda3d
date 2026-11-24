@@ -1977,6 +1977,7 @@ dependencies = [
  "proto",
  "serde",
  "serde_json",
+ "sim-server",
  "ui-share",
 ]
 

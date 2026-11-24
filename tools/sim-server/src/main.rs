@@ -3,8 +3,9 @@
 //! Usage:
 //!   sim-server <unix-socket-path> [--scene <name>] [--defs <path>]
 //!              [--weather <preset>] [--ui-shm <path>]
-//!              [--ui-start <state>]
+//!              [--ui-start <state>] [--seed <n>]
 //!   sim-server --measure [--scene <name>] [--defs <path>]
+//!   sim-server --scenario <file> [--defs <path>]
 //!
 //! `--weather` overrides the scene's starting weather preset
 //! (S3: clear/sunny/cloudy/rain/storm/lightning). Mid-run weather
@@ -13,7 +14,13 @@
 //! `--ui-shm` sets the UI shared-memory file path (S4; default:
 //! `<socket>.ui-shm` beside the socket). `--ui-start` sets the
 //! initial UI state (gameplay|inventory|crafting|look|
-//! main-menu), overriding the scene's `ui_start` key.
+//! main-menu), overriding the scene's `ui_start` key. `--seed`
+//! overrides the scene's world RNG seed (S7; the §3.1 CLI shape).
+//!
+//! `--scenario <file>` (S7) runs a §5 scenario file in-process
+//! against a fresh world built from the scenario's own scene,
+//! prints the step log, and exits 0 (all assertions held) or 1.
+//! No socket is bound in this mode.
 //!
 //! The voxel engine (or `proto-client`) connects as the IPC client,
 //! exactly as it will to the real fork with
@@ -32,8 +39,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>] [--ui-shm <path>] [--ui-start <state>]");
+    eprintln!("usage: sim-server <unix-socket-path> [--scene <name>] [--defs <path>] [--weather <preset>] [--ui-shm <path>] [--ui-start <state>] [--seed <n>]");
     eprintln!("       sim-server --measure [--scene <name>] [--defs <path>]");
+    eprintln!("       sim-server --scenario <file> [--defs <path>]");
     ExitCode::from(2)
 }
 
@@ -44,6 +52,8 @@ fn main() -> ExitCode {
     let mut weather: Option<String> = None;
     let mut ui_shm: Option<PathBuf> = None;
     let mut ui_start: Option<String> = None;
+    let mut seed: Option<i64> = None;
+    let mut scenario_file: Option<PathBuf> = None;
     let mut measure = false;
 
     let mut args = std::env::args().skip(1);
@@ -69,6 +79,17 @@ fn main() -> ExitCode {
                 Some(v) => ui_start = Some(v),
                 None => return usage(),
             },
+            "--seed" => match args.next() {
+                Some(v) => match v.parse::<i64>() {
+                    Ok(n) => seed = Some(n),
+                    Err(_) => return usage(),
+                },
+                None => return usage(),
+            },
+            "--scenario" => match args.next() {
+                Some(v) => scenario_file = Some(PathBuf::from(v)),
+                None => return usage(),
+            },
             "--measure" => measure = true,
             _ if arg.starts_with("--") => return usage(),
             _ => {
@@ -78,6 +99,12 @@ fn main() -> ExitCode {
                 socket = Some(PathBuf::from(arg));
             }
         }
+    }
+
+    // S7 scenario mode: no socket, no scene flag — the file
+    // names its own scene. Run in-process and report.
+    if let Some(file) = &scenario_file {
+        return run_scenario_mode(file, defs.as_deref());
     }
 
     let scene_path = match sim::scenes::resolve_scene(&scene) {
@@ -116,6 +143,7 @@ fn main() -> ExitCode {
         weather,
         ui_shm_path: ui_shm,
         ui_start,
+        seed,
     };
     match sim::run_server(&config) {
         Ok(()) => {
@@ -124,6 +152,71 @@ fn main() -> ExitCode {
         }
         Err(e) => {
             eprintln!("sim-server: error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `sim-server --scenario <file>`: parse the scenario, build
+/// its scene's world, run it in-process, print the step log.
+fn run_scenario_mode(file: &PathBuf, defs: Option<&std::path::Path>) -> ExitCode {
+    let text = match std::fs::read_to_string(file) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("sim-server --scenario: cannot read {}: {e}", file.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let scenario = match sim::scenario::Scenario::parse(&text) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("sim-server --scenario: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if !scenario.is_green() {
+        eprintln!(
+            "sim-server --scenario: '{}' carries status {:?} — it is not in the green set and does not run",
+            scenario.name.as_deref().unwrap_or("<unnamed>"),
+            scenario.status.as_deref().unwrap_or("")
+        );
+        return ExitCode::FAILURE;
+    }
+    let reg = match sim::DefRegistry::load_resolved(defs) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("sim-server --scenario: defs: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let scene_path = match sim::scenes::resolve_scene(&scenario.scene) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("sim-server --scenario: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let scene = match sim::Scene::load_file(&scene_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("sim-server --scenario: scene: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match sim::scenario::run_in_process(&reg, scene, &scenario) {
+        Ok(outcome) => {
+            for line in &outcome.log {
+                println!("{line}");
+            }
+            println!(
+                "scenario '{}': PASS ({} steps)",
+                scenario.name.as_deref().unwrap_or("<unnamed>"),
+                outcome.steps_executed
+            );
+            ExitCode::SUCCESS
+        }
+        Err(failure) => {
+            eprintln!("{failure}");
             ExitCode::FAILURE
         }
     }

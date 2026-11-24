@@ -106,6 +106,37 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 2
 
+  sim-scenarios:
+    # Phase 11 S7: the §5 scenario gate — every green scenario
+    # runs in-process against the sim world and a subset drives
+    # a real sim-server subprocess over its socket — plus the
+    # engine's sim-ingest gates. Headless; lavapipe installed
+    # for the engine test binaries (they link wgpu even when a
+    # gate is CPU-side), following the visual-regression job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+      - name: Build sim-server (the scenario gate spawns it)
+        run: cargo build -p sim-server
+        env:
+          CARGO_BUILD_JOBS: 2
+      - name: Scenario gate (in-process + process modes)
+        run: cargo test -p sim --test scenario_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+      - name: Engine sim-ingest gates
+        run: >
+          cargo test -p engine --test sim_world_parity_gate
+          --test sim_visibility_gate --test sim_ui_gate
+          --test sim_creature_gate --test sim_destruction_gate
+        env:
+          CARGO_BUILD_JOBS: 2
+
   fuzz-smoke:
     # Gate 1.5 full form: 60 s per target on PRs (longer runs
     # nightly). Targets live in crates/proto/fuzz (detached

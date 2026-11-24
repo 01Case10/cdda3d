@@ -1,0 +1,41 @@
+# T10 — resync (plan §6 T10), the half S7 can prove: a
+# disconnect/reconnect cycle mid-session loses nothing (the
+# world persists server-side; the fresh Snapshot reseeds the
+# client view and must agree with it), ping answers, and a
+# map-shift resync still lands afterwards. Runs in BOTH modes
+# (the gate's process set includes this file). The abuse half
+# of T10 — garbage seqs, replayed epochs, corrupt frames — is
+# adversarial-input work and belongs to S8's fuzz gate; it is
+# recorded as open there, not faked here.
+scene = "street_block"
+name = "T10 resync: disconnect, reconnect, shift"
+
+steps = [
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 7, 0] },
+  { do = "ping" },
+  { do = "disconnect" },
+  { do = "reconnect" },
+  # The world kept our place while we were gone.
+  { assert_player = [5, 7, 0] },
+  { assert_tile = { pos = [5, 8, 0], terrain = "t_door_c" } },
+  # Play on: out of the house and across the boundary — the
+  # shift's fresh Snapshot is the protocol's own resync.
+  { do = "key", key = "o" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 9, 0] },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { do = "key", key = "l" },
+  { assert_message = { kind = "Snapshot", epoch = 2 } },
+  { assert_player = [12, 9, 0] },
+  { do = "ping" },
+  { assert_mirror = true },
+]

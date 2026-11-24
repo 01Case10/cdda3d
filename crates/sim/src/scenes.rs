@@ -200,6 +200,21 @@ pub struct Scene {
     pub ui_start: Option<String>,
 }
 
+/// Parse a document that must consist of top-level key/value
+/// pairs only (the S7 scenario format: `scene = "..."`, `steps =
+/// [ ... ]`) and return the raw pairs in file order. Sections
+/// and array tables are rejected — scenarios have neither.
+pub(crate) fn parse_top_level(text: &str) -> Result<KvMap, String> {
+    let doc = Parser::parse(text)?;
+    if !doc.zsections.is_empty() || !doc.tables.is_empty() {
+        return Err(
+            "document has [sections] or [[array tables]]; only top-level keys are allowed here"
+                .to_string(),
+        );
+    }
+    Ok(doc.top)
+}
+
 impl Scene {
     pub fn load_file(path: &Path) -> Result<Scene, String> {
         let text = std::fs::read_to_string(path)
@@ -439,7 +454,7 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
 // ---------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
-enum Value {
+pub(crate) enum Value {
     Str(String),
     Int(i64),
     Float(f64),
@@ -448,7 +463,7 @@ enum Value {
     Table(Vec<(String, Value)>),
 }
 
-type KvMap = Vec<(String, Value, usize)>; // (key, value, line)
+pub(crate) type KvMap = Vec<(String, Value, usize)>; // (key, value, line)
 
 #[derive(Debug, Default)]
 struct RawDoc {
@@ -619,7 +634,10 @@ impl Parser {
                         Some(Tok::Comma) => {
                             self.pos += 1;
                         }
-                        Some(Tok::Str(k)) => {
+                        Some(Tok::Str(k)) | Some(Tok::Ident(k)) => {
+                            // Inline-table keys: quoted strings
+                            // (scene legends) or bare identifiers
+                            // (S7 scenario steps: `{ do = "key" }`).
                             self.pos += 1;
                             if self.peek() != Some(&Tok::Eq) {
                                 return Err(self.err(line, "expected '=' in inline table"));
@@ -654,32 +672,32 @@ fn parse_z_section(name: &str) -> Option<i32> {
 // RawDoc -> Scene (typed extraction + validation)
 // ---------------------------------------------------------------------
 
-fn get<'a>(map: &'a KvMap, key: &str) -> Option<&'a Value> {
+pub(crate) fn get<'a>(map: &'a KvMap, key: &str) -> Option<&'a Value> {
     map.iter()
         .rev()
         .find(|(k, _, _)| k == key)
         .map(|(_, v, _)| v)
 }
 
-fn req<'a>(map: &'a KvMap, key: &str, ctx: &str) -> Result<&'a Value, String> {
+pub(crate) fn req<'a>(map: &'a KvMap, key: &str, ctx: &str) -> Result<&'a Value, String> {
     get(map, key).ok_or_else(|| format!("scene: {ctx} is missing required key '{key}'"))
 }
 
-fn as_string(v: &Value, ctx: &str) -> Result<String, String> {
+pub(crate) fn as_string(v: &Value, ctx: &str) -> Result<String, String> {
     match v {
         Value::Str(s) => Ok(s.clone()),
         _ => Err(format!("scene: {ctx} must be a string")),
     }
 }
 
-fn as_int(v: &Value, ctx: &str) -> Result<i64, String> {
+pub(crate) fn as_int(v: &Value, ctx: &str) -> Result<i64, String> {
     match v {
         Value::Int(n) => Ok(*n),
         _ => Err(format!("scene: {ctx} must be an integer")),
     }
 }
 
-fn as_float(v: &Value, ctx: &str) -> Result<f64, String> {
+pub(crate) fn as_float(v: &Value, ctx: &str) -> Result<f64, String> {
     match v {
         Value::Float(f) => Ok(*f),
         Value::Int(n) => Ok(*n as f64),
@@ -687,14 +705,14 @@ fn as_float(v: &Value, ctx: &str) -> Result<f64, String> {
     }
 }
 
-fn as_bool(v: &Value, ctx: &str) -> Result<bool, String> {
+pub(crate) fn as_bool(v: &Value, ctx: &str) -> Result<bool, String> {
     match v {
         Value::Bool(b) => Ok(*b),
         _ => Err(format!("scene: {ctx} must be a boolean")),
     }
 }
 
-fn as_pos(v: &Value, ctx: &str) -> Result<[i32; 3], String> {
+pub(crate) fn as_pos(v: &Value, ctx: &str) -> Result<[i32; 3], String> {
     match v {
         Value::Array(items) if items.len() == 3 => {
             let mut out = [0i32; 3];
@@ -707,35 +725,35 @@ fn as_pos(v: &Value, ctx: &str) -> Result<[i32; 3], String> {
     }
 }
 
-fn as_str_array(v: &Value, ctx: &str) -> Result<Vec<String>, String> {
+pub(crate) fn as_str_array(v: &Value, ctx: &str) -> Result<Vec<String>, String> {
     match v {
         Value::Array(items) => items.iter().map(|i| as_string(i, ctx)).collect(),
         _ => Err(format!("scene: {ctx} must be an array of strings")),
     }
 }
 
-fn opt_string(map: &KvMap, key: &str, ctx: &str) -> Result<Option<String>, String> {
+pub(crate) fn opt_string(map: &KvMap, key: &str, ctx: &str) -> Result<Option<String>, String> {
     match get(map, key) {
         Some(v) => Ok(Some(as_string(v, &format!("{ctx}.{key}"))?)),
         None => Ok(None),
     }
 }
 
-fn opt_int(map: &KvMap, key: &str, ctx: &str) -> Result<Option<i64>, String> {
+pub(crate) fn opt_int(map: &KvMap, key: &str, ctx: &str) -> Result<Option<i64>, String> {
     match get(map, key) {
         Some(v) => Ok(Some(as_int(v, &format!("{ctx}.{key}"))?)),
         None => Ok(None),
     }
 }
 
-fn opt_bool(map: &KvMap, key: &str, ctx: &str) -> Result<Option<bool>, String> {
+pub(crate) fn opt_bool(map: &KvMap, key: &str, ctx: &str) -> Result<Option<bool>, String> {
     match get(map, key) {
         Some(v) => Ok(Some(as_bool(v, &format!("{ctx}.{key}"))?)),
         None => Ok(None),
     }
 }
 
-fn opt_pos(map: &KvMap, key: &str, ctx: &str) -> Result<Option<[i32; 3]>, String> {
+pub(crate) fn opt_pos(map: &KvMap, key: &str, ctx: &str) -> Result<Option<[i32; 3]>, String> {
     match get(map, key) {
         Some(v) => Ok(Some(as_pos(v, &format!("{ctx}.{key}"))?)),
         None => Ok(None),

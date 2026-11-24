@@ -1,0 +1,18 @@
+# T12 — soak / fuzz (plan §6 T12). STATUS: S8.
+#
+# This file is NOT in the gate's green set. T12's real form —
+# 10,000 turns of fuzzed inputs (random keys, garbage bytes,
+# truncated frames, hostile seqs) with the mirror invariant
+# and a final mirror == world assertion — is S8's gate; the
+# fuzz driver does not exist in S7 and a hand-written "soak"
+# that only waits politely would prove nothing. The steps
+# below record the deterministic skeleton S8's fuzzer wraps:
+# long advance, invariant, done.
+status = "s8"
+scene = "street_block"
+name = "T12 soak (S8 — fuzzer not yet built)"
+
+steps = [
+  { do = "advance_turns", count = 10000 },
+  { assert_mirror = true },
+]

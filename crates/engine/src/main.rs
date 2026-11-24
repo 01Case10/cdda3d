@@ -11,6 +11,13 @@
 //!   Exits non-zero with a named error when no wgpu adapter exists.
 //! - `--scene-report`: build + mesh the full 132x132 bubble scene on
 //!   CPU and print counts/timing (the 2.13 data-level proxy). No GPU.
+//! - `--connect <unix-socket>` (Phase 11 S7): a headless live
+//!   session against a running game server (sim-server or the
+//!   fork's IPC frontend) — handshake, wire-fed world ingest,
+//!   stdin keys -> Input messages, heartbeat, clean shutdown.
+//!   See `engine::client`. The windowed seating of this session
+//!   is the named remaining step (CaptureArgs takes fixture
+//!   names, not wire worlds).
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -33,6 +40,15 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--headless-capture") {
         return headless_main(&args);
+    }
+    if let Some(socket) = value_after(&args, "--connect") {
+        return match engine::client::run_connect(std::path::Path::new(&socket)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("voxel-engine --connect: {e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if args.iter().any(|a| a == "--scene-report") {
         let r = world::bubble_report();
@@ -59,7 +75,7 @@ fn main() -> ExitCode {
              --size WxH --out file.png] [--scene-report] \
              [--renderer raster|rt] [--textures dir] [--effects effects.json] \
              [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] [--light-hour H] [--ui-stub] \
-             [--fine-props]"
+             [--fine-props] [--connect <unix-socket>]"
         );
         return ExitCode::SUCCESS;
     }

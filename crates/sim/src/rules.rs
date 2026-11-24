@@ -508,13 +508,30 @@ impl World {
             return;
         };
         let target = [pos[0] + dir.0, pos[1] + dir.1, pos[2]];
+        self.bash_tile(reg, target);
+    }
+
+    /// Smash the tile at `target`: one step along its bash
+    /// chain (furniture first, then terrain — `apply_bash`'s
+    /// resolution, shared verbatim). Returns true when a smash
+    /// landed (chain step or furniture removal; the HitFlash +
+    /// Sound effects are queued for the caller's flush).
+    ///
+    /// This is the position-based entry point the S7 scenario
+    /// DSL's `bash` / `damage_tile` steps wrap: tiles have no
+    /// HP in the sim, so "damage a tile" IS one bash-chain
+    /// step, with no player involved. The scoping is the
+    /// player's own: creature tiles belong to the bump attack
+    /// and vehicle-part tiles to the vehicle damage API, so
+    /// both are no-ops here too.
+    pub fn bash_tile(&mut self, reg: &DefRegistry, target: [i32; 3]) -> bool {
         // Scope: creature tiles belong to the bump attack, and
         // vehicle-part tiles to the vehicle damage API.
         if self.creature_id_at(target).is_some() {
-            return;
+            return false;
         }
         if self.vehicle_part_at(target).is_some() {
-            return;
+            return false;
         }
         // Furniture first (upstream's priority in
         // bash_ter_furn): any furniture on the tile is the
@@ -533,7 +550,7 @@ impl World {
                         eprintln!(
                             "sim: bash result '{sid}' is not in the registry; no-op"
                         );
-                        return;
+                        return false;
                     }
                     self.set_furniture(target, new_id);
                 }
@@ -547,17 +564,17 @@ impl World {
             self.push_effect(hit_flash(target));
             self.push_effect(bash_sound(target));
             self.messages.push("You smash it.".to_string());
-            return;
+            return true;
         }
         // Terrain: no bash_result = unbashable.
         let Some(terrain) = self.terrain_at(target) else {
-            return;
+            return false;
         };
         let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
-            return;
+            return false;
         };
         let Some(sid) = transform(def, |d| &d.bash_result).map(str::to_string) else {
-            return;
+            return false;
         };
         // "t_null" destroys the tile: upstream's ter_set with
         // a null result id lands on t_open_air (map.cpp:4203).
@@ -568,12 +585,13 @@ impl World {
         };
         if new_id == 0 {
             eprintln!("sim: bash result '{sid}' is not in the registry; no-op");
-            return;
+            return false;
         }
         self.set_terrain(target, new_id);
         self.push_effect(hit_flash(target));
         self.push_effect(bash_sound(target));
         self.messages.push("You smash it.".to_string());
+        true
     }
 
     /// Pickup (S6): take one unit from the pile on the

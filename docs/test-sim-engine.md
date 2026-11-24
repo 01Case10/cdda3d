@@ -482,6 +482,112 @@ grid cell, fine-layer volume present/absent, sky exposure at tile),
 **render** (`capture` + region/golden checks, reusing the 2g.3
 image-diff harness).
 
+### 5.1 S7 settlements (2026-11-24, as built)
+
+The runner lives in `crates/sim/src/scenario.rs`; scenario files
+live in `crates/sim/scenarios/`; the mirror the invariant uses is
+`crates/sim/src/mirror.rs` (factored out of the per-slice gates'
+private copies — the gates keep theirs). `sim-server --scenario
+<file>` runs a scenario in-process and exits 0/1; the cargo gate
+`crates/sim/tests/scenario_gate.rs` runs the green set in-process
+and a subset over a real socket. Settled points:
+
+- **File shape:** top-level `scene` (required), `name`, `seed`
+  (overrides the scene's), `status` (`"s8"` = written but excluded
+  from the green set), `steps = [...]`. A step is one inline table
+  with a `do` key (action, fields flat beside it) or exactly one
+  `assert_*` key (fields inside its table, or the bare payload
+  form `{ assert_player = [x, y, z] }`). The worked example above
+  predates two settlements and is left as written: its `s` keys
+  meant "south" under the old WASD aliases (S6's keymap
+  settlement removed them — `s` is now smash) and its positions
+  are the old street_block sketch, not the built scene.
+- **`damage_tile` ≡ the `bash` step:** tiles have no HP; the step
+  advances the tile's bash chain one step via the S6 machinery
+  (`World::bash_tile`), no player involved. `damage_entity` deals
+  N damage to the first live entity of the named type through the
+  S5 combat path (death + corpse included). Script-mutation steps
+  (spawn / bash / damage_* / vehicle mutations) flush a turn after
+  applying, so the change rides that step's Delta.
+- **`capture` is rejected at parse time**, with an error naming
+  the CaptureArgs limitation (pixel capture takes fixture names,
+  not wire snapshots). Green-set scenarios must not use it. The
+  **engine** and **render** assertion classes of the v1 vocabulary
+  are likewise not implemented by the sim runner — they belong to
+  the engine-side gates, which already assert them against the
+  same scenes.
+- **The mirror invariant** (mirror == a fresh Snapshot of the
+  world) is checked after every action step in-process, over the
+  state Deltas fully determine: tiles (incl. frac/tint), entities,
+  vehicles. **Memory is scoped out of the per-step equality, by
+  wire necessity:** memory blocks ride Snapshots only, so a
+  delta-fed client cannot track memory membership between
+  snapshots (a tile that leaves view memorized and one still in
+  view but unlit both arrive as lit-BLANK live tiles, and the
+  exporter's memory blocks exclude currently-visible tiles). In
+  its place, at each Snapshot the runner checks memory
+  *consistency*: wherever the incoming Snapshot transmits a memory
+  for a tile the accumulated mirror also remembers, the remembered
+  terrain/furniture must agree.
+- **Per-mode step matrix.** In-process implements every step.
+  Process mode (a real client over the socket) refuses the
+  world-event steps by name — `spawn`, `bash`/`damage_tile`,
+  `damage_entity`, `damage_vehicle_part`, `rotate_vehicle`,
+  `translate_vehicle`, `remove_vehicle_part`, `set_weather`,
+  `advance_time` — because the protocol has no client message
+  that injects them; author the event into the scene instead
+  (T3's process twin does exactly this: `zombie_yard` is
+  street_block with the zombie authored in). Equivalents:
+  `advance_turns` = that many `.` wait keys; `snapshot` =
+  disconnect + reconnect (the fresh Snapshot must satisfy the
+  memory-consistency check against the pre-disconnect mirror);
+  `disconnect`/`reconnect` in-process = drop the mirror / reseed
+  from a fresh world Snapshot (the world persists); `ping`
+  in-process = log-only no-op, in process mode a real Ping→Pong
+  nonce check. Assertions refused in process mode, by name:
+  `assert_ui_screen` and `assert_carried` (the wire carries the
+  UI *mode*, never the screen's identity or the item list) and
+  `assert_env`'s `weather` preset name (the wire carries the
+  weather *id*; `weather_id` and the sun-altitude checks work in
+  both modes, as do all tile/entity/vehicle/message assertions
+  against the stream-fed mirror).
+- **Server lifecycle change (S7):** the sim-server now builds
+  the world once and accepts connections one at a time — a
+  client disconnect no longer ends the server (the world
+  persists across connections; a dead connection's I/O error
+  just ends that session). Shutdown and the handshake version
+  mismatch still exit cleanly, as S0 pinned. This is what makes
+  T10's reconnect half and `engine --connect` reconnections
+  meaningful against the real binary.
+- **Scenario file inventory:** green in-process — `t1_go_outside`,
+  `t2_open_ui`, `t3_spawn_chase_kill`, `t4_bash`, `t5_door_cycle`,
+  `t6_time_weather`, `t7_fields`, `t8_items`, `t10_resync`,
+  `t11_vehicles`; green over a real socket — `t1_go_outside`,
+  `t3_process` (scene `crates/sim/scenes/zombie_yard.toml`),
+  `t5_door_cycle`, `t10_resync`. T10's green half is the
+  disconnect/reconnect + shift resync; its abuse half (garbage
+  seqs, replayed epochs, corrupt frames) is S8 fuzz work, recorded
+  in the file. T7's smoke-drift half stays gate-only (it needs a
+  mid-run scene mutation scenario steps cannot express).
+  Deferred with `status = "s8"`: `t9_stairs` (no stair/z-move rule
+  and no multistorey scene exist yet — the file records the
+  intended steps) and `t12_soak` (the fuzz driver is S8's; the
+  file records the deterministic skeleton).
+- **Interactive mode:** `voxel-engine --connect <socket>`
+  (crates/engine/src/client.rs) — a headless live session:
+  handshake, Snapshot → world via `snapshot_world`, UiFrame +
+  shm validated via `frame::prepare_ui`, stdin bytes → Key
+  inputs (0x1b = Esc, `Q` = end), SeqTracker/HeartbeatTracker
+  discipline, drain-then-Shutdown on exit. The **windowed**
+  seating of this session is NOT built: `render_frame` /
+  CaptureArgs accept fixture names only, so the windowed frame
+  loop cannot take a wire-fed world without the engine change
+  already named as the pixel-capture-parity follow-up. The
+  windowed human run is a desktop-machine step; the headless
+  session is the proof available here (street_block: player
+  walked (5,5) → (5,9), out of the house; clean exits both
+  ends).
+
 ## 6. Test matrix — the user's named tests, plus the ones they imply
 
 | # | Test | Scenario sketch | Key assertions |
@@ -517,7 +623,7 @@ updated in the same change.
 | **S4 — UI** | shm writer (double-buffer, header, dirty rect), UI state machine (§3.3), Resize handling | **T2 pass**; ui-share gates re-run against sim-written frames (not just synthetic-written); torn-frame reader test against the sim writer |
 | **S5 — Creatures, fields, effects** | Spawn/AI/combat/death; field spread/decay + displayed-field rule; Effects emission | **T3 + T7 pass** — DONE 2026-11-24 |
 | **S6 — Destruction, items, vehicles** | Bash chains, furniture removal, item piles + inventory list, vehicle move/damage/remove | **T4 + T8 + T11 pass**; fine-layer restamp assertions in engine gates — DONE 2026-11-24 (v1 gate T1–T4 complete) |
-| **S7 — Scenario DSL + interactive mode** | §5 runner (process + in-process), scenario files for T1–T12; `engine --connect` live session against sim-server you can play with the keyboard; CI job (headless, lavapipe) | All scenarios green in CI; a human can run the windowed engine against the sim and walk out of the house |
+| **S7 — Scenario DSL + interactive mode** | §5 runner (process + in-process), scenario files for T1–T12; `engine --connect` live session against sim-server you can play with the keyboard; CI job (headless, lavapipe) | All scenarios green in CI; a human can run the windowed engine against the sim and walk out of the house — **DONE 2026-11-24 with the windowed half named, not built**: scenarios green in-process + process subset over real sockets (locally validated CI commands; CI itself runs on push via Joey's PC route), `engine --connect` proven headless (walk out of the house, clean shutdown); the windowed seating waits on the CaptureArgs wire-source engine change (see §5.1) |
 | **S8 — Soak & fuzz (optional, after v1)** | Random-input soak, malformed-frame fuzz on the sim's own server side, record/replay of a session log | **T9/T10/T12 pass**; decode fuzz clean (parity with the existing proto fuzz gates) |
 
 Rough size: S0–S2 is the critical path to first value (a walkable,

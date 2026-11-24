@@ -9,6 +9,7 @@
 pub mod blend;
 pub mod camera;
 pub mod capture;
+pub mod client;
 pub mod cutaway;
 pub mod frame;
 pub mod fxwire;

@@ -1,0 +1,25 @@
+# T9 — stairs / multi-storey (plan §6 T9). STATUS: S8.
+#
+# This file is NOT in the gate's green set and does not run
+# in S7: the behaviour it scripts does not exist yet. There
+# is no stair or z-move rule in the sim's movement code (the
+# keymap has no `>` / `<` handling) and no multistorey scene
+# to run it in — both are S8 work (the slice row assigns T9's
+# PASS to S8). The steps below record the intended shape so
+# S8 starts from the test, not from a blank page: a two-floor
+# house scene ("house_stairs", to be authored in S8) whose
+# staircase the player climbs, with the z-window and the
+# lit/memory behaviour re-asserted on the new floor.
+status = "s8"
+scene = "house_stairs"
+name = "T9 stairs (S8 — behaviour not yet built)"
+
+steps = [
+  { assert_player = [5, 5, 0] },
+  { do = "key", key = ">" },
+  { assert_player = [5, 5, 1] },
+  { assert_lit = { pos = [5, 5, 1], not_value = "BLANK" } },
+  { do = "key", key = "<" },
+  { assert_player = [5, 5, 0] },
+  { assert_mirror = true },
+]

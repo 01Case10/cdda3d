@@ -1,0 +1,37 @@
+# T2 — open the UI (plan §6 T2; behaviour proved by the S4
+# gate). The inventory / crafting / look screens round-trip
+# over UiFrame mode changes; movement keys are consumed by the
+# UI while it is open (the player does not move). Screen-name
+# and carried assertions are in-process only (the wire carries
+# the mode, never the screen's identity or the item list).
+scene = "street_block"
+name = "T2 open the UI"
+
+steps = [
+  { assert_ui_mode = "MapInput" },
+  { assert_ui_screen = "gameplay" },
+  { assert_carried = { type = "rock", count = 3 } },
+  { assert_carried = { type = "stick", count = 1 } },
+  { do = "key", key = "i" },
+  { assert_ui_mode = "UiInput" },
+  { assert_ui_screen = "inventory" },
+  { assert_message = { kind = "UiFrame" } },
+  # A movement key inside the UI moves the cursor, not the player.
+  { do = "key", key = "j" },
+  { assert_player = [5, 5, 0] },
+  { assert_ui_screen = "inventory" },
+  { do = "key", key = "Esc" },
+  { assert_ui_mode = "MapInput" },
+  { assert_ui_screen = "gameplay" },
+  { do = "key", key = "&" },
+  { assert_ui_screen = "crafting" },
+  { assert_ui_mode = "UiInput" },
+  { do = "key", key = "Esc" },
+  { assert_ui_screen = "gameplay" },
+  { do = "key", key = ";" },
+  { assert_ui_screen = "look" },
+  { assert_ui_mode = "UiInput" },
+  { do = "key", key = "Esc" },
+  { assert_ui_screen = "gameplay" },
+  { assert_ui_mode = "MapInput" },
+]

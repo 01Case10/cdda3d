@@ -1,0 +1,33 @@
+# T7 — fields (plan §6 T7; behaviour proved by the S5 gate).
+# The field_fire cabin fire: standing in intensity-1 fire
+# hurts (7/turn), the fire spreads to the flammable floor and
+# furniture over the following turns, and the whole burn dies
+# out within the gate's 1200-turn bound at seed 1. The smoke-
+# drift half of T7 stays gate-only: it needs a mid-run scene
+# mutation (a second fire source) that scenario steps cannot
+# express — see the S7 records.
+scene = "field_fire"
+name = "T7 fields: fire burns, spreads, dies"
+
+steps = [
+  { assert_player = [16, 5, 0] },
+  { assert_field = { pos = [18, 5, 0], type = "fd_fire", min_intensity = 1 } },
+  { assert_displayed = { pos = [18, 5, 0], type = "fd_fire" } },
+  { do = "key", key = "l" },
+  { assert_player = [17, 5, 0] },
+  { do = "key", key = "l" },
+  { assert_player = [18, 5, 0] },
+  # One turn standing in intensity-1 fire: 7 damage.
+  { assert_player_hp = { lt = 255 } },
+  { do = "key", key = "h" },
+  { do = "key", key = "h" },
+  { assert_player = [16, 5, 0] },
+  # Spread: within 40 turns the fire has taken a second tile
+  # (the S5 gate's bound at this seed).
+  { do = "advance_turns", count = 40 },
+  { assert_field_count = { type = "fd_fire", gte = 2 } },
+  # Burnout: every fire is gone by the gate's 1200-turn bound.
+  { do = "advance_turns", count = 1160 },
+  { assert_field_count = { type = "fd_fire", eq = 0 } },
+  { assert_mirror = true },
+]

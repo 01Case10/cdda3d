@@ -40,6 +40,7 @@ fn spawn_server(path: PathBuf) -> JoinHandle<proto::Result<()>> {
         weather: None,
         ui_shm_path: None,
         ui_start: None,
+        seed: None,
     };
     std::thread::spawn(move || sim::run_server(&config))
 }

@@ -1,0 +1,37 @@
+# T3 (process mode) — the chase over a real socket. Same
+# behaviour as t3_spawn_chase_kill, driven against a spawned
+# sim-server subprocess: the zombie is authored into the
+# zombie_yard scene (a client cannot inject a spawn), and the
+# player walks out to meet it. While the player is still
+# inside, the house walls block the zombie's LOS and it
+# wanders; once the player is out in the open yard it sees
+# them, chases, and attacks. The kill half stays in-process
+# (bump direction depends on the chase's final tile; the
+# in-process file pins it exactly).
+scene = "zombie_yard"
+name = "T3 process-mode chase"
+
+steps = [
+  { assert_entity_visible = "mon_zombie" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { do = "key", key = "o" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { do = "key", key = "j" },
+  { assert_player = [5, 9, 0] },
+  # Out in the open: waiting draws the chase in and then the
+  # attack (the zombie closes one Chebyshev step per turn in
+  # the open, exactly as in-process).
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { do = "key", key = "." },
+  { assert_player_hp = { lt = 255 } },
+  { assert_entity_visible = "mon_zombie" },
+  { do = "ping" },
+]
