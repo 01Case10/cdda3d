@@ -687,14 +687,18 @@ impl Ui {
                 self.state = UiState::Gameplay;
                 true
             }
-            'j' | 's' | 'l' if self.state != UiState::LookAround => self.move_cursor(1, len),
+            // Cursor keys follow the world keymap settlement
+            // (S6): `s`/`d` are smash/drop in MapInput, so the
+            // UI drops those movement aliases too — vi-keys
+            // (plus `w`/`a`) everywhere.
+            'j' | 'l' if self.state != UiState::LookAround => self.move_cursor(1, len),
             'k' | 'w' | 'h' if self.state != UiState::LookAround => self.move_cursor(-1, len),
             _ if self.state == UiState::LookAround => {
                 let (dx, dy) = match ch {
                     'h' | 'a' => (-1, 0),
-                    'l' | 'd' => (1, 0),
+                    'l' => (1, 0),
                     'k' | 'w' => (0, -1),
-                    'j' | 's' => (0, 1),
+                    'j' => (0, 1),
                     'y' => (-1, -1),
                     'u' => (1, -1),
                     'b' => (-1, 1),

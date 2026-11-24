@@ -203,7 +203,9 @@ fn t3_engine_chase_through_delta_ingest() {
     let start_x = store[&zid].pos[0];
 
     // Walk out and wait; apply each flush's entity fields.
-    for c in ['s', 's', 'o', 's', 's', 's', '.', '.', '.'] {
+    // (S6 amendment: the south steps use the vi-key `j` — `s`
+    // is the smash key since S6. Same walk.)
+    for c in ['j', 'j', 'o', 'j', 'j', 'j', '.', '.', '.'] {
         let msgs = world.apply_input(&reg, &key_input(c));
         for m in &msgs {
             match m {

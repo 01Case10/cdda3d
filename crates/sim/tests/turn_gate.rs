@@ -2,6 +2,12 @@
 //! `World::apply_input` (no socket — the same entry point the
 //! server loop uses, and the one S7's scenario runner will use).
 //!
+//! AMENDED (S6): movement keys in this file were switched
+//! from the WASD aliases `s`/`d` to the vi-keys `j`/`l` —
+//! since S6 `s` is the game's smash key and `d` its drop key
+//! (0.I-1 keybindings), so the aliases no longer move. The
+//! walks themselves are unchanged.
+//!
 //! - T1 (world/wire half): street_block — bump a closed door
 //!   (blocked), `o`+dir opens it (TileChange t_door_c -> t_door_o),
 //!   step out, cross a submap boundary (fresh Snapshot, epoch+1),
@@ -205,15 +211,15 @@ fn t1_outside_then_back_inside() {
     let player_id = drv.world.player_id.unwrap();
 
     // Walk to the door.
-    let d = drv.delta('s');
+    let d = drv.delta('j');
     assert_eq!(drv.player(), [5, 6, 0]);
     let up = entity_update_at(&d, player_id).expect("move must update the player entity");
     assert_eq!(up.pos.as_ref().map(|p| [p.x, p.y, p.z]), Some([5, 6, 0]));
-    drv.delta('s');
+    drv.delta('j');
     assert_eq!(drv.player(), [5, 7, 0]);
 
     // Bump the closed door: blocked, turn consumed, door unchanged.
-    let d = drv.delta('s');
+    let d = drv.delta('j');
     assert_eq!(drv.player(), [5, 7, 0], "closed door blocks the step");
     assert!(
         d.tile_changes.as_ref().is_none_or(|v| v.is_empty()),
@@ -231,7 +237,7 @@ fn t1_outside_then_back_inside() {
 
     // o + south opens it.
     assert!(drv.key('o').is_empty(), "arming Open produces no message");
-    let d = drv.delta('s');
+    let d = drv.delta('j');
     assert_eq!(
         drv.player(),
         [5, 7, 0],
@@ -246,14 +252,14 @@ fn t1_outside_then_back_inside() {
     assert_eq!(drv.terrain_str(DOOR), "t_door_o");
 
     // Step out onto the grass.
-    drv.delta('s');
+    drv.delta('j');
     assert_eq!(drv.player(), [5, 8, 0], "standing in the doorway");
-    drv.delta('s');
+    drv.delta('j');
     assert_eq!(drv.player(), [5, 9, 0], "outside the house");
 
     // Walk east along y=9 and cross the x=12 submap boundary.
     for x in 6..12 {
-        let d = drv.delta('d');
+        let d = drv.delta('l');
         assert_eq!(drv.player(), [x, 9, 0]);
         assert_eq!(d.epoch, 1, "no shift before the boundary");
     }
@@ -262,7 +268,7 @@ fn t1_outside_then_back_inside() {
         Facing::RIGHT,
         "eastward step faces RIGHT"
     );
-    let snap = drv.snapshot('d');
+    let snap = drv.snapshot('l');
     assert_eq!(drv.player(), [12, 9, 0], "crossed into the next submap");
     assert_eq!(snap.epoch, 2, "map shift bumps the epoch");
     let pe = snap
@@ -292,7 +298,7 @@ fn t1_outside_then_back_inside() {
     drv.delta('k');
     assert_eq!(drv.player(), [5, 7, 0], "back inside");
     assert!(drv.key('c').is_empty(), "arming Close produces no message");
-    let d = drv.delta('s');
+    let d = drv.delta('j');
     let tc = change_at(&d, DOOR).expect("close must emit a TileChange for the door tile");
     assert_eq!(
         drv.reg.string_of(Kind::Terrain, tc.terrain),
@@ -333,7 +339,7 @@ fn movecost_passability() {
     assert_eq!(drv.player(), [5, 5, 0], "bookcase blocks");
 
     // East: t_floor (2) + f_table (mod +2) — passable.
-    drv.delta('d');
+    drv.delta('l');
     assert_eq!(drv.player(), [6, 5, 0], "table tile is passable");
 
     // And back west onto the grass.
@@ -346,14 +352,14 @@ fn t5_door_cycle_and_noops() {
     let (mut drv, _snap) = Driver::new("street_block");
 
     // To the door, open it, step through.
-    drv.delta('s');
-    drv.delta('s');
+    drv.delta('j');
+    drv.delta('j');
     assert_eq!(drv.player(), [5, 7, 0]);
     assert!(drv.key('o').is_empty());
-    let d = drv.delta('s');
+    let d = drv.delta('j');
     assert!(change_at(&d, DOOR).is_some(), "open emits a TileChange");
-    drv.delta('s');
-    drv.delta('s');
+    drv.delta('j');
+    drv.delta('j');
     assert_eq!(drv.player(), [5, 9, 0], "through the door and outside");
 
     // Close behind (north = back toward the door).
@@ -646,8 +652,8 @@ fn mirror_invariant_200_turns() {
     // walls, opens the door once per cycle, waits — deterministic
     // by construction.
     const PATTERN: &[char] = &[
-        's', 's', 'o', 's', 'd', 'd', 'w', 'w', 'a', 'a', 'k', 'j', 'j', 'h', 'h', 'l', '.', 'd',
-        'a', 's', 'w',
+        'j', 'j', 'o', 'j', 'l', 'l', 'w', 'w', 'a', 'a', 'k', 'j', 'j', 'h', 'h', 'l', '.', 'l',
+        'a', 'j', 'w',
     ];
     let mut turns = 0usize;
     let mut inputs = 0usize;

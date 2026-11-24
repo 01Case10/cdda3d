@@ -124,19 +124,21 @@ fn t1_render_half_midnight_and_memory() {
         input.pressed = true;
         world.apply_input(&reg, &input);
     };
+    // (S6 amendment: east steps use the vi-key `l` — `d` is
+    // the drop key since S6. Same walk.)
     for _ in 0..4 {
-        key(&mut world, 'd');
+        key(&mut world, 'l');
     }
     key(&mut world, 'o');
-    key(&mut world, 'd'); // open
+    key(&mut world, 'l'); // open
     for _ in 0..6 {
-        key(&mut world, 'd');
+        key(&mut world, 'l');
     }
     for _ in 0..6 {
         key(&mut world, 'a');
     }
     key(&mut world, 'c');
-    key(&mut world, 'd'); // close
+    key(&mut world, 'l'); // close
     let snap = world.build_snapshot(&reg, 0, 0);
     assert!(snap.memory_blocks.is_some(), "the visit left memory blocks");
     let grid = grid_from_snapshot(&snap);

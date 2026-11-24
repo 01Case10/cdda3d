@@ -5,19 +5,32 @@
 //! samples where 105 = 'i'):
 //! - Movement: vi-keys `h` west, `j` south, `k` north, `l` east,
 //!   `y` northwest, `u` northeast, `b` southwest, `n` southeast;
-//!   WASD cardinals as aliases (`w` north, `a` west, `s` south,
-//!   `d` east).
+//!   `w` north and `a` west remain as aliases.
 //! - `.` or ` ` waits.
-//! - `o` / `c` arm a pending Open / Close: the NEXT movement-
-//!   direction key applies the action to the adjacent tile in
-//!   that direction instead of moving (CDDA's `o`/<dir> pattern).
-//!   Arming does not consume a turn and produces no message; any
-//!   non-direction key cancels the pending action (and is then
-//!   processed as its own key). A direction key that applies a
-//!   pending action still consumes the turn.
+//! - `o` / `c` arm a pending Open / Close, `s` arms a pending
+//!   Bash (S6): the NEXT movement-direction key applies the
+//!   action to the adjacent tile in that direction instead of
+//!   moving (CDDA's `o`/<dir> pattern). Arming does not
+//!   consume a turn and produces no message; any non-direction
+//!   key cancels the pending action (and is then processed as
+//!   its own key). A direction key that applies a pending
+//!   action still consumes the turn.
+//! - `g` picks up one unit from the player's own tile, `d`
+//!   drops one unit onto it (S6; see below).
 //! - Any other pressed key consumes a turn with no effect. Key
 //!   releases and non-Key inputs are not turns at all: no state
 //!   change, no reply.
+//!
+//! **Keymap settlement (S6):** the action keys are the game's
+//! own defaults from 0.I-1 `data/raw/keybindings.json` —
+//! `smash` = `s`, `pickup` = `g`, `drop` = `d`, matching
+//! `open` = `o` / `close` = `c` from S2. Where a real binding
+//! collides with a movement alias, the real binding wins:
+//! S2's WASD aliases `s` (south) and `d` (east) are REMOVED
+//! (south is `j`, east is `l`); `w`/`a` stay because they
+//! collide only with actions the sim does not model (wear /
+//! apply). Gates written against the old aliases were amended
+//! with the reason recorded in place.
 //!
 //! Passability: CDDA's own rule, `map::move_cost_ter_furn`
 //! (src/map.cpp at the pinned commit): terrain `move_cost` == 0
@@ -38,6 +51,47 @@
 //! itself does not yet scale turn length (every step is one
 //! turn regardless of cost) — that is a later refinement, not
 //! part of passability.
+//!
+//! S6 additions:
+//! - **Bash (`s` + direction):** the adjacent tile advances
+//!   ONE step along its bash chain. Resolution mirrors
+//!   upstream `map::bash_ter_furn` (0.I-1 src/map.cpp:3932+):
+//!   furniture is smashed first when the tile has any — a
+//!   furniture def's `bash_result` (furn_set) becomes the new
+//!   furniture, `"f_null"` removes it; terrain otherwise —
+//!   its `bash_result` (ter_set) becomes the new terrain, and
+//!   `"t_null"` destroys the tile to `t_open_air` (upstream
+//!   `ter_set(p, ter_t_open_air)` when the result id is null,
+//!   map.cpp:4203). Two named simplifications: (1) the sim
+//!   has no strength stat, so one bash = one chain step,
+//!   deterministic — upstream rolls `strength + damage >=
+//!   str_max` with damage accruing across attempts; (2) a
+//!   furniture def with NO `bash_result` is REMOVED outright
+//!   (plan §3.2's rule) where upstream's missing bash spec
+//!   falls through to the terrain — the plan's rule is the
+//!   one the gates pin. Terrain with no `bash_result` is
+//!   unbashable: a no-op, turn still consumed. A successful
+//!   bash queues exactly one HitFlash + one Sound
+//!   (`"smash_success"`, upstream's success sound id,
+//!   map.cpp:4108) at the target tile. Bashing a creature's
+//!   tile is out of scope (the bump attack owns creature
+//!   tiles — the bash is a no-op), and so is bashing a tile
+//!   holding a vehicle part (vehicle damage has its own
+//!   entry point, `World::damage_vehicle_part`).
+//! - **Pickup (`g`) / drop (`d`)**, own tile only (CDDA's
+//!   adjacent-pickup UI is out of scope): pickup takes ONE
+//!   unit from the tile's pile — `item_count` −1, `top_item`
+//!   stable until the last unit clears it — and the unit
+//!   joins the carried list (so the S4 inventory UI shows
+//!   it). Drop removes one unit from the FIRST carried stack
+//!   (list order) onto the player's tile: an empty tile takes
+//!   it as `top_item` × 1, a matching pile grows by one, and
+//!   a tile whose pile is a DIFFERENT kind refuses the drop
+//!   (the lossy wire cannot hold two kinds on one tile) —
+//!   the state does not change but the turn is still
+//!   consumed, the sim's attempted-action rule, same as a
+//!   blocked step. Empty-tile pickup and empty-hands drop
+//!   are likewise no-op turns.
 //!
 //! S5 additions:
 //! - **Bump attack:** stepping into a creature's tile is a
@@ -193,25 +247,43 @@ fn melee_sound(from: [i32; 3], to: [i32; 3]) -> EffectEventT {
     e
 }
 
+/// A bash Sound at the smashed tile: upstream plays the
+/// success sound AT the bashed position
+/// (`sounds::sound(p, ..., "smash_success")`, map.cpp:4108),
+/// so from == to == the target.
+fn bash_sound(pos: [i32; 3]) -> EffectEventT {
+    let mut e = EffectEventT::default();
+    e.kind = EffectKind::Sound;
+    e.effect_id = Some("smash_success".to_string());
+    e.from_pos = Some(v3(pos));
+    e.to_pos = Some(v3(pos));
+    e.duration_ms = HIT_EFFECT_MS;
+    e
+}
+
 /// Chebyshev distance (8-way movement's natural metric).
 fn chebyshev(a: [i32; 3], b: [i32; 3]) -> i32 {
     (a[0] - b[0]).abs().max((a[1] - b[1]).abs()).max((a[2] - b[2]).abs())
 }
 
-/// An armed Open/Close awaiting its direction key.
+/// An armed Open/Close/Bash awaiting its direction key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingAction {
     Open,
     Close,
+    Bash,
 }
 
 /// Movement direction (dx, dy) for a key char, if it is one.
+/// The vi-keys are the full set; `w`/`a` are the surviving
+/// WASD aliases — `s` and `d` are the game's smash/drop keys
+/// since S6 (see the module docs' keymap settlement).
 pub fn direction_for_key(key: char) -> Option<(i32, i32)> {
     Some(match key {
         'h' | 'a' => (-1, 0),
-        'j' | 's' => (0, 1),
+        'j' => (0, 1),
         'k' | 'w' => (0, -1),
-        'l' | 'd' => (1, 0),
+        'l' => (1, 0),
         'y' => (-1, -1),
         'u' => (1, -1),
         'b' => (-1, 1),
@@ -293,10 +365,15 @@ impl World {
 
         let key = char::from_u32(key_code as u32).unwrap_or('\0');
 
-        // A pending Open/Close takes the next direction key.
+        // A pending Open/Close/Bash takes the next direction key.
         if let Some(action) = self.pending.take() {
             if let Some(dir) = direction_for_key(key) {
-                self.apply_open_close(reg, action, dir);
+                match action {
+                    PendingAction::Bash => self.apply_bash(reg, dir),
+                    PendingAction::Open | PendingAction::Close => {
+                        self.apply_open_close(reg, action, dir)
+                    }
+                }
                 return self.flush_turn(reg);
             }
             // Any other key cancels the pending action and is
@@ -325,6 +402,24 @@ impl World {
             'c' => {
                 self.pending = Some(PendingAction::Close);
                 Vec::new()
+            }
+            // Smash (0.I-1 keybindings: "smash" = 's'): arm a
+            // pending Bash, exactly like Open/Close.
+            's' => {
+                self.pending = Some(PendingAction::Bash);
+                Vec::new()
+            }
+            // Pickup ("pickup" = 'g'): one unit from the
+            // player's own tile into the carried list.
+            'g' => {
+                self.pickup(reg);
+                self.flush_turn(reg)
+            }
+            // Drop ("drop" = 'd'): one unit from the first
+            // carried stack onto the player's own tile.
+            'd' => {
+                self.drop_item(reg);
+                self.flush_turn(reg)
             }
             _ => {
                 if let Some(dir) = direction_for_key(key) {
@@ -381,6 +476,9 @@ impl World {
         let sid = match action {
             PendingAction::Open => transform(def, |d| &d.open_result),
             PendingAction::Close => transform(def, |d| &d.close_result),
+            // Bash never reaches here (apply_key routes it to
+            // apply_bash); no transform.
+            PendingAction::Bash => None,
         };
         let Some(sid) = sid else {
             return; // no such transform: no-op
@@ -396,7 +494,137 @@ impl World {
         self.messages.push(match action {
             PendingAction::Open => "You open the door.".to_string(),
             PendingAction::Close => "You close the door.".to_string(),
+            PendingAction::Bash => "You smash it.".to_string(),
         });
+    }
+
+    /// Apply an armed Bash to the tile adjacent to the player
+    /// in `dir` (S6; the rule set and its upstream grounding
+    /// are in the module docs). One chain step on success,
+    /// exactly one HitFlash + Sound; every failure mode is a
+    /// silent no-op (the caller still flushes the turn).
+    fn apply_bash(&mut self, reg: &DefRegistry, dir: (i32, i32)) {
+        let Some(pos) = self.player_pos() else {
+            return;
+        };
+        let target = [pos[0] + dir.0, pos[1] + dir.1, pos[2]];
+        // Scope: creature tiles belong to the bump attack, and
+        // vehicle-part tiles to the vehicle damage API.
+        if self.creature_id_at(target).is_some() {
+            return;
+        }
+        if self.vehicle_part_at(target).is_some() {
+            return;
+        }
+        // Furniture first (upstream's priority in
+        // bash_ter_furn): any furniture on the tile is the
+        // bash target.
+        let furniture = self.furniture_at(target).unwrap_or(0);
+        if furniture != 0 {
+            let result = reg
+                .def_by_id(Kind::Furniture, furniture)
+                .and_then(|d| transform(d, |d| &d.bash_result).map(str::to_string));
+            match result {
+                // A furn_set chain step; "f_null" is the
+                // removal sentinel (id 0).
+                Some(sid) => {
+                    let new_id = reg.id_of(Kind::Furniture, &sid);
+                    if new_id == 0 && sid != "f_null" {
+                        eprintln!(
+                            "sim: bash result '{sid}' is not in the registry; no-op"
+                        );
+                        return;
+                    }
+                    self.set_furniture(target, new_id);
+                }
+                // No bash_result: the furniture is destroyed
+                // outright (plan §3.2's rule — see module
+                // docs for the upstream divergence).
+                None => {
+                    self.set_furniture(target, 0);
+                }
+            }
+            self.push_effect(hit_flash(target));
+            self.push_effect(bash_sound(target));
+            self.messages.push("You smash it.".to_string());
+            return;
+        }
+        // Terrain: no bash_result = unbashable.
+        let Some(terrain) = self.terrain_at(target) else {
+            return;
+        };
+        let Some(def) = reg.def_by_id(Kind::Terrain, terrain) else {
+            return;
+        };
+        let Some(sid) = transform(def, |d| &d.bash_result).map(str::to_string) else {
+            return;
+        };
+        // "t_null" destroys the tile: upstream's ter_set with
+        // a null result id lands on t_open_air (map.cpp:4203).
+        let new_id = if sid == "t_null" {
+            reg.id_of(Kind::Terrain, "t_open_air")
+        } else {
+            reg.id_of(Kind::Terrain, &sid)
+        };
+        if new_id == 0 {
+            eprintln!("sim: bash result '{sid}' is not in the registry; no-op");
+            return;
+        }
+        self.set_terrain(target, new_id);
+        self.push_effect(hit_flash(target));
+        self.push_effect(bash_sound(target));
+        self.messages.push("You smash it.".to_string());
+    }
+
+    /// Pickup (S6): take one unit from the pile on the
+    /// player's own tile into the carried list. An empty tile
+    /// is a no-op (the caller still flushes the turn).
+    fn pickup(&mut self, reg: &DefRegistry) {
+        let Some(pos) = self.player_pos() else {
+            return;
+        };
+        let Some((top, count)) = self.tile_items(pos) else {
+            return;
+        };
+        if top == 0 || count == 0 {
+            return;
+        }
+        // top_item stays stable until the last unit, which
+        // clears the pile entirely.
+        let (new_top, new_count) = if count > 1 {
+            (top, count - 1)
+        } else {
+            (0, 0)
+        };
+        self.set_tile_items(pos, new_top, new_count);
+        self.carried_add(top);
+        let name = Self::item_display_name(reg, top);
+        self.messages.push(format!("You pick up the {name}."));
+    }
+
+    /// Drop (S6): place one unit from the FIRST carried stack
+    /// onto the player's own tile. A pile of a different kind
+    /// refuses the drop (state unchanged; the caller still
+    /// flushes the turn — see the module docs).
+    fn drop_item(&mut self, reg: &DefRegistry) {
+        let Some(pos) = self.player_pos() else {
+            return;
+        };
+        let Some((id, _)) = self.carried_first() else {
+            return; // empty hands: no-op turn
+        };
+        let Some((top, count)) = self.tile_items(pos) else {
+            return;
+        };
+        if top != 0 && top != id {
+            return; // mixed pile: refused (documented rule)
+        }
+        if !self.carried_remove_one(id) {
+            return;
+        }
+        self.set_tile_items(pos, id, count + 1);
+        let name = Self::item_display_name(reg, id);
+        self.messages.push(format!("You drop the {name}."));
     }
 }
 

@@ -1,0 +1,181 @@
+# destructible_street — plan §4 item 7 (new in S6): bashable
+# doors/windows/furniture and a damageable vehicle, arranged
+# for the destruction tests (T4) plus items (T8) and vehicles
+# (T11). 24x12 = 2x1 submaps.
+#
+# A walled room (a street-side garage) on grass, pavement to
+# the east:
+# - North wall (y=2) has a window (t_window) at x=5: bash chain
+#   t_window -> t_window_frame -> t_window_empty -> t_null
+#   (destroyed -> t_open_air), per the real defs.
+# - An inner partition (y=6) spans the room with a closed door
+#   (t_door_c) at x=5. The south chamber (y 7..8) has no other
+#   opening, so the tile behind the door (5,7) is BLANK until
+#   the first bash turns the door into t_door_b (TRANSPARENT):
+#   the T4 LOS/lit-through-the-opening assertion. Door chain:
+#   t_door_c -> t_door_b -> t_door_frame -> t_null.
+# - Furniture: f_table at (4,4) (NO bash_result in the defs ->
+#   bashing removes it, plan §3.2) and f_board_map at (6,4)
+#   (bash_result f_board_map_b -> one furn_set step, then no
+#   bash_result -> removed).
+# - Items for T8: a rock pile x3 at (3,3) and a stick at (3,4)
+#   (the mixed-pile drop-refusal tile).
+# - The car: a [[vehicle]] store vehicle (S6) — origin +
+#   face_deg 23.0, parts declared by (vpart, mount); absolute
+#   positions are computed sim-side by the ported
+#   precalc_mounts/coord_translate math (at 23 degrees the
+#   tileray precalc is the identity for these mounts, so each
+#   part sits at origin + mount). Roof part carries flags 4
+#   (FLAG_ROOF, vehicles::model). T11 rotates it 23 -> 90
+#   degrees, translates it, damages and removes parts through
+#   the World vehicle APIs.
+name = "destructible_street"
+seed = 1
+time = "noon"
+weather = "clear"
+player = [5, 4, 0]
+environment = true
+
+[z0]
+legend = { "#" = "t_wall", "." = "t_floor", "D" = "t_door_c", "O" = "t_door_o", "W" = "t_window", "," = "t_grass", "R" = "t_pavement", "T" = "f_table", "B" = "f_board_map" }
+map = [
+  ",,,,,,,,,,,,RRRRRRRRRRRR",
+  ",,,,,,,,,,,,RRRRRRRRRRRR",
+  ",,#####W####,RRRRRRRRRRR",
+  ",,#........#,RRRRRRRRRRR",
+  ",,#........#,RRRRRRRRRRR",
+  ",,#........#,RRRRRRRRRRR",
+  ",,#####D####,RRRRRRRRRRR",
+  ",,#........#,RRRRRRRRRRR",
+  ",,#........#,RRRRRRRRRRR",
+  ",,##########,RRRRRRRRRRR",
+  ",,,,,,,,,,,,RRRRRRRRRRRR",
+  ",,,,,,,,,,,,RRRRRRRRRRRR",
+]
+furn = [
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "....T.B.................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+]
+
+[[spawn]]
+type = "player"
+pos = [5, 4, 0]
+hp_frac = 255
+facing = "NONE"
+
+[[items]]
+pos = [3, 3, 0]
+top = "rock"
+count = 3
+
+[[items]]
+pos = [3, 4, 0]
+top = "stick"
+count = 1
+
+[[vehicle]]
+id = 1
+name = "car"
+origin = [17, 5, 0]
+face_deg = 23.0
+
+[[vpart]]
+vehicle = 1
+type = "wheel"
+mount = [1, -1, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "wheel"
+mount = [1, 1, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "wheel"
+mount = [-1, -1, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "wheel"
+mount = [-1, 1, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "frame"
+mount = [1, 0, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "frame"
+mount = [-1, 0, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "frame"
+mount = [0, 0, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "headlight"
+mount = [1, 0, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "seat"
+mount = [0, 0, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "door"
+mount = [0, -1, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "door"
+mount = [0, 1, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "trunk"
+mount = [-1, 0, 0]
+hp_frac = 255
+flags = 0
+
+[[vpart]]
+vehicle = 1
+type = "roof"
+mount = [0, 0, 0]
+hp_frac = 255
+flags = 4

@@ -3,6 +3,11 @@
 //! extended to accept the Effects message a combat flush now
 //! carries).
 //!
+//! AMENDED (S6): movement keys switched from the WASD aliases
+//! `s`/`d` to the vi-keys `j`/`l` (walk_out, the bump-key map,
+//! the fire walk, the mirror PATTERN) — `s` is smash and `d`
+//! is drop since S6 (0.I-1 keybindings). Walks unchanged.
+//!
 //! - T3 (spawn enemies): a hostile chases the player across
 //!   open ground (pos updates per Delta, facing follows the
 //!   step), attacks when adjacent (player hp_frac drops,
@@ -182,12 +187,12 @@ fn chebyshev(a: [i32; 3], b: [i32; 3]) -> i32 {
 
 /// Walk the street_block player out of the house to (5,9).
 fn walk_out(drv: &mut Driver) {
-    drv.delta('s');
-    drv.delta('s');
+    drv.delta('j');
+    drv.delta('j');
     assert!(drv.key('o').is_empty(), "arming Open produces no message");
-    drv.delta('s'); // open the door
-    drv.delta('s'); // (5,8) doorway
-    drv.delta('s'); // (5,9) outside
+    drv.delta('j'); // open the door
+    drv.delta('j'); // (5,8) doorway
+    drv.delta('j'); // (5,9) outside
     assert_eq!(drv.player(), [5, 9, 0]);
 }
 
@@ -305,9 +310,9 @@ fn t3_bump_attack_kill_and_corpse() {
         (0, -1) => 'k',
         (1, -1) => 'u',
         (-1, 0) => 'a',
-        (1, 0) => 'd',
+        (1, 0) => 'l',
         (-1, 1) => 'b',
-        (0, 1) => 's',
+        (0, 1) => 'j',
         (1, 1) => 'n',
         other => panic!("zombie not adjacent: {other:?}"),
     };
@@ -728,8 +733,8 @@ fn t7_fire_light_and_player_damage() {
     // waits cost two more (3 x 7 damage at intensity 1).
     let before = drv.player_hp_frac();
     assert_eq!(before, 255);
-    drv.delta('d');
-    drv.delta('d');
+    drv.delta('l');
+    drv.delta('l');
     assert_eq!(drv.player(), fire_pos, "the player steps onto the fire tile");
     drv.delta('.');
     drv.delta('.');
@@ -764,7 +769,7 @@ fn mirror_invariant_creatures_and_fire_200_turns() {
     // A small patrol inside the cabin + waits; the zombie
     // chases through the cabin (across the fire row), the fire
     // grows and spreads meanwhile.
-    const PATTERN: &[char] = &['.', '.', 's', '.', 'd', '.', 'k', '.', 'a', '.', '.', '.'];
+    const PATTERN: &[char] = &['.', '.', 'j', '.', 'l', '.', 'k', '.', 'a', '.', '.', '.'];
     let mut turns = 0usize;
     let mut inputs = 0usize;
     while turns < 200 {

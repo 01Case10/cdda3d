@@ -51,10 +51,17 @@
 //!   - `[[items]]`: `pos`, `top` (Item string id), `count`.
 //!   - `[[graffiti]]`: `pos`.
 //!   - `[[vehicle]]`: `id`, `name`, `face_deg` (float, continuous —
-//!     never quantised).
+//!     never quantised), `origin` (`[x, y, z]`, S6: the tile the
+//!     vehicle's mount (0,0,0) sits on — the sim vehicle store's
+//!     pivot; part absolutes are recomputed from it).
 //!   - `[[vpart]]`: `vehicle` (id of a `[[vehicle]]`), `type`
-//!     (VehiclePart string id), `pos` (game-computed absolute),
-//!     `mount`, `hp_frac`, `flags`.
+//!     (VehiclePart string id), `mount`, `hp_frac`, `flags`, and
+//!     optionally `pos` (a declared absolute position, S1-era
+//!     fixtures). Since S6 the store derives absolutes from
+//!     origin + mount + face_deg; a declared `pos` is used only
+//!     to seed the origin of a vehicle that declares none
+//!     (from its first part: origin = pos - precalc(mount)), so
+//!     the old fixture scenes keep their exact wire shape.
 //!   - `[[carried]]`: `type` (Item string id), `count` — an item
 //!     stack the player starts carrying (S4; the inventory UI's
 //!     initial contents).
@@ -145,13 +152,19 @@ pub struct VehicleSpec {
     pub id: u64,
     pub name: String,
     pub face_deg: f32,
+    /// The store pivot (S6): the tile mount (0,0,0) maps to.
+    /// `None` = derive from the first vpart's declared `pos`.
+    pub origin: Option<[i32; 3]>,
 }
 
 #[derive(Debug, Clone)]
 pub struct VPartSpec {
     pub vehicle: u64,
     pub type_id: String,
-    pub pos: [i32; 3],
+    /// Declared absolute position (legacy fixtures); the S6
+    /// store recomputes absolutes from the vehicle origin +
+    /// mount + facing, so this only seeds a missing origin.
+    pub pos: Option<[i32; 3]>,
     pub mount: [i32; 3],
     pub hp_frac: u8,
     pub flags: u32,
@@ -856,6 +869,7 @@ impl RawDoc {
                             Some(v) => as_float(v, "vehicle.face_deg")? as f32,
                             None => 0.0,
                         },
+                        origin: opt_pos(map, "origin", ctx)?,
                     });
                 }
                 "vpart" => {
@@ -863,7 +877,7 @@ impl RawDoc {
                     vparts.push(VPartSpec {
                         vehicle: opt_int(map, "vehicle", ctx)?.unwrap_or(1) as u64,
                         type_id: as_string(req(map, "type", ctx)?, "vpart.type")?,
-                        pos: as_pos(req(map, "pos", ctx)?, "vpart.pos")?,
+                        pos: opt_pos(map, "pos", ctx)?,
                         mount: opt_pos(map, "mount", ctx)?.unwrap_or([0, 0, 0]),
                         hp_frac: opt_int(map, "hp_frac", ctx)?.unwrap_or(255) as u8,
                         flags: opt_int(map, "flags", ctx)?.unwrap_or(0) as u32,

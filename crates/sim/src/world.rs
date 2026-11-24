@@ -31,6 +31,16 @@
 //! (parallel to the wire field list, never sent), a burned-out
 //! tile set, and the turn's pending Effects — the creature /
 //! field machinery itself lives in [`crate::rules`].
+//!
+//! S6 state: vehicles live in a sim-side store
+//! ([`VehicleState`]: origin + continuous `face_deg` + parts
+//! keyed by mount) — the wire `VehicleT` is *derived* from it,
+//! with each part's absolute position recomputed by the
+//! ported `precalc_mounts`/`coord_translate` math
+//! ([`vehicle_precalc`]). Damage / removal / translation /
+//! rotation mutate the store through the `World` vehicle
+//! APIs; the flush differ diffs the derived wire form against
+//! the last-sent baseline exactly like entities.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -121,6 +131,187 @@ pub struct BlockState {
     pub tiles: Vec<TileState>,
 }
 
+/// Vehicle part flag bit: the part is open (vehicle door /
+/// trunk). The fork adapter's bits (`part.open`,
+/// voxel_real_adapter.cpp), mirrored by `vehicles::model`.
+pub const VPART_FLAG_OPEN: u32 = 1 << 0;
+/// Vehicle part flag bit: the part is broken
+/// (`vehicle_part::is_broken()`).
+pub const VPART_FLAG_BROKEN: u32 = 1 << 1;
+/// Vehicle part flag bit: the part is a roof part
+/// (`vpart_info` ROOF flag) — roof parts stamp on the top
+/// block of their tile, body parts below.
+pub const VPART_FLAG_ROOF: u32 = 1 << 2;
+
+/// One vehicle part in the sim store (S6): identity is
+/// (vpart def, mount) — the mount is the part's fixed slot in
+/// the vehicle frame and never changes as the vehicle moves
+/// or turns (the engine's `PartKey` notion). The wire
+/// absolute position is derived, never stored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VehiclePartState {
+    /// VehiclePart wire id (per-kind, registry).
+    pub vpart: u32,
+    /// Mount in the vehicle frame: x forward, y across,
+    /// z up — CDDA's vehicle JSON part locations.
+    pub mount: [i32; 3],
+    pub hp_frac: u8,
+    pub flags: u32,
+}
+
+/// One vehicle in the sim store (S6). The wire form
+/// ([`VehicleT`]) is derived by [`VehicleState::to_wire`]:
+/// every part's absolute position is
+/// `origin + vehicle_precalc(face_deg, mount)` — the game's
+/// own arrangement, where `vehicle::bub_part_pos` is the
+/// vehicle position plus the mount pre-rotated by
+/// `precalc_mounts` (0.I-1 src/vehicle.cpp:3757-3765).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VehicleState {
+    pub id: u64,
+    pub name: String,
+    /// The pivot tile: where mount (0, 0, 0) sits. Upstream's
+    /// `precalc_mounts` runs with pivot (0,0) for a placed
+    /// vehicle (vehicle.cpp:2185), so the origin is the
+    /// vehicle's position and the precalc is mount-relative.
+    pub origin: [i32; 3],
+    /// Continuous facing in degrees, stored and sent as the
+    /// exact f32 — never quantised (§2.4).
+    pub face_deg: f32,
+    pub parts: Vec<VehiclePartState>,
+}
+
+impl VehicleState {
+    /// The part's absolute tile position at the vehicle's
+    /// current origin/facing.
+    pub fn part_abs(&self, part: &VehiclePartState) -> [i32; 3] {
+        let rel = vehicle_precalc(self.face_deg, part.mount);
+        [
+            self.origin[0] + rel[0],
+            self.origin[1] + rel[1],
+            self.origin[2] + rel[2],
+        ]
+    }
+
+    /// Derive the wire form: parts in store order, absolute
+    /// positions recomputed, `face_deg` verbatim.
+    pub fn to_wire(&self) -> VehicleT {
+        let parts: Vec<VehiclePartStateT> = self
+            .parts
+            .iter()
+            .map(|p| {
+                let abs = self.part_abs(p);
+                let mut w = VehiclePartStateT::default();
+                w.vpart = p.vpart;
+                w.abs_pos = Some(v3(abs[0], abs[1], abs[2]));
+                w.mount = Some(v3(p.mount[0], p.mount[1], p.mount[2]));
+                w.hp_frac = p.hp_frac;
+                w.flags = p.flags;
+                w
+            })
+            .collect();
+        let mut v = VehicleT::default();
+        v.id = self.id;
+        v.name = if self.name.is_empty() {
+            None
+        } else {
+            Some(self.name.clone())
+        };
+        v.face_deg = self.face_deg;
+        v.parts = if parts.is_empty() { None } else { Some(parts) };
+        v
+    }
+}
+
+/// The mount rotation at the heart of the vehicle store: a
+/// faithful port of 0.I-1's `vehicle::coord_translate`
+/// (src/vehicle.cpp:3598-3616) over a `tileray`
+/// (src/tileray.cpp) — the exact math `precalc_mounts`
+/// (vehicle.cpp:3643-3663) applies to every mount with pivot
+/// (0, 0). Given the facing and a mount, returns the mount's
+/// tile offset from the vehicle origin:
+///
+/// - the tileray's direction delta is `(100·cos θ, 100·sin θ)`
+///   truncated to ints (tileray::init from an angle);
+/// - `advance(mount.x)` walks the ray Bresenham-style: along
+///   the major axis one tile per step, the minor axis
+///   accumulating `leftover` until it crosses the major delta;
+/// - the across component `mount.y` enters through the
+///   orthogonal offset, which lands entirely on the minor
+///   axis (ortho_dx when mostly vertical, ortho_dy when
+///   mostly horizontal), signed by quadrant
+///   (sx = [1,-1,-1,1], sy = [1,1,-1,-1]).
+///
+/// Consequences the gates pin: face 0 is the identity; face
+/// 90 maps (x, y) -> (-y, x) exactly; intermediate angles
+/// quantise the way the game's own ray does (at 23 degrees
+/// this scene car's mounts — all within one tile of the
+/// pivot — map to themselves).
+pub fn vehicle_precalc(face_deg: f32, mount: [i32; 3]) -> [i32; 3] {
+    // tileray::init(angle): normalise to [0, 360), delta =
+    // (cos, sin) * 100 truncated toward zero (vec2d->point).
+    let dir = face_deg.rem_euclid(360.0);
+    let rad = dir.to_radians();
+    let delta = [
+        (rad.cos() * 100.0) as i32,
+        (rad.sin() * 100.0) as i32,
+    ];
+    let abs_d = [delta[0].abs(), delta[1].abs()];
+    let quadrant = ((dir / 90.0).floor() as usize) % 4;
+    const SX: [i32; 4] = [1, -1, -1, 1];
+    const SY: [i32; 4] = [1, 1, -1, -1];
+    let mostly_vertical = abs_d[0] <= abs_d[1];
+
+    // tileray::advance(num) from a cleared state.
+    let advance = |num: i32| -> [i32; 2] {
+        if num == 0 {
+            return [0, 0];
+        }
+        let anum = num.abs();
+        let mut last = [0i32; 2];
+        let mut leftover = 0i32;
+        if abs_d[0] != 0 && abs_d[1] != 0 {
+            for _ in 0..anum {
+                if mostly_vertical {
+                    leftover += abs_d[0];
+                    if leftover >= abs_d[1] {
+                        last[0] += 1;
+                        leftover -= abs_d[1];
+                    }
+                } else {
+                    leftover += abs_d[1];
+                    if leftover >= abs_d[0] {
+                        last[1] += 1;
+                        leftover -= abs_d[0];
+                    }
+                }
+            }
+        }
+        if mostly_vertical {
+            last[1] = anum;
+        } else {
+            last[0] = anum;
+        }
+        last[0] *= SX[quadrant];
+        last[1] *= SY[quadrant];
+        if num < 0 {
+            last = [-last[0], -last[1]];
+        }
+        last
+    };
+
+    // coord_translate: q = advance(p.x - pivot.x) + ortho(p.y
+    // - pivot.y), pivot (0,0); z passes through untouched.
+    let fwd = advance(mount[0]);
+    let od = mount[1];
+    let ortho = if mostly_vertical {
+        [od * -SY[quadrant], 0]
+    } else {
+        [0, od * SX[quadrant]]
+    };
+    [fwd[0] + ortho[0], fwd[1] + ortho[1], mount[2]]
+}
+
 #[derive(Debug)]
 pub struct World {
     pub name: String,
@@ -128,7 +319,10 @@ pub struct World {
     /// (origin x, y, z) of submaps changed since the last send.
     dirty: HashSet<(i32, i32, i32)>,
     pub entities: Vec<EntityT>,
-    pub vehicles: Vec<VehicleT>,
+    /// The vehicle store (S6): mutated through the World
+    /// vehicle APIs; the wire form is derived per snapshot /
+    /// diff (`vehicles_wire`).
+    pub vehicles: Vec<VehicleState>,
     pub player_pos: Option<[i32; 3]>,
     pub view_origin: Vec3iT,
     pub view_radius: u32,
@@ -168,6 +362,9 @@ pub struct World {
     last_blocks: Vec<SubmapBlockT>,
     /// Entities as last sent — the entity-diff baseline.
     last_entities: Vec<EntityT>,
+    /// Vehicle wire forms as last sent — the vehicle-diff
+    /// baseline (S6).
+    last_vehicles: Vec<VehicleT>,
     /// Submap index (x/12, y/12, z) the player was in at the last
     /// Snapshot; `None` until the first Snapshot is sent.
     last_snapshot_player_submap: Option<(i32, i32, i32)>,
@@ -453,13 +650,20 @@ impl World {
         }
         let next_entity_id = entities.len() as u64 + 1;
 
+        // Vehicles as store entries (S6). The origin comes
+        // from the scene declaration; a scene that declares
+        // none (the S1-era fixtures) seeds it from the first
+        // part's declared absolute position — origin = pos -
+        // precalc(face, mount) inverts the store derivation
+        // exactly, so legacy scenes produce the identical
+        // wire vehicles.
         let mut vehicles = Vec::new();
         for v in &scene.vehicles {
-            let parts: Vec<VehiclePartStateT> = scene
+            let parts: Vec<VehiclePartState> = scene
                 .vparts
                 .iter()
                 .filter(|p| p.vehicle == v.id)
-                .map(|p| -> Result<VehiclePartStateT, String> {
+                .map(|p| -> Result<VehiclePartState, String> {
                     let id = reg.id_of(Kind::VehiclePart, &p.type_id);
                     if id == 0 {
                         return Err(format!(
@@ -467,25 +671,33 @@ impl World {
                             scene.name, p.type_id
                         ));
                     }
-                    let mut part = VehiclePartStateT::default();
-                    part.vpart = id;
-                    part.abs_pos = Some(v3(p.pos[0], p.pos[1], p.pos[2]));
-                    part.mount = Some(v3(p.mount[0], p.mount[1], p.mount[2]));
-                    part.hp_frac = p.hp_frac;
-                    part.flags = p.flags;
-                    Ok(part)
+                    Ok(VehiclePartState {
+                        vpart: id,
+                        mount: p.mount,
+                        hp_frac: p.hp_frac,
+                        flags: p.flags,
+                    })
                 })
                 .collect::<Result<_, _>>()?;
-            let mut veh = VehicleT::default();
-            veh.id = v.id;
-            veh.name = if v.name.is_empty() {
-                None
-            } else {
-                Some(v.name.clone())
-            };
-            veh.face_deg = v.face_deg;
-            veh.parts = if parts.is_empty() { None } else { Some(parts) };
-            vehicles.push(veh);
+            let origin = v.origin.or_else(|| {
+                scene
+                    .vparts
+                    .iter()
+                    .find(|p| p.vehicle == v.id)
+                    .and_then(|first| {
+                        first.pos.map(|pos| {
+                            let rel = vehicle_precalc(v.face_deg, first.mount);
+                            [pos[0] - rel[0], pos[1] - rel[1], pos[2] - rel[2]]
+                        })
+                    })
+            });
+            vehicles.push(VehicleState {
+                id: v.id,
+                name: v.name.clone(),
+                origin: origin.unwrap_or([0, 0, 0]),
+                face_deg: v.face_deg,
+                parts,
+            });
         }
 
         // S3 clock: the scene's `turn` key wins; else the
@@ -583,6 +795,7 @@ impl World {
             epoch: 1,
             last_blocks: Vec::new(),
             last_entities: Vec::new(),
+            last_vehicles: Vec::new(),
             last_snapshot_player_submap: None,
             pending: None,
             ui,
@@ -647,6 +860,151 @@ impl World {
     /// The items the player carries: (item wire id, count).
     pub fn carried_items(&self) -> &[(u32, u16)] {
         &self.carried
+    }
+
+    /// The first carried stack in list order (S6 drop rule:
+    /// drop takes from here).
+    pub fn carried_first(&self) -> Option<(u32, u16)> {
+        self.carried.first().copied()
+    }
+
+    /// Add one unit of `id` to the carried list: merges into
+    /// the existing stack of that kind if there is one, else
+    /// appends a new stack (S6 pickup).
+    pub fn carried_add(&mut self, id: u32) {
+        if let Some(stack) = self.carried.iter_mut().find(|(s, _)| *s == id) {
+            stack.1 = stack.1.saturating_add(1);
+        } else {
+            self.carried.push((id, 1));
+        }
+    }
+
+    /// Remove one unit of `id` from the carried list; the
+    /// stack leaves the list when it empties. Returns false
+    /// when the player does not carry that kind (S6 drop).
+    pub fn carried_remove_one(&mut self, id: u32) -> bool {
+        let Some(i) = self.carried.iter().position(|(s, _)| *s == id) else {
+            return false;
+        };
+        self.carried[i].1 -= 1;
+        if self.carried[i].1 == 0 {
+            self.carried.remove(i);
+        }
+        true
+    }
+
+    // -----------------------------------------------------------------
+    // Vehicle store (S6): wire derivation + the mutation APIs
+    // the gates drive (the S7 scenario DSL wraps these).
+    // -----------------------------------------------------------------
+
+    /// All vehicles in wire form, in store order.
+    pub fn vehicles_wire(&self) -> Vec<VehicleT> {
+        self.vehicles.iter().map(|v| v.to_wire()).collect()
+    }
+
+    /// One vehicle in wire form.
+    pub fn vehicle_wire(&self, id: u64) -> Option<VehicleT> {
+        self.vehicles.iter().find(|v| v.id == id).map(|v| v.to_wire())
+    }
+
+    /// A vehicle's current origin (the mount-(0,0,0) tile).
+    pub fn vehicle_origin(&self, id: u64) -> Option<[i32; 3]> {
+        self.vehicles.iter().find(|v| v.id == id).map(|v| v.origin)
+    }
+
+    /// A vehicle's current facing, the exact stored float.
+    pub fn vehicle_face(&self, id: u64) -> Option<f32> {
+        self.vehicles.iter().find(|v| v.id == id).map(|v| v.face_deg)
+    }
+
+    /// The store index of the part identified by (vpart string
+    /// id, mount) on a vehicle — part identity for the
+    /// mutation APIs.
+    pub fn vehicle_part_index(
+        &self,
+        reg: &DefRegistry,
+        id: u64,
+        vpart: &str,
+        mount: [i32; 3],
+    ) -> Option<usize> {
+        let vpart_id = reg.id_of(Kind::VehiclePart, vpart);
+        if vpart_id == 0 {
+            return None;
+        }
+        let v = self.vehicles.iter().find(|v| v.id == id)?;
+        v.parts
+            .iter()
+            .position(|p| p.vpart == vpart_id && p.mount == mount)
+    }
+
+    /// The (vehicle id, part index) occupying an absolute
+    /// tile, if any — bash scoping and passability read this.
+    pub fn vehicle_part_at(&self, pos: [i32; 3]) -> Option<(u64, usize)> {
+        for v in &self.vehicles {
+            for (i, p) in v.parts.iter().enumerate() {
+                if v.part_abs(p) == pos {
+                    return Some((v.id, i));
+                }
+            }
+        }
+        None
+    }
+
+    /// Damage a part: `hp_frac` drops by `amount`
+    /// (saturating); at 0 the broken flag sets — the sim's
+    /// `vehicle_part::is_broken()` (hp == 0). The change rides
+    /// the next flush's Delta as a wholesale vehicle update.
+    pub fn damage_vehicle_part(&mut self, id: u64, part_index: usize, amount: u8) -> bool {
+        let Some(v) = self.vehicles.iter_mut().find(|v| v.id == id) else {
+            return false;
+        };
+        let Some(p) = v.parts.get_mut(part_index) else {
+            return false;
+        };
+        p.hp_frac = p.hp_frac.saturating_sub(amount);
+        if p.hp_frac == 0 {
+            p.flags |= VPART_FLAG_BROKEN;
+        }
+        true
+    }
+
+    /// Remove a part from the store: it leaves the wire on the
+    /// next flush (the vehicle update no longer lists it).
+    pub fn remove_vehicle_part(&mut self, id: u64, part_index: usize) -> bool {
+        let Some(v) = self.vehicles.iter_mut().find(|v| v.id == id) else {
+            return false;
+        };
+        if part_index >= v.parts.len() {
+            return false;
+        }
+        v.parts.remove(part_index);
+        true
+    }
+
+    /// Move a vehicle rigidly: the origin shifts and every
+    /// part's absolute position follows (derived).
+    pub fn translate_vehicle(&mut self, id: u64, delta: [i32; 3]) -> bool {
+        let Some(v) = self.vehicles.iter_mut().find(|v| v.id == id) else {
+            return false;
+        };
+        v.origin = [
+            v.origin[0] + delta[0],
+            v.origin[1] + delta[1],
+            v.origin[2] + delta[2],
+        ];
+        true
+    }
+
+    /// Set a vehicle's facing: the exact float is stored
+    /// verbatim (never quantised); part absolutes follow
+    /// through [`vehicle_precalc`] on the next derivation.
+    pub fn set_vehicle_face(&mut self, id: u64, face_deg: f32) -> bool {
+        let Some(v) = self.vehicles.iter_mut().find(|v| v.id == id) else {
+            return false;
+        };
+        v.face_deg = face_deg;
+        true
     }
 
     /// The UI store handle (readers/tests attach through this;
@@ -872,10 +1230,11 @@ impl World {
         } else {
             Some(self.entities.clone())
         };
-        snap.vehicles = if self.vehicles.is_empty() {
+        let vehicles = self.vehicles_wire();
+        snap.vehicles = if vehicles.is_empty() {
             None
         } else {
-            Some(self.vehicles.clone())
+            Some(vehicles)
         };
         snap.seq = seq;
         snap.epoch = epoch;
@@ -957,6 +1316,7 @@ impl World {
         self.epoch = snap.epoch;
         self.last_blocks = snap.blocks.clone().unwrap_or_default();
         self.last_entities = snap.entities.clone().unwrap_or_default();
+        self.last_vehicles = snap.vehicles.clone().unwrap_or_default();
         self.last_snapshot_player_submap = self.player_pos().map(submap_index);
         self.dirty.clear();
         if snap.environment.is_some() {
@@ -1019,6 +1379,41 @@ impl World {
             return false;
         };
         self.blocks[b].tiles[i].terrain = terrain;
+        let o = &self.blocks[b].origin;
+        self.mark_dirty((o.x, o.y, o.z));
+        true
+    }
+
+    /// Set the furniture at an absolute pos and mark its
+    /// submap dirty (0 = no furniture). Returns false if the
+    /// pos is outside the scene. (S6: the bash chain's
+    /// furn_set goes through here.)
+    pub fn set_furniture(&mut self, pos: [i32; 3], furniture: u32) -> bool {
+        let Some((b, i)) = self.tile_at(pos) else {
+            return false;
+        };
+        self.blocks[b].tiles[i].furniture = furniture;
+        let o = &self.blocks[b].origin;
+        self.mark_dirty((o.x, o.y, o.z));
+        true
+    }
+
+    /// The item pile at an absolute pos: (top_item wire id,
+    /// count). The wire's lossy shape — one kind per tile.
+    pub fn tile_items(&self, pos: [i32; 3]) -> Option<(u32, u16)> {
+        let (b, i) = self.tile_at(pos)?;
+        let t = &self.blocks[b].tiles[i];
+        Some((t.top_item, t.item_count))
+    }
+
+    /// Replace the item pile at an absolute pos and mark its
+    /// submap dirty (S6 pickup/drop).
+    pub fn set_tile_items(&mut self, pos: [i32; 3], top_item: u32, count: u16) -> bool {
+        let Some((b, i)) = self.tile_at(pos) else {
+            return false;
+        };
+        self.blocks[b].tiles[i].top_item = top_item;
+        self.blocks[b].tiles[i].item_count = count;
         let o = &self.blocks[b].origin;
         self.mark_dirty((o.x, o.y, o.z));
         true
@@ -1264,7 +1659,15 @@ impl World {
                 .and_then(|d| d.move_cost)
                 .unwrap_or(0),
         };
-        furn_mod >= 0 && ter_cost + furn_mod > 0
+        if !(furn_mod >= 0 && ter_cost + furn_mod > 0) {
+            return false;
+        }
+        // A vehicle part's tile is occupied (S6): upstream a
+        // vehicle tile blocks movement unless the part is
+        // passable-through (aisle/cockpit); the sim has no
+        // per-part passability data, so every part blocks —
+        // one rule for player and creatures alike.
+        self.vehicle_part_at(pos).is_none()
     }
 
     /// Apply any weather-script entries scheduled at or before
@@ -1490,13 +1893,38 @@ impl World {
             .collect();
         let entity_changed = !entity_updates.is_empty() || !entity_removed.is_empty();
 
+        // Vehicles diff exactly like entities (S6): the store
+        // is derived to wire form and compared by id against
+        // the last-sent baseline; a changed vehicle rides the
+        // Delta wholesale (the protocol's update semantics).
+        let cur_vehicles = self.vehicles_wire();
+        let mut vehicle_updates: Vec<VehicleT> = Vec::new();
+        for v in &cur_vehicles {
+            match self.last_vehicles.iter().find(|old| old.id == v.id) {
+                Some(old) if old == v => {}
+                _ => vehicle_updates.push(v.clone()),
+            }
+        }
+        let vehicle_removed: Vec<u64> = self
+            .last_vehicles
+            .iter()
+            .map(|old| old.id)
+            .filter(|id| !cur_vehicles.iter().any(|v| v.id == *id))
+            .collect();
+        let vehicle_changed = !vehicle_updates.is_empty() || !vehicle_removed.is_empty();
+
         self.dirty.clear();
         self.last_blocks = cur_blocks;
         self.last_entities = self.entities.clone();
+        self.last_vehicles = cur_vehicles;
 
         let env_due = self.env_due();
         let mut msgs: Vec<MessageT> = Vec::new();
-        if any_structural || entity_changed || (all_changes.is_empty() && emit_empty_delta) {
+        if any_structural
+            || entity_changed
+            || vehicle_changed
+            || (all_changes.is_empty() && emit_empty_delta)
+        {
             self.seq += 1;
             let mut delta = DeltaT::default();
             delta.seq = self.seq;
@@ -1504,8 +1932,8 @@ impl World {
             delta.tile_changes = Some(all_changes);
             delta.entity_updates = Some(entity_updates);
             delta.entity_removed = Some(entity_removed);
-            delta.vehicle_updates = None;
-            delta.vehicle_removed = None;
+            delta.vehicle_updates = Some(vehicle_updates);
+            delta.vehicle_removed = Some(vehicle_removed);
             if env_due {
                 delta.environment = Some(Box::new(self.environment_update(self.seq, self.epoch)));
                 self.last_env_turn = self.game_turn;

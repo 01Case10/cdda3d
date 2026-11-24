@@ -1,6 +1,10 @@
 //! S3 gates, stage 2 (turn level): T1 full, T6, and the
 //! LightUpdate folding rule.
 //!
+//! AMENDED (S6): movement keys switched from the WASD aliases
+//! `s`/`d` to the vi-keys `j`/`l` — `s` is smash and `d` is
+//! drop since S6 (0.I-1 keybindings). Walks unchanged.
+//!
 //! T1 note (deviation from the slice brief, grounded in
 //! source): the brief's path expectation was "lit LIT -> BRIGHT
 //! -> LIT". A faithful apparent_light_at port cannot produce
@@ -120,10 +124,10 @@ fn t1_full_outside_lit_and_back() {
     assert_eq!((lit, seen, outside), (LitLevel::LOW, 255, false));
 
     // To the door, bump it, open it.
-    drv.key('s');
-    drv.key('s');
+    drv.key('j');
+    drv.key('j');
     assert_eq!(drv.player(), [5, 7, 0]);
-    drv.key('s'); // bump
+    drv.key('j'); // bump
     assert_eq!(drv.player(), [5, 7, 0]);
     let (lit, _, outside) = drv.fresh_tile([5, 7, 0]);
     assert_eq!(
@@ -132,7 +136,7 @@ fn t1_full_outside_lit_and_back() {
         "still inside, door closed"
     );
     assert!(drv.key('o').is_empty());
-    let msgs = drv.key('s');
+    let msgs = drv.key('j');
     let tc = change_at(delta_of(&msgs), DOOR).expect("open emits the door TileChange");
     assert_eq!(
         drv.reg.string_of(Kind::Terrain, tc.terrain),
@@ -142,9 +146,9 @@ fn t1_full_outside_lit_and_back() {
     assert_eq!(tc.lit, LitLevel::BRIGHT, "the door tile is sunlit");
 
     // Step out: the player tile flips to outside + BRIGHT.
-    drv.key('s');
+    drv.key('j');
     assert_eq!(drv.player(), [5, 8, 0]);
-    drv.key('s');
+    drv.key('j');
     assert_eq!(drv.player(), [5, 9, 0]);
     let (lit, seen, outside) = drv.fresh_tile([5, 9, 0]);
     assert_eq!(
@@ -154,7 +158,7 @@ fn t1_full_outside_lit_and_back() {
     );
 
     // Walk the yard and come back in; close the door behind.
-    drv.key('d');
+    drv.key('l');
     drv.key('a');
     drv.key('k');
     drv.key('k');
@@ -163,7 +167,7 @@ fn t1_full_outside_lit_and_back() {
     assert_eq!(lit, LitLevel::BRIGHT, "sun streams through the open door");
     assert!(!outside);
     assert!(drv.key('c').is_empty());
-    let msgs = drv.key('s');
+    let msgs = drv.key('j');
     let tc = change_at(delta_of(&msgs), DOOR).expect("close emits the door TileChange");
     assert_eq!(
         drv.reg.string_of(Kind::Terrain, tc.terrain),
@@ -190,17 +194,17 @@ fn t1_memory_blocks_after_leaving() {
 
     // Visit the middle room.
     for _ in 0..4 {
-        drv.key('d');
+        drv.key('l');
     }
     assert_eq!(drv.player(), [7, 5, 0]);
     assert!(drv.key('o').is_empty());
-    let msgs = drv.key('d');
+    let msgs = drv.key('l');
     let tc = change_at(delta_of(&msgs), mid)
         .expect("opening the door relights the middle room in the same Delta");
     assert_eq!(tc.lit, LitLevel::LOW, "middle room becomes visible lit LOW");
     assert_eq!(tc.seen, 255);
     for _ in 0..6 {
-        drv.key('d');
+        drv.key('l');
     }
     assert_eq!(drv.player(), [13, 5, 0]);
     assert_eq!(drv.fresh_tile(mid), (LitLevel::LOW, 255, false));
@@ -211,7 +215,7 @@ fn t1_memory_blocks_after_leaving() {
     }
     assert_eq!(drv.player(), [7, 5, 0]);
     assert!(drv.key('c').is_empty());
-    drv.key('d');
+    drv.key('l');
 
     // Live view: the middle room is BLANK again — but NOT erased:
     // it must be in the snapshot's memory blocks as MEMORIZED,
