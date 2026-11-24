@@ -761,6 +761,14 @@ fn coarse_face_cull_by_fine(
 /// 8 fine cells = a quarter tile.
 pub const SLOPE_EDGE_THRESHOLD: i32 = 8;
 
+/// Columns sampled on each side of a corner vertex by the
+/// slope plane fit (docs/fine-slope-normals.md S3): centres
+/// at +-0.5 .. +-2.5 cells, a 6x6 window — wide enough to
+/// span the step period of a quantised shallow slope
+/// (gradient ~0.3 steps every ~3.5 columns), narrow enough
+/// that features a few cells wide keep their shape.
+const SLOPE_FIT_COLS: i32 = 3;
+
 /// The top height (absolute fine z of the first air cell) of
 /// the surface continuous with the cell at `(fx, fy, fz)` in
 /// the neighbouring column `(fx, fy)`: from `fz`, walk up
@@ -794,27 +802,68 @@ fn surface_top(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, limit: i32) -> 
 
 /// Per-corner normal (world space) for the +Z face of the
 /// stamped cell at `(fx, fy, fz)`, at the face corner offset
-/// `(dx, dy)` in {0,1}^2 (docs/fine-slope-normals.md S1).
-/// The corner is shared by the four columns around the grid
-/// vertex `(fx + dx, fy + dy)`; the gradient is the central
-/// difference of their surface tops. Any column whose top is
-/// missing or further than [`SLOPE_EDGE_THRESHOLD`] from the
-/// face's own top falls the corner back to the axis normal.
+/// `(dx, dy)` in {0,1}^2 (docs/fine-slope-normals.md S1, S3).
+/// The gradient is a least-squares plane fit over the
+/// columns around the grid vertex `(fx + dx, fy + dy)`;
+/// columns whose tops are missing or further than
+/// [`SLOPE_EDGE_THRESHOLD`] from the face's own top are
+/// excluded from the fit, and too few samples falls the
+/// corner back to the axis normal.
 fn top_corner_normal(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dx: i32, dy: i32) -> [f32; 3] {
     let h0 = fz + 1;
-    let mut hs = [[0i32; 2]; 2];
-    for (i, cx) in [fx + dx - 1, fx + dx].into_iter().enumerate() {
-        for (j, cy) in [fy + dy - 1, fy + dy].into_iter().enumerate() {
-            match surface_top(sampler, cx, cy, fz, SLOPE_EDGE_THRESHOLD) {
-                Some(h) if (h - h0).abs() <= SLOPE_EDGE_THRESHOLD => hs[i][j] = h,
-                _ => return [0.0, 1.0, 0.0],
+    let vx = fx + dx;
+    let vy = fy + dy;
+    // Least-squares plane over the 6x6 columns around the
+    // vertex (centres at +-0.5 .. +-2.5). A 1-cell difference
+    // oscillates between 0 and the full step on any slope
+    // shallower than 1:1, because the integer heightfield
+    // steps in whole cells with flat rests between steps
+    // (gradient 0.84 quantises to runs of 1s and 0s); the fit
+    // averages the rests and steps back out to the true
+    // gradient. Samples past the hard-edge threshold are
+    // excluded, so a cliff contributes only its own side and
+    // the fit stays flat there; too few samples (volume
+    // border, void) falls back to the axis normal.
+    let mut samples = [(0.0f64, 0.0f64, 0.0f64); 36];
+    let mut n = 0usize;
+    let (mut su, mut sv, mut sh) = (0.0f64, 0.0f64, 0.0f64);
+    for cx in (vx - SLOPE_FIT_COLS)..=(vx + SLOPE_FIT_COLS - 1) {
+        for cy in (vy - SLOPE_FIT_COLS)..=(vy + SLOPE_FIT_COLS - 1) {
+            let Some(h) = surface_top(sampler, cx, cy, fz, SLOPE_EDGE_THRESHOLD) else {
+                continue;
+            };
+            if (h - h0).abs() > SLOPE_EDGE_THRESHOLD {
+                continue;
             }
+            let u = (cx - vx) as f64 + 0.5;
+            let v = (cy - vy) as f64 + 0.5;
+            samples[n] = (u, v, h as f64);
+            su += u;
+            sv += v;
+            sh += h as f64;
+            n += 1;
         }
     }
-    // Column centres sit 1 cell apart on each axis; the two
-    // rows (columns) are averaged, hence / 2.
-    let dhdx = (hs[1][0] + hs[1][1] - hs[0][0] - hs[0][1]) as f32 / 2.0;
-    let dhdy = (hs[0][1] + hs[1][1] - hs[0][0] - hs[1][0]) as f32 / 2.0;
+    if n < 12 {
+        return [0.0, 1.0, 0.0];
+    }
+    let nf = n as f64;
+    let (mu, mv, mh) = (su / nf, sv / nf, sh / nf);
+    let (mut sxx, mut syy, mut sxy, mut sxh, mut syh) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    for &(u, v, h) in &samples[..n] {
+        let (du, dv, dh) = (u - mu, v - mv, h - mh);
+        sxx += du * du;
+        syy += dv * dv;
+        sxy += du * dv;
+        sxh += du * dh;
+        syh += dv * dh;
+    }
+    let det = sxx * syy - sxy * sxy;
+    if det.abs() < 1e-6 {
+        return [0.0, 1.0, 0.0];
+    }
+    let dhdx = ((syy * sxh - sxy * syh) / det) as f32;
+    let dhdy = ((sxx * syh - sxy * sxh) / det) as f32;
     let inv_len = 1.0 / (dhdx * dhdx + dhdy * dhdy + 1.0).sqrt();
     let g = [-dhdx * inv_len, -dhdy * inv_len, inv_len];
     // Grid -> world, the normal_to_world rotation for a

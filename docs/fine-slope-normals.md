@@ -212,3 +212,44 @@ Regression: full mesher suite green; full engine suite green
 (lib 33 + every gate target, incl. golden 3/3, phase9 set,
 sky set, stage set, sim set, vehicle_texture 4/4).
 Not pushed (bundle route via Joey's PC, as ever).
+
+## 11. Wider-stencil gradient (2026-11-24, Joey's call)
+
+S2 review found residual banding on the vehicle profile's
+windshield and hood front, with squiggly band edges. Root
+cause (verified against the exported car model): the S1
+gradient was the 1-cell height difference across each
+vertex, which oscillates between 0 and the full step on any
+slope shallower than 1:1 — the integer heightfield steps in
+whole cells with flat rests between (the windshield sheet's
+true gradient 0.84 quantises to runs of 1-steps and 0-rests;
+the hood front's 0.28 to a step every ~3.5 columns). Band
+edges are iso-height contours, so cross-slope components
+(crown, tumblehome, fender drop) make them wobble. The G1
+ramp never showed it: at exactly 1:1 the 1-cell difference
+is exact.
+
+Fix: `top_corner_normal` now fits a least-squares plane to
+the surface tops of the 6x6 columns around the vertex
+(`SLOPE_FIT_COLS = 3`, centres +-0.5..+-2.5), averaging
+rests and steps back out to the true gradient. Samples past
+`SLOPE_EDGE_THRESHOLD` are excluded from the fit, so a
+cliff still contributes only its own side and stays flat;
+fewer than 12 samples (or a degenerate window) falls back
+to the axis normal. Risers inherit the fit through the same
+function. G1 gains a sixth test — a quantised 0.75-gradient
+ramp whose corners must land on normalize(-0.75, 1, 0)
+within 0.05 — verified failing on the 1-cell estimator
+first (it returned flat normals at rest vertices). 6/6;
+full mesher suite 34/34.
+
+Vehicle profile re-capture: 221,840 quads identical, zero
+cover-classification changes vs tex6 (silhouette
+identical); the windshield shades as one continuous plane
+and the hood front as one panel — the ripple is gone. The
+crown grooves persist unchanged in nature (step geometry +
+per-face occlusion, §10) and now read as clean straight
+channels. Golden / phase9 / puddle / raster_tex / frame /
+vehicle_texture / phase9_rt / fine_occlusion_rt gates all
+pass unchanged — still no golden fixture with a shallow
+stamped slope. Not pushed.

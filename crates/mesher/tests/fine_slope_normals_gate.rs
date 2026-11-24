@@ -238,3 +238,39 @@ fn ramp_riser_faces_carry_the_plane_normal() {
     }
     assert!(checked > 100, "only {checked} interior riser quads checked");
 }
+
+#[test]
+fn shallow_ramp_corners_average_out_the_quantisation() {
+    // Slope 3/4: column heights step 0,1,1,1 repeating. The
+    // per-vertex 1-cell difference oscillates between 0 and
+    // 1 on such a slope, flipping the shading normal between
+    // flat and 45 degrees — the banding visible on the
+    // vehicle profile's windshield and hood (their true
+    // gradients are 0.84 and 0.28). The fitted gradient must
+    // land on the true 0.75 at every interior corner:
+    // world normal normalize(-0.75, 1, 0) = (-0.6, 0.8, 0).
+    let scene = scene(|lx, _ly| 8 + (lx * 3) / 4);
+    let mesh = mesh(&scene, true);
+    let quads = top_quads(&mesh);
+    let bs = WorldScale::default().block_size;
+    let lo = (4 * FINE + 5) as f32 / FINE as f32 * bs;
+    let hi = (4 * FINE + 27) as f32 / FINE as f32 * bs;
+    let want = [-0.6, 0.8, 0.0];
+    let mut checked = 0usize;
+    for (centre, normals) in &quads {
+        let gy = -centre[2] / bs;
+        if centre[0] < lo || centre[0] > hi || gy < lo || gy > hi {
+            continue;
+        }
+        checked += 1;
+        for n in normals {
+            for k in 0..3 {
+                assert!(
+                    (n[k] - want[k]).abs() < 0.05,
+                    "shallow ramp corner normal {n:?}, want {want:?}"
+                );
+            }
+        }
+    }
+    assert!(checked > 100, "only {checked} interior top quads checked");
+}
