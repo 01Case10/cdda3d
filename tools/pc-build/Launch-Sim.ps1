@@ -141,7 +141,14 @@ try {
         "jjojjjQ" | & $engineExe --connect $SocketPath
     } else {
         Write-Host "== launching renderer: voxel-engine --connect-window (close the window to end) =="
-        & $engineExe --connect-window $SocketPath
+        $engineArgs = @("--connect-window", $SocketPath)
+        if (Test-Path "assets\ultica_run1\materials.json") {
+            $engineArgs += @("--textures", "assets\ultica_run1")
+            Write-Host "   live furniture props: ON (model table found in assets\ultica_run1)"
+        } else {
+            Write-Host "   live furniture props: OFF (no assets\ultica_run1\materials.json -- extract the models pack there to enable)"
+        }
+        & $engineExe @engineArgs
     }
     $engineExit = $LASTEXITCODE
     Write-Host "== session ended (engine exit $engineExit); server log tail: =="
