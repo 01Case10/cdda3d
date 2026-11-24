@@ -793,6 +793,7 @@ A stateful, deterministic Rust test game that stands in for the fork over the re
 - **S2 DONE 2026-11-23 (parent re-verified, sim suite 11/11):** turn loop in `crates/sim/src/rules.rs` (`World::apply_input`, also the in-process entry point for S7's runner). **Input echo REMOVED** — stub semantics replaced by real-game semantics: a pressed Key = one turn, answered by exactly one Delta (or a fresh Snapshot on map shift); key releases ignored; Ping/Pong unchanged. Keys: vi-keys + WASD cardinals, `.`/space wait, `o`/`c` arm a pending Open/Close and the next direction key applies it to the adjacent tile (arming itself is not a turn — it's a prompt, as in CDDA; the direction key consumes the turn). Deltas are diff-shaped like the real exporter: dirty-submap diff vs last-sent state, TileChanges for changed tiles only, entity updates via `entity_updates` (schema note: DeltaT has no separate added-entities field). Player crossing a submap boundary = epoch+1 + fresh Snapshot. Passability: WALL hot-flag bit (bit 25, `TFLAG_WALL`) + has-`open_result` + creature occupancy; bump into a closed door blocks and consumes the turn. New scene `street_block` (24×24, 2×2 submaps). Gates: **T1 world/wire half PASS** (bump blocked with empty Delta, `o`+`s` TileChange `t_door_c → t_door_o`, out, submap crossing → epoch 2 Snapshot, back → epoch 3, close behind; seq +1 asserted every turn; lit/outside assertions are S3's), **T5 PASS** (door cycle; no-op open/close emits NO TileChange for the door tile), **200-turn mirror invariant PASS** (fixed patrol pattern, mirror == fresh snapshot after every turn). S0/S1 gates all preserved (parity 3/3 — initial snapshots unchanged). **KNOWN FIDELITY GAP (finding, follow-up):** passability does not use CDDA's real rule — `movecost` (0 = impassable), which the S1a importer does not extract. Consequences under the current rule: `t_tree` is walk-through (no WALL flag in its data; CDDA blocks it via movecost 0), `t_window` and `t_chainfence` are passable at no cost (CDDA: climb-through with high movecost / climb check — directionally right, cost-free). Fix path: importer extracts `movecost` for terrain/furniture → registry → passability = movecost > 0 (plus the open_result/creature rules); small slice, not yet scheduled.
 - **Movecost passability FIXED 2026-11-23 (Joey's call; parent-implemented + verified, sim suite 12/12):** grounded in the pinned source first — JSON keys are terrain `move_cost` (`ter_t::load`, optional, member default 0) and furniture `move_cost_mod` (`furn_t::load`, mandatory); the rule is `map::move_cost_ter_furn` (src/map.cpp): ter cost 0 → impassable, furn mod < 0 → impassable, else passable iff sum > 0. Importer now extracts both into defs.json as sim-internal `move_cost` (TileDef has no such wire field; registry-only), validate gained ground-truth spot checks (t_wall/t_tree/t_door_c/t_window/t_chainfence = 0, t_floor/t_grass/t_door_o = 2, f_bookcase = −1, f_table = +2 — all pass; counts/dangling unchanged, validate PASS). Sim passability now mirrors `move_cost_ter_furn` + the creature-occupancy rule; the WALL-bit and open_result conditions are gone (closed doors/windows block via their real move_cost 0). Regression discipline per Joey's rule: new `movecost_passability` gate (new `passability` scene: tree/window/fence/bookcase block, table tile passes) was run against the old rule first and FAILED on "tree blocks", then passes with the fix; T1/T5/200-turn mirror invariant all still green. Not yet modelled: move_cost scaling turn length (every step is still one turn).
 - **Engine world/mesh parity DONE + DefTable kind-collision FIXED 2026-11-23 (Joey picked parity over S3; gate parent re-verified at every step):** new `crates/engine/tests/sim_world_parity_gate.rs` (engine dev-dep on `sim`, test-only; NO engine source change for the gate itself) feeds both sides — sim registry TileDefs + scene Snapshot vs the `proto::samples` fixtures — through the engine's real wire-ingest `snapshot_world::build_snapshot_world` with `block_for` canonicalised via string ids, then compares the full ChunkMaps cell-by-cell (Block id/colour/pass/tex_layers), the `HideAbove(0)` cutaway maps, the RT form (`treebuild::VoxelWorld::from_chunk_map`, full VoxelCell compare), and `mesh_world` output (per-pass quad counts + FNV-1a hash over all mesh arrays). **First run: stub_house 0 diffs, roofed explicit 0 diffs, roofed implicit FAILED — 76 diffs, every one a missing implicit-roof slab on the sim side** (36 ChunkMap + 36 RT cells at the z+1 slab over the 6×6 footprint; mesh-outside 34 vs 54 quads). **Root cause (engine-side latent bug, verified in source + data):** `hardcases::DefTable::from_tiledefs` keyed defs by raw numeric id across ALL kinds, last-wins — but wire ids are per-kind (the real adapter's convention, and the sim's), so terrain ids collided with later Item/VehiclePart defs (`t_floor` 345 → `seat_wood_bench`, `t_wall` 1132 → `barrette`, `t_door_c` 231 → `hand_rims`, all `roof_result: None`) and `floor_at`'s roof lookup silently found no roof. The fixture tables' globally unique hand-assigned ids are why no earlier gate saw it; **the real fork would hit this identically.** Second layer: 147 string ids exist in two kinds at once, so string resolution must also be kind-scoped. **Fix:** `DefTable` is now keyed by `(kind, id)` and `(kind, string_id)`; `def`/`resolve`/`classify_transition` take a `TileKind`; call sites updated (`openair::floor_at` = Terrain, `snapshot_world` prop-stamp lookups = Terrain, `TileWorld::apply_change` passes Terrain/Furniture per slot, hardcases/release tests + perf_probe updated — one gate_tests fixture was furniture doors mislabelled by the mechanical edit and is now correctly Furniture). **After the fix: parity 3/3, 0 diffs everywhere** (mesh hashes equal); hardcases + release suites green; roof/terrain/phase8-wire/phase9-stamp engine gates green; sim suite 12/12. Side benefit: `report::defs()` now yields ALL defs (colliding defs were previously dropped silently). **Still open:** pixel-capture parity (needs the CaptureArgs wire-snapshot source — engine change, unscheduled) and furniture fine-prop parity (the gate covers the coarse terrain/roof world; furniture enters via the Phase 9 stamp path with its own resolver).
+- **S3 scope AMENDED 2026-11-23 (Addendum 11 light amendment, Joey's decision; full design `docs/addendum-11-light.md`):** S3's visibility recompute must produce not only `lit`/`seen`/`outside` but also the two new additive wire fields **`light_frac`** (continuous falloff inside `LOW`/`LIT`, upstream `light_above_threshold` definition) and **`light_tint`** (normalised per-tile hue, upstream `illumination_hue` definition) — the sim is their first producer, computing them by the same definitions the fork adapter will use, and T1/T6 gain frac/tint assertions. No code changed by the amendment; S3 remains next.
 
 ---
 
@@ -1982,3 +1983,53 @@ tree. The build remains to be done, against the acceptance shape
 agreed in the thread: beam pool measurably brighter than the same
 scene unlit in both renderers, and an occluded region inside the cone
 staying dark in RT (the shadow proof).
+
+> **Amendment 2026-11-23 (Joey, light-rendering thread — full design in
+> `docs/addendum-11-light.md`): how CDDA actually handles light, and
+> two additive wire fields.** Source investigation (pinned CDDA
+> `6a3e59e0`, `src/lightmap.{h,cpp}`, `src/smooth_lighting.{h,cpp}`):
+> CDDA computes light *continuously* — per-tile per-quadrant float
+> energy `lm` from a top-down sunlight pass plus shadowcast artificial
+> sources, with coloured contributions in `light_color_cache` — then
+> collapses it at `map::apparent_light_at()` into the 7-value
+> `lit_level` enum, and further at `get_visibility()` into
+> detail / bright-silhouette / hidden. Falloff inside `LOW`/`LIT` and
+> all per-tile colour are computed and discarded at that boundary;
+> our Phase 1 schema copied the boundary verbatim (`lit` + `seen`
+> only), the fork adapter exports only the enum, and the engine
+> adapter hardcodes `TileLight.tint = [1,1,1]` — even though
+> `crates/lighting` already carries tint end-to-end. **Decision
+> (Joey): carry colour as well as falloff — colour does not break
+> the game.** Two additive fields, appended last in `SubmapBlock` /
+> `TileChange` / `LightUpdate` (the Phase 10 `outside` precedent;
+> absent = today's behaviour, byte-identical): **`light_frac`**
+> (`ubyte`/tile) = upstream smooth lighting's
+> `light_above_threshold(apparent_light, vision_threshold)` —
+> meaningful only for `LOW`/`LIT`, `BRIGHT = 255`, all other levels
+> `0`; and **`light_tint`** (`[ubyte;3]`/tile) = upstream's
+> normalised `illumination_hue(light_color_cache, lm.max())`,
+> brightest channel 1.0, absent = white. Raw `light_color_rgb`
+> energy is explicitly NOT sent (unbounded; would double-count
+> intensity). Safety is by construction, matching upstream: gradient
+> and hue are recovered only inside tiles already visible in detail —
+> `lit_level` still decides visibility (`BLANK` fails closed,
+> `MEMORIZED`/`BRIGHT_ONLY` presentations unchanged), tint is a
+> multiplier ≤ 1.0, and the ceiling rule still caps all renderer
+> light (sky GI and the declared emitters above) by the tile's lit
+> factor, which now carries frac + tint. Clarification to this
+> addendum's text above: CDDA *does* bake emitter cones into `lm`;
+> "the game does not bake the cone into the grid" describes our
+> renderer's shading, not CDDA's internals — the frac/tint export
+> will reflect the baked cone as a visibility/ceiling verdict while
+> the renderer transports declared emitters itself. Double-counting
+> between the two is an OPEN question for the emitter prototype
+> slice (accept-as-cap vs fork-side exclusion), not resolved here.
+> Engine work when built is small: `base_intensity()` takes frac in
+> place of `seen` as the within-visibility ordering (gate 7.1
+> re-pinned failing-first), and the proto adapter fills
+> `TileLight.tint` from the wire instead of white — no renderer
+> change needed for colour. First producer is the sim in Phase 11
+> slice S3 (see the Phase 11 record and `docs/test-sim-engine.md`
+> §2.3/§7, amended in the same change); the fork adapter follows
+> when 0.1/0.2 unblock it. Status: DESIGN RECORDED, NOT
+> IMPLEMENTED — no schema, fork, sim, or engine code changed.

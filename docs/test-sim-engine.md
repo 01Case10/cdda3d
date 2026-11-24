@@ -79,6 +79,25 @@ friendlier protocol:
   exists in pinned source — the real adapter quantises from
   `lit_level` (BLANK=0, MEMORIZED=64, visible=255); the sim should
   follow the same convention so engine thresholds mean the same thing.
+- **`light_frac` / `light_tint` (Addendum 11 light amendment,
+  2026-11-23, Joey's decision — full design in
+  `docs/addendum-11-light.md`):** CDDA computes continuous light
+  (float `lm` + `light_color_cache`) and collapses it into
+  `lit_level` at `apparent_light_at()`; the amendment adds two
+  additive wire fields alongside `lit`/`seen` in `SubmapBlock` /
+  `TileChange` / `LightUpdate` (absent = today's behaviour):
+  `light_frac` (`ubyte`) = upstream smooth lighting's
+  `light_above_threshold(apparent_light, vision_threshold)`
+  (meaningful only for `LOW`/`LIT`; `BRIGHT`=255, else 0), and
+  `light_tint` (`[ubyte;3]`) = upstream's normalised
+  `illumination_hue(light_color_cache, lm.max())` (brightest
+  channel 1.0; absent = white; raw colour *energy* is never
+  sent). The sim is the fields' first producer (S3): it must
+  compute frac/tint by these same definitions from its own
+  apparent-light model and light-source colours, so sim gates
+  and fork gates mean the same thing. Visibility is unchanged —
+  `lit_level` still decides what may be shown; frac/tint only
+  order and colour light inside visible tiles.
 - **Memory blocks are a separate layer:** avatar map memory
   (`avatar::get_memorized_tile`) carries terrain/furniture only,
   `lit = MEMORIZED`, never live entities/items/fields.
@@ -222,7 +241,7 @@ consumes its output:
 | Creatures | Spawn (script or scenario), simple AI per turn: idle → wander (seeded) → chase player if visible (LOS + lit != BLANK) → attack in range (hp_frac drops, HitFlash). Death ⇒ `entity_removed` + optional corpse item | Billboard spawn/move/despawn, occlusion, picking, entity delta handling |
 | Vehicles | Static by default; scenario can translate/rotate (parts' absolute positions recomputed sim-side, `face_deg` continuous), damage a part (hp_frac, broken flag), remove it | Vehicle stamping, roof-part split, restamp on damage/removal |
 | Time / weather | Every turn advances the calendar (6 s/turn default, scenario-settable); sun/moon recomputed; weather is a named preset or script (clear/rain/fog/thunderstorm, matching `SkyScene::named` vocabulary) with resolved numerics | SkyState, Phase 10 GI, fog/precip, EnvironmentUpdate cadence (10-min rule) |
-| Visibility | After any world/player change: LOS flood from player (radius ≤ 60, blocked by opaque defs, 3D z-range rule), lit from sun/moon + field light, `outside` = no roof/explicit roof tile overhead, previously-seen → MEMORIZED memory tiles | Lighting bake, VisibilityMask (BLANK excluded in both renderers), sky-exposure channel (wire, not column scan) |
+| Visibility | After any world/player change: LOS flood from player (radius ≤ 60, blocked by opaque defs, 3D z-range rule), lit from sun/moon + field light, **`light_frac`/`light_tint` derived from the same apparent-light values (§2.3)**, `outside` = no roof/explicit roof tile overhead, previously-seen → MEMORIZED memory tiles | Lighting bake, VisibilityMask (BLANK excluded in both renderers), sky-exposure channel (wire, not column scan) |
 | Map shift | Player crossing a submap edge recentres the bubble: epoch++, fresh Snapshot | SeqTracker epoch handling, resync (8.12) |
 | UI state | See §3.3 | UI compositing, input routing, 4.12 latency path |
 
@@ -392,7 +411,7 @@ updated in the same change.
 | **S1a — Full def importer (Option C, Joey's pick)** | `tools/sim-defs`: census of `fork-src/cdda/data/json`, `copy-from`/abstract resolution, connect-group indices from load order, nested bash/open/close/roof extraction, `hot_flags` from the `ter_furn_flag` order, fg/bg join from the tileset crate; generated table checked in + census/closure validation | Generated counts match the source census per kind; zero dangling transform strings; zero abstracts emitted; spot-parity vs the fork harness's mock defs and vs hand-checked real entries (glass door bash chain, `t_door_c` open/roof) |
 | **S1 — Static scenes over the wire** | Def registry from S1a's generated table, scene loader, Snapshot builder with diff infrastructure in place (all-dirty first send) | stub_house Snapshot ≡ `sample_snapshot()`; roofed-house pair matches the existing fixtures; engine capture of a sim scene ≡ capture of the same scene as a fixture (both renderers); **TileDefs connect time + message size measured and recorded** |
 | **S2 — Turn loop: movement, doors, Delta** | Input→turn→dirty-submap diff→Delta; movement/collision; open/close transforms | **T1 (world/wire half) + T5 pass**; mirror invariant holds for a scripted 200-turn walk |
-| **S3 — Visibility & environment** | LOS/lit/seen/memory/outside recompute; calendar + weather presets/scripts; EnvironmentUpdate cadence; LightUpdate folding | **T1 (full, incl. render) + T6 pass**; outside/lit grids match a hand-computed expectation for street_block at noon and midnight |
+| **S3 — Visibility & environment** | LOS/lit/seen/memory/outside recompute; **`light_frac` + `light_tint` recompute and wire export (Addendum 11 light amendment, §2.3)**; calendar + weather presets/scripts; EnvironmentUpdate cadence; LightUpdate folding | **T1 (full, incl. render) + T6 pass**; outside/lit grids match a hand-computed expectation for street_block at noon and midnight, **including per-tile frac/tint (a coloured source's pool tints, tiles outside it stay white)** |
 | **S4 — UI** | shm writer (double-buffer, header, dirty rect), UI state machine (§3.3), Resize handling | **T2 pass**; ui-share gates re-run against sim-written frames (not just synthetic-written); torn-frame reader test against the sim writer |
 | **S5 — Creatures, fields, effects** | Spawn/AI/combat/death; field spread/decay + displayed-field rule; Effects emission | **T3 + T7 pass** |
 | **S6 — Destruction, items, vehicles** | Bash chains, furniture removal, item piles + inventory list, vehicle move/damage/remove | **T4 + T8 + T11 pass**; fine-layer restamp assertions in engine gates |
