@@ -519,6 +519,7 @@ dependencies = [
  "tileset",
  "transient",
  "treebuild",
+ "uds_windows",
  "ui-share",
  "vehicles",
  "voxelizer",
@@ -1046,6 +1047,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]
@@ -1628,6 +1638,7 @@ name = "proto"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
+ "uds_windows",
 ]
 
 [[package]]
@@ -1978,6 +1989,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sim-server",
+ "uds_windows",
  "ui-share",
 ]
 
@@ -2308,6 +2320,17 @@ name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
+
+[[package]]
+name = "uds_windows"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
+dependencies = [
+ "memoffset",
+ "tempfile",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "ui-share"

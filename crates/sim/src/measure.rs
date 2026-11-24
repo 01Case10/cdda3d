@@ -7,7 +7,10 @@
 //!   over a real loopback socket against the actual server.
 
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+#[cfg(windows)]
+use uds_windows::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

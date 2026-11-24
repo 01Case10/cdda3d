@@ -20,3 +20,6 @@ serde_json = "1.0"
 # binary (CARGO_BIN_EXE_sim-server).
 [dev-dependencies]
 sim-server = { path = "../../tools/sim-server" }
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1"

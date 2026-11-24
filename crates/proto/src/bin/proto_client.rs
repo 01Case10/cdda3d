@@ -6,7 +6,10 @@
 //! Usage: proto-client <socket-path>
 
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+#[cfg(windows)]
+use uds_windows::UnixStream;
 use std::time::Duration;
 
 use proto::samples::{sample_hello_ack, sample_input};

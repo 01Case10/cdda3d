@@ -134,6 +134,47 @@ impl FrameSnapshot {
 
 // --- backing ---------------------------------------------------------------
 
+// Positioned file I/O, portable: std::os::unix::fs::FileExt is
+// unix-only (a Windows build of this crate failed on it, 2026-11-24).
+// The Windows FileExt offers single-shot seek_read/seek_write, so the
+// exact/all semantics are looped here to match.
+#[cfg(unix)]
+fn read_exact_at(f: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    f.read_exact_at(buf, offset)
+}
+#[cfg(windows)]
+fn read_exact_at(f: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut done = 0usize;
+    while done < buf.len() {
+        let n = f.seek_read(&mut buf[done..], offset + done as u64)?;
+        if n == 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        }
+        done += n;
+    }
+    Ok(())
+}
+#[cfg(unix)]
+fn write_all_at(f: &std::fs::File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    f.write_all_at(data, offset)
+}
+#[cfg(windows)]
+fn write_all_at(f: &std::fs::File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut done = 0usize;
+    while done < data.len() {
+        let n = f.seek_write(&data[done..], offset + done as u64)?;
+        if n == 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
+        }
+        done += n;
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 enum Backing {
     Memory(Arc<RwLock<Vec<u8>>>),
@@ -152,9 +193,8 @@ impl Backing {
                 Ok(())
             }
             Backing::File(f, _, _) => {
-                use std::os::unix::fs::FileExt;
                 let f = f.lock().unwrap();
-                f.read_exact_at(buf, offset as u64)?;
+                read_exact_at(&f, buf, offset as u64)?;
                 Ok(())
             }
         }
@@ -168,9 +208,8 @@ impl Backing {
                 Ok(())
             }
             Backing::File(f, _, _) => {
-                use std::os::unix::fs::FileExt;
                 let f = f.lock().unwrap();
-                f.write_all_at(data, offset as u64)?;
+                write_all_at(&f, data, offset as u64)?;
                 Ok(())
             }
         }

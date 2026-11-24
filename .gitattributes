@@ -1,0 +1,7 @@
+# FlatBuffers schemas are consumed by crates/proto/build.rs, which
+# does exact-text surgery on the Hello table (v2 forward-compat
+# variant). Pin LF endings so a Windows checkout with
+# core.autocrlf=true cannot hand it CRLF. (build.rs also normalises
+# defensively; this keeps the working tree clean.)
+schema/*.fbs text eol=lf
+crates/proto/tests/fixtures/*.fbs text eol=lf
