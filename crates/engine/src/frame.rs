@@ -1568,6 +1568,26 @@ fn render_frame_inner(
     // lit preparation (visibility mask + per-vertex bake, 2h.3).
     let visible = CutawayMode::HideAbove(0).visible_levels(args.cutaway_z);
     let mut renderer = Renderer::new(device, CAPTURE_FORMAT);
+    // Wire-fed source (Phase 11 follow-up, Lane A): a seated
+    // `wire` scene replaces the fixture-name dispatch below —
+    // its map was built from wire data by the caller, and its
+    // preparation is `scene_prep::prepare_raster_wire`. The
+    // fixture prop scenes are name-keyed, so a wire frame
+    // carries no fine props in v1 (see `prepare_raster_wire`).
+    // With no wire scene seated, the preparation is exactly
+    // the pre-Lane-A dispatch and the tail below is shared.
+    let wire_prepared = match &args.wire {
+        Some(w) => Some(
+            crate::scene_prep::prepare_raster_wire(
+                &visible,
+                w,
+                args.lighting.as_ref(),
+                args.vehicles.as_ref(),
+            )
+            .map_err(CaptureError::Device)?,
+        ),
+        None => None,
+    };
     let sample = args.snapshot == "sample-scene";
     // Phase 9 slice 2 (9.10): the effective prop scene — an
     // explicit `props` scene wins regardless of the flag; with
@@ -1580,7 +1600,9 @@ fn render_frame_inner(
         None
     };
     let effective_props: Option<&PropScene> = args.props.as_ref().or(fixture_props.as_ref());
-    let (meshes, mstats, spec) = match (&args.lighting, sample, effective_props) {
+    let (meshes, mstats, spec) = match wire_prepared {
+        Some(prepared) => prepared,
+        None => match (&args.lighting, sample, effective_props) {
         (Some(lit), false, Some(p)) => crate::scene_prep::prepare_raster_house_lit_vp(
             &visible,
             args.textures.as_deref(),
@@ -1637,6 +1659,7 @@ fn render_frame_inner(
             args.vehicles.as_ref(),
         )
         .map_err(CaptureError::Device)?,
+        },
     };
     if let Some(v) = &args.vehicles {
         stats.vehicles = v.models.len();

@@ -15,9 +15,17 @@
 //!   session against a running game server (sim-server or the
 //!   fork's IPC frontend) — handshake, wire-fed world ingest,
 //!   stdin keys -> Input messages, heartbeat, clean shutdown.
-//!   See `engine::client`. The windowed seating of this session
-//!   is the named remaining step (CaptureArgs takes fixture
-//!   names, not wire worlds).
+//!   See `engine::client`.
+//! - `--connect-window <unix-socket>` (Phase 11 follow-up,
+//!   Lane A): the same session, seated in the windowed app —
+//!   the session runs on its own thread and publishes its live
+//!   wire world (`CaptureArgs::wire`, the wire-source change);
+//!   the window renders that world through the one frame loop
+//!   and forwards key presses back as Input messages (camera
+//!   keys stay local; closing the window ends the session via
+//!   the client's input-close rule). The windowed run itself
+//!   needs a desktop — on this VM only the headless seating is
+//!   proven (the wire-source gate's connect test).
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -50,6 +58,32 @@ fn main() -> ExitCode {
             }
         };
     }
+    // --connect-window: spawn the live session on its thread
+    // (it owns the socket), then run the windowed app with the
+    // session's published wire scene + key channel linked in.
+    // The app holds the channel sender; when the window closes
+    // the app drops, the channel closes, and the session ends
+    // cleanly (drain + Shutdown) — joined below, bounded by
+    // the client's own drain cap.
+    let mut live_session: Option<std::thread::JoinHandle<Result<engine::client::ConnectReport, String>>> =
+        None;
+    let live_link = match value_after(&args, "--connect-window") {
+        Some(socket) => {
+            let (tx, rx) = std::sync::mpsc::channel::<u8>();
+            let share: engine::client::SharedWireScene =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            live_session = Some(engine::client::spawn_connect(
+                std::path::Path::new(&socket),
+                engine::client::ConnectConfig {
+                    input: engine::client::ConnectInput::Channel(rx),
+                    share: Some(share.clone()),
+                    captures: None,
+                },
+            ));
+            Some(LiveWindowLink { share, input: tx })
+        }
+        None => None,
+    };
     if args.iter().any(|a| a == "--scene-report") {
         let r = world::bubble_report();
         println!(
@@ -75,7 +109,7 @@ fn main() -> ExitCode {
              --size WxH --out file.png] [--scene-report] \
              [--renderer raster|rt] [--textures dir] [--effects effects.json] \
              [--billboards fixture|sample:<atlas-dir>|<atlas-dir>] [--light-hour H] [--ui-stub] \
-             [--fine-props] [--connect <unix-socket>]"
+             [--fine-props] [--connect <unix-socket>] [--connect-window <unix-socket>]"
         );
         return ExitCode::SUCCESS;
     }
@@ -105,7 +139,7 @@ fn main() -> ExitCode {
         _ => None,
     };
     let light_hour = value_after(&args, "--light-hour").and_then(|s| s.parse().ok());
-    windowed_main(WindowConfig {
+    let code = windowed_main(WindowConfig {
         renderer_kind: kind,
         textures_dir: textures,
         effects,
@@ -120,7 +154,30 @@ fn main() -> ExitCode {
             .filter(|&v| v >= 1)
             .unwrap_or(1),
         fine_props: args.iter().any(|a| a == "--fine-props"),
-    })
+        live: live_link,
+    });
+    // The window is closed and the app (with the key channel's
+    // sender) is dropped: the session is draining to its clean
+    // Shutdown. Join it so its report/exit is not lost.
+    if let Some(handle) = live_session {
+        match handle.join() {
+            Ok(Ok(report)) => println!(
+                "voxel-engine --connect-window: session ended — {} snapshots, {} deltas, {} inputs sent; player at {:?}",
+                report.snapshots, report.deltas, report.inputs_sent, report.player_pos
+            ),
+            Ok(Err(e)) => eprintln!("voxel-engine --connect-window: session error: {e}"),
+            Err(_) => eprintln!("voxel-engine --connect-window: session thread panicked"),
+        }
+    }
+    code
+}
+
+/// The windowed app's half of a `--connect-window` session:
+/// the shared slot the session thread publishes its live wire
+/// scene into, and the channel key presses are forwarded to.
+struct LiveWindowLink {
+    share: engine::client::SharedWireScene,
+    input: std::sync::mpsc::Sender<u8>,
 }
 
 /// Shared by the headless and windowed entry points: build the
@@ -351,6 +408,9 @@ struct WindowConfig {
     transient_fixture_ms: Option<u64>,
     render_scale: u32,
     fine_props: bool,
+    /// `--connect-window`: seat the live session's wire world
+    /// (see `LiveWindowLink`). `None` = the fixture app.
+    live: Option<LiveWindowLink>,
 }
 
 struct GpuState {
@@ -383,6 +443,12 @@ struct App {
     ui_store: Option<ui_share::UiShmStore>,
     router: Option<ui_share::input::InputRouter>,
     input_sink: Vec<proto::InputT>,
+    /// `--connect-window` seating: the session thread's
+    /// published live wire scene (polled per frame into
+    /// `frame_args.wire`) and the channel key presses are
+    /// forwarded to as session Inputs.
+    live_share: Option<engine::client::SharedWireScene>,
+    live_input: Option<std::sync::mpsc::Sender<u8>>,
     cursor: (f64, f64),
     drag_from: Option<(f64, f64)>,
     started: Instant,
@@ -421,6 +487,25 @@ impl App {
                 .map(engine::frame::TransientScene::fixture_burst),
             ..CaptureArgs::default()
         };
+        // Live session seating (`--connect-window`): the frame
+        // renders the session's wire world, so the fixture
+        // companions come off — a fake-house light grid or sky
+        // over a wire world would mask/shade tiles the game
+        // never reported. Lighting for the windowed session is
+        // not seated yet (the capture path seats wire + grid
+        // today; the session publishes the world only). Until
+        // the first Snapshot publishes, `wire` stays None and
+        // the frame is the default fixture.
+        let (live_share, live_input) = match cfg.live {
+            Some(link) => {
+                frame_args.sky = None;
+                frame_args.lighting = None;
+                frame_args.vehicles = None;
+                frame_args.transients = None;
+                (Some(link.share), Some(link.input))
+            }
+            None => (None, None),
+        };
         // Stub UI: a fixed 640x360 synthetic frame in an in-memory
         // store (the compositor stretches it to the window).
         let (ui_store, router) = if cfg.ui_stub {
@@ -456,6 +541,8 @@ impl App {
             ui_store,
             router,
             input_sink: Vec::new(),
+            live_share,
+            live_input,
             cursor: (0.0, 0.0),
             drag_from: None,
             started: Instant::now(),
@@ -472,6 +559,15 @@ impl App {
     /// Sync the live camera/cutaway/size/time into the frame
     /// template before a redraw.
     fn sync_frame_args(&mut self) {
+        // Live session: seat the session's latest published
+        // wire world (replaced by the session thread after
+        // every applied flush; an unchanged scene is the same
+        // Arc, so this is a pointer swap per frame).
+        if let Some(share) = &self.live_share {
+            if let Some(w) = share.lock().expect("wire share lock").clone() {
+                self.frame_args.wire = Some(w);
+            }
+        }
         let a = &mut self.frame_args;
         a.camera_target = (self.camera.target.x, -self.camera.target.z);
         a.yaw_deg = self.camera.yaw_deg;
@@ -752,6 +848,30 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
+                }
+                // Live session: forward the game's keys to the
+                // session as Inputs. The camera keys (WASD/E/Q
+                // physical codes, arrows, Escape) stay local —
+                // Q is also the headless session-end byte, so
+                // in the window the session ends by closing it
+                // (the app drop closes the channel, the client's
+                // input-close rule). Everything else printable
+                // (vi-keys, o/c/g/d/i, '.', '>'/'<', space)
+                // goes to the game.
+                if let Some(tx) = &self.live_input {
+                    if let Some(text) = &event.text {
+                        for ch in text.chars() {
+                            if (' '..='~').contains(&ch)
+                                && !matches!(
+                                    ch,
+                                    'w' | 'a' | 's' | 'd' | 'e' | 'q' | 'W' | 'A' | 'S' | 'D'
+                                        | 'E' | 'Q'
+                                )
+                            {
+                                let _ = tx.send(ch as u8);
+                            }
+                        }
+                    }
                 }
                 let mut camera_moved = true;
                 match event.physical_key {
