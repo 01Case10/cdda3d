@@ -1057,6 +1057,7 @@ struct TileDefT : public ::flatbuffers::NativeTable {
   int32_t fg_ref = -1;
   int32_t bg_ref = -1;
   std::string roof_result{};
+  std::string color{};
 };
 
 struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1078,7 +1079,8 @@ struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_LOOKS_LIKE = 28,
     VT_FG_REF = 30,
     VT_BG_REF = 32,
-    VT_ROOF_RESULT = 34
+    VT_ROOF_RESULT = 34,
+    VT_COLOR = 36
   };
   uint32_t id() const {
     return GetField<uint32_t>(VT_ID, 0);
@@ -1142,6 +1144,17 @@ struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::String *roof_result() const {
     return GetPointer<const ::flatbuffers::String *>(VT_ROOF_RESULT);
   }
+  /// The def's own CDDA colour NAME (the string the game's
+  /// `color_from_string` resolves, e.g. "green", "light_gray",
+  /// "brown_green"), exactly as authored/inherited in the game
+  /// data. Absent = the def carries no colour. Added 2026-11-24
+  /// (Phase 11 follow-up Lane J): the name — not an RGB — crosses
+  /// the wire; the engine maps names to RGB through the game's
+  /// own colour table so both sides agree on what "green" means.
+  /// Appended last: additive/non-breaking, old readers ignore it.
+  const ::flatbuffers::String *color() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_COLOR);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint32_t>(verifier, VT_ID, 4) &&
@@ -1172,6 +1185,8 @@ struct TileDef FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<int32_t>(verifier, VT_BG_REF, 4) &&
            VerifyOffset(verifier, VT_ROOF_RESULT) &&
            verifier.VerifyString(roof_result()) &&
+           VerifyOffset(verifier, VT_COLOR) &&
+           verifier.VerifyString(color()) &&
            verifier.EndTable();
   }
   TileDefT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1231,6 +1246,9 @@ struct TileDefBuilder {
   void add_roof_result(::flatbuffers::Offset<::flatbuffers::String> roof_result) {
     fbb_.AddOffset(TileDef::VT_ROOF_RESULT, roof_result);
   }
+  void add_color(::flatbuffers::Offset<::flatbuffers::String> color) {
+    fbb_.AddOffset(TileDef::VT_COLOR, color);
+  }
   explicit TileDefBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1259,9 +1277,11 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDef(
     ::flatbuffers::Offset<::flatbuffers::String> looks_like = 0,
     int32_t fg_ref = -1,
     int32_t bg_ref = -1,
-    ::flatbuffers::Offset<::flatbuffers::String> roof_result = 0) {
+    ::flatbuffers::Offset<::flatbuffers::String> roof_result = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> color = 0) {
   TileDefBuilder builder_(_fbb);
   builder_.add_hot_flags(hot_flags);
+  builder_.add_color(color);
   builder_.add_roof_result(roof_result);
   builder_.add_bg_ref(bg_ref);
   builder_.add_fg_ref(fg_ref);
@@ -1297,7 +1317,8 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDefDirect(
     const char *looks_like = nullptr,
     int32_t fg_ref = -1,
     int32_t bg_ref = -1,
-    const char *roof_result = nullptr) {
+    const char *roof_result = nullptr,
+    const char *color = nullptr) {
   auto string_id__ = string_id ? _fbb.CreateString(string_id) : 0;
   auto name__ = name ? _fbb.CreateString(name) : 0;
   auto flags__ = flags ? _fbb.CreateVector<::flatbuffers::Offset<::flatbuffers::String>>(*flags) : 0;
@@ -1309,6 +1330,7 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDefDirect(
   auto bash_result__ = bash_result ? _fbb.CreateString(bash_result) : 0;
   auto looks_like__ = looks_like ? _fbb.CreateString(looks_like) : 0;
   auto roof_result__ = roof_result ? _fbb.CreateString(roof_result) : 0;
+  auto color__ = color ? _fbb.CreateString(color) : 0;
   return cdda::ipc::CreateTileDef(
       _fbb,
       id,
@@ -1326,7 +1348,8 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDefDirect(
       looks_like__,
       fg_ref,
       bg_ref,
-      roof_result__);
+      roof_result__,
+      color__);
 }
 
 ::flatbuffers::Offset<TileDef> CreateTileDef(::flatbuffers::FlatBufferBuilder &_fbb, const TileDefT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -4568,6 +4591,7 @@ inline void TileDef::UnPackTo(TileDefT *_o, const ::flatbuffers::resolver_functi
   { auto _e = fg_ref(); _o->fg_ref = _e; }
   { auto _e = bg_ref(); _o->bg_ref = _e; }
   { auto _e = roof_result(); if (_e) _o->roof_result = _e->str(); }
+  { auto _e = color(); if (_e) _o->color = _e->str(); }
 }
 
 inline ::flatbuffers::Offset<TileDef> TileDef::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TileDefT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4594,6 +4618,7 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDef(::flatbuffers::FlatBufferBui
   auto _fg_ref = _o->fg_ref;
   auto _bg_ref = _o->bg_ref;
   auto _roof_result = _o->roof_result.empty() ? 0 : _fbb.CreateString(_o->roof_result);
+  auto _color = _o->color.empty() ? 0 : _fbb.CreateString(_o->color);
   return cdda::ipc::CreateTileDef(
       _fbb,
       _id,
@@ -4611,7 +4636,8 @@ inline ::flatbuffers::Offset<TileDef> CreateTileDef(::flatbuffers::FlatBufferBui
       _looks_like,
       _fg_ref,
       _bg_ref,
-      _roof_result);
+      _roof_result,
+      _color);
 }
 
 inline TileDefsT::TileDefsT(const TileDefsT &o)
