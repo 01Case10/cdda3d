@@ -207,3 +207,36 @@ per-part grey family moving onto the vehicle paint
 (41,41,41) — glass, wheels, sides and the blue roof are
 pixel-identical. Engine suite green (exit 0), vehicles +
 voxelizer 130/130.
+
+## 10. S4 outcome (2026-11-24) — pickup bed, bicycle, variants
+
+Bed: Zones now computes bed_tiles (cargo_space tiles with
+no roof part, flooded over 4-connected trunk tiles). On bed
+tiles, cargo/trunk panels extrude to BED_FLOOR (14) inside
+and keep deck height on a 4-wide rim facing any non-bed
+tile — the bed reads hollow with walls and a tailgate. The
+rear-glass pass is gated on the rear tile actually backing
+a cabin (it previously painted a glass sheet over the
+pickup's tailgate tiles).
+
+Thin vehicles (single tile row, e.g. the bicycle): a bike
+is a profile object, not a footprint. Footprint parts
+extrude only in the centre band (rows 13..19); wheel
+sprites are true side profiles and are mapped sprite-row →
+height in rows 15..18, drawn after the tile's other parts
+so the wheel wins the shared plane; generic parts cap at
+20; "saddle" joins the seat branch; basketsm gets the
+container rule (rim 26 / floor 17). First render had the
+rear wheel swallowed by the basket's solid extrusion —
+the deferred wheel draw + hollow basket fixed it.
+
+State variants: NOT built. Open-door sprites exist in the
+tileset (vp_door_full_left_open, vp_door_front_open_rot),
+but choosing one needs the door's variant family, which
+the wire does not carry — the same gap as the #variant
+limitation from the (b) work. Named here, unscheduled.
+
+Gates: vehicle_s4_gate 2/2 (bed floor/rim heights, thin
+band + profile-wheel occupancy); the S1/S2 car gate is
+unchanged and green — the car has no bed tiles and is not
+thin, by construction.
