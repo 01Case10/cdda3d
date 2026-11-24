@@ -38,7 +38,6 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mesher::scale::WorldScale;
-use mesher::{Block, Pass};
 use proto::samples::sample_hello_ack;
 use proto::sync::{DeltaDecision, HeartbeatTracker, SeqTracker};
 use proto::{
@@ -48,17 +47,6 @@ use proto::{
 
 use crate::capture::{CaptureArgs, CaptureError};
 use crate::wire::{apply_delta_to_snapshot, WireScene};
-
-/// One coarse block per def id (the gates' stand-in mapping;
-/// the windowed app resolves real models/textures instead).
-fn coarse_block(id: u32) -> Block {
-    Block {
-        id,
-        color: [0.5, 0.5, 0.5, 1.0],
-        pass: Pass::Opaque,
-        tex_layers: None,
-    }
-}
 
 fn now_ms(start: Instant) -> u64 {
     start.elapsed().as_millis() as u64
@@ -76,11 +64,22 @@ pub struct LiveWorld {
     defs: Option<TileDefsT>,
     snapshot: Option<SnapshotT>,
     player_pos: Option<[i32; 3]>,
+    /// The voxelizer furniture model table, when the session
+    /// was configured with one (Lane G): wire scenes built
+    /// from the live state carry the snapshot-derived prop
+    /// scene.
+    props_table: Option<Arc<crate::materials::MaterialTable>>,
 }
 
 impl LiveWorld {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Seat (or clear) the furniture model table used for
+    /// prop-scene derivation in [`LiveWorld::wire_scene`].
+    pub fn set_props_table(&mut self, table: Option<Arc<crate::materials::MaterialTable>>) {
+        self.props_table = table;
     }
 
     pub fn player_pos(&self) -> Option<[i32; 3]> {
@@ -132,12 +131,17 @@ impl LiveWorld {
     }
 
     /// The renderable wire scene for the current live state
-    /// (coarse stand-in blocks — the same resolver the S7
-    /// session built its per-snapshot worlds with), or `None`
-    /// before the first Snapshot.
+    /// (blocks coloured by the string-id palette,
+    /// [`crate::wire::palette_resolver`] — Lane G; before it,
+    /// every def rendered the same grey), or `None` before
+    /// the first Snapshot.
     pub fn wire_scene(&self) -> Option<WireScene> {
         let (defs, snap) = (self.defs.as_ref()?, self.snapshot.as_ref()?);
-        Some(WireScene::from_wire(defs, snap, &coarse_block))
+        let scene = WireScene::from_wire(defs, snap, &crate::wire::palette_resolver(defs));
+        match &self.props_table {
+            Some(table) => Some(scene.with_props(crate::wire::prop_scene_for_wire(defs, snap, table))),
+            None => Some(scene),
+        }
     }
 
     /// Capture args rendering the live world to `out`: the
@@ -202,6 +206,14 @@ pub struct ConnectConfig {
     /// Publish the live wire scene after every applied flush.
     pub share: Option<SharedWireScene>,
     pub captures: Option<ConnectCaptures>,
+    /// Voxelizer output directory holding the furniture
+    /// model table (Lane G): when set, the session loads it
+    /// once and every published wire scene carries the
+    /// snapshot-derived furniture prop scene. `None` = the
+    /// coarse-only live world. A load failure is logged and
+    /// the session continues without props (the protocol is
+    /// the session's job; props are presentation).
+    pub models_dir: Option<PathBuf>,
 }
 
 impl Default for ConnectConfig {
@@ -210,6 +222,7 @@ impl Default for ConnectConfig {
             input: ConnectInput::Stdin,
             share: None,
             captures: None,
+            models_dir: None,
         }
     }
 }
@@ -375,7 +388,7 @@ impl Session {
                         defs,
                         s,
                         WorldScale::default(),
-                        &coarse_block,
+                        &crate::wire::palette_resolver(defs),
                     );
                     println!(
                         "connect: snapshot seq={} epoch={} -> world ({} chunks)",
@@ -532,6 +545,25 @@ pub fn run_connect_with(
         capture_outcomes: Vec::new(),
         first_capture_done: false,
     };
+    // Lane G: load the furniture model table once, up front;
+    // a failure leaves the session coarse-only (logged).
+    if let Some(dir) = &config.models_dir {
+        match crate::materials::MaterialTable::load(dir) {
+            Ok(table) => {
+                println!(
+                    "connect: furniture model table loaded from {} (live props on)",
+                    dir.display()
+                );
+                session.live.set_props_table(Some(Arc::new(table)));
+            }
+            Err(e) => {
+                println!(
+                    "connect: furniture model table at {} failed to load ({e}); live props off",
+                    dir.display()
+                );
+            }
+        }
+    }
 
     // Handshake: Hello, HelloAck, TileDefs, Snapshot, UiFrame.
     match session.expect("Hello")? {

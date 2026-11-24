@@ -211,7 +211,11 @@ fn t11_vehicle_stamps_broken_rotation_and_removal() {
     // Stamp: the 9 distinct part tiles are occupied; the roof
     // part sits on the top block of its tile (17,5); the
     // wheel-only tile (16,4) fills the body band and leaves
-    // the top block AIR.
+    // the top block to whatever the world build put there
+    // (AIR under the pre-Lane-G slab model; the terrain's
+    // standing-fill block since Lane G — either way the
+    // wheel stamp must not touch it).
+    let wheel_top_before = id_at(&map, 16, 4, 2);
     let (occupied, _) = stamp_vehicle(&mut map, &model, 0);
     let want: BTreeSet<[i32; 3]> = [
         [16, 4, 0],
@@ -230,7 +234,16 @@ fn t11_vehicle_stamps_broken_rotation_and_removal() {
     assert_eq!(id_at(&map, 17, 5, 2), VEHICLE_BLOCK_ID, "roof part on the top block");
     assert_eq!(id_at(&map, 17, 5, 0), VEHICLE_BLOCK_ID, "body under the roof tile");
     assert_eq!(id_at(&map, 16, 4, 0), VEHICLE_BLOCK_ID, "wheel tile body band");
-    assert_eq!(id_at(&map, 16, 4, 2), AIR, "wheel-only tile: top block stays AIR");
+    assert_eq!(
+        id_at(&map, 16, 4, 2),
+        wheel_top_before,
+        "wheel-only tile: the stamp leaves the top block alone"
+    );
+    assert_ne!(
+        id_at(&map, 16, 4, 2),
+        VEHICLE_BLOCK_ID,
+        "wheel-only tile: no vehicle block on the top block"
+    );
 
     // Damage the door (mount (0,-1)) to 0 through the sim's
     // World API: the next Delta flips the engine model's

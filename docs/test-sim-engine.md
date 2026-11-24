@@ -727,7 +727,8 @@ and a subset over a real socket. Settled points:
   world — `TileDefs` + `Snapshot` fed through
   `snapshot_world::build_snapshot_world` with a caller-chosen
   block resolver (gates: the S1 canonical palette; the client
-  session: the coarse stand-in; a desktop run: the voxelizer
+  session: the string-id palette since Lane G — before it, a
+  uniform-grey coarse stand-in; a desktop run: the voxelizer
   materials) — carried as an `Arc<ChunkMap>` + the window's
   `min_game_z`. When seated, both renderer paths prepare from
   the wire map (`scene_prep::prepare_raster_wire`; the RT
@@ -736,13 +737,16 @@ and a subset over a real socket. Settled points:
   golden gates pass without regen, which is the regression
   fence. Companions seat as usual: `lighting` / `vehicles`
   apply to a wire world exactly as to a fixture world.
-  Fixture-keyed inputs are not consulted for a wire world in
-  v1: `textures` / `effects` (fake-id material tables) and the
+  Fixture-keyed inputs are not consulted for a wire world:
+  `textures` / `effects` (fake-id material tables) and the
   Phase 9 fixture prop scenes (name-keyed) — the wire world's
-  blocks carry their resolver's colours already, and wire
-  fine-prop seating remains the snapshot path's own stamping
-  (`snapshot_world::stamp_furniture` / `stamp_terrain`) into a
-  caller-owned layer the frame loop does not yet carry.
+  blocks carry their resolver's colours already. Wire
+  fine-prop seating was, in v1, the snapshot path's own
+  stamping into a caller-owned layer the frame loop did not
+  carry; **Lane G closed that** — the wire scene now carries
+  its own snapshot-derived furniture prop scene and both
+  frame paths stamp it (see the Lane G paragraph at the end
+  of this section).
 - **Live state:** the client session folds every accepted
   Delta into its stored Snapshot
   (`wire::apply_delta_to_snapshot`: per-tile changes land in
@@ -764,12 +768,24 @@ and a subset over a real socket. Settled points:
   (door (6,11) vs (5,11); windows (3,0)/(0,6)/(11,6) vs (2,0))
   and are stamped by different models (fixture `set_tile`
   shapes — walls/doors/windows a full 3-block level, roof
-  slabs at z 3 — vs the wire builder's every-terrain-a-slab
-  rule). The gate enumerates the ENTIRE world-level diff and
-  pins it to exactly those causes: **238 cells** (144 roof
-  band + 88 perimeter height + 6 authoring), and the captures
-  differ in 17,840 of 230,400 pixels accordingly. Nothing in
-  the seating path owns that diff; closing it would mean
+  slabs at z 3 — vs the wire builder's stamping model: at
+  Lane A, every-terrain-a-slab; **since Lane G, a solid tile
+  fills its whole level**). The gate enumerates the ENTIRE
+  world-level diff and pins it to exactly those causes:
+  **238 cells** at Lane A (144 roof band + 88 perimeter
+  height + 6 authoring); **362 cells** since Lane G (144
+  roof band + 200 interior fill — the wire builder fills a
+  floor tile's level where the fixture keeps interior
+  headroom — + 6 authoring + the same 6 risen through
+  z 1..=2; the old 88-cell perimeter class collapsed to
+  those 12 because both sides now fill standing tiles, so
+  pure wall tiles match for the first time). The captures
+  differ in 17,840 of 230,400 pixels — unchanged by Lane G:
+  the changed band lies inside the region that already
+  differed (flat wire colours vs the legacy house's textured
+  walls), so that count is insensitive to the fill; the cell
+  enumeration is the sensitive measure. Nothing in the
+  seating path owns that diff; closing it would mean
   re-authoring one of the two houses or changing the wire
   builder's stamping model, both outside this follow-up.
 - **Windowed seating:** `voxel-engine --connect-window
@@ -793,6 +809,58 @@ and a subset over a real socket. Settled points:
   camera follows the player), both frames non-blank, the
   final live state shows the door at (5,8) as `t_door_o`,
   clean Shutdown both ends.
+- **Lane G settlements (2026-11-24 — standing geometry,
+  palette, live furniture; the first windowed run on Joey's
+  PC exposed the v1 wire world's limits: it rendered at
+  117 fps but as a single uniform-grey slab — floor slabs
+  only, every def the same grey):** (1) **Standing fill:**
+  `build_columns` now fills a solid tile's whole z-level
+  with its def's block (the bottom block is the floor, the
+  rest is the tile's standing volume), per the mesher scale
+  contract ("full-height tiles fill all
+  blocks_per_z_level"). The predicate is `floor_at`'s own
+  Solid classification — the only one present in both the
+  sim's real def table and the fixture sample table (the
+  WALL hot-flag, connect groups, fg/bg refs and move_cost
+  were each checked: unreliable in real data, divergent
+  across the tables, or not on the wire at all) — so both
+  wire consumers gain the fill identically and the parity
+  above holds by construction. RoofOf stays a slab (a roof
+  is the ceiling of the level below, not a standing tile).
+  The coarse column is a tile's full occupancy: floor tiles
+  fill too, which is the named interior-fill class in the
+  re-enumerated diff above. Two contract completions keep
+  the fine layer honest: a Ground terrain model airs its
+  tile's whole coarse column (it IS the tile's terrain), and
+  a modelled furniture placement airs the standing fill
+  above its floor slab (furniture wins the standing slot —
+  the 9.0 suppression contract's observable behaviour is
+  unchanged). (2) **Palette:** the live client resolves
+  blocks through `wire::palette_color` — FNV-1a of the def's
+  STRING id into a constrained HSL band. It is colour-CODING,
+  documented as a stand-in until CDDA's own per-def `color`
+  field is imported into the wire def table (it is not
+  imported today, so there is nothing truer to show).
+  (3) **Live furniture:** `wire::prop_scene_for_wire`
+  derives a `PropScene` from the snapshot's furniture arrays
+  (Lane F's derivation) with models resolved by string id in
+  the voxelizer table; `WireScene.props` carries it; both
+  frame paths stamp it through the fixtures' own
+  `stamp_props_into` pipeline (RT: a wire variant of the
+  props build, minus the fixture-keyed texture/variant
+  steps). Model-less furniture is not placed — there is no
+  coarse-cube fallback. The client seats it when configured
+  with a model table (`ConnectConfig.models_dir`;
+  `--connect-window` takes it from `--textures`). Terrain
+  fine models are NOT derived for wire worlds (they are
+  keyed to the fixture texture pass); wire standing terrain
+  is its coarse fill until a wire terrain-model seating is
+  designed. Gates: `wire_standing_gate` (failing-first;
+  street_block filled blocks 576 → 1,728, exposed faces
+  1,248 → 1,440; ≥3 palette colours in a real capture) and
+  `wire_props_gate` (live stamp == Lane F derivation
+  cell-for-cell; both renderers' live renders change with
+  props attached).
 
 ## 6. Test matrix — the user's named tests, plus the ones they imply
 

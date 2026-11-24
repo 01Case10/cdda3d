@@ -107,7 +107,14 @@ if [ "$HEADLESS" -eq 1 ]; then
   STATUS=$?
 else
   echo "== launching renderer: voxel-engine --connect-window (close the window to end) =="
-  "$BIN_DIR/voxel-engine" --connect-window "$SOCK"
+  ENGINE_ARGS=(--connect-window "$SOCK")
+  if [ -f assets/ultica_run1/materials.json ]; then
+    ENGINE_ARGS+=(--textures assets/ultica_run1)
+    echo "   live furniture props: ON (model table found in assets/ultica_run1)"
+  else
+    echo "   live furniture props: OFF (no assets/ultica_run1/materials.json -- extract the models pack there to enable)"
+  fi
+  "$BIN_DIR/voxel-engine" "${ENGINE_ARGS[@]}"
   STATUS=$?
 fi
 

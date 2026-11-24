@@ -546,8 +546,15 @@ fn render_rt_frame_inner(
     // Wire-fed source (Phase 11 follow-up, Lane A): the props
     // path builds its worlds from fixture builders, so a wire
     // frame takes the coarse path below regardless of the
-    // prop inputs (the fixture-name dispatch is untouched when
-    // no wire scene is seated).
+    // FIXTURE prop inputs (the fixture-name dispatch is
+    // untouched when no wire scene is seated). Since Lane G
+    // a wire scene can carry its OWN prop scene (derived
+    // from its snapshot), which takes the wire props path.
+    if let Some(wire) = &args.wire {
+        if let Some(props) = &wire.props {
+            return render_rt_frame_wire_props(device, queue, args, wire, props, sky, emitters);
+        }
+    }
     if args.wire.is_none() {
         if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
             return render_rt_frame_props(device, queue, args, props, sky, emitters);
@@ -1006,6 +1013,116 @@ fn render_rt_frame_props(
         fine_nodes: fine_built.as_ref().map(|b| b.node_count()).unwrap_or(0),
         build_ms,
         texture_stats,
+    })
+}
+
+/// The wire form of [`render_rt_frame_props`] (Lane G): the
+/// same two-tree build (coarse world + fine prop world, lit
+/// rewrites, fine occlusion) over the wire scene's map and
+/// its own snapshot-derived prop scene. The fixture-keyed
+/// steps of the fixture form do not exist here: no texture
+/// spec or variant preparation (the wire world renders its
+/// resolver's flat colours + the prop-only spec), no terrain
+/// extension (fixture-keyed to the texture pass), vehicles
+/// stamp through the wire path's mapped form, exactly as
+/// [`world_from_wire`] stamps them.
+fn render_rt_frame_wire_props(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    wire: &crate::wire::WireScene,
+    props: &crate::frame::PropScene,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
+    let t0 = Instant::now();
+    let levels = capture_visible_levels(args.cutaway_z);
+    let scale = mesher::scale::WorldScale::default();
+    let mut filtered = world::filtered_map(&wire.map, wire.min_game_z, &levels);
+    if let Some(v) = &args.vehicles {
+        crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, None);
+    }
+    let kept: Vec<crate::snapshot_world::FurniturePlacement>;
+    let placements: &[crate::snapshot_world::FurniturePlacement] = match &args.lighting {
+        Some(lit) => {
+            crate::scene_prep::apply_visibility_mask(&mut filtered, lit);
+            kept = props
+                .placements
+                .iter()
+                .copied()
+                .filter(|p| {
+                    let slab_z = scale.level_base_block(p.level) as i32;
+                    !filtered.block_at(p.x, p.y, slab_z).is_air()
+                })
+                .collect();
+            &kept
+        }
+        None => &props.placements,
+    };
+    let mut spec_opt = None;
+    let prep = crate::scene_prep::prep_prop_spec(props, &mut spec_opt);
+    let layer = crate::scene_prep::stamp_props_into(&mut filtered, placements, props, &prep, scale)
+        .map_err(CaptureError::Device)?;
+    let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
+    let mut fine_world = VoxelWorld::from_fine_layer(&layer);
+    if let Some(lit) = &args.lighting {
+        let exposure = SkyExposure::from_grid(&lit.grid, lit.min_game_z);
+        coarse_world = lit_rewrite(&coarse_world, lit, false, &exposure);
+        fine_world = lit_rewrite(&fine_world, lit, true, &exposure);
+        fine_world = fine_occlusion_rewrite(&fine_world, &filtered, &layer);
+    }
+    // Untextured: `prep_prop_spec` already built the prop-only
+    // spec at the stamp-time base id — no shift needed.
+    let attach_spec: Option<treebuild::render::TextureSpec> = if prep.colors.is_empty() {
+        None
+    } else {
+        spec_opt
+    };
+    let built = build_tree(&coarse_world, BuildConfig::default())
+        .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
+    let fine_built = if fine_world.is_empty() {
+        None
+    } else {
+        Some(
+            build_tree(&fine_world, BuildConfig::default())
+                .map_err(|e| CaptureError::Device(format!("treebuild fine: {e}")))?,
+        )
+    };
+    let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let (renderer, mut scene) =
+        RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
+    if let Some(sky) = sky {
+        scene.set_sky(queue, sky);
+    }
+    if let Some(e) = emitters {
+        scene.set_emitters(queue, e);
+    }
+    if let Some(spec) = &attach_spec {
+        scene
+            .attach_textures(device, queue, spec)
+            .map_err(CaptureError::Device)?;
+    }
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let aspect = width as f32 / height as f32;
+    let camera = capture_camera(args, aspect);
+    let frame = if args.macro_debug_height {
+        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
+    } else {
+        renderer.render(device, queue, &scene, &camera, (width, height), true)
+    };
+    device.poll(wgpu::Maintain::Wait);
+    Ok(RtFrameOut {
+        color: frame.color,
+        depth: frame.depth,
+        max_dist: frame.max_dist,
+        camera,
+        size: (width, height),
+        leaves: built.leaf_count(),
+        nodes: built.node_count(),
+        fine_leaves: fine_built.as_ref().map(|b| b.leaf_count()).unwrap_or(0),
+        fine_nodes: fine_built.as_ref().map(|b| b.node_count()).unwrap_or(0),
+        build_ms,
+        texture_stats: None,
     })
 }
 

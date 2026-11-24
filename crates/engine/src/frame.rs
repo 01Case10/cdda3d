@@ -1571,11 +1571,12 @@ fn render_frame_inner(
     // Wire-fed source (Phase 11 follow-up, Lane A): a seated
     // `wire` scene replaces the fixture-name dispatch below —
     // its map was built from wire data by the caller, and its
-    // preparation is `scene_prep::prepare_raster_wire`. The
-    // fixture prop scenes are name-keyed, so a wire frame
-    // carries no fine props in v1 (see `prepare_raster_wire`).
-    // With no wire scene seated, the preparation is exactly
-    // the pre-Lane-A dispatch and the tail below is shared.
+    // preparation is `scene_prep::prepare_raster_wire`. Since
+    // Lane G the wire scene can carry its OWN furniture prop
+    // scene (derived from the snapshot, not name-keyed), and
+    // `prepare_raster_wire` stamps it. With no wire scene
+    // seated, the preparation is exactly the pre-Lane-A
+    // dispatch and the tail below is shared.
     let wire_prepared = match &args.wire {
         Some(w) => Some(
             crate::scene_prep::prepare_raster_wire(

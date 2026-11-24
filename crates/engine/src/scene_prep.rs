@@ -1204,14 +1204,26 @@ pub fn prepare_raster_house_lit_vp(
 /// level 0 is the wire window's base z — for a snapshot-seated
 /// grid that is the snapshot's own `min_game_z`).
 ///
-/// No texture spec is produced: the fixture material tables
-/// are keyed to fake tile ids, so a wire world renders with
-/// its resolver's flat colours in v1 (the same posture as the
-/// untextured fixture path). Fine props are likewise not
-/// stamped here — the snapshot path's stamping lives in
-/// `snapshot_world::stamp_furniture` / `stamp_terrain` and
-/// seats into a caller-owned fine layer, a seating the frame
-/// loop does not yet carry for any source.
+/// No COARSE texture spec is produced: the fixture material
+/// tables are keyed to fake tile ids, so a wire world's
+/// coarse blocks render with their resolver's flat colours
+/// (the same posture as the untextured fixture path).
+///
+/// Furniture fine props (Lane G): when the wire scene
+/// carries a prop scene ([`crate::wire::WireScene::props`],
+/// derived from the snapshot's furniture arrays through the
+/// voxelizer model table), the props stamp into a fine layer
+/// through the fixtures' own [`stamp_props_into`] pipeline
+/// and mesh with the fine dispatch — the same seating the
+/// fixture prop scenes take, including the lit form's
+/// mask-then-filter-placements order and its PerVertex bake
+/// route for every bake mode (the fixture deviation rule).
+/// The returned spec is then the prop-only spec
+/// `prep_prop_spec` builds (the untextured fixture posture).
+/// Terrain fine models are NOT derived for wire worlds:
+/// they are keyed to the fixture texture pass, and the wire
+/// world's standing terrain is its coarse fill (Lane G
+/// Part 1) until a wire terrain-model seating is designed.
 pub fn prepare_raster_wire(
     visible_levels: &[i32],
     wire: &crate::wire::WireScene,
@@ -1224,9 +1236,42 @@ pub fn prepare_raster_wire(
         stamp_vehicles(&mut filtered, v);
     }
     let Some(lit) = lit else {
+        // Unlit: with props, stamp + fine-mesh; without, the
+        // coarse path exactly as before.
+        if let Some(props) = &wire.props {
+            let mut spec_opt = None;
+            let prep = prep_prop_spec(props, &mut spec_opt);
+            let layer =
+                stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
+            let (meshes, stats) = mesh_filtered_fine(&filtered, &layer);
+            return Ok((meshes, stats, spec_opt));
+        }
         let (meshes, stats) = mesh_filtered(&filtered);
         return Ok((meshes, stats, None));
     };
+    if let Some(props) = &wire.props {
+        // Lit with props: the fixture lit-fine order — mask
+        // first, drop placements whose slab the mask (or the
+        // cutaway) removed, stamp, fine-mesh, PerVertex bake.
+        let mut spec_opt = None;
+        let prep = prep_prop_spec(props, &mut spec_opt);
+        apply_visibility_mask(&mut filtered, lit);
+        apply_sky_exposure_alpha(&mut filtered, lit);
+        let kept: Vec<FurniturePlacement> = props
+            .placements
+            .iter()
+            .copied()
+            .filter(|p| {
+                let slab_z = scale.level_base_block(p.level) as i32;
+                !filtered.block_at(p.x, p.y, slab_z).is_air()
+            })
+            .collect();
+        let layer = stamp_props_into(&mut filtered, &kept, props, &prep, scale)?;
+        let (mut meshes, stats) = mesh_filtered_fine(&filtered, &layer);
+        lighting::bake_pass_meshes(&mut meshes, &lit.grid, lit.env, scale, lit.min_game_z);
+        refine_sky_factor_alpha(&mut meshes, lit, scale);
+        return Ok((meshes, stats, spec_opt));
+    }
     apply_visibility_mask(&mut filtered, lit);
     apply_sky_exposure_alpha(&mut filtered, lit);
     if lit.bake_mode == crate::frame::BakeMode::PerBlock {

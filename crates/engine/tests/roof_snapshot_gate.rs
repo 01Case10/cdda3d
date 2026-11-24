@@ -147,10 +147,16 @@ fn explicit_roof_cutaway_at_player_z_shows_the_interior() {
     let scale = WorldScale::default();
     let map = build_snapshot_world(&defs, &snap, scale, &block_for);
 
-    // Full build (no cutaway): the roof deck exists as floor
-    // slabs at z +1 over the whole 6x6 footprint, walls
-    // included; the room floor is at z 0; open air over grass
-    // produces no slab at z +1.
+    // Full build (no cutaway): the roof deck exists at z +1
+    // over the whole 6x6 footprint, walls included; the room
+    // floor is at z 0; open air over grass produces no slab
+    // at z +1. Counts: since Lane G a solid tile fills its
+    // whole level, so a material's block count is its tile
+    // count x blocks_per_z_level (the explicit roof is
+    // authored terrain at z +1, so it fills like any solid
+    // tile; the per-tile facts these counts pin are
+    // unchanged from the slab-era numbers / PER).
+    let per = scale.blocks_per_z_level as usize;
     assert_eq!(id_at(&map, 5, 5, slab_z(1)), TER_ROOF_SHINGLE);
     assert_eq!(id_at(&map, 3, 3, slab_z(1)), TER_ROOF_SHINGLE);
     assert_eq!(id_at(&map, 5, 5, slab_z(0)), TER_FLOOR);
@@ -160,7 +166,7 @@ fn explicit_roof_cutaway_at_player_z_shows_the_interior() {
         0,
         "no fabricated roof over the yard"
     );
-    assert_eq!(count_id(&map, TER_ROOF_SHINGLE), 36);
+    assert_eq!(count_id(&map, TER_ROOF_SHINGLE), 36 * per);
 
     // Player inside (z 0), HideAbove(0): the roof level is
     // filtered out at data level; the interior floor remains.
@@ -169,16 +175,16 @@ fn explicit_roof_cutaway_at_player_z_shows_the_interior() {
     assert_eq!(count_id(&cut, TER_ROOF_SHINGLE), 0, "roof gone from inside");
     assert_eq!(
         count_id(&cut, TER_FLOOR),
-        16,
+        16 * per,
         "4x4 interior floor still drawn"
     );
-    assert_eq!(count_id(&cut, TER_GRASS), 144 - 36, "yard still drawn");
+    assert_eq!(count_id(&cut, TER_GRASS), (144 - 36) * per, "yard still drawn");
 
     // Exterior view (the windowed default HideAbove(1) at
     // player z 0): the roof level is kept whole.
     let outside = CutawayMode::HideAbove(1).visible_levels(pz);
     let full = filtered_map(&map, -1, &outside);
-    assert_eq!(count_id(&full, TER_ROOF_SHINGLE), 36);
+    assert_eq!(count_id(&full, TER_ROOF_SHINGLE), 36 * per);
 
     // Both world forms agree: the RT tree built from the cut
     // map has no roof cell over the room; from the full map it
@@ -226,13 +232,16 @@ fn implicit_roof_resolves_from_tiledef_roof_results() {
         + count_id(&map, TER_ROOF_WOOD);
     assert_eq!(roof_slabs, 36, "one roof slab per footprint column");
 
-    // Same cutaway behaviour as the explicit form.
+    // Same cutaway behaviour as the explicit form. (The
+    // implicit roof slabs above stay one-per-column —
+    // RoofOf never fills; the FLOOR count is tiles x
+    // blocks_per_z_level since Lane G's standing fill.)
     let inside = CutawayMode::HideAbove(0).visible_levels(pz);
     let cut = filtered_map(&map, -1, &inside);
     assert_eq!(count_id(&cut, TER_ROOF_WOOD_TREATED), 0);
     assert_eq!(count_id(&cut, TER_ROOF_FLAT), 0);
     assert_eq!(count_id(&cut, TER_ROOF_WOOD), 0);
-    assert_eq!(count_id(&cut, TER_FLOOR), 16);
+    assert_eq!(count_id(&cut, TER_FLOOR), 16 * scale.blocks_per_z_level as usize);
     let outside = CutawayMode::HideAbove(1).visible_levels(pz);
     let full = filtered_map(&map, -1, &outside);
     assert_eq!(

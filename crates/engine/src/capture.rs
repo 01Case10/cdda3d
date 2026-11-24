@@ -54,8 +54,12 @@ pub struct CaptureArgs {
     /// `lighting` / `vehicles` apply to the wire world exactly
     /// as to a fixture world; `textures`, `effects` and the
     /// Phase 9 fixture prop scenes are fixture-keyed and are
-    /// not consulted for a wire world in v1 (the wire world's
-    /// blocks carry their resolver's colours/layers already).
+    /// not consulted for a wire world. Since Lane G the wire
+    /// scene itself can carry a furniture prop scene
+    /// (`WireScene::props`, derived from the snapshot through
+    /// the voxelizer model table), which both renderer paths
+    /// stamp — that is the wire world's own prop seating, not
+    /// the fixture one.
     pub wire: Option<crate::wire::WireScene>,
     /// Renderer selection (Phase 2c).
     pub renderer: RendererKind,
