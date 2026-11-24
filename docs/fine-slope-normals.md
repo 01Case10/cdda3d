@@ -71,9 +71,12 @@ local to `mesh_chunk_fine`:
    the mesher already uses for boundary culling, so slopes crossing
    a chunk border do not seam.
 4. Both emission paths get the treatment: `push_quad` and
-   `push_quad_textured` (textured fine terrain — shore/blend slopes
-   — shares `mesh_chunk_fine` and will smooth too; §4 G3 covers
-   its goldens).
+   `push_quad_textured` — the fine pass's flat and textured
+   variants for stamped cells. (Correction, S1: shore/blend
+   terrain slopes are a coarse-path texture treatment and do
+   NOT pass through `mesh_chunk_fine`; the textured variant
+   here covers textured stamped cells — props carrying
+   `tex_layers`.)
 5. A per-mesh opt-in flag, default off, so existing callers change
    only where §4 has verified the result. The fine-prop and
    fine-terrain paths opt in explicitly.
@@ -135,3 +138,26 @@ stamper profile/colouring pass; design settled in the 2026-11-24
 prototype thread, captures in 98e2a0b) should land after S2, so its
 two-pass review judges final shading rather than the banded
 interim. This plan is independent of Phase 11 (sim) work.
+
+## 9. S1 outcome (2026-11-24)
+
+Landed: `mesh_chunk_fine` takes `slope_normals: bool` (all
+existing callers pass `false`; S2 opts the fine paths in).
+With the flag on, a stamped cell's +Z face is emitted through
+the new `Mesh::push_quad_per_corner` /
+`push_quad_textured_per_corner` with per-corner normals from
+`top_corner_normal`: the central difference of the four
+neighbouring columns' surface tops (`surface_top`, walked
+through the `FineSampler`, so coarse-expanded columns resolve
+identically and chunk borders cannot seam — the sampler IS
+the cross-chunk read path). Threshold
+`SLOPE_EDGE_THRESHOLD = 8` fine cells, as proposed.
+G1 (`crates/mesher/tests/fine_slope_normals_gate.rs`, written
+failing-first — the ramp assertion failed on the pre-fix
+mesher while the three invariant tests passed): ramp corners
+tilt to normalize(-1, 1, 0) within 0.02; plateau and 16-unit
+cliff keep exact axis normals; flag off is all-axis. 4/4.
+Regression: full mesher suite green; engine golden_gate 3/3
+with the flag off everywhere (meshes unchanged), phase9 /
+puddle / raster_tex / frame / phase8 / vehicle_texture gates
+all green.

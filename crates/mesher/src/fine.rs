@@ -753,6 +753,75 @@ fn coarse_face_cull_by_fine(
     Some(true)
 }
 
+/// Hard-edge threshold for slope normals (fine cells): a
+/// neighbouring column whose surface sits more than this far
+/// from the face's own surface is a deliberate cliff, not a
+/// slope — corners sampling it keep the axis normal, so table
+/// edges, panel ends and other hard silhouettes stay crisp.
+/// 8 fine cells = a quarter tile.
+pub const SLOPE_EDGE_THRESHOLD: i32 = 8;
+
+/// The top height (absolute fine z of the first air cell) of
+/// the surface continuous with the cell at `(fx, fy, fz)` in
+/// the neighbouring column `(fx, fy)`: from `fz`, walk up
+/// while solid or down while air. `None` when the surface
+/// steps away by more than `limit` cells in either direction
+/// (a cliff or a void — not this face's sheet). Occupancy is
+/// `!is_air` via the sampler, so coarse-expanded columns
+/// resolve exactly like stamped ones.
+fn surface_top(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, limit: i32) -> Option<i32> {
+    let solid = |z: i32| !sampler.block_at_fine(fx, fy, z).is_air();
+    if solid(fz) {
+        let mut z = fz;
+        while solid(z + 1) {
+            z += 1;
+            if z - fz > limit {
+                return None;
+            }
+        }
+        Some(z + 1)
+    } else {
+        let mut z = fz;
+        while !solid(z - 1) {
+            z -= 1;
+            if fz - z > limit {
+                return None;
+            }
+        }
+        Some(z)
+    }
+}
+
+/// Per-corner normal (world space) for the +Z face of the
+/// stamped cell at `(fx, fy, fz)`, at the face corner offset
+/// `(dx, dy)` in {0,1}^2 (docs/fine-slope-normals.md S1).
+/// The corner is shared by the four columns around the grid
+/// vertex `(fx + dx, fy + dy)`; the gradient is the central
+/// difference of their surface tops. Any column whose top is
+/// missing or further than [`SLOPE_EDGE_THRESHOLD`] from the
+/// face's own top falls the corner back to the axis normal.
+fn top_corner_normal(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dx: i32, dy: i32) -> [f32; 3] {
+    let h0 = fz + 1;
+    let mut hs = [[0i32; 2]; 2];
+    for (i, cx) in [fx + dx - 1, fx + dx].into_iter().enumerate() {
+        for (j, cy) in [fy + dy - 1, fy + dy].into_iter().enumerate() {
+            match surface_top(sampler, cx, cy, fz, SLOPE_EDGE_THRESHOLD) {
+                Some(h) if (h - h0).abs() <= SLOPE_EDGE_THRESHOLD => hs[i][j] = h,
+                _ => return [0.0, 1.0, 0.0],
+            }
+        }
+    }
+    // Column centres sit 1 cell apart on each axis; the two
+    // rows (columns) are averaged, hence / 2.
+    let dhdx = (hs[1][0] + hs[1][1] - hs[0][0] - hs[0][1]) as f32 / 2.0;
+    let dhdy = (hs[0][1] + hs[1][1] - hs[0][0] - hs[1][0]) as f32 / 2.0;
+    let inv_len = 1.0 / (dhdx * dhdx + dhdy * dhdy + 1.0).sqrt();
+    let g = [-dhdx * inv_len, -dhdy * inv_len, inv_len];
+    // Grid -> world, the normal_to_world rotation for a
+    // non-axis vector: (x, y_south, z_up) -> (x, z_up, -y_south).
+    [g[0], g[2], -g[1]]
+}
+
 /// Mesh one chunk column at fine resolution (Phase 9, 9.4):
 /// the chunk's coarse cells naively (one quad per visible
 /// face, exactly as `mesh_naive` emits them, with the fine
@@ -780,6 +849,7 @@ pub fn mesh_chunk_fine(
     layer: &FineLayer,
     coord: [i32; 2],
     scale: WorldScale,
+    slope_normals: bool,
 ) -> Option<PassMeshes> {
     let chunk = coarse.chunks.get(&coord)?;
     let origin = chunk.origin();
@@ -861,6 +931,29 @@ pub fn mesh_chunk_fine(
                             });
                             let corners = grid_corners.map(|g| to_world(g, scale));
                             let normal = normal_to_world(*dir);
+                            // Slope normals (docs/fine-slope-
+                            // normals.md S1): with the opt-in,
+                            // a stamped cell's +Z face carries
+                            // per-corner gradient normals so a
+                            // fine staircase shades as one
+                            // inclined plane. Every other face
+                            // (and every face with the opt-in
+                            // off) keeps the axis normal.
+                            let corner_normals: Option<[[f32; 3]; 4]> =
+                                if slope_normals && di == 4 {
+                                    Some(FACE_CORNERS[di].map(|c| {
+                                        top_corner_normal(
+                                            &sampler,
+                                            fx,
+                                            fy,
+                                            fz,
+                                            c[0] as i32,
+                                            c[1] as i32,
+                                        )
+                                    }))
+                                } else {
+                                    None
+                                };
                             // Geometric occlusion (Stage H,
                             // 8c-A): darken the face by the
                             // stamped geometry around it. A
@@ -879,8 +972,8 @@ pub fn mesh_chunk_fine(
                                     cell.color[3],
                                 ]
                             };
-                            match layer_for_dir(cell, di) {
-                                Some(tex_layer) => {
+                            match (layer_for_dir(cell, di), corner_normals) {
+                                (Some(tex_layer), cn) => {
                                     let quad_min =
                                         [fx as f32 * inv, fy as f32 * inv, fz as f32 * inv];
                                     let uvs = quad_uvs(
@@ -890,11 +983,19 @@ pub fn mesh_chunk_fine(
                                         [inv, inv, inv],
                                         tex_layer,
                                     );
-                                    mesh.push_quad_textured(
-                                        corners, normal, color, uvs, tex_layer,
-                                    );
+                                    match cn {
+                                        Some(cn) => mesh.push_quad_textured_per_corner(
+                                            corners, cn, color, uvs, tex_layer,
+                                        ),
+                                        None => mesh.push_quad_textured(
+                                            corners, normal, color, uvs, tex_layer,
+                                        ),
+                                    }
                                 }
-                                None => mesh.push_quad(corners, normal, color),
+                                (None, Some(cn)) => {
+                                    mesh.push_quad_per_corner(corners, cn, color)
+                                }
+                                (None, None) => mesh.push_quad(corners, normal, color),
                             }
                         }
                     }

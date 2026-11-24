@@ -176,7 +176,7 @@ fn water_marker_becomes_rt_flag() {
 fn water_marker_reaches_raster_vertices() {
     let (map, layer) = scene(ModelSurface::Water);
     let scale = WorldScale::default();
-    let meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale).expect("chunk meshes");
+    let meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale, false).expect("chunk meshes");
     let mut water_up_verts = 0usize;
     let mut plain_up_verts = 0usize;
     for pass in &meshes.meshes {
@@ -251,7 +251,7 @@ fn water_shading_brightens_puddle_raster() {
     let render = |surface: ModelSurface, name: &str| -> image::RgbaImage {
         let (map, layer) = scene(surface);
         let scale = WorldScale::default();
-        let meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale).expect("chunk meshes");
+        let meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale, false).expect("chunk meshes");
         let renderer = Renderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
         let gpu_meshes = renderer.upload(&device, &meshes);
         let color = device.create_texture(&wgpu::TextureDescriptor {

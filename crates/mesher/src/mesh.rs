@@ -192,6 +192,46 @@ impl Mesh {
         );
     }
 
+    /// Append one quad with a PER-CORNER normal (slope shading):
+    /// same default UVs / flat layer as [`Mesh::push_quad`].
+    pub fn push_quad_per_corner(
+        &mut self,
+        corners: [[f32; 3]; 4],
+        normals: [[f32; 3]; 4],
+        color: [f32; 4],
+    ) {
+        self.push_quad_textured_per_corner(
+            corners,
+            normals,
+            color,
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            FLAT_LAYER,
+        );
+    }
+
+    /// Append one textured quad with PER-CORNER normals (slope
+    /// shading): per-corner `uvs` in the same order as `corners`,
+    /// all sampling texture-array `layer`.
+    pub fn push_quad_textured_per_corner(
+        &mut self,
+        corners: [[f32; 3]; 4],
+        normals: [[f32; 3]; 4],
+        color: [f32; 4],
+        uvs: [[f32; 2]; 4],
+        layer: u32,
+    ) {
+        let base = self.positions.len() as u32;
+        for (i, c) in corners.into_iter().enumerate() {
+            self.positions.push(c);
+            self.normals.push(normals[i]);
+            self.colors.push(color);
+            self.uvs.push(uvs[i]);
+            self.layers.push(layer);
+        }
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
     /// Append one textured quad (Phase 2f): per-corner `uvs` in the
     /// same order as `corners`, all sampling texture-array `layer`.
     pub fn push_quad_textured(

@@ -147,7 +147,7 @@ fn phase9_boundary_fixture_culling_and_fine_coverage() {
     let (map, layer, scale) = boundary_fixture();
     assert!(map.chunks[&[0, 0]].has_fine, "fixture chunk is flagged");
 
-    let fine_meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale).expect("chunk present");
+    let fine_meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale, false).expect("chunk present");
     // The coarse-only reference: the same map meshed naively
     // with no fine knowledge.
     let coarse_only = map.mesh_chunk([0, 0], false).expect("chunk present");

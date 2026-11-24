@@ -130,7 +130,7 @@ fn pocket_face_counts_its_occluders() {
 fn mesher_applies_the_factor_per_face() {
     let (map, layer) = lone_prop();
     let scale = WorldScale::default();
-    let meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale).expect("chunk meshes");
+    let meshes = mesh_chunk_fine(&map, &layer, [0, 0], scale, false).expect("chunk meshes");
     let opaque = &meshes.meshes[Pass::Opaque.index()];
     let mut saw_plain = false;
     let mut saw_shaded = false;
