@@ -738,9 +738,12 @@ and a subset over a real socket. Settled points:
   fence. Companions seat as usual: `lighting` / `vehicles`
   apply to a wire world exactly as to a fixture world.
   Fixture-keyed inputs are not consulted for a wire world:
-  `textures` / `effects` (fake-id material tables) and the
-  Phase 9 fixture prop scenes (name-keyed) — the wire world's
-  blocks carry their resolver's colours already. Wire
+  `effects` (fake-id tables) and the Phase 9 fixture prop
+  scenes (name-keyed) — the wire world's blocks carry their
+  resolver's colours already. (`textures` joined the wire
+  path in Lane H, resolved by string id through the scene's
+  own material id map — never through the fake-id tables;
+  see the Lane H settlements below.) Wire
   fine-prop seating was, in v1, the snapshot path's own
   stamping into a caller-owned layer the frame loop did not
   carry; **Lane G closed that** — the wire scene now carries
@@ -798,8 +801,13 @@ and a subset over a real socket. Settled points:
   client's input-close rule, drain + Shutdown, joined at
   exit). Fixture companions (fake-house lighting/sky,
   vehicle/transient fixtures) are NOT seated over a wire
-  world; the windowed session's lighting is unseated in v1
-  (the capture path seats wire + grid today). The windowed
+  world. The wire world's OWN companions are, since Lane H:
+  the published scene carries the snapshot-derived lighting
+  scene + environment sample, and the app seats them per
+  fresh publish (lighting wholesale; the environment pushed
+  into the running sky scene on newer samples), which also
+  makes the cave-factor reseat live for wire sessions.
+  Vehicles/transients remain unseated in live mode. The windowed
   run itself is a desktop step — the headless proof is the
   gate: a real sim-server (street_block) + the client over a
   real socket, first frame captured from the live world at
@@ -861,6 +869,82 @@ and a subset over a real socket. Settled points:
   `wire_props_gate` (live stamp == Lane F derivation
   cell-for-cell; both renderers' live renders change with
   props attached).
+- **Lane H settlements (2026-11-24 — RT default, live GI,
+  wire textures; Joey's directives after Lane G: ray tracing
+  becomes the live launch's default renderer, global
+  illumination must work in the live session, and all models
+  must have textures):** (1) **RT default:** the launch
+  scripts launch the windowed engine with `--renderer rt`;
+  `-Renderer` / `--renderer` selects `raster` instead
+  (validated; the banner prints the renderer). The engine's
+  `--connect-window` session itself also defaults to RT when
+  no `--renderer` is given; the fixture app's raster default
+  is unchanged. This is Joey's explicit call, superseding
+  the earlier stance that raster stays default until RT
+  frame time is measured on his 9070 XT — the measurement
+  is still outstanding, now post-decision. (2) **Live GI:**
+  `LightingScene::from_snapshot` packages the capture
+  path's wire seating (grid via the proto adapter; bake
+  environment derived from the snapshot's piggybacked
+  environment — hour + weather classified from the
+  numerics, §2.1); `WireScene` carries the environment
+  sample + lighting scene (`from_wire` leaves both `None`,
+  so the parity build is untouched); `LiveWorld::wire_scene`
+  derives them from the same snapshot; `capture_args` seats
+  them; the windowed app seats them per fresh publish
+  (lighting wholesale, environment pushed into the running
+  sky on newer samples — the §2.3 cadence joint — which
+  also makes the existing cave-factor reseat live for wire
+  sessions). Both renderers consume the seated companions
+  through the one frame composition. Vehicles/transients
+  stay unseated. Gate `wire_gi_gate`, failing-first (the
+  pre-change production captures at noon and midnight were
+  byte-identical, mean luminance 90.9 both — the environment
+  never reached the frame): seating + exposure data pinned
+  (interior sheltered 0.0, yard exposed 1.0, from the game's
+  own outside verdicts), and in pixels on both renderers —
+  noon vs midnight mean luminance raster 155.0 vs 36.6, RT
+  93.6 vs 5.9; at noon the sheltered interior stays dimmer
+  than the exposed surround and the day/night swing lands
+  outside far more than inside (the Phase 7 ceiling rule in
+  pixel form). (3) **Wire textures:** `WireScene::material_ids`
+  (wire terrain id → string id for the snapshot's presented
+  defs + each presented def's `roof_result` target — roof
+  blocks carry the roof def's wire id and never appear in a
+  terrain array) joins a seated `--textures` table in both
+  renderers: raster via `wire_textured_spec` (the
+  `textured_spec` shape minus vehicles; the props arms take
+  the base spec the prop extension extends), RT via
+  id-map-parameterized cores of the variant/shore/blend/
+  attach helpers (the fake wrappers delegate, unchanged).
+  Both halves (dir + map) or neither: a textures dir on a
+  scene without a map renders byte-identical to no textures
+  (gate-pinned, both renderers), and without `--textures`
+  the world is exactly Lane G's. Resolution happens at
+  scene preparation, keyed by block id through the prebuilt
+  map — never per frame or per tile at mesh time. Two
+  recorded deviations from fixture order, both forced by
+  the wire id space: vehicles stamp AFTER the texture pass
+  in `prepare_raster_wire` (a wire vehicle block is an
+  unmapped stand-in whose sentinel id 1000 can collide with
+  a real wire terrain id), and `stamp_tex_layers` never
+  runs against the prop-only spec (its synthetic ids share
+  the wire numeric space). Coverage (gate
+  `wire_texture_gate`, real `assets/ultica_run1` table):
+  street_block presents 11 terrain defs, 7 resolve textured
+  (t_grass, t_pavement, t_floor, t_wall, t_door_c, t_window,
+  t_tree); the 4 flat ones (t_flat_roof, t_treetop,
+  t_wood_treated_roof, t_wood_roof — all roof/canopy defs)
+  are absent from the table itself, pinned by a per-def
+  tripwire (spec resolution == table membership, so a def
+  the table carries can never silently stay flat). Pixel
+  detail: distinct colours flat → textured, raster 38 → 846
+  (coarse) / 40 → 890 (props), RT 27 → 1,298 / 31 → 1,458,
+  with adjacency detail rising on both renderers. Fine
+  furniture models keep Lane G's seating; with the table
+  seated their stamped cells resolve through the same spec
+  the coarse world uses (the props arms' extend + RT
+  fine-id shift, the fixture props shape).
 
 ## 6. Test matrix — the user's named tests, plus the ones they imply
 
