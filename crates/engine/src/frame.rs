@@ -147,6 +147,32 @@ impl LightingScene {
         }
     }
 
+    /// A scene seated from a wire `Snapshot` (Phase 11
+    /// follow-up, Lane H — the live session's lighting): the
+    /// grid is the game's own lit/outside data via the proto
+    /// adapter (`grid_from_snapshot` — the same conversion the
+    /// capture path and the sim gates use), and the bake
+    /// environment is derived from the snapshot's piggybacked
+    /// environment — hour from `time_of_day_sec`, weather
+    /// classified from the resolved numerics
+    /// (`lighting::sky::classify_weather`, the §2.1 rule:
+    /// classification never reads the weather id). A snapshot
+    /// carrying no environment seats the grid under the
+    /// neutral bake environment: the grid is the game's light
+    /// truth either way, the environment only tempers it.
+    pub fn from_snapshot(snap: &proto::SnapshotT, min_game_z: i32) -> Self {
+        let grid = lighting::proto_adapter::grid_from_snapshot(snap);
+        let env = lighting::proto_adapter::game_environment_from_snapshot(snap)
+            .map(|ge| {
+                lighting::Environment::new(
+                    ge.time_of_day_sec / 3600.0,
+                    lighting::sky::classify_weather(&ge),
+                )
+            })
+            .unwrap_or_else(lighting::Environment::neutral);
+        Self::from_grid(grid, env, min_game_z)
+    }
+
     /// The fake house under the Phase 7 night-interior light grid
     /// (exterior `DARK`, lamp falloff inside, walls occluding),
     /// evaluated at `hour` in `weather`. The fixture grid
@@ -1571,11 +1597,12 @@ fn render_frame_inner(
     // Wire-fed source (Phase 11 follow-up, Lane A): a seated
     // `wire` scene replaces the fixture-name dispatch below —
     // its map was built from wire data by the caller, and its
-    // preparation is `scene_prep::prepare_raster_wire`. The
-    // fixture prop scenes are name-keyed, so a wire frame
-    // carries no fine props in v1 (see `prepare_raster_wire`).
-    // With no wire scene seated, the preparation is exactly
-    // the pre-Lane-A dispatch and the tail below is shared.
+    // preparation is `scene_prep::prepare_raster_wire`. Since
+    // Lane G the wire scene can carry its OWN furniture prop
+    // scene (derived from the snapshot, not name-keyed), and
+    // `prepare_raster_wire` stamps it. With no wire scene
+    // seated, the preparation is exactly the pre-Lane-A
+    // dispatch and the tail below is shared.
     let wire_prepared = match &args.wire {
         Some(w) => Some(
             crate::scene_prep::prepare_raster_wire(
@@ -1583,6 +1610,7 @@ fn render_frame_inner(
                 w,
                 args.lighting.as_ref(),
                 args.vehicles.as_ref(),
+                args.textures.as_deref(),
             )
             .map_err(CaptureError::Device)?,
         ),

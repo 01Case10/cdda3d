@@ -308,7 +308,14 @@ fn wire_fixture_world_diff_is_the_named_finding() {
                 diffs += 1;
                 let perimeter = x == 0 || x == 11 || y == 0 || y == 11;
                 let classified = (z == 3) // roof band: fixture slabs, wire window has no z+1
-                    || (perimeter && (z == 1 || z == 2)) // Full-height fixture shapes vs wire slab
+                    || (perimeter && (z == 1 || z == 2)) // authoring diffs extended upward:
+                    // both sides fill standing tiles since Lane G, so pure wall
+                    // tiles now MATCH; what remains here is the door/window
+                    // placement divergence rising through z 1..=2
+                    || (!perimeter && (z == 1 || z == 2)) // Lane G interior fill: the
+                    // wire builder fills a floor tile's whole level (the coarse
+                    // column is the tile's full occupancy); the hand-authored
+                    // fixture keeps interior headroom (air) above its floors
                     || (z == 0 && authoring.contains(&(x, y)));
                 if !classified {
                     unclassified.push((x, y, z));
@@ -320,12 +327,18 @@ fn wire_fixture_world_diff_is_the_named_finding() {
         unclassified.is_empty(),
         "fixture/wire diff has unclassified cells (the named finding no longer covers it): {unclassified:?}"
     );
-    // 44 perimeter tiles x 2 (z 1..=2) + 144 roof-band cells
-    // (z 3) + 6 authoring cells (z 0).
-    assert_eq!(diffs, 238, "fixture/wire world diff count changed");
+    // 144 roof-band cells (z 3) + 100 interior tiles x 2
+    // (Lane G fill, z 1..=2) + 6 authoring tiles x 2
+    // (perimeter, z 1..=2) + 6 authoring cells (z 0) = 362.
+    // Was 238 before Lane G: the interior-fill class added
+    // 200, and the old 88-cell perimeter-height class
+    // collapsed to 12 (the authoring tiles only) because
+    // both sides now fill standing tiles — pure wall tiles
+    // match for the first time.
+    assert_eq!(diffs, 362, "fixture/wire world diff count changed");
     println!(
         "fixture vs wire world diff: {diffs} cells, all inside the named finding \
-         (roof band 144, perimeter height 88, authoring 6)"
+         (roof band 144, interior fill 200, authoring 6 + 12 upward)"
     );
 }
 
@@ -365,6 +378,7 @@ fn connect_session_captures_live_wire_world() {
                 end: Some(end_png.clone()),
                 size: (640, 360),
             }),
+            models_dir: None,
         },
     );
 

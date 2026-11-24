@@ -21,10 +21,18 @@
 //! stored `Snapshot` with [`apply_delta_to_snapshot`] and
 //! rebuilds the `WireScene`, so the seated world is the
 //! delta-fed state, not just the connect-time snapshot.
+//!
+//! GI companions (Lane H): a scene built by the live session
+//! (`client::LiveWorld::wire_scene`) also carries the wire
+//! environment sample and the lighting scene derived from the
+//! same snapshot, so a consumer (the windowed app, a live
+//! capture) seats Phase 10 sky + GI from the wire data itself.
+//! [`WireScene::from_wire`] leaves both `None` — it stays the
+//! pure world build the parity gates pin.
 
 use std::sync::Arc;
 
-use mesher::block::Block;
+use mesher::block::{Block, Pass};
 use mesher::chunk::ChunkMap;
 use mesher::scale::WorldScale;
 
@@ -44,6 +52,46 @@ use crate::snapshot_world::build_snapshot_world;
 pub struct WireScene {
     pub map: Arc<ChunkMap>,
     pub min_game_z: i32,
+    /// Furniture fine models for this world (Lane G),
+    /// derived from the same snapshot by
+    /// [`prop_scene_for_wire`] when the caller has the
+    /// voxelizer model table. `None` = the coarse-only wire
+    /// world (the pre-Lane-G seating). The frame paths stamp
+    /// it through the same `stamp_props_into` pipeline the
+    /// fixture prop scenes take.
+    pub props: Option<crate::frame::PropScene>,
+    /// The wire environment sample this world was built from
+    /// (Lane H): the snapshot's piggybacked
+    /// `EnvironmentUpdate`, converted by the lighting proto
+    /// adapter. A consumer seats its sky scene from it
+    /// (`SkyScene::new` / `SkyScene::push` on newer samples).
+    /// `None` = the snapshot carried no environment (or the
+    /// scene was built by [`WireScene::from_wire`] directly,
+    /// which leaves the companions unseated by design).
+    pub environment: Option<lighting::GameEnvironment>,
+    /// The lighting scene derived from the same snapshot
+    /// (Lane H): the game's lit/outside grids via
+    /// `LightingScene::from_snapshot`, sky exposure included.
+    /// Seated into `CaptureArgs::lighting` by the live
+    /// consumers, so both renderers apply the Phase 7 ceiling
+    /// rule + Phase 10 GI to the wire world. `None` as for
+    /// [`WireScene::environment`].
+    pub lighting: Option<crate::frame::LightingScene>,
+    /// Terrain material resolution for this world (Lane H):
+    /// wire terrain id -> def string id, for exactly the
+    /// terrain defs this snapshot presents (its terrain
+    /// arrays' ids, plus each presented def's `roof_result`
+    /// target — the roof blocks the builder stamps carry the
+    /// roof def's wire id). The frame paths join it with a
+    /// seated voxelizer material table (`CaptureArgs::textures`)
+    /// to build the texture spec keyed by the map's block ids
+    /// — the wire form of the fixture paths' fake-id map.
+    /// Derived from `defs` alone in [`WireScene::from_wire`]
+    /// (no table is consulted at build time); `None` for
+    /// scenes wrapped by [`WireScene::from_map`], which has
+    /// no def table. A frame path with a textures dir but no
+    /// material ids renders exactly the untextured world.
+    pub material_ids: Option<std::collections::HashMap<u32, String>>,
 }
 
 impl WireScene {
@@ -57,7 +105,9 @@ impl WireScene {
         block_for: &dyn Fn(u32) -> Block,
     ) -> Self {
         let map = build_snapshot_world(defs, snapshot, WorldScale::default(), block_for);
-        Self::from_map(map, snapshot)
+        let mut scene = Self::from_map(map, snapshot);
+        scene.material_ids = Some(material_ids_for(defs, snapshot));
+        scene
     }
 
     /// Wrap an already-built snapshot world (built by
@@ -78,6 +128,264 @@ impl WireScene {
         Self {
             map: Arc::new(map),
             min_game_z,
+            props: None,
+            environment: None,
+            lighting: None,
+            material_ids: None,
+        }
+    }
+
+    /// Attach the furniture prop scene derived from this
+    /// scene's own snapshot (see [`prop_scene_for_wire`]).
+    pub fn with_props(mut self, props: Option<crate::frame::PropScene>) -> Self {
+        self.props = props;
+        self
+    }
+
+    /// Attach the GI companions derived from this scene's
+    /// own snapshot (Lane H — see the field docs): the wire
+    /// environment sample and the snapshot's lighting scene.
+    pub fn with_companions(
+        mut self,
+        environment: Option<lighting::GameEnvironment>,
+        lighting: Option<crate::frame::LightingScene>,
+    ) -> Self {
+        self.environment = environment;
+        self.lighting = lighting;
+        self
+    }
+}
+
+/// Derive the furniture prop scene for a wire world from its
+/// snapshot (Lane G): every non-zero furniture cell of every
+/// `SubmapBlock` becomes a placement at its world tile
+/// (block origins are tile coords of the submap's corner),
+/// at level `block.z - snapshot min z`; the furniture def's
+/// STRING id resolves the model in the one real voxelizer
+/// table (`table`, 351 furniture models) — the Lane F
+/// derivation, shared now by the live path instead of being
+/// re-implemented per gate.
+///
+/// PropScene model ids are scene-local: the modelled defs'
+/// string ids are sorted and numbered from 1, and placements
+/// carry those ids. Furniture with no model in the table is
+/// NOT placed (it stays coarse-suppressed per the 9.0
+/// contract's other half — no fabricated geometry; it is
+/// also not stamped as a coarse cube). Returns `None` when
+/// no placement resolves to a model.
+pub fn prop_scene_for_wire(
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+    table: &crate::materials::MaterialTable,
+) -> Option<crate::frame::PropScene> {
+    use std::collections::BTreeMap;
+    let strings: std::collections::HashMap<u32, String> = defs
+        .defs
+        .as_ref()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|d| d.kind == proto::TileKind::Furniture)
+        .filter_map(|d| d.string_id.clone().map(|s| (d.id, s)))
+        .collect();
+    let blocks = snapshot.blocks.as_ref().map(Vec::as_slice).unwrap_or(&[]);
+    let min_z = blocks
+        .iter()
+        .map(|b| b.origin.as_ref().map(|o| o.z).unwrap_or(0))
+        .min()
+        .unwrap_or(0);
+    // Modelled furniture defs present in the snapshot:
+    // string id -> model (BTreeMap = sorted = deterministic
+    // synthetic ids).
+    let mut modelled: BTreeMap<String, crate::materials::PropModelData> = BTreeMap::new();
+    let mut cells: Vec<(i32, i32, u32, String)> = Vec::new();
+    for block in blocks {
+        let (ox, oy, oz) = block
+            .origin
+            .as_ref()
+            .map(|o| (o.x, o.y, o.z))
+            .unwrap_or((0, 0, 0));
+        for (i, &f) in block
+            .furniture
+            .as_ref()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            if f == 0 {
+                continue;
+            }
+            let Some(sid) = strings.get(&f) else {
+                continue;
+            };
+            let Some(model) = table.get(sid).and_then(|m| m.model.as_ref()) else {
+                continue;
+            };
+            modelled
+                .entry(sid.clone())
+                .or_insert_with(|| model.clone());
+            cells.push((
+                ox + (i % 12) as i32,
+                oy + (i / 12) as i32,
+                (oz - min_z) as u32,
+                sid.clone(),
+            ));
+        }
+    }
+    if cells.is_empty() {
+        return None;
+    }
+    let ids: std::collections::HashMap<String, u32> = modelled
+        .keys()
+        .enumerate()
+        .map(|(i, s)| (s.clone(), (i + 1) as u32))
+        .collect();
+    let models: Vec<(u32, crate::materials::PropModelData)> = modelled
+        .into_iter()
+        .enumerate()
+        .map(|(i, (_s, m))| ((i + 1) as u32, m))
+        .collect();
+    let placements = cells
+        .into_iter()
+        .map(|(x, y, level, sid)| crate::snapshot_world::FurniturePlacement {
+            x,
+            y,
+            level,
+            furn_id: ids[&sid],
+            quarter_turns: 0,
+        })
+        .collect();
+    Some(crate::frame::PropScene { models, placements })
+}
+
+/// The terrain material id map for a wire world (Lane H —
+/// see [`WireScene::material_ids`]): the terrain defs the
+/// snapshot presents, keyed wire id -> string id. Presentation
+/// is read off the snapshot's terrain arrays; each presented
+/// def's `roof_result` target joins too (the builder stamps
+/// roof blocks under the roof def's own wire id, and that id
+/// never appears in a terrain array). Defs without a string
+/// id cannot resolve in any table and are omitted.
+fn material_ids_for(
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+) -> std::collections::HashMap<u32, String> {
+    let mut by_id: std::collections::HashMap<u32, &proto::TileDefT> =
+        std::collections::HashMap::new();
+    let mut by_string: std::collections::HashMap<&str, u32> =
+        std::collections::HashMap::new();
+    if let Some(list) = &defs.defs {
+        for d in list {
+            if d.kind == proto::TileKind::Terrain {
+                by_id.insert(d.id, d);
+                if let Some(s) = &d.string_id {
+                    by_string.insert(s.as_str(), d.id);
+                }
+            }
+        }
+    }
+    let mut out: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+    let mut present: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    if let Some(blocks) = &snapshot.blocks {
+        for b in blocks {
+            if let Some(terrain) = &b.terrain {
+                present.extend(terrain.iter().copied().filter(|&id| id != 0));
+            }
+        }
+    }
+    for id in present {
+        let Some(def) = by_id.get(&id) else { continue };
+        let Some(sid) = &def.string_id else { continue };
+        out.insert(id, sid.clone());
+        if let Some(roof) = &def.roof_result {
+            if let Some(&roof_id) = by_string.get(roof.as_str()) {
+                out.entry(roof_id).or_insert_with(|| roof.clone());
+            }
+        }
+    }
+    out
+}
+
+/// The live wire palette (Phase 11 follow-up, Lane G): one
+/// deterministic colour per terrain def, keyed by the def's
+/// STRING id — the only join key that means the same thing on
+/// every side of the wire (wire ids are per-kind and renumber
+/// between tables). The colour is an FNV-1a hash of the string
+/// id mapped into a constrained HSL band (saturation
+/// 0.38..0.68, lightness 0.36..0.60), so colours are stable
+/// across runs and machines, distinct per def, and never
+/// garish or near-black/near-white.
+///
+/// This is honest colour-CODING, not the game's colours: it
+/// exists so a live wire world is readable (grass vs road vs
+/// floor vs wall are different hues) until semantic colours
+/// land — CDDA's own per-def `color` field is not currently
+/// imported into the wire def table, so there is nothing
+/// truer to show yet. When that import lands, this palette
+/// is the thing it replaces.
+pub fn palette_color(string_id: &str) -> [f32; 4] {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in string_id.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let hue = (hash % 360) as f32;
+    let sat = 0.38 + ((hash >> 9) % 100) as f32 / 100.0 * 0.30;
+    let light = 0.36 + ((hash >> 17) % 100) as f32 / 100.0 * 0.24;
+    let [r, g, b] = hsl_to_rgb(hue, sat, light);
+    [r, g, b, 1.0]
+}
+
+fn hsl_to_rgb(hue: f32, sat: f32, light: f32) -> [f32; 3] {
+    let c = (1.0 - (2.0 * light - 1.0).abs()) * sat;
+    let x = c * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+    let m = light - c / 2.0;
+    let (r, g, b) = match hue {
+        h if h < 60.0 => (c, x, 0.0),
+        h if h < 120.0 => (x, c, 0.0),
+        h if h < 180.0 => (0.0, c, x),
+        h if h < 240.0 => (0.0, x, c),
+        h if h < 300.0 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    [r + m, g + m, b + m]
+}
+
+/// The `block_for` resolver form of [`palette_color`] for a
+/// whole def table: terrain wire id -> that def's palette
+/// block (the block keeps the wire id; only the colour is
+/// derived). Id 0 ("none") resolves to AIR, matching the
+/// gates' resolver convention; a terrain id with no string
+/// id (a malformed table) hashes its `#<id>` placeholder, so
+/// it still gets a stable colour instead of a hole.
+pub fn palette_resolver(defs: &proto::TileDefsT) -> impl Fn(u32) -> Block + '_ {
+    let mut colors: std::collections::HashMap<u32, [f32; 4]> =
+        std::collections::HashMap::new();
+    if let Some(list) = &defs.defs {
+        for d in list {
+            if d.kind == proto::TileKind::Terrain {
+                let key = d
+                    .string_id
+                    .clone()
+                    .unwrap_or_else(|| format!("#{}", d.id));
+                colors.insert(d.id, palette_color(&key));
+            }
+        }
+    }
+    move |id: u32| {
+        if id == 0 {
+            return Block::AIR;
+        }
+        let color = colors
+            .get(&id)
+            .copied()
+            .unwrap_or_else(|| palette_color(&format!("#{id}")));
+        Block {
+            id,
+            color,
+            pass: Pass::Opaque,
+            tex_layers: None,
         }
     }
 }

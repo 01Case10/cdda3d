@@ -7,6 +7,11 @@
 #   tools/pc-build/launch-sim.sh [--scene <name>] [--seed <n>]
 #                                [--record <path>] [--skip-build]
 #                                [--debug] [--headless] [--socket <path>]
+#                                [--renderer rt|raster]
+#
+# --renderer picks the windowed renderer: rt (ray tracing) is the
+# default since Lane H (Joey's call, 2026-11-24); pass raster for
+# the greedy-mesher renderer.
 #
 # What it does, in order:
 #   1. Builds the release binaries (sim-server + voxel-engine).
@@ -37,6 +42,7 @@ RECORD=""
 PROFILE=release
 SKIP_BUILD=0
 HEADLESS=0
+RENDERER=rt
 SOCK=/tmp/cdda-sim.sock
 
 while [ $# -gt 0 ]; do
@@ -44,6 +50,7 @@ while [ $# -gt 0 ]; do
     --scene) SCENE="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
     --record) RECORD="$2"; shift 2 ;;
+    --renderer) RENDERER="$2"; shift 2 ;;
     --socket) SOCK="$2"; shift 2 ;;
     --debug) PROFILE=debug; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
@@ -51,6 +58,11 @@ while [ $# -gt 0 ]; do
     *) echo "launch-sim.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+case "$RENDERER" in
+  rt|raster) ;;
+  *) echo "launch-sim.sh: --renderer must be rt|raster (got '$RENDERER')" >&2; exit 2 ;;
+esac
 
 # The proto crate's build.rs needs flatc exactly 24.3.25 (located via
 # $FLATC, project-local copies, then PATH). Fail early with the fix
@@ -106,8 +118,15 @@ if [ "$HEADLESS" -eq 1 ]; then
   printf 'jjojjjQ' | "$BIN_DIR/voxel-engine" --connect "$SOCK"
   STATUS=$?
 else
-  echo "== launching renderer: voxel-engine --connect-window (close the window to end) =="
-  "$BIN_DIR/voxel-engine" --connect-window "$SOCK"
+  echo "== launching renderer: voxel-engine --connect-window (renderer: $RENDERER; close the window to end) =="
+  ENGINE_ARGS=(--connect-window "$SOCK" --renderer "$RENDERER")
+  if [ -f assets/ultica_run1/materials.json ]; then
+    ENGINE_ARGS+=(--textures assets/ultica_run1)
+    echo "   live furniture props: ON (model table found in assets/ultica_run1)"
+  else
+    echo "   live furniture props: OFF (no assets/ultica_run1/materials.json -- extract the models pack there to enable)"
+  fi
+  "$BIN_DIR/voxel-engine" "${ENGINE_ARGS[@]}"
   STATUS=$?
 fi
 

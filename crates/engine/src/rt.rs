@@ -67,9 +67,21 @@ pub fn prepare_fake_variants(
     world: &mut VoxelWorld,
     dir: &std::path::Path,
 ) -> Result<Vec<treebuild::connect::VariantAssignment>, CaptureError> {
+    prepare_variants_with(world, dir, &fake_material_ids())
+}
+
+/// [`prepare_fake_variants`] keyed by a caller-supplied id
+/// map (numeric block id -> game string id) — the wire
+/// world's form (Lane H), where the numeric ids are wire
+/// terrain ids and the map is the scene's
+/// [`crate::wire::WireScene::material_ids`].
+pub fn prepare_variants_with(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+    id_map: &std::collections::HashMap<u32, String>,
+) -> Result<Vec<treebuild::connect::VariantAssignment>, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let id_map = fake_material_ids();
     let multitile_ids: std::collections::HashSet<u32> = id_map
         .iter()
         .filter(|(_, game_id)| {
@@ -101,9 +113,18 @@ pub fn prepare_fake_shore_variants(
     world: &mut VoxelWorld,
     dir: &std::path::Path,
 ) -> Result<Vec<crate::shore::ShoreAssignment>, CaptureError> {
+    prepare_shore_variants_with(world, dir, &fake_material_ids())
+}
+
+/// [`prepare_fake_shore_variants`] keyed by a caller-supplied
+/// id map — the wire world's form (Lane H).
+pub fn prepare_shore_variants_with(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+    id_map: &std::collections::HashMap<u32, String>,
+) -> Result<Vec<crate::shore::ShoreAssignment>, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let id_map = fake_material_ids();
     let water_ids: std::collections::HashSet<u32> = id_map
         .iter()
         .filter(|(_, game_id)| {
@@ -131,9 +152,18 @@ pub fn prepare_fake_blend_variants(
     world: &mut VoxelWorld,
     dir: &std::path::Path,
 ) -> Result<Vec<crate::blend::BlendAssignment>, CaptureError> {
+    prepare_blend_variants_with(world, dir, &fake_material_ids())
+}
+
+/// [`prepare_fake_blend_variants`] keyed by a caller-supplied
+/// id map — the wire world's form (Lane H).
+pub fn prepare_blend_variants_with(
+    world: &mut VoxelWorld,
+    dir: &std::path::Path,
+    id_map: &std::collections::HashMap<u32, String>,
+) -> Result<Vec<crate::blend::BlendAssignment>, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let id_map = fake_material_ids();
     let macro_spans: std::collections::HashMap<u32, u32> = id_map
         .iter()
         .filter_map(|(num, game_id)| {
@@ -165,9 +195,36 @@ pub fn attach_fake_textures(
     blend_assignments: &[crate::blend::BlendAssignment],
     veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
 ) -> Result<crate::textures::TextureStats, CaptureError> {
+    attach_textures_with(
+        device,
+        queue,
+        scene,
+        dir,
+        &fake_material_ids(),
+        assignments,
+        shore_assignments,
+        blend_assignments,
+        veh_mats,
+    )
+}
+
+/// [`attach_fake_textures`] keyed by a caller-supplied id
+/// map — the wire world's form (Lane H).
+#[allow(clippy::too_many_arguments)]
+pub fn attach_textures_with(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    scene: &mut treebuild::render::RtScene,
+    dir: &std::path::Path,
+    base_id_map: &std::collections::HashMap<u32, String>,
+    assignments: &[treebuild::connect::VariantAssignment],
+    shore_assignments: &[crate::shore::ShoreAssignment],
+    blend_assignments: &[crate::blend::BlendAssignment],
+    veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
+) -> Result<crate::textures::TextureStats, CaptureError> {
     let table = crate::materials::MaterialTable::load(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
-    let mut id_map = fake_material_ids();
+    let mut id_map = base_id_map.clone();
     if let Some(vm) = veh_mats {
         id_map.extend(vm.id_map.iter().map(|(k, v)| (*k, v.clone())));
     }
@@ -546,8 +603,15 @@ fn render_rt_frame_inner(
     // Wire-fed source (Phase 11 follow-up, Lane A): the props
     // path builds its worlds from fixture builders, so a wire
     // frame takes the coarse path below regardless of the
-    // prop inputs (the fixture-name dispatch is untouched when
-    // no wire scene is seated).
+    // FIXTURE prop inputs (the fixture-name dispatch is
+    // untouched when no wire scene is seated). Since Lane G
+    // a wire scene can carry its OWN prop scene (derived
+    // from its snapshot), which takes the wire props path.
+    if let Some(wire) = &args.wire {
+        if let Some(props) = &wire.props {
+            return render_rt_frame_wire_props(device, queue, args, wire, props, sky, emitters);
+        }
+    }
     if args.wire.is_none() {
         if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
             return render_rt_frame_props(device, queue, args, props, sky, emitters);
@@ -572,8 +636,11 @@ fn render_rt_frame_inner(
     // and the vehicles render flat, byte-identical to before.
     // The fixture texture hookups (vehicle materials, variant
     // / shore / blend preparation, texture attach below) are
-    // keyed to the fake tile ids; a wire world skips all of
-    // them in v1 and renders its resolver's flat colours.
+    // keyed to the fake tile ids. A wire world takes the same
+    // hookups keyed by its own material id map (Lane H —
+    // wire terrain id -> string id) when a textures dir is
+    // seated; without the map it renders its resolver's flat
+    // colours, exactly as in v1.
     let wire = args.wire.as_ref();
     let veh_mats = match (wire, &args.textures, &args.vehicles) {
         (None, Some(dir), Some(v)) => {
@@ -619,6 +686,10 @@ fn render_rt_frame_inner(
     // world is untouched, byte-for-byte the pre-blend render.
     let blend_assignments = match (wire, &args.textures) {
         (None, Some(dir)) => prepare_fake_blend_variants(&mut voxel_world, dir)?,
+        (Some(w), Some(dir)) => match &w.material_ids {
+            Some(ids) => prepare_blend_variants_with(&mut voxel_world, dir, ids)?,
+            None => Vec::new(),
+        },
         _ => Vec::new(),
     };
     let built = build_tree(&voxel_world, BuildConfig::default())
@@ -642,6 +713,20 @@ fn render_rt_frame_inner(
             &blend_assignments,
             veh_mats.as_ref(),
         )?),
+        (Some(w), Some(dir)) => match &w.material_ids {
+            Some(ids) => Some(attach_textures_with(
+                device,
+                queue,
+                &mut scene,
+                dir,
+                ids,
+                &assignments,
+                &shore_assignments,
+                &blend_assignments,
+                None,
+            )?),
+            None => None,
+        },
         _ => None,
     };
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
@@ -935,6 +1020,177 @@ fn render_rt_frame_props(
         None => {
             // `prep_prop_spec` already built the prop-only spec
             // at the stamp-time base id — no shift needed.
+            if prep.colors.is_empty() {
+                None
+            } else {
+                spec_opt
+            }
+        }
+    };
+    let built = build_tree(&coarse_world, BuildConfig::default())
+        .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
+    let fine_built = if fine_world.is_empty() {
+        None
+    } else {
+        Some(
+            build_tree(&fine_world, BuildConfig::default())
+                .map_err(|e| CaptureError::Device(format!("treebuild fine: {e}")))?,
+        )
+    };
+    let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let (renderer, mut scene) =
+        RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
+    if let Some(sky) = sky {
+        scene.set_sky(queue, sky);
+    }
+    if let Some(e) = emitters {
+        scene.set_emitters(queue, e);
+    }
+    if let Some(spec) = &attach_spec {
+        scene
+            .attach_textures(device, queue, spec)
+            .map_err(CaptureError::Device)?;
+    }
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let aspect = width as f32 / height as f32;
+    let camera = capture_camera(args, aspect);
+    let frame = if args.macro_debug_height {
+        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
+    } else {
+        renderer.render(device, queue, &scene, &camera, (width, height), true)
+    };
+    device.poll(wgpu::Maintain::Wait);
+    Ok(RtFrameOut {
+        color: frame.color,
+        depth: frame.depth,
+        max_dist: frame.max_dist,
+        camera,
+        size: (width, height),
+        leaves: built.leaf_count(),
+        nodes: built.node_count(),
+        fine_leaves: fine_built.as_ref().map(|b| b.leaf_count()).unwrap_or(0),
+        fine_nodes: fine_built.as_ref().map(|b| b.node_count()).unwrap_or(0),
+        build_ms,
+        texture_stats,
+    })
+}
+
+/// The wire form of [`render_rt_frame_props`] (Lane G): the
+/// same two-tree build (coarse world + fine prop world, lit
+/// rewrites, fine occlusion) over the wire scene's map and
+/// its own snapshot-derived prop scene. The fixture-keyed
+/// steps of the fixture form do not exist here: no terrain
+/// extension (fixture-keyed to the texture pass), vehicles
+/// stamp through the wire path's mapped form, exactly as
+/// [`world_from_wire`] stamps them. Textures (Lane H): with
+/// a textures dir and the scene's material id map, the
+/// coarse world takes the full texture spec + variant
+/// preparation keyed by wire ids (the fixture form's shape
+/// with the fake id map swapped for the wire one); without
+/// either, the wire world renders its resolver's flat
+/// colours + the prop-only spec, exactly as Lane G left it.
+fn render_rt_frame_wire_props(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    wire: &crate::wire::WireScene,
+    props: &crate::frame::PropScene,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+) -> Result<RtFrameOut, CaptureError> {
+    let t0 = Instant::now();
+    let levels = capture_visible_levels(args.cutaway_z);
+    let scale = mesher::scale::WorldScale::default();
+    let mut filtered = world::filtered_map(&wire.map, wire.min_game_z, &levels);
+    if let Some(v) = &args.vehicles {
+        crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, None);
+    }
+    let kept: Vec<crate::snapshot_world::FurniturePlacement>;
+    let placements: &[crate::snapshot_world::FurniturePlacement] = match &args.lighting {
+        Some(lit) => {
+            crate::scene_prep::apply_visibility_mask(&mut filtered, lit);
+            kept = props
+                .placements
+                .iter()
+                .copied()
+                .filter(|p| {
+                    let slab_z = scale.level_base_block(p.level) as i32;
+                    !filtered.block_at(p.x, p.y, slab_z).is_air()
+                })
+                .collect();
+            &kept
+        }
+        None => &props.placements,
+    };
+    // Lane H texture seating: both halves (dir + id map) or
+    // neither, as everywhere on the wire path.
+    let tex_ids = match (&args.textures, &wire.material_ids) {
+        (Some(dir), Some(ids)) => Some((dir, ids)),
+        _ => None,
+    };
+    let mut spec_opt = match tex_ids {
+        Some((dir, ids)) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (spec, _stats) = crate::textures::build_texture_spec(&table, dir, ids)
+                .map_err(CaptureError::Device)?;
+            Some(spec)
+        }
+        None => None,
+    };
+    let prep = crate::scene_prep::prep_prop_spec(props, &mut spec_opt);
+    let layer = crate::scene_prep::stamp_props_into(&mut filtered, placements, props, &prep, scale)
+        .map_err(CaptureError::Device)?;
+    let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
+    let mut fine_world = VoxelWorld::from_fine_layer(&layer);
+    if let Some(lit) = &args.lighting {
+        let exposure = SkyExposure::from_grid(&lit.grid, lit.min_game_z);
+        coarse_world = lit_rewrite(&coarse_world, lit, false, &exposure);
+        fine_world = lit_rewrite(&fine_world, lit, true, &exposure);
+        fine_world = fine_occlusion_rewrite(&fine_world, &filtered, &layer);
+    }
+    let assignments = match tex_ids {
+        Some((dir, ids)) => prepare_variants_with(&mut coarse_world, dir, ids)?,
+        None => Vec::new(),
+    };
+    let shore_assignments = match tex_ids {
+        Some((dir, ids)) => prepare_shore_variants_with(&mut coarse_world, dir, ids)?,
+        None => Vec::new(),
+    };
+    let blend_assignments = match tex_ids {
+        Some((dir, ids)) => prepare_blend_variants_with(&mut coarse_world, dir, ids)?,
+        None => Vec::new(),
+    };
+    let mut texture_stats = None;
+    let attach_spec: Option<treebuild::render::TextureSpec> = match tex_ids {
+        Some((dir, ids)) => {
+            let table = crate::materials::MaterialTable::load(dir)
+                .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
+            let (mut spec, stats) = crate::textures::build_texture_spec_variants(
+                &table,
+                dir,
+                ids,
+                &assignments,
+                &shore_assignments,
+                &blend_assignments,
+            )
+            .map_err(CaptureError::Device)?;
+            texture_stats = Some(stats);
+            if !prep.colors.is_empty() {
+                let final_base = spec.material_layers.len() as u32;
+                crate::textures::extend_texture_spec_with_props(
+                    &mut spec,
+                    &prep.colors,
+                    final_base,
+                );
+                shift_fine_ids(&mut fine_world, prep.base_id, final_base);
+            }
+            Some(spec)
+        }
+        // Untextured: `prep_prop_spec` already built the
+        // prop-only spec at the stamp-time base id — no
+        // shift needed.
+        None => {
             if prep.colors.is_empty() {
                 None
             } else {

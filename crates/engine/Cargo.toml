@@ -22,6 +22,7 @@ ui-share = { path = "../ui-share" }
 billboard = { path = "../billboard" }
 lighting = { path = "../lighting" }
 vehicles = { path = "../vehicles" }
+voxelizer = { path = "../voxelizer" }
 transient = { path = "../transient" }
 hardcases = { path = "../hardcases" }
 glam = "0.29"
@@ -47,3 +48,6 @@ tileset = { path = "../tileset" }
 # in-process and compare their wire-ingested worlds against the
 # proto sample fixtures.
 sim = { path = "../sim" }
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1"
