@@ -615,8 +615,11 @@ impl<'a> FineSampler<'a> {
 /// prop and wall drops toward 0.67, a face boxed in on
 /// all sides to the 0.56 floor. Opacity here is
 /// `Pass::Opaque` only — glass and cutout do not occlude.
-pub fn face_occlusion(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dir: [i32; 3]) -> f32 {
-    let a = [fx + dir[0], fy + dir[1], fz + dir[2]];
+/// The occluder count around air position `a` for a face
+/// looking along `dir` (the counting core of
+/// [`face_occlusion`]): the opaque cells beside `a` in the
+/// face plane plus the cell straight ahead at `a + dir`.
+fn occlusion_count(sampler: &FineSampler, a: [i32; 3], dir: [i32; 3]) -> u32 {
     let opaque = |p: [i32; 3]| {
         let b = sampler.block_at_fine(p[0], p[1], p[2]);
         !b.is_air() && b.pass == Pass::Opaque
@@ -637,7 +640,49 @@ pub fn face_occlusion(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dir: [i3
     if opaque([a[0] + dir[0], a[1] + dir[1], a[2] + dir[2]]) {
         count += 1;
     }
+    count
+}
+
+fn occlusion_factor(count: u32) -> f32 {
     (1.0 - 0.11 * count as f32).max(0.56)
+}
+
+pub fn face_occlusion(sampler: &FineSampler, fx: i32, fy: i32, fz: i32, dir: [i32; 3]) -> f32 {
+    let a = [fx + dir[0], fy + dir[1], fz + dir[2]];
+    occlusion_factor(occlusion_count(sampler, a, dir))
+}
+
+/// Per-corner occlusion (docs/fine-slope-normals.md §12):
+/// the [`face_occlusion`] counting rule run from the air
+/// cell diagonally in front of one face corner — the front
+/// cell that has the corner vertex on its back face, one
+/// cell beyond the face's own front cell in each in-plane
+/// axis toward the corner (`corner` is the face's
+/// `FACE_CORNERS` entry for the corner, components in
+/// {0, 1}; the component along `dir` is fixed by the face
+/// and ignored). Where the flat form stamps one factor on
+/// the whole face — a uniform dark notch on the tread
+/// beside a 1-cell step — the corner form reads the step
+/// only at the corners whose front cell sits against it,
+/// so the rasteriser interpolates a gradient across the
+/// tread. Same 0.11 step and 0.56 floor as the flat form;
+/// a corner in the open keeps 1.0 exactly.
+pub fn corner_occlusion(
+    sampler: &FineSampler,
+    fx: i32,
+    fy: i32,
+    fz: i32,
+    dir: [i32; 3],
+    corner: [f32; 3],
+) -> f32 {
+    let mut a = [fx + dir[0], fy + dir[1], fz + dir[2]];
+    for axis in 0..3 {
+        if dir[axis] != 0 {
+            continue;
+        }
+        a[axis] += if corner[axis] > 0.5 { 1 } else { -1 };
+    }
+    occlusion_factor(occlusion_count(sampler, a, dir))
 }
 
 /// A stamped cell's overall occlusion: the mean of
@@ -1057,20 +1102,42 @@ pub fn mesh_chunk_fine(
                             // face in the open keeps factor
                             // 1.0 — its colour is the cell's
                             // own, byte-identical to the
-                            // pre-pass mesher.
-                            let occ = face_occlusion(&sampler, fx, fy, fz, *dir);
-                            let color = if occ >= 1.0 {
-                                cell.color
-                            } else {
-                                [
-                                    cell.color[0] * occ,
-                                    cell.color[1] * occ,
-                                    cell.color[2] * occ,
-                                    cell.color[3],
-                                ]
+                            // pre-pass mesher. Under the
+                            // slope opt-in the factor is
+                            // PER-CORNER (docs/fine-slope-
+                            // normals.md §12): each corner
+                            // counts the occluders around
+                            // its own front cell, so a step
+                            // darkens only the tread corners
+                            // beside it and the factor
+                            // interpolates across the face
+                            // instead of stamping one flat
+                            // notch. Flag off keeps the
+                            // legacy flat per-face factor
+                            // exactly.
+                            let shade = |occ: f32| {
+                                if occ >= 1.0 {
+                                    cell.color
+                                } else {
+                                    [
+                                        cell.color[0] * occ,
+                                        cell.color[1] * occ,
+                                        cell.color[2] * occ,
+                                        cell.color[3],
+                                    ]
+                                }
                             };
-                            match (layer_for_dir(cell, di), corner_normals) {
-                                (Some(tex_layer), cn) => {
+                            let corner_colors: [[f32; 4]; 4] = if slope_normals {
+                                FACE_CORNERS[di].map(|c| {
+                                    shade(corner_occlusion(&sampler, fx, fy, fz, *dir, c))
+                                })
+                            } else {
+                                let occ = face_occlusion(&sampler, fx, fy, fz, *dir);
+                                [shade(occ); 4]
+                            };
+                            let normals4 = corner_normals.unwrap_or([normal; 4]);
+                            match layer_for_dir(cell, di) {
+                                Some(tex_layer) => {
                                     let quad_min =
                                         [fx as f32 * inv, fy as f32 * inv, fz as f32 * inv];
                                     let uvs = quad_uvs(
@@ -1080,19 +1147,19 @@ pub fn mesh_chunk_fine(
                                         [inv, inv, inv],
                                         tex_layer,
                                     );
-                                    match cn {
-                                        Some(cn) => mesh.push_quad_textured_per_corner(
-                                            corners, cn, color, uvs, tex_layer,
-                                        ),
-                                        None => mesh.push_quad_textured(
-                                            corners, normal, color, uvs, tex_layer,
-                                        ),
-                                    }
+                                    mesh.push_quad_textured_per_corner_colors(
+                                        corners,
+                                        normals4,
+                                        corner_colors,
+                                        uvs,
+                                        tex_layer,
+                                    );
                                 }
-                                (None, Some(cn)) => {
-                                    mesh.push_quad_per_corner(corners, cn, color)
-                                }
-                                (None, None) => mesh.push_quad(corners, normal, color),
+                                None => mesh.push_quad_per_corner_colors(
+                                    corners,
+                                    normals4,
+                                    corner_colors,
+                                ),
                             }
                         }
                     }

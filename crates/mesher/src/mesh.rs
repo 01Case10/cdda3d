@@ -220,11 +220,45 @@ impl Mesh {
         uvs: [[f32; 2]; 4],
         layer: u32,
     ) {
+        self.push_quad_textured_per_corner_colors(corners, normals, [color; 4], uvs, layer);
+    }
+
+    /// Append one quad with PER-CORNER normals and PER-CORNER
+    /// colours (slope shading + per-corner occlusion): same
+    /// default UVs / flat layer as [`Mesh::push_quad`].
+    pub fn push_quad_per_corner_colors(
+        &mut self,
+        corners: [[f32; 3]; 4],
+        normals: [[f32; 3]; 4],
+        colors: [[f32; 4]; 4],
+    ) {
+        self.push_quad_textured_per_corner_colors(
+            corners,
+            normals,
+            colors,
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            FLAT_LAYER,
+        );
+    }
+
+    /// Append one textured quad with PER-CORNER normals and
+    /// PER-CORNER colours: per-corner `uvs` in the same order
+    /// as `corners`, all sampling texture-array `layer`. With
+    /// uniform normals and colours this emits exactly the
+    /// vertices [`Mesh::push_quad_textured`] emits.
+    pub fn push_quad_textured_per_corner_colors(
+        &mut self,
+        corners: [[f32; 3]; 4],
+        normals: [[f32; 3]; 4],
+        colors: [[f32; 4]; 4],
+        uvs: [[f32; 2]; 4],
+        layer: u32,
+    ) {
         let base = self.positions.len() as u32;
         for (i, c) in corners.into_iter().enumerate() {
             self.positions.push(c);
             self.normals.push(normals[i]);
-            self.colors.push(color);
+            self.colors.push(colors[i]);
             self.uvs.push(uvs[i]);
             self.layers.push(layer);
         }

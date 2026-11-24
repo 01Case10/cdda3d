@@ -298,3 +298,54 @@ omits EMITTER_WGSL from its render string while the
 pipeline includes it — a pre-existing gap in that test
 accessor, unrelated to this change; the pipeline assembly
 is what the GPU gates exercise. Not pushed.
+
+## 12. Per-corner occlusion (2026-11-24)
+
+The §10 residual's occlusion half, fixed in the mesher.
+`face_occlusion`'s counting core now takes the air position
+as a parameter; the new `corner_occlusion` runs the same
+rule (0.11 per opaque neighbour beside/ahead, floor 0.56)
+from the air cell diagonally in front of each face corner —
+the front cell that has the corner vertex on its back face.
+Under the existing fine-path opt-in, `mesh_chunk_fine`
+emits per-corner colours (new `push_quad_*_per_corner_colors`
+in mesh.rs) so the factor interpolates across the face: at
+a 1-cell step the tread's step-side corners darken and its
+far corners keep 1.0, instead of one flat 0.89 notch across
+the whole tread. Flag off keeps the legacy flat per-face
+factor byte-identically. `face_occlusion` and
+`cell_occlusion` are numerically untouched, so the RT
+path's per-cell form is unchanged by construction.
+
+Gate: `crates/mesher/tests/fine_occlusion_corner_gate.rs`,
+4/4, written failing-first (pre-fix, the tread's far corners
+read the flat 0.89; the invariant pins — plateau 1.0,
+flag-off flat 0.89, cell_occlusion 0.89 — passed
+throughout). Post-fix the step tread reads near 0.67 /
+far 1.0, strictly ordered. Full mesher suite 38/38.
+
+Engine regression: phase9_render 3/3, puddle 4/4, frame
+5/5, raster_tex 3/3, vehicle_texture 4/4. golden_gate: the
+raster captures that executed (house_raster_flat,
+house_raster_cutaway0) show 0 mismatched pixels; the gate
+then stops at its first RT capture on a shader parse error
+in the RT spike's WIP crate (recursive `fine_light_normal`,
+crates/treebuild/src/render.rs) — outside this slice's
+scope and unreachable from mesher output. No golden
+changed; none regenerated.
+
+Vehicle check: profile capture re-rendered at 221,840
+quads, zero cover-classification changes, and the files
+are byte-identical to the committed captures — the crown
+grooves did NOT soften in this capture, and the reason is
+structural: the car renders through the TEXTURED prop
+path, whose bake (`lighting::bake_pass_meshes`) replaces
+every textured vertex's RGB with the pure light
+multiplier, discarding mesher-side colour modulation
+entirely (flat or per-corner alike — which is also why
+the S1/S2 normal work showed here while colour work
+cannot). §10's occlusion attribution holds for the FLAT
+fine path, where the per-corner gradient now applies;
+in the textured path the grooves are step geometry plus
+the per-vertex bake, and softening them there is a
+bake-side question, not a mesher one. Not pushed.
