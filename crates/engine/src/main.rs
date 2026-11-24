@@ -119,9 +119,21 @@ fn main() -> ExitCode {
         );
         return ExitCode::SUCCESS;
     }
-    let kind = value_after(&args, "--renderer")
-        .and_then(|s| RendererKind::parse(&s))
-        .unwrap_or(RendererKind::Raster);
+    // Renderer default (Lane H, Joey's call 2026-11-24): a live
+    // `--connect-window` session defaults to RT — ray tracing is
+    // the default renderer for the live launch, and `--renderer
+    // raster` is the opt-out. The fixture app keeps its raster
+    // default (its gates and scripts name their renderer
+    // explicitly), and an explicit `--renderer` always wins in
+    // both. (This supersedes the pre-Lane-H stance that raster
+    // stays default until RT frame time is measured on Joey's
+    // 9070 XT; the measurement is still outstanding, now
+    // post-decision.)
+    let kind = match value_after(&args, "--renderer") {
+        Some(s) => RendererKind::parse(&s).unwrap_or(RendererKind::Raster),
+        None if live_link.is_some() => RendererKind::Rt,
+        None => RendererKind::Raster,
+    };
     let textures = value_after(&args, "--textures").map(std::path::PathBuf::from);
     let effects = value_after(&args, "--effects").map(std::path::PathBuf::from);
     let billboards = match value_after(&args, "--billboards") {
