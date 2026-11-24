@@ -42,7 +42,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
-use lighting::{SkyUniforms, SKY_WGSL};
+use lighting::{EmitterUniforms, SkyUniforms, EMITTER_WGSL, SKY_WGSL};
 use Sparse_Voxel_64Tree::Tree64GpuManager;
 use wgpu::util::DeviceExt;
 
@@ -542,6 +542,15 @@ const RENDER_WGSL: &str = r#"
 // embedded verbatim ahead of this string.
 @group(1) @binding(12) var<uniform> sky_u: SkyUniforms;
 
+// Addendum 11 (emitter prototype): the shared emitter uniforms
+// (lighting::EmitterUniforms, 208 bytes) — a dedicated buffer at
+// binding 13, render pipeline only, like the sky block at 12.
+// The EmitterUniforms struct + falloff math come from
+// lighting::EMITTER_WGSL, embedded verbatim ahead of this string.
+// Positions in the block are GRID space (east, south, up in
+// blocks); shade() converts to tree space per emitter.
+@group(1) @binding(13) var<uniform> emitters_u: EmitterUniforms;
+
 @group(1) @binding(2) var color_out: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(3) var<storage, read_write> depth_out: array<f32>;
 @group(1) @binding(4) var tex_array: texture_2d_array<f32>;
@@ -828,6 +837,36 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         albedo = mix(albedo, vec3<f32>(0.55, 0.65, 0.75), fres * 0.45);
         let hv = normalize(u.sun_dir + v);
         spec_add = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
+    }
+    // Addendum 11 (emitter prototype): declared local emitters
+    // (headlights et al.) add their transported light to `light`
+    // BEFORE the ceiling multiply below, so the game's per-tile
+    // lit factor still caps the total — the capped baseline (the
+    // "lid" option) the prototype exists to measure. Per emitter:
+    // the shared cone+distance falloff (lighting::EMITTER_WGSL)
+    // at the hit point, with visibility from ONE shadow ray
+    // toward the emitter through the same two-tree traversal the
+    // sun shadows use (skip_transparent, origin nudged along the
+    // normal by the sun path's 0.01); blocked by any voxel
+    // strictly between hit and emitter (hit distance < emitter
+    // distance - 0.05) => visibility 0. Emitter positions arrive
+    // in grid space; `hitp` is tree space, so the falloff is
+    // evaluated at the grid-space point and the shadow ray at the
+    // tree-space emitter. Count 0 (the default block) skips the
+    // loop entirely — the pre-Addendum-11 shading, byte-for-byte.
+    {
+        let ecount = emitter_count(emitters_u);
+        for (var i = 0; i < ecount; i = i + 1) {
+            let epos_tree = emitter_pos(emitters_u, i) - u.tree_origin;
+            let to_e = epos_tree - hitp;
+            let d = length(to_e);
+            var vis = 1.0;
+            if u.shadows != 0u && d > 1e-3 {
+                let sh = trace_two(hitp + n * 0.01, to_e / d, true);
+                vis = select(1.0, 0.0, sh.hit && sh.dist < d - 0.05);
+            }
+            light = light + emitter_term(emitters_u, i, hitp + u.tree_origin, vis);
+        }
     }
     // The lit_factor ceiling multiply stays LAST (§3.4 ceiling
     // rule: sky GI never reveals what the game marks dark/unseen).
@@ -1297,6 +1336,12 @@ pub struct RtScene {
     /// under which the sky background reproduces the pre-10.4
     /// gradient exactly.
     sky_uniform_buffer: wgpu::Buffer,
+    /// Addendum 11 (emitter prototype): the shared emitter
+    /// uniforms buffer (208 B), bound at group 1 binding 13 in
+    /// the render pipeline. Starts at
+    /// [`EmitterUniforms::empty`] (count 0), under which the
+    /// shading is byte-identical to the pre-Addendum-11 render.
+    emitter_uniform_buffer: wgpu::Buffer,
     /// Bound textures; starts as the dummy set (all flat color)
     /// until `attach_textures` replaces it.
     pub textures: TextureSet,
@@ -1332,6 +1377,22 @@ impl RtScene {
         let rows = sky.as_rows();
         queue.write_buffer(
             &self.sky_uniform_buffer,
+            0,
+            bytemuck::cast_slice(rows.as_slice()),
+        );
+    }
+
+    /// Addendum 11 (emitter prototype): upload the shared
+    /// emitter uniforms for subsequent renders. This takes the
+    /// block **as given, in grid space** (east, south, up in
+    /// blocks) — the caller converts from game space with
+    /// `EmitterUniforms::to_grid_space`, exactly as with
+    /// [`Self::set_sky`]. Scenes start at
+    /// [`EmitterUniforms::empty`].
+    pub fn set_emitters(&self, queue: &wgpu::Queue, emitters: &EmitterUniforms) {
+        let rows = emitters.as_rows();
+        queue.write_buffer(
+            &self.emitter_uniform_buffer,
             0,
             bytemuck::cast_slice(rows.as_slice()),
         );
@@ -1461,6 +1522,10 @@ impl RtRenderer {
                 // pipeline only (the query layout below is
                 // unchanged, so its buffer layout stays stable).
                 uniform_layout_entry(12),
+                // Addendum 11 (emitter prototype): shared
+                // emitter uniforms — render pipeline only, same
+                // reasoning as the sky block at 12.
+                uniform_layout_entry(13),
             ],
         });
         let query_group1_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1487,7 +1552,7 @@ impl RtRenderer {
         let render_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rt-render-shader"),
             source: wgpu::ShaderSource::Wgsl(
-                format!("{TRAVERSAL_WGSL}\n{SKY_WGSL}\n{RENDER_WGSL}").into(),
+                format!("{TRAVERSAL_WGSL}\n{SKY_WGSL}\n{EMITTER_WGSL}\n{RENDER_WGSL}").into(),
             ),
         });
         let query_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1580,6 +1645,7 @@ impl RtRenderer {
             }),
         );
         let sky_rows = SkyUniforms::neutral().as_rows();
+        let emitter_rows = EmitterUniforms::empty().as_rows();
         let scene = RtScene {
             side_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("rt-side-table"),
@@ -1595,6 +1661,11 @@ impl RtRenderer {
             sky_uniform_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("rt-sky-uniforms"),
                 contents: bytemuck::cast_slice(sky_rows.as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }),
+            emitter_uniform_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("rt-emitter-uniforms"),
+                contents: bytemuck::cast_slice(emitter_rows.as_slice()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
             node_count: built.node_count(),
@@ -1803,6 +1874,10 @@ impl RtRenderer {
                 wgpu::BindGroupEntry {
                     binding: 12,
                     resource: scene.sky_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: scene.emitter_uniform_buffer.as_entire_binding(),
                 },
             ],
         });

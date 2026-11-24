@@ -160,6 +160,17 @@ fn apply_scene_flags(
             )
         })?);
     }
+    // Addendum 11 (emitter prototype): named emitter fixture
+    // scenes, resolved through `EmitterScene::named` — the same
+    // resolver the gate uses. The scene seats its companions
+    // (sky / vehicles / lighting) wherever the args don't
+    // already carry one, so the prototype capture is one flag.
+    if let Some(s) = value_after(args, "--emitters") {
+        let scene = engine::frame::EmitterScene::named(&s)
+            .ok_or_else(|| format!("bad --emitters '{s}' (headlight-car)"))?;
+        scene.seat_companions(cap);
+        cap.emitters = Some(scene);
+    }
     if args.iter().any(|a| a == "--ui-stub") {
         let (store, note) = engine::frame::stub_ui_store(ui_size.0, ui_size.1, false)?;
         cap.ui = Some(engine::frame::prepare_ui(&store, &note)?);

@@ -27,6 +27,7 @@
 
 pub mod atmosphere;
 pub mod bake;
+pub mod emitters;
 pub mod fixtures;
 pub mod grid;
 pub mod mapping;
@@ -43,6 +44,10 @@ pub use atmosphere::{
 };
 pub use bake::{
     bake_chunk_map, bake_chunk_map_with_offset, bake_pass_meshes, filter_levels, shade_color,
+};
+pub use emitters::{
+    emitter_light_cpu, emitter_term_cpu, Emitter, EmitterUniforms, CONE_INNER_FRACTION,
+    EMITTER_UNIFORM_ROWS, EMITTER_WGSL, MAX_EMITTERS,
 };
 pub use grid::{ClosureLightSampler, LightGrid, LightSampler, VisibilityMask};
 pub use mapping::{
