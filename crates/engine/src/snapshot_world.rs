@@ -5,12 +5,25 @@
 //! previously only proven at model level).
 //!
 //! The rule, per column:
-//! - a terrain id that emits a block stamps its own block as the
-//!   level's floor slab (bottom block of the z-level);
+//! - a terrain id that emits a block (`Floor::Solid` in
+//!   `floor_at`'s classification) fills its WHOLE z-level with
+//!   its own block: the bottom block is the floor you stand
+//!   on, the blocks above are the tile's standing volume
+//!   (a wall, a tree, a floor tile's coarse body). Before
+//!   Phase 11 Lane G only the floor slab was stamped, which
+//!   left standing terrain invisible in the wire world —
+//!   the fill is what the mesher's scale contract already
+//!   assumes ("full-height tiles fill all
+//!   blocks_per_z_level", mesher::scale). A fine model that
+//!   replaces the tile (Ground terrain via [`stamp_terrain`],
+//!   furniture via [`stamp_furniture`]) airs the coarse
+//!   column it replaces, so the fill never pollutes a
+//!   modelled tile;
 //! - `t_open_air` (and the reserved id 0) emit **nothing** — the
 //!   floor at that level, if any, is the `roof` of the terrain
 //!   below (`Floor::RoofOf`), stamped as that level's floor slab
-//!   in the roof material;
+//!   in the roof material (a roof stays a slab: it is the
+//!   ceiling of the level below, not a standing tile);
 //! - open air over a roof-less terrain, or over more open air,
 //!   stamps nothing: a hole / shaft, never a fabricated slab.
 //!
@@ -25,8 +38,11 @@
 //! columns this module builds: [`stamp_furniture`] stamps
 //! prop models into a `mesher::fine::FineLayer` over the built
 //! map (see that module for the fine-grid terms). `build_columns`
-//! itself is unchanged and never writes a furniture block —
-//! that absence IS the 9.0 suppression contract (below).
+//! never writes a FURNITURE block — that absence IS the 9.0
+//! suppression contract (below); since Lane G it fills solid
+//! TERRAIN levels, and `stamp_furniture` airs that fill above
+//! the floor slab wherever a placement resolves to a model,
+//! so the contract's observable behaviour is unchanged.
 //!
 //! Terrain wiring (2026-11-18) adds the terrain counterpart:
 //! [`stamp_terrain`] seats the terrain materials' own prop
@@ -102,18 +118,20 @@ pub fn build_columns(
         for (i, &ter) in c.terrain.iter().enumerate() {
             let z = c.z_min + i as i32;
             let base = scale.level_base_block(i as u32) as i32;
-            let floor_block = if hardcases::openair::emits_block(table, ter) {
-                Some(block_for(ter))
-            } else {
-                match floor_at(table, &column, z) {
-                    Floor::RoofOf(_, roof_id) => Some(block_for(roof_id)),
-                    // Solid is unreachable here (emits_block was
-                    // false); None = no floor at this level.
-                    _ => None,
+            if hardcases::openair::emits_block(table, ter) {
+                // Solid tile: fill the whole level (Lane G —
+                // see the module rule above). The slab-height
+                // prefix is the floor; the rest is the tile's
+                // standing volume.
+                let block = block_for(ter);
+                for bz in base..base + per.max(1) {
+                    map.set_global_block(c.x, c.y, bz, block);
                 }
-            };
-            if let Some(block) = floor_block {
-                // Floor slab: the bottom block(s) of the level.
+            } else if let Floor::RoofOf(_, roof_id) = floor_at(table, &column, z) {
+                // Open air over a roofed tile: the roof slab
+                // only (Solid is unreachable here — emits_block
+                // was false; None = no floor at this level).
+                let block = block_for(roof_id);
                 let slab = scale.floor_slab_blocks.min(per as u32) as i32;
                 for bz in base..base + slab.max(1) {
                     map.set_global_block(c.x, c.y, bz, block);
@@ -331,12 +349,19 @@ pub fn prop_block_for<'a>(
 /// is recomputed from the layer.
 ///
 /// SUPPRESSION contract (9.0): a modelled furniture gets NO
-/// coarse block. `build_columns` writes none (it stamps
-/// terrain floors only) and this function writes none either —
-/// the coarse grid above the floor slab at a modelled tile
-/// stays all AIR, and the prop exists only in the fine layer.
-/// Placements with no model are skipped and counted in the
-/// report's `skipped`.
+/// coarse block of its own, and the prop exists only in the
+/// fine layer. Since Lane G, `build_columns` fills a solid
+/// tile's whole level with its TERRAIN block, so this
+/// function airs that standing fill above the floor slab
+/// wherever a placement resolves to a model (furniture wins
+/// the tile's standing slot — the multi-object rule: standing
+/// terrain + furniture share the slot, last stamp wins).
+/// The floor slab itself stays (furniture seats on it), and
+/// a placement with NO model airs nothing — its tile keeps
+/// the terrain's coarse column, mirroring the fine layer's
+/// posture of never fabricating a replacement. Placements
+/// with no model are skipped and counted in the report's
+/// `skipped`.
 ///
 /// RESTAMP semantics (the 9.0 Deltas paragraph, at layer
 /// level): every placement first drops the tile's existing
@@ -396,6 +421,16 @@ pub fn stamp_furniture<'m>(
         layer.remove_tile_in_z_range(tile, z0, z0 + layer.depth_z);
         match resolve(p.furn_id) {
             Some(model) => {
+                // Suppression contract (above): air the
+                // coarse standing fill over this tile's
+                // floor slab — the modelled prop owns the
+                // standing slot now.
+                let cbase = scale.level_base_block(p.level) as i32;
+                let slab = (scale.floor_slab_blocks.min(scale.blocks_per_z_level)).max(1) as i32;
+                let per = (scale.blocks_per_z_level).max(1) as i32;
+                for bz in cbase + slab..cbase + per {
+                    map.set_global_block(p.x, p.y, bz, Block::AIR);
+                }
                 let r = mesher::fine::stamp_model_rotated(layer, tile, z0, model, p.quarter_turns)?;
                 report.stamped_cells += r.stamped_cells;
                 report.volumes += r.volumes;
@@ -643,11 +678,17 @@ pub fn stamp_terrain<'m>(
                 report.volumes += 1;
                 report.memory_bytes += volume.memory_bytes();
                 layer.insert(volume);
-                // The model replaces the coarse floor
-                // slab build_columns stamped for the tile.
+                // The model replaces the tile's coarse
+                // column: since Lane G, build_columns fills
+                // a solid tile's whole level (floor slab +
+                // standing fill), and the Ground model IS
+                // the tile's terrain — so the whole level
+                // band is aired, not just the slab prefix.
+                // (For a RoofOf floor the band holds only
+                // the roof slab; the rest is already air.)
                 let base = scale.level_base_block(job.level) as i32;
-                let slab = (scale.floor_slab_blocks.min(scale.blocks_per_z_level)).max(1) as i32;
-                for bz in base..base + slab {
+                let per = (scale.blocks_per_z_level).max(1) as i32;
+                for bz in base..base + per {
                     map.set_global_block(job.x, job.y, bz, Block::AIR);
                 }
             }
