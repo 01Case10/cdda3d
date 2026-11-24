@@ -397,18 +397,23 @@ fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
     // transported per-fragment at the world position with
     // visibility 1.0 (raster v1 casts no emitter shadow rays —
     // the recorded asymmetry against the RT path). The term
-    // folds into the shade factor INSIDE the Phase 7 ceiling:
-    // in the flat path the vertex colour IS albedo x bake, so
-    // multiplying (shade + emit) by it caps the emitter light
-    // with the tile's baked lit factor exactly as the sky GI is
-    // capped (BLANK tiles are never meshed; MEMORIZED colours
-    // carry the pinned desaturated presentation — neither is
-    // bypassed). In the textured path the texel supplies the
-    // albedo, so the ceiling scalar is the vertex colour's mean
-    // (albedo x bake, the same data the flat path multiplies
-    // outright). The water branch above returns before this
-    // point — emitters do not touch water shading in v1.
-    // Count 0 returns exactly 0.0, so an emitter-less frame is
+    // folds into the shade factor INSIDE the Phase 7 ceiling
+    // (BLANK tiles are never meshed; MEMORIZED tiles keep their
+    // pinned presentation — neither is bypassed). Vertex-colour
+    // contract (lighting::bake_pass_meshes): FLAT vertices
+    // carry albedo x bake in color.rgb, so multiplying
+    // (shade + emit) by the colour caps the emitter light with
+    // the tile's baked lit factor implicitly; TEXTURED vertices
+    // carry the pure bake multiplier instead (the texel
+    // supplies the albedo), and bake_ceil below is that
+    // multiplier — it caps the emitter term per channel by
+    // exactly the factor the flat path applies. (The first cut
+    // capped by the MEAN of the fused albedo x bake colour,
+    // applying albedo and bake twice; the pool vanished over
+    // textures, and the emitter gate's textured test pins the
+    // fix.) The water branch above returns before this point —
+    // emitters do not touch water shading in v1. Count 0
+    // returns exactly 0.0, so an emitter-less frame is
     // byte-identical to the pre-Addendum-11 frame.
     let emit = emitter_light(emitters, input.world_pos);
     if flat {
@@ -426,7 +431,7 @@ fn shade_fragment(input: VsOut, cutout: bool, transparent: bool) -> vec4<f32> {
     if cutout && texel.a < 0.5 {
         discard;
     }
-    let bake_ceil = dot(input.color.rgb, vec3<f32>(0.33333334, 0.33333334, 0.33333334));
+    let bake_ceil = input.color.rgb;
     if transparent {
         return vec4<f32>(texel.rgb * (shade + emit * bake_ceil), texel.a * input.color.a);
     }
