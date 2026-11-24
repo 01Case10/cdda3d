@@ -5,7 +5,12 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File tools\pc-build\Launch-Sim.ps1
 #       [-Scene street_block] [-Seed 1] [-Record path.toml]
-#       [-SkipBuild] [-DebugBuild] [-Headless] [-SocketPath path]
+#       [-Renderer rt|raster] [-SkipBuild] [-DebugBuild] [-Headless]
+#       [-SocketPath path]
+#
+# -Renderer picks the windowed renderer: rt (ray tracing) is the
+# default since Lane H (Joey's call, 2026-11-24); pass raster for
+# the greedy-mesher renderer.
 #
 # What it does, in order:
 #   1. Builds the release binaries (sim-server + voxel-engine).
@@ -32,6 +37,8 @@ param(
     [string]$Seed = "",
     [string]$Record = "",
     [string]$SocketPath = "",
+    [ValidateSet("rt", "raster")]
+    [string]$Renderer = "rt",
     [switch]$SkipBuild,
     [switch]$DebugBuild,
     [switch]$Headless
@@ -140,8 +147,8 @@ try {
         Write-Host "== headless smoke: voxel-engine --connect (keys: jjojjjQ) =="
         "jjojjjQ" | & $engineExe --connect $SocketPath
     } else {
-        Write-Host "== launching renderer: voxel-engine --connect-window (close the window to end) =="
-        $engineArgs = @("--connect-window", $SocketPath)
+        Write-Host "== launching renderer: voxel-engine --connect-window (renderer: $Renderer; close the window to end) =="
+        $engineArgs = @("--connect-window", $SocketPath, "--renderer", $Renderer)
         if (Test-Path "assets\ultica_run1\materials.json") {
             $engineArgs += @("--textures", "assets\ultica_run1")
             Write-Host "   live furniture props: ON (model table found in assets\ultica_run1)"

@@ -119,9 +119,21 @@ fn main() -> ExitCode {
         );
         return ExitCode::SUCCESS;
     }
-    let kind = value_after(&args, "--renderer")
-        .and_then(|s| RendererKind::parse(&s))
-        .unwrap_or(RendererKind::Raster);
+    // Renderer default (Lane H, Joey's call 2026-11-24): a live
+    // `--connect-window` session defaults to RT — ray tracing is
+    // the default renderer for the live launch, and `--renderer
+    // raster` is the opt-out. The fixture app keeps its raster
+    // default (its gates and scripts name their renderer
+    // explicitly), and an explicit `--renderer` always wins in
+    // both. (This supersedes the pre-Lane-H stance that raster
+    // stays default until RT frame time is measured on Joey's
+    // 9070 XT; the measurement is still outstanding, now
+    // post-decision.)
+    let kind = match value_after(&args, "--renderer") {
+        Some(s) => RendererKind::parse(&s).unwrap_or(RendererKind::Raster),
+        None if live_link.is_some() => RendererKind::Rt,
+        None => RendererKind::Raster,
+    };
     let textures = value_after(&args, "--textures").map(std::path::PathBuf::from);
     let effects = value_after(&args, "--effects").map(std::path::PathBuf::from);
     let billboards = match value_after(&args, "--billboards") {
@@ -497,9 +509,11 @@ impl App {
         // renders the session's wire world, so the fixture
         // companions come off — a fake-house light grid or sky
         // over a wire world would mask/shade tiles the game
-        // never reported. Lighting for the windowed session is
-        // not seated yet (the capture path seats wire + grid
-        // today; the session publishes the world only). Until
+        // never reported. The wire world's OWN companions take
+        // their place per publish in `sync_frame_args` (Lane
+        // H: the published scene carries the snapshot-derived
+        // lighting scene + environment sample). Vehicles and
+        // transients stay unseated for live sessions. Until
         // the first Snapshot publishes, `wire` stays None and
         // the frame is the default fixture.
         let (live_share, live_input) = match cfg.live {
@@ -571,6 +585,40 @@ impl App {
         // Arc, so this is a pointer swap per frame).
         if let Some(share) = &self.live_share {
             if let Some(w) = share.lock().expect("wire share lock").clone() {
+                // Lane H: on a fresh publish, seat the wire
+                // world's GI companions with it — the lighting
+                // scene wholesale (it is data: the game's
+                // current lit/outside grids), and the
+                // environment sample into the running sky
+                // scene (seat fresh if none; `push` only on a
+                // newer sample — the §2.3 cadence joint — so
+                // the clock cross-fades instead of restarting
+                // on every flush). Vehicles/transients stay
+                // None for live sessions.
+                let fresh = match &self.frame_args.wire {
+                    Some(old) => !Arc::ptr_eq(&old.map, &w.map),
+                    None => true,
+                };
+                if fresh {
+                    if let Some(lit) = &w.lighting {
+                        self.frame_args.lighting = Some(lit.clone());
+                    }
+                    if let Some(env) = &w.environment {
+                        match &mut self.frame_args.sky {
+                            Some(sky) => {
+                                if sky.game_env.turn != env.turn
+                                    || sky.game_env.time_of_day_sec != env.time_of_day_sec
+                                {
+                                    sky.push(env.clone());
+                                }
+                            }
+                            None => {
+                                self.frame_args.sky =
+                                    Some(engine::frame::SkyScene::new(env.clone()));
+                            }
+                        }
+                    }
+                }
                 self.frame_args.wire = Some(w);
             }
         }
