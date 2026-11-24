@@ -420,8 +420,31 @@ characters on an overlay layer or explicit `[[place]]` entries.
 4. **street_block** *(new — the outside/inside workhorse)*: two
    roofed houses on a road, trees, chain-link fence run, parked car,
    street items. Big enough that walking out a door crosses submaps.
-5. **underground_lab** *(new)*: z 0 entrance + z −1 rooms, DARK lit,
-   never outside — for cave-factor / no-sky tests.
+5. **underground_lab** *(built, Phase 11 follow-up 2026-11-24)*:
+   a fenced surface stairhead over a sealed lab at z −1 — for
+   cave-factor / no-sky tests. As built (12×12 sections): z 0 is
+   open grass with a chain-link fence ring (t_chainfence, gap on
+   the east side) at Chebyshev distance 2 around the t_stairs_down
+   tile at (4,4), nothing modelled above, so the pad's open
+   ground reads outside=true in daylight. The stair tile itself
+   reads outside=FALSE — its own def carries INDOORS, and
+   build_outside_cache (0.I-1 map.cpp:9294-9305) stamps an
+   INDOORS tile and its Chebyshev-1 neighbourhood as not
+   outside; the game itself never reports a stair tile as
+   outside, and the gate pins the faithful value. z −1 is three
+   enclosed rooms cut into t_rock (entry room NW holding the
+   t_stairs_up, east room through the door at (6,5), south-west
+   room through the door at (4,6)), NO light sources, NO
+   openings besides the stair shaft: outside=false on all 144
+   tiles, visible lit LOW / unseen BLANK (the §5.2 settlement —
+   this sketch's original "DARK lit" was wrong the same way
+   T9's was). Gates: `crates/sim/tests/lab_gate.rs` (round trip
+   on the z-move rule, sealed-level snapshot, both door walks,
+   surface outside values) and
+   `crates/engine/tests/sim_lab_gate.rs` (every z −1 tile's
+   sky-exposure factor is 0 from the wire grid;
+   cave_factor_for engages at the lab tile and not at the
+   surface stairhead).
 6. **field_fire** *(built, S5)*: grass + a cabin, one lit fire tile —
    field spread, smoke drift, night light pool. The fire's fuel is
    the cabin (FLAMMABLE_HARD floor + FLAMMABLE tables): `t_grass`
