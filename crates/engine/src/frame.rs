@@ -655,6 +655,28 @@ pub struct BillboardScene {
 }
 
 impl BillboardScene {
+    /// An atlas with no entities yet: the live windowed app's
+    /// starting scene for a `--connect-window` session. The
+    /// session's published wire scene supplies the entities and
+    /// the base lift per publish (`App::sync_frame_args` copies
+    /// `WireScene::entities` / `billboard_base_lift` into the
+    /// seated scene), so until the first Snapshot lands this
+    /// draws nothing — but the billboard PASS exists, which is
+    /// what the pre-seating code lacked: with no scene seated
+    /// at all, the sync had nowhere to put the wire entities
+    /// and the player never rendered.
+    pub fn empty_with_atlas(atlas: billboard::atlas::SpriteAtlas) -> Self {
+        Self {
+            atlas,
+            entities: Vec::new(),
+            items: None,
+            time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
+            base_lift: 0.0,
+        }
+    }
+
     /// Fixture-atlas crowd inside the fake house (hermetic — the
     /// composed-golden scene): an equipped zombie, a skeleton, a
     /// ghost, an oversized hulk, plus the fixture item piles.

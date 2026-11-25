@@ -84,10 +84,16 @@ fn main() -> ExitCode {
                     // the fixture paths load materials from).
                     models_dir: value_after(&args, "--textures")
                         .map(std::path::PathBuf::from),
-                    // Captures are off in the windowed session;
-                    // entity billboards seat in the App from the
-                    // published wire scene (sync_frame_args).
-                    billboards_dir: None,
+                    // The same voxelizer dir holds the sprite
+                    // atlas (`sprites.json`/`sprites.png` +
+                    // `tile_sprites.json`): seat it for the
+                    // session's captures too, so the windowed
+                    // session and a headless capture of the same
+                    // world draw the same entity billboards. The
+                    // App seats its own copy for the live frame
+                    // (see `App::new`).
+                    billboards_dir: value_after(&args, "--textures")
+                        .map(std::path::PathBuf::from),
                 },
             ));
             Some(LiveWindowLink { share, input: tx })
@@ -532,6 +538,36 @@ impl App {
                 frame_args.lighting = None;
                 frame_args.vehicles = None;
                 frame_args.transients = None;
+                // Entity billboards (the player included): seat
+                // an empty scene over the sprite atlas from the
+                // textures dir — the same dir the session loads
+                // its model table from; it holds `sprites.json`
+                // + `tile_sprites.json`. `sync_frame_args` fills
+                // its entities + lift from every published wire
+                // scene. Without a seated scene that sync is a
+                // no-op and NO wire entity — above all the
+                // player — ever renders in the window (the
+                // 2026-11-25 Launch-Sim screenshot). An explicit
+                // `--billboards` scene wins; a failed atlas load
+                // is logged and the session continues without
+                // billboards (the client's posture for its own
+                // atlas load).
+                if frame_args.billboards.is_none() {
+                    if let Some(dir) = frame_args.textures.clone() {
+                        match billboard::atlas::SpriteAtlas::load(&dir) {
+                            Ok(atlas) => {
+                                frame_args.billboards =
+                                    Some(BillboardScene::empty_with_atlas(atlas));
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "voxel-engine: live billboard atlas at {} failed to load ({e}); entity billboards off",
+                                    dir.display()
+                                );
+                            }
+                        }
+                    }
+                }
                 (Some(link.share), Some(link.input))
             }
             None => (None, None),
@@ -1121,5 +1157,68 @@ mod app_wiring_tests {
             Some(1),
             "the windowed render path must trace frame 2 from the held scene"
         );
+    }
+
+    /// Regression (2026-11-25 Launch-Sim screenshot, symptom
+    /// 1): a `--connect-window` App launched with a textures
+    /// dir must seat a billboard scene, and a published wire
+    /// scene must land its entities — the player first — in
+    /// it. Before the fix the App seated NO billboard scene
+    /// for live sessions (the session config hardcoded
+    /// `billboards_dir: None` and nothing else seated one), so
+    /// `sync_frame_args`'s entity copy had no scene to copy
+    /// into and the player never rendered.
+    #[test]
+    fn live_app_seats_the_wire_player_billboard() {
+        let ultica = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/ultica_run1");
+        if !ultica.join("sprites.json").exists() {
+            eprintln!("SKIP live billboard seating test: real UltiCa atlas absent");
+            return;
+        }
+        let (tx, _rx) = std::sync::mpsc::channel::<u8>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: Some(ultica),
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share: share.clone(),
+                input: tx,
+            }),
+        });
+        // A published wire scene whose only entity is the
+        // player at (5, 5, 0).
+        let mut snap = proto::SnapshotT::default();
+        let mut player = proto::EntityT::default();
+        player.id = 1;
+        player.sprite_id = Some("player_male".to_string());
+        player.pos = Some(proto::Vec3iT { x: 5, y: 5, z: 0 });
+        snap.entities = Some(vec![player]);
+        let wire = engine::wire::WireScene::from_map(
+            mesher::chunk::ChunkMap::new(mesher::scale::WorldScale::default()),
+            &snap,
+        );
+        let want_lift = wire.billboard_base_lift();
+        *share.lock().expect("share lock") = Some(wire);
+        app.sync_frame_args();
+        let scene = app
+            .frame_args
+            .billboards
+            .as_ref()
+            .expect("a live App with a textures dir seats a billboard scene");
+        assert!(
+            scene.entities.iter().any(|e| e.sprite_id == "player_male"),
+            "the published wire player lands in the seated billboard scene"
+        );
+        assert_eq!(scene.base_lift, want_lift, "the wire lift is applied");
     }
 }
