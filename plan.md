@@ -2238,3 +2238,55 @@ staying dark in RT (the shadow proof).
 > on the new table: 1,382,468 bytes. Still outstanding per the
 > scope above: step 6 (0.1/0.2 baseline re-taken on Joey's PC)
 > and the fork's first compile (B1–B4 + H1–H8 on the PC build).
+
+## Addendum 2026-11-25 (13): RT interior lighting — Option B (Joey's order)
+
+> The RT interior crush (same data warm in raster, ~0.07–0.15× in
+> RT: hemisphere-only × lit_factor LOW ceiling 0.45 × AO, all
+> multiplied) is fixed per Joey's Option B spec, approved in the
+> e88a0f7a thread and re-ordered 2026-11-25: **the floor applies
+> to the indirect term only, AO scopes to indirect too, and the
+> game's lit band caps the sum rather than multiplying the
+> parts.** RT `shade()` (treebuild) now composes
+> `light = direct + indirect`, where indirect = hemisphere GI
+> (with the §5.3 overcast collapse) × occupancy AO, floored —
+> for non-sky-exposed fragments only, after AO — at the low end
+> of the game's own lit band for the tile's band
+> (`lighting::mapping::band`: DARK .06 / LOW .18 / BRIGHT_ONLY
+> .34 / LIT .54 / BRIGHT .80; MEMORIZED/BLANK unfloored), tinted
+> by the hemisphere colour at unit luminance. The sum is then
+> capped at `lit_factor` as a **luminance** cap, ratio-applied
+> so hue survives (a per-channel min was implemented first and
+> rejected on evidence: it bleached capped surfaces toward grey
+> and zeroed the F2 blend gate's RT dirt classification).
+> Emitters (Addendum 11) add into direct before the cap; the
+> §3.4 ceiling rule is preserved — sky GI still never reveals
+> what the game marks dark/unseen. Raster untouched.
+>
+> **Gate:** new `treebuild/tests/interior_light_gate.rs`,
+> verified failing-first on the pre-fix shader (noon LOW roofed
+> interior median luminance 0.211 vs ≥0.32; AO pit tile 0.868 vs
+> ≥0.96). Post-fix, llvmpipe Vulkan: noon LOW 0.451 (the LOW cap
+> itself), midnight full-moon LOW 0.179 (the 0.18 floor),
+> pit 0.978. **Two existing assertions re-derived, flagged not
+> buried:** treebuild texture-hookup white-texel bound >180 →
+> >85 (Option B top-face R ≈ 92 by the formula above);
+> sky_rt_gate 10.4a midnight-roof ratio <0.5× → <0.8× (measured
+> 0.048 vs 0.068 noon — the DARK cap saturates at noon and
+> nearly saturates under full moonlight; the >2× darkening was
+> a product-formula artifact). **Goldens:** the 3 RT goldens
+> regenerated (raster goldens byte-identical; RT ~8.3–8.6% px,
+> geometry unchanged — the §6 precedent signature). Suites
+> re-run isolated with a live adapter: treebuild all green,
+> engine rt/sky_rt/sky_live/emitter/wire_gi/fx/frame/rt_cache/
+> phase8_wire/f2 blend/f2 pond/golden green; mip_gate 2e.2/2e.3
+> fail identically on unmodified code (pre-existing). Note:
+> full-suite parallel runs on this VM intermittently lose the
+> wgpu adapter (panics inside wgpu-core / vacuous skips) —
+> isolated runs are the trustworthy surface. Textured
+> before/after captures: `~/workspace/your_files/cdda-option-b-
+> interior-noon-{before,after}-2026-11-25.png` (stub house, RT,
+> noon, cutaway 0) and the midnight pair. The Phase-10 "RT
+> twilight darker than raster" item shares this composition's
+> family; its status under Option B is unmeasured — not claimed
+> closed.
