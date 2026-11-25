@@ -146,6 +146,19 @@ pub struct WireScene {
     /// billboard pass, exactly like an enemy. Empty when the
     /// snapshot carried no entities.
     pub entities: Vec<FakeEntity>,
+    /// Voxel tree models for this world, derived from the
+    /// same snapshot by [`tree_scene_for_wire`] when the
+    /// caller has the voxelizer model table: one placement
+    /// per TREE-flagged terrain tile. `None` = no tree models
+    /// (the coarse textured column remains — which renders
+    /// as a small stump-like cutout, the tree symptom of the
+    /// 2026-11-25 Launch-Sim screenshot). The scene-prep wire
+    /// paths stamp these on the level TOP (a wire world's
+    /// solid tiles fill their whole z-level, so the surface
+    /// a tree stands on is the level top, not the fixture
+    /// worlds' floor slab) through
+    /// `snapshot_world::stamp_level_top_standing`.
+    pub trees: Option<crate::frame::PropScene>,
 }
 
 impl WireScene {
@@ -187,6 +200,7 @@ impl WireScene {
             lighting: None,
             material_ids: None,
             entities: billboard_entities(snapshot),
+            trees: None,
         }
     }
 
@@ -230,6 +244,13 @@ impl WireScene {
     /// scene's own snapshot (see [`prop_scene_for_wire`]).
     pub fn with_props(mut self, props: Option<crate::frame::PropScene>) -> Self {
         self.props = props;
+        self
+    }
+
+    /// Attach the tree model scene derived from this scene's
+    /// own snapshot (see [`tree_scene_for_wire`]).
+    pub fn with_trees(mut self, trees: Option<crate::frame::PropScene>) -> Self {
+        self.trees = trees;
         self
     }
 
@@ -316,6 +337,107 @@ pub fn prop_scene_for_wire(
             modelled
                 .entry(sid.clone())
                 .or_insert_with(|| model.clone());
+            cells.push((
+                ox + (i % 12) as i32,
+                oy + (i / 12) as i32,
+                (oz - min_z) as u32,
+                sid.clone(),
+            ));
+        }
+    }
+    if cells.is_empty() {
+        return None;
+    }
+    let ids: std::collections::HashMap<String, u32> = modelled
+        .keys()
+        .enumerate()
+        .map(|(i, s)| (s.clone(), (i + 1) as u32))
+        .collect();
+    let models: Vec<(u32, crate::materials::PropModelData)> = modelled
+        .into_iter()
+        .enumerate()
+        .map(|(i, (_s, m))| ((i + 1) as u32, m))
+        .collect();
+    let placements = cells
+        .into_iter()
+        .map(|(x, y, level, sid)| crate::snapshot_world::FurniturePlacement {
+            x,
+            y,
+            level,
+            furn_id: ids[&sid],
+            quarter_turns: 0,
+        })
+        .collect();
+    Some(crate::frame::PropScene { models, placements })
+}
+
+/// Derive the tree model scene for a wire world from its
+/// snapshot: every terrain cell whose def carries the game's
+/// `TREE` flag and whose voxelizer material records a
+/// `Standing` model becomes a placement at its world tile
+/// (same coordinate derivation as [`prop_scene_for_wire`]).
+/// Model ids are scene-local (sorted string ids numbered
+/// from 1), exactly as in the furniture derivation. A tree
+/// def with no Standing model in the table is NOT placed —
+/// its coarse column stays; nothing is fabricated. Returns
+/// `None` when no placement resolves to a model.
+pub fn tree_scene_for_wire(
+    defs: &proto::TileDefsT,
+    snapshot: &proto::SnapshotT,
+    table: &crate::materials::MaterialTable,
+) -> Option<crate::frame::PropScene> {
+    use std::collections::BTreeMap;
+    let tree_strings: std::collections::HashMap<u32, String> = defs
+        .defs
+        .as_ref()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|d| d.kind == proto::TileKind::Terrain)
+        .filter(|d| {
+            d.flags
+                .as_ref()
+                .is_some_and(|fs| fs.iter().any(|f| f == "TREE"))
+        })
+        .filter_map(|d| d.string_id.clone().map(|s| (d.id, s)))
+        .collect();
+    if tree_strings.is_empty() {
+        return None;
+    }
+    let blocks = snapshot.blocks.as_ref().map(Vec::as_slice).unwrap_or(&[]);
+    let min_z = blocks
+        .iter()
+        .map(|b| b.origin.as_ref().map(|o| o.z).unwrap_or(0))
+        .min()
+        .unwrap_or(0);
+    let mut modelled: BTreeMap<String, crate::materials::PropModelData> = BTreeMap::new();
+    let mut cells: Vec<(i32, i32, u32, String)> = Vec::new();
+    for block in blocks {
+        let (ox, oy, oz) = block
+            .origin
+            .as_ref()
+            .map(|o| (o.x, o.y, o.z))
+            .unwrap_or((0, 0, 0));
+        for (i, &t) in block
+            .terrain
+            .as_ref()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            if t == 0 {
+                continue;
+            }
+            let Some(sid) = tree_strings.get(&t) else {
+                continue;
+            };
+            let Some(mat) = table.get(sid) else { continue };
+            if mat.model_kind != crate::materials::ModelKind::Standing {
+                continue;
+            }
+            let Some(model) = &mat.model else { continue };
+            modelled.entry(sid.clone()).or_insert_with(|| model.clone());
             cells.push((
                 ox + (i % 12) as i32,
                 oy + (i / 12) as i32,

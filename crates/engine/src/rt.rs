@@ -729,10 +729,18 @@ impl RtCacheKey {
                     v
                 })
             }),
-            wire_props: args
-                .wire
-                .as_ref()
-                .and_then(|w| w.props.as_ref().map(hash_prop_scene)),
+            wire_props: args.wire.as_ref().and_then(|w| {
+                match (w.props.as_ref(), w.trees.as_ref()) {
+                    (None, None) => None,
+                    (p, t) => {
+                        use std::hash::{Hash, Hasher};
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        p.map(hash_prop_scene).hash(&mut h);
+                        t.map(hash_prop_scene).hash(&mut h);
+                        Some(h.finish())
+                    }
+                }
+            }),
             props: args.props.as_ref().map(hash_prop_scene),
             lighting: args.lighting.as_ref().map(hash_lighting),
             vehicles: args.vehicles.as_ref().map(hash_vehicles),
@@ -888,8 +896,11 @@ fn build_rt_scene(
     // a wire scene can carry its OWN prop scene (derived
     // from its snapshot), which takes the wire props path.
     if let Some(wire) = &args.wire {
-        if let Some(props) = &wire.props {
-            return build_rt_scene_wire_props(device, queue, args, wire, props);
+        // The wire props path also seats the scene's tree
+        // models (WireScene::trees), so a wire world with
+        // trees but no furniture props takes it too.
+        if wire.props.is_some() || wire.trees.is_some() {
+            return build_rt_scene_wire_props(device, queue, args, wire);
         }
     }
     if args.wire.is_none() {
@@ -1340,10 +1351,11 @@ fn build_rt_scene_props(
 /// same two-tree build (coarse world + fine prop world, lit
 /// rewrites, fine occlusion) over the wire scene's map and
 /// its own snapshot-derived prop scene. The fixture-keyed
-/// steps of the fixture form do not exist here: no terrain
-/// extension (fixture-keyed to the texture pass), vehicles
-/// stamp through the wire path's mapped form, exactly as
-/// [`world_from_wire`] stamps them. Textures (Lane H): with
+/// steps of the fixture form do not exist here; the terrain
+/// models that do seat are the scene's trees
+/// (`WireScene::trees`), stamped on their tiles' level top
+/// into the same fine layer. Vehicles stamp through the wire path's mapped form,
+/// exactly as [`world_from_wire`] stamps them. Textures (Lane H): with
 /// a textures dir and the scene's material id map, the
 /// coarse world takes the full texture spec + variant
 /// preparation keyed by wire ids (the fixture form's shape
@@ -1355,7 +1367,6 @@ fn build_rt_scene_wire_props(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
     wire: &crate::wire::WireScene,
-    props: &crate::frame::PropScene,
 ) -> Result<BuiltRtScene, CaptureError> {
     let t0 = Instant::now();
     let levels = capture_visible_levels(args.cutaway_z);
@@ -1364,6 +1375,13 @@ fn build_rt_scene_wire_props(
     if let Some(v) = &args.vehicles {
         crate::scene_prep::stamp_vehicles_mapped(&mut filtered, v, None);
     }
+    let empty_props = crate::frame::PropScene {
+        models: Vec::new(),
+        placements: Vec::new(),
+    };
+    let props: &crate::frame::PropScene = wire.props.as_ref().unwrap_or(&empty_props);
+    let color_scene =
+        crate::scene_prep::wire_color_scene(wire.props.as_ref(), wire.trees.as_ref());
     let kept: Vec<crate::snapshot_world::FurniturePlacement>;
     let placements: &[crate::snapshot_world::FurniturePlacement] = match &args.lighting {
         Some(lit) => {
@@ -1397,9 +1415,25 @@ fn build_rt_scene_wire_props(
         }
         None => None,
     };
-    let prep = crate::scene_prep::prep_prop_spec(props, &mut spec_opt);
-    let layer = crate::scene_prep::stamp_props_into(&mut filtered, placements, props, &prep, scale)
+    let prep = crate::scene_prep::prep_prop_spec(&color_scene, &mut spec_opt);
+    let mut layer =
+        crate::scene_prep::stamp_props_into(&mut filtered, placements, props, &prep, scale)
+            .map_err(CaptureError::Device)?;
+    // Tree seating (the raster wire path's twin): the trees
+    // stamp into the same fine layer on their tiles' level
+    // top, after the lit mask above so a tree on a masked-out
+    // tile drops with its column like any prop.
+    if let Some(trees) = &wire.trees {
+        crate::scene_prep::stamp_wire_trees_into(
+            &mut filtered,
+            &mut layer,
+            wire,
+            trees,
+            &prep,
+            scale,
+        )
         .map_err(CaptureError::Device)?;
+    }
     let mut coarse_world = VoxelWorld::from_chunk_map(&filtered);
     let mut fine_world = VoxelWorld::from_fine_layer(&layer);
     if let Some(lit) = &args.lighting {

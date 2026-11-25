@@ -176,7 +176,11 @@ impl LiveWorld {
         let lighting = crate::frame::LightingScene::from_snapshot(snap, scene.min_game_z);
         let scene = scene.with_companions(self.environment(), Some(lighting));
         match &self.props_table {
-            Some(table) => Some(scene.with_props(crate::wire::prop_scene_for_wire(defs, snap, table))),
+            Some(table) => Some(
+                scene
+                    .with_props(crate::wire::prop_scene_for_wire(defs, snap, table))
+                    .with_trees(crate::wire::tree_scene_for_wire(defs, snap, table)),
+            ),
             None => Some(scene),
         }
     }
