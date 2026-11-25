@@ -26,6 +26,10 @@
 //!   primary variant: highest weight, first on ties), and both
 //!   compose to their real 32x48 sprites — no invented art.
 //! - A delta-fed snapshot tracks the player to its new tile.
+//! - The feet stand on the floor: UltiCa's humanoids carry
+//!   transparent rows below their feet, and the composite
+//!   records that margin so the instance geometry sinks the
+//!   quad by it (player -5/32, zombie -7/32 tiles).
 //! - Pixel level (GPU, loud-skip with no adapter or no atlas):
 //!   a textured wire capture contains both sprites' own
 //!   dominant colours, sampled from the atlas itself.
@@ -165,7 +169,16 @@ fn player_and_zombie_resolve_to_real_ultica_sprites() {
         );
     }
     // The composites themselves: real dimensions, real bodies.
-    for (id, want_opaque) in [("player_male", 200), ("mon_zombie", 200)] {
+    // And the feet: UltiCa's 32x48 humanoids carry transparent
+    // rows BELOW the feet (measured from the atlas: the player's
+    // last opaque row is 42 of 48, the zombie's 40 of 48), so a
+    // quad anchored by its canvas bottom leaves the feet
+    // floating 5-7 px above the floor while the blob shadow sits
+    // on it. The composite records that margin and the instance
+    // geometry subtracts it, standing the feet on the floor.
+    for (id, want_opaque, want_inset) in
+        [("player_male", 200, 5), ("mon_zombie", 200, 7)]
+    {
         let (comp, missing) = billboard::composite::CompositeCache::new().get_or_compose(
             &atlas,
             id,
@@ -178,6 +191,10 @@ fn player_and_zombie_resolve_to_real_ultica_sprites() {
             (32, 48),
             "{id} composite is the real sprite's size"
         );
+        assert_eq!(
+            comp.feet_inset_px, want_inset,
+            "{id} feet inset is the atlas's own transparent margin"
+        );
         let opaque = (0..comp.height() as i32)
             .flat_map(|y| (0..comp.width() as i32).map(move |x| (x, y)))
             .filter(|&(x, y)| comp.alpha_at(x, y) > 127)
@@ -185,6 +202,18 @@ fn player_and_zombie_resolve_to_real_ultica_sprites() {
         assert!(
             opaque > want_opaque,
             "{id} composite has a body: {opaque} opaque px"
+        );
+        // The geometry's quad bottom sits that far BELOW the
+        // feet line, so the feet — not the canvas — land on the
+        // floor. (The live instance adds the idle bob on top,
+        // ±0.03, so the exact value is asserted on the geometry,
+        // not the bobbed instance.)
+        let (_, bottom, _) =
+            billboard::instance::composite_geometry(&comp, 32.0);
+        let want_bottom = -(want_inset as f32) / 32.0;
+        assert!(
+            (bottom - want_bottom).abs() < 1e-6,
+            "{id} geometry bottom is the feet inset below the floor: {bottom} vs {want_bottom}"
         );
     }
 }
