@@ -379,6 +379,7 @@ fn connect_session_captures_live_wire_world() {
                 size: (640, 360),
             }),
             models_dir: None,
+            billboards_dir: None,
         },
     );
 

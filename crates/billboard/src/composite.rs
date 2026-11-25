@@ -58,11 +58,26 @@ pub struct Signature {
 /// One composited creature image plus its placement in tile-pixel
 /// space: pixel `(0,0)` of the image is tile-pixel
 /// `(origin_x, origin_y)`.
+///
+/// `feet_inset_px` is the transparent margin below the BASE
+/// sprite's feet, in canvas pixels: how far the base sprite's
+/// last opaque row sits above the canvas bottom. UltiCa's
+/// 32x48 humanoids carry 5-7 px of it (the figure's feet end
+/// above the cell bottom), so a quad anchored by its canvas
+/// bottom leaves the feet floating that far above the floor
+/// while the blob shadow sits on it. World anchoring (see
+/// `instance::composite_geometry`) subtracts it, standing the
+/// feet on the floor and letting the transparent margin sink
+/// into the tile. It is measured from the base layer only:
+/// overlays may extend below the feet (a long wielded item),
+/// and they rest on the floor the same way rather than
+/// re-anchoring the body.
 #[derive(Debug, Clone)]
 pub struct Composite {
     pub image: RgbaImage,
     pub origin_x: i32,
     pub origin_y: i32,
+    pub feet_inset_px: i32,
     pub signature: Signature,
 }
 
@@ -122,9 +137,14 @@ pub fn compose(
     let mut missing = Vec::new();
     let mut layers: Vec<(RgbaImage, i32, i32)> = Vec::new();
     for id in sprite_ids {
-        match (atlas.get(id), atlas.sprite_image(id)) {
-            (Some(uv), Some(img)) => layers.push((img, uv.offset_x, uv.offset_y)),
-            _ => missing.push(id.clone()),
+        // Game ids resolve to sprite names first (tile-entry
+        // table): a creature's base id is an entry id, not a
+        // sprite name (`mon_zombie` -> `mon_zombie_2`,
+        // `player_male` -> `skin_brown_m`).
+        let resolved = atlas.resolve(id);
+        match resolved.and_then(|name| atlas.get(name).zip(atlas.sprite_image(name))) {
+            Some((uv, img)) => layers.push((img, uv.offset_x, uv.offset_y)),
+            None => missing.push(id.clone()),
         }
     }
     if layers.is_empty() {
@@ -133,6 +153,7 @@ pub fn compose(
                 image: RgbaImage::new(1, 1),
                 origin_x: 0,
                 origin_y: 0,
+                feet_inset_px: 0,
                 signature: Signature {
                     sprite_ids: sprite_ids.to_vec(),
                     facing,
@@ -140,6 +161,21 @@ pub fn compose(
             },
             missing,
         );
+    }
+    // Feet inset of the BASE layer (layers[0]): transparent
+    // canvas rows below the base sprite's last opaque row. The
+    // canvas bottom is max_y; the base content bottom is
+    // base_oy + last_opaque_row + 1.
+    let (base_img, base_ox, base_oy) = &layers[0];
+    let _ = base_ox;
+    let mut last_opaque: i32 = -1;
+    for y in (0..base_img.height() as i32).rev() {
+        if (0..base_img.width() as i32)
+            .any(|x| base_img.get_pixel(x as u32, y as u32).0[3] > 127)
+        {
+            last_opaque = y;
+            break;
+        }
     }
     let min_x = layers.iter().map(|(_, ox, _)| *ox).min().unwrap();
     let min_y = layers.iter().map(|(_, _, oy)| *oy).min().unwrap();
@@ -153,6 +189,11 @@ pub fn compose(
         .map(|(img, _, oy)| *oy + img.height() as i32)
         .max()
         .unwrap();
+    let feet_inset_px = if last_opaque < 0 {
+        0
+    } else {
+        (max_y - (*base_oy + last_opaque + 1)).max(0)
+    };
     let mut canvas = RgbaImage::new((max_x - min_x) as u32, (max_y - min_y) as u32);
     for (img, ox, oy) in &layers {
         for y in 0..img.height() {
@@ -181,6 +222,7 @@ pub fn compose(
                 image: canvas,
                 origin_x: 32 - max_x,
                 origin_y: min_y,
+                feet_inset_px,
                 signature: Signature {
                     sprite_ids: sprite_ids.to_vec(),
                     facing,
@@ -194,6 +236,7 @@ pub fn compose(
             image: canvas,
             origin_x: min_x,
             origin_y: min_y,
+            feet_inset_px,
             signature: Signature {
                 sprite_ids: sprite_ids.to_vec(),
                 facing,

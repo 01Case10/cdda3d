@@ -44,6 +44,9 @@ const GLASS_TOP: f64 = 40.0;
 const ROOF_Z: (f64, f64) = (40.0, 45.0);
 const SEAT_Z: (f64, f64) = (11.0, 20.0);
 const WHEEL_R: i32 = 16;
+/// Stage-G S4: pickup bed floor height (mockup units;
+/// assistant-chosen, tuned at the S5 review).
+const BED_FLOOR: f64 = 14.0;
 /// The glass colour (prototype GLASS).
 pub const GLASS: [u8; 3] = [70, 92, 110];
 const PILLAR: [u8; 3] = [24, 26, 30];
@@ -105,19 +108,41 @@ fn lerp(a: f64, b: f64, f: f64) -> f64 {
 /// Resolve a part's sprite through the prototype's lookup
 /// order: `vp_<base>`, `<base>`, the variant fallback.
 fn sprite_for(base: &str, sprites: &dyn Fn(&str) -> Option<RgbaImage>) -> Option<RgbaImage> {
+    resolve_part_sprite(base, sprites).map(|(_, img)| img)
+}
+
+/// Resolve a part's sprite, returning the winning
+/// material name with the image. Order: the part's own
+/// vp_ entry; for wheels the multitile front/rear entries
+/// (the bicycle wheel exists only as
+/// vp_wheel_bicycle_front/_rear — the bare name is an
+/// unrelated item icon, which this ordering must never
+/// reach first); the hand-pinned fallback map; and only
+/// then the bare part name.
+pub fn resolve_part_sprite(
+    base: &str,
+    sprites: &dyn Fn(&str) -> Option<RgbaImage>,
+) -> Option<(String, RgbaImage)> {
     if INTERNAL_PREFIXES.iter().any(|p| base.starts_with(p)) {
         return None;
     }
-    let vp = format!("vp_{base}");
-    if let Some(s) = sprites(&vp) {
-        return Some(s);
-    }
-    if let Some(s) = sprites(base) {
-        return Some(s);
+    let mut candidates = vec![format!("vp_{base}")];
+    if base.starts_with("wheel") {
+        candidates.push(format!("vp_{base}_front"));
+        candidates.push(format!("vp_{base}_rear"));
     }
     if let Some(fb) = fallback_material(base) {
-        if let Some(s) = sprites(fb) {
-            return Some(s);
+        candidates.push(fb.to_string());
+    }
+    // The bare name comes LAST: some tileset entries are
+    // genuinely keyed bare (frame, seat), but others
+    // collide with item icons (wheel_bicycle is a 20x20
+    // small.png item sprite) — the vp_ and suffixed
+    // candidates above must win first.
+    candidates.push(base.to_string());
+    for name in candidates {
+        if let Some(s) = sprites(&name) {
+            return Some((name, s));
         }
     }
     None
@@ -176,6 +201,31 @@ fn extrude(
     }
 }
 
+/// Draw a sprite as a side elevation in the tile's centre
+/// plane (rows 15..18): sprite columns map to tile x,
+/// sprite rows map to height (30 units over the tile).
+/// Thin vehicles' tileset art is drawn this way — the
+/// bicycle's wheel, saddle, pedals and rear basket are all
+/// side elevations, unlike the cars' top-down sprites.
+fn draw_profile(grid: &mut Grid, tx: i32, ty: i32, spr: &RgbaImage, part: &str) {
+    let (w, h) = (spr.width() as i32, spr.height() as i32);
+    for sy in 0..h {
+        for sx in 0..w {
+            let px = spr.get_pixel(sx as u32, sy as u32);
+            if px[3] < 128 {
+                continue;
+            }
+            let lx = sx * FINE / w;
+            let zt = (h - 1 - sy) as f64 * 30.0 / h as f64;
+            for ly in 15..18 {
+                put(grid, tx * FINE + lx, ty * FINE + ly,
+                    zt, zt + 30.0 / h as f64,
+                    [px[0], px[1], px[2]], part);
+            }
+        }
+    }
+}
+
 /// Zones derived from one z-level's tile map.
 struct Zones {
     roof_tiles: std::collections::HashSet<(i32, i32)>,
@@ -188,6 +238,12 @@ struct Zones {
     rear_x: i32,
     row_lo: i32,
     row_hi: i32,
+    /// Stage-G S4: the pickup bed — cargo_space tiles with
+    /// no roof part, flooded over adjacent trunk tiles.
+    bed_tiles: std::collections::HashSet<(i32, i32)>,
+    /// Stage-G S4: a single-row vehicle (a bicycle) is a
+    /// thin profile object, not a footprint extrusion.
+    thin: bool,
 }
 
 fn zones(tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>) -> Option<Zones> {
@@ -216,6 +272,41 @@ fn zones(tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>) -> Option<Zones> {
     };
     let roof_x0 = roof_tiles.iter().map(|t| t.0).min().unwrap_or(0);
     let roof_x1 = roof_tiles.iter().map(|t| t.0).max().unwrap_or(-1);
+    // Bed: seed on cargo tiles with no roof part, then
+    // flood over 4-connected trunk tiles (the bed floor
+    // continues under the tailgate in the pickup layout).
+    let mut bed_tiles: std::collections::HashSet<(i32, i32)> = tiles
+        .iter()
+        .filter(|(t, ps)| {
+            !roof_tiles.contains(t)
+                && ps.iter().any(|p| p.base == "cargo_space")
+        })
+        .map(|(t, _)| *t)
+        .collect();
+    loop {
+        let grown: Vec<(i32, i32)> = tiles
+            .keys()
+            .filter(|t| {
+                !bed_tiles.contains(t)
+                    && tiles[*t].iter().any(|p| p.base == "trunk")
+                    && [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .any(|(dx, dy)| bed_tiles.contains(&(t.0 + dx, t.1 + dy)))
+            })
+            .copied()
+            .collect();
+        if grown.is_empty() {
+            break;
+        }
+        bed_tiles.extend(grown);
+    }
+    let row_lo = tiles.keys().map(|t| t.1).min().unwrap();
+    let row_hi = tiles.keys().map(|t| t.1).max().unwrap();
+    // Thin means a profile-art vehicle (the bicycle): a
+    // single row AND no bed — a one-row cargo cart or
+    // trailer keeps the footprint treatment, its sprites
+    // are top-down like the cars'.
+    let thin = row_lo == row_hi && bed_tiles.is_empty();
     Some(Zones {
         roof_tiles,
         glass_tiles,
@@ -225,8 +316,10 @@ fn zones(tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>) -> Option<Zones> {
         roof_x1,
         front_x: tiles.keys().map(|t| t.0).max().unwrap(),
         rear_x: tiles.keys().map(|t| t.0).min().unwrap(),
-        row_lo: tiles.keys().map(|t| t.1).min().unwrap(),
-        row_hi: tiles.keys().map(|t| t.1).max().unwrap(),
+        row_lo,
+        row_hi,
+        bed_tiles,
+        thin,
     })
 }
 
@@ -255,14 +348,43 @@ fn build_level(
     let mut grid: Grid = Grid::new();
     for ((tx, ty), spots) in tiles {
         let (tx, ty) = (*tx, *ty);
+        // Thin-vehicle profile wheels are drawn after the
+        // tile's other parts: in the shared profile plane
+        // the wheel must win over the parts behind it (a
+        // rear basket otherwise swallows the rear wheel).
+        let mut thin_wheels: Vec<RgbaImage> = Vec::new();
         for spot in spots {
             let base = spot.base.as_str();
+            if z.thin {
+                // Thin vehicle: every part is a side
+                // elevation in the centre plane. The
+                // tileset's bike-specific variant of a
+                // part (vp_<base>_bike_rear) wins over the
+                // generic sprite when it exists. Wheels
+                // defer so they draw over the parts behind
+                // them in the plane.
+                let Some(generic) = sprite_for(base, sprites) else {
+                    continue;
+                };
+                let spr = sprites(&format!("vp_{base}_bike_rear")).unwrap_or(generic);
+                if base.starts_with("wheel") {
+                    thin_wheels.push(spr);
+                } else {
+                    draw_profile(&mut grid, tx, ty, &spr, base);
+                }
+                continue;
+            }
             if base == "wheel" {
                 continue; // the tile-level constructor below
             }
             let Some(spr) = sprite_for(base, sprites) else {
                 continue;
             };
+            // Thin vehicles: footprint parts extrude only
+            // in the centre band (the object's profile
+            // plane); the band keep composes with each
+            // branch's own keep.
+            let band = |_lx: i32, ly: i32| !z.thin || (13..19).contains(&ly);
             if spot.roof {
                 let keep = |lx: i32, ly: i32| {
                     !(lx < 4 && !z.roof_tiles.contains(&(tx - 1, ty)))
@@ -277,7 +399,8 @@ fn build_level(
                         ROOF_Z.1
                     }
                 };
-                extrude(&mut grid, tx, ty, &spr, ROOF_Z.0, &top, Some(&keep), "roof");
+                let keep2 = |lx: i32, ly: i32| keep(lx, ly) && band(lx, ly);
+                extrude(&mut grid, tx, ty, &spr, ROOF_Z.0, &top, Some(&keep2), "roof");
             } else if base == "windshield" {
                 // Sloped glass sheet: GLASS_TOP at the cabin
                 // edge down to DECK at the front edge, over a
@@ -297,18 +420,36 @@ fn build_level(
                     }
                 }
             } else if base == "frame" || base == "xlframe" {
-                extrude(&mut grid, tx, ty, &spr, FRAME_Z.0, &|_, _, _| FRAME_Z.1, None, "frame");
-            } else if matches!(base, "seat" | "reclining_seat" | "seat_back") {
-                extrude(&mut grid, tx, ty, &spr, SEAT_Z.0, &|_, _, _| SEAT_Z.1, None, base);
+                extrude(&mut grid, tx, ty, &spr, FRAME_Z.0, &|_, _, _| FRAME_Z.1, Some(&band), "frame");
+            } else if matches!(base, "seat" | "reclining_seat" | "seat_back" | "saddle") {
+                extrude(&mut grid, tx, ty, &spr, SEAT_Z.0, &|_, _, _| SEAT_Z.1, Some(&band), base);
+            } else if matches!(base, "cargo_space" | "trunk") && z.bed_tiles.contains(&(tx, ty)) {
+                // The bed: interior columns stop at the
+                // floor; a 4-wide rim on any edge facing a
+                // non-bed tile keeps the panel height (bed
+                // walls and tailgate).
+                let bed = &z.bed_tiles;
+                let top = |gx: i32, lx: i32, ly: i32| {
+                    let rim = (lx < 4 && !bed.contains(&(tx - 1, ty)))
+                        || (lx >= FINE - 4 && !bed.contains(&(tx + 1, ty)))
+                        || (ly < 4 && !bed.contains(&(tx, ty - 1)))
+                        || (ly >= FINE - 4 && !bed.contains(&(tx, ty + 1)));
+                    if rim {
+                        deck_top_at(&z, gx, tx)
+                    } else {
+                        BED_FLOOR
+                    }
+                };
+                extrude(&mut grid, tx, ty, &spr, CLEAR, &top, Some(&band), base);
             } else {
                 let top = |gx: i32, _lx: i32, _ly: i32| deck_top_at(&z, gx, tx);
-                extrude(&mut grid, tx, ty, &spr, CLEAR, &top, None, base);
+                extrude(&mut grid, tx, ty, &spr, CLEAR, &top, Some(&band), base);
             }
         }
         // Rear glass: a sloped sheet over the rear tile's
         // front half, from the deck rise up to the roof's
         // rear edge.
-        if tx == z.rear_x {
+        if tx == z.rear_x && !z.roof_tiles.is_empty() && z.rear_x >= z.roof_x0 - 1 {
             for lx in FINE / 2..FINE {
                 for ly in 0..FINE {
                     let z1 = lerp(30.0, 41.0, (lx - FINE / 2) as f64 / (FINE / 2) as f64);
@@ -339,6 +480,9 @@ fn build_level(
                     }
                 }
             }
+        }
+        for spr in &thin_wheels {
+            draw_profile(&mut grid, tx, ty, spr, "wheel");
         }
         // Wheel constructor: a disc at the tile's centre
         // column, on the vehicle's outer side.
@@ -458,6 +602,146 @@ fn fill(grid: &Grid, colorizer: &Colorizer) -> Vec<((i32, i32), PropModel)> {
     models.into_iter().collect()
 }
 
+
+/// Stage-G S7: synthesized frame tubes for thin vehicles
+/// (Joey approved the invention 2026-11-24 — the
+/// bicycle's xlframe art exists only as connection
+/// sprites no entry reaches, so without tubes the wheels
+/// and saddle stay disconnected slices). A diamond frame
+/// in the centre plane: both hubs tie to the bottom
+/// bracket and to two high points over it (seat top,
+/// head), which a top tube joins. Anchors come from the
+/// resolved sprites' alpha bboxes — hub = wheel bbox
+/// centre, bracket = pedals bbox centre — so the tubes
+/// plug into the art as drawn, not into tile centres.
+const TUBE_TOP_Z: f64 = 25.0;
+const TUBE_HALF: f64 = 1.25;
+const TUBE_SEAT_DX: f64 = -7.0;
+const TUBE_HEAD_DX: f64 = 9.0;
+
+/// A sprite's anchor in tile fine units: alpha-bbox
+/// centre as (lx, height in mockup units).
+fn sprite_anchor(spr: &RgbaImage) -> Option<(f64, f64)> {
+    let (w, h) = (spr.width(), spr.height());
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0u32, 0u32);
+    let mut any = false;
+    for yy in 0..h {
+        for xx in 0..w {
+            if spr.get_pixel(xx, yy)[3] >= 128 {
+                any = true;
+                x0 = x0.min(xx);
+                y0 = y0.min(yy);
+                x1 = x1.max(xx);
+                y1 = y1.max(yy);
+            }
+        }
+    }
+    if !any {
+        return None;
+    }
+    let cx = (x0 + x1) as f64 / 2.0 * 32.0 / w as f64;
+    let cz = (h as f64 - 1.0 - (y0 + y1) as f64 / 2.0) * 30.0 / h as f64;
+    Some((cx, cz))
+}
+
+/// The sprite's most common dark opaque colour (the
+/// frame's paint, read off the saddle/pedals art).
+fn dark_colour(spr: &RgbaImage) -> Option<[u8; 3]> {
+    let mut counts: std::collections::HashMap<[u8; 3], u32> = std::collections::HashMap::new();
+    for yy in 0..spr.height() {
+        for xx in 0..spr.width() {
+            let px = spr.get_pixel(xx, yy);
+            if px[3] < 128 {
+                continue;
+            }
+            let lum = 0.3 * px[0] as f64 + 0.5 * px[1] as f64 + 0.2 * px[2] as f64;
+            if lum < 90.0 {
+                *counts.entry([px[0], px[1], px[2]]).or_default() += 1;
+            }
+        }
+    }
+    counts.into_iter().max_by_key(|(_, c)| *c).map(|(c, _)| c)
+}
+
+fn tube(grid: &mut Grid, ty: i32, a: (f64, f64), b: (f64, f64), colour: [u8; 3]) {
+    // Paint every integer column in the run — a diagonal
+    // stepped by parameter can skip a column when the
+    // endpoints are fractional, leaving a visible gap.
+    let (gx0, gx1) = (
+        (a.0.min(b.0)).round() as i32,
+        (a.0.max(b.0)).round() as i32,
+    );
+    for gx in gx0..=gx1 {
+        let (zc, half) = if (b.0 - a.0).abs() < 0.5 {
+            ((a.1 + b.1) / 2.0, (a.1 - b.1).abs() / 2.0 + TUBE_HALF)
+        } else {
+            let f = (gx as f64 - a.0) / (b.0 - a.0);
+            (a.1 + (b.1 - a.1) * f, TUBE_HALF)
+        };
+        for ly in 15..18 {
+            put(grid, gx, ty * FINE + ly, zc - half, zc + half, colour, "pillar");
+        }
+    }
+}
+
+fn frame_tubes(
+    grid: &mut Grid,
+    z: &Zones,
+    tiles: &BTreeMap<(i32, i32), Vec<PartSpot>>,
+    sprites: &dyn Fn(&str) -> Option<RgbaImage>,
+) {
+    if !z.thin {
+        return;
+    }
+    let mut hubs: Vec<(f64, f64)> = Vec::new();
+    let mut bracket: Option<(f64, f64)> = None;
+    let mut colour: Option<[u8; 3]> = None;
+    for ((tx, _), spots) in tiles {
+        for spot in spots {
+            let Some((_, spr)) = resolve_part_sprite(&spot.base, sprites) else {
+                continue;
+            };
+            let Some((lx, cz)) = sprite_anchor(&spr) else {
+                continue;
+            };
+            let gx = *tx as f64 * 32.0 + lx;
+            if spot.base.starts_with("wheel") {
+                hubs.push((gx, cz));
+            } else if spot.base == "foot_pedals" {
+                bracket = Some((gx, cz));
+                if colour.is_none() {
+                    colour = dark_colour(&spr);
+                }
+            } else if spot.base == "saddle" && colour.is_none() {
+                colour = dark_colour(&spr);
+            }
+        }
+    }
+    if hubs.len() < 2 {
+        return;
+    }
+    hubs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let rear = hubs[0];
+    let front = hubs[hubs.len() - 1];
+    if front.0 - rear.0 < 32.0 {
+        return;
+    }
+    let bb = bracket.unwrap_or((
+        (rear.0 + front.0) / 2.0,
+        (rear.1 + front.1) / 2.0,
+    ));
+    let colour = colour.unwrap_or([30, 30, 33]);
+    let seat_top = (bb.0 + TUBE_SEAT_DX, TUBE_TOP_Z);
+    let head = (bb.0 + TUBE_HEAD_DX, TUBE_TOP_Z);
+    let ty = z.row_lo;
+    tube(grid, ty, rear, seat_top, colour);
+    tube(grid, ty, rear, bb, colour);
+    tube(grid, ty, bb, seat_top, colour);
+    tube(grid, ty, bb, head, colour);
+    tube(grid, ty, seat_top, head, colour);
+    tube(grid, ty, head, front, colour);
+}
+
 /// Compose a vehicle's fine models, one per occupied tile,
 /// keyed by vehicle-frame tile (x, y, z-level).
 pub fn compose_vehicle(
@@ -473,6 +757,7 @@ pub fn compose_vehicle(
     for (zl, tiles) in levels {
         let (mut grid, z) = build_level(&tiles, sprites);
         crown_and_enclosure(&mut grid, &z, &tiles);
+        frame_tubes(&mut grid, &z, &tiles, sprites);
         for ((tx, ty), model) in fill(&grid, &colorizer) {
             out.push(((tx, ty, zl), model));
         }

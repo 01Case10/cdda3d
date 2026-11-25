@@ -639,6 +639,19 @@ pub struct BillboardScene {
     /// caller built one. `None` = decorations address the scene
     /// atlas directly.
     pub decor_atlas: Option<billboard::atlas::SpriteAtlas>,
+    /// World Y added to every billboard anchor (sprites, shadows,
+    /// item piles, decorations) so feet stand on the surface the
+    /// scene's world actually renders: the fixture worlds stamp
+    /// a 1-block floor slab, so their lift is
+    /// [`floor_surface_lift`]; a WIRE world fills every solid
+    /// tile's whole z-level (Lane G), so its rendered surface is
+    /// the level TOP and the lift is a full level height above
+    /// the level base (`wire::WireScene::billboard_scene` /
+    /// `billboard_base_lift`). With the fixture lift over a wire
+    /// world, every billboard — the player character included —
+    /// is buried inside the opaque level fill and depth-occluded
+    /// to invisibility.
+    pub base_lift: f32,
 }
 
 impl BillboardScene {
@@ -665,6 +678,7 @@ impl BillboardScene {
             time_s: 0.0,
             decorations: Vec::new(),
             decor_atlas: None,
+            base_lift: floor_surface_lift(),
         }
     }
 
@@ -696,6 +710,7 @@ impl BillboardScene {
             time_s: 0.0,
             decorations: Vec::new(),
             decor_atlas: None,
+            base_lift: floor_surface_lift(),
         })
     }
 
@@ -728,6 +743,7 @@ impl BillboardScene {
             time_s: 0.0,
             decorations: Vec::new(),
             decor_atlas: None,
+            base_lift: floor_surface_lift(),
         })
     }
 }
@@ -1408,14 +1424,43 @@ pub fn render_frame(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<FrameOutcome, CaptureError> {
+    render_frame_scaled(device, queue, args, None)
+}
+
+/// [`render_frame`] with a caller-held RT scene cache (the
+/// live windowed loop): on the RT path the built scene (trees,
+/// textures, pipelines) is reused across frames whose
+/// scene-determining inputs are unchanged — see
+/// `rt::RtSceneCache`. One-shot callers use [`render_frame`],
+/// which builds per call exactly as before.
+pub fn render_frame_with_rt_cache(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    rt_cache: &mut Option<crate::rt::RtSceneCache>,
+) -> Result<FrameOutcome, CaptureError> {
+    render_frame_scaled(device, queue, args, Some(rt_cache))
+}
+
+fn render_frame_scaled(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    mut rt_cache: Option<&mut Option<crate::rt::RtSceneCache>>,
+) -> Result<FrameOutcome, CaptureError> {
     let scale = args.render_scale.max(1);
     if scale == 1 {
-        return render_frame_inner(device, queue, args);
+        return render_frame_inner(device, queue, args, rt_cache);
     }
     let mut inner_args = args.clone();
     inner_args.size = ((args.size.0 / scale).max(1), (args.size.1 / scale).max(1));
     inner_args.render_scale = 1;
-    let inner = render_frame_inner(device, queue, &inner_args)?;
+    let inner = render_frame_inner(
+        device,
+        queue,
+        &inner_args,
+        rt_cache.as_mut().map(|c| &mut **c),
+    )?;
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("frame-upscaled"),
@@ -1447,6 +1492,7 @@ fn render_frame_inner(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,
+    rt_cache: Option<&mut Option<crate::rt::RtSceneCache>>,
 ) -> Result<FrameOutcome, CaptureError> {
     let defs = fx_defs(args)?;
     let mut stats = FrameStats::default();
@@ -1489,16 +1535,30 @@ fn render_frame_inner(
         // inner path.
         let emitter_uniforms = args.emitters.as_ref().map(|s| s.uniforms_grid_space());
         let sky_grid_uniforms = args.sky.as_ref().map(|s| s.uniforms_grid_space());
-        let frame = if sky_grid_uniforms.is_none() && emitter_uniforms.is_none() {
-            crate::rt::render_rt_frame(device, queue, args)?
-        } else {
-            crate::rt::render_rt_frame_sky_emitters(
+        // A caller-held cache (the live loop) traces from the
+        // held scene — the cached entry subsumes the sky/emitter
+        // call, since both are per-frame uniforms there.
+        // Without a cache slot, one-shot callers keep the exact
+        // build-per-call behaviour of the two entries below.
+        let frame = match rt_cache {
+            Some(cache) => crate::rt::render_rt_frame_cached(
                 device,
                 queue,
                 args,
                 sky_grid_uniforms.as_ref(),
                 emitter_uniforms.as_ref(),
-            )?
+                cache,
+            )?,
+            None if sky_grid_uniforms.is_none() && emitter_uniforms.is_none() => {
+                crate::rt::render_rt_frame(device, queue, args)?
+            }
+            None => crate::rt::render_rt_frame_sky_emitters(
+                device,
+                queue,
+                args,
+                sky_grid_uniforms.as_ref(),
+                emitter_uniforms.as_ref(),
+            )?,
         };
         let (width, height) = frame.size;
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1971,8 +2031,11 @@ fn composite_overlays(
 /// the slab box, whose faces depth-occlude it — in the composed
 /// frame only a sliver of each creature survived (found
 /// 2026-11-15 via the sample scene; gate 2h.2 asserted pixel
-/// deltas, which the sliver satisfied). The engine therefore
-/// lifts every billboard anchor by the slab height.
+/// deltas, which the sliver satisfied). Fixture billboard
+/// scenes therefore lift every anchor by the slab height
+/// (`BillboardScene::base_lift`); wire scenes lift by a full
+/// level instead — their solid tiles fill the whole level, so
+/// the rendered surface is the level top.
 fn floor_surface_lift() -> f32 {
     let s = mesher::scale::WorldScale::default();
     s.floor_slab_blocks as f32 * s.block_size
@@ -2002,9 +2065,9 @@ fn draw_billboards(
     };
     let mut built =
         billboard::scene::build_frame(&scene.atlas, &scene.entities, &bb_cam, scene.time_s);
-    // Stand the creatures on the floor surface, not the level
-    // base (see floor_surface_lift).
-    let lift = floor_surface_lift();
+    // Stand the creatures on the surface the scene's world
+    // renders, not the level base (see `BillboardScene::base_lift`).
+    let lift = scene.base_lift;
     for inst in &mut built.instances {
         inst.anchor.y += lift;
     }

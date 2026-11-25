@@ -38,8 +38,9 @@
 //! - Array tables (top-level, after any sections; `pos` is always
 //!   an absolute `[x, y, z]`):
 //!   - `[[spawn]]`: `type` (a Monster string id, or the special
-//!     `"player"` — type_def 0, sprite `"player"`, like the real
-//!     adapter's avatar), `pos`, `hp_frac`, optional `facing`
+//!     `"player"` — type_def 0, sprite `"player_male"`, the
+//!     tile-entry id the game draws the avatar with), `pos`,
+//!     `hp_frac`, optional `facing`
 //!     (`"NONE"`/`"LEFT"`/`"RIGHT"`, default NONE), `overlays`
 //!     (string array, game order — never re-sorted), `flags`,
 //!     `sprite` (override). Entities are emitted in file order;

@@ -381,11 +381,15 @@ impl Mirror {
     }
 
     /// The player entity in the mirror (the avatar: sprite
-    /// `"player"`, per the real adapter's convention).
+    /// `player_male` / `player_female`, the tile-entry ids the
+    /// game draws the avatar with).
     pub fn player_entity(&self) -> Option<&EntityT> {
-        self.entities
-            .values()
-            .find(|e| e.sprite_id.as_deref() == Some("player"))
+        self.entities.values().find(|e| {
+            matches!(
+                e.sprite_id.as_deref(),
+                Some("player_male") | Some("player_female")
+            )
+        })
     }
 
     pub fn player_pos(&self) -> Option<[i32; 3]> {

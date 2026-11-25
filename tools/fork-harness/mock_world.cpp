@@ -51,7 +51,7 @@ World make_shelter()
     w.mut( 1, 1, 0 ).furniture = F_BED;
     w.mut( 2, 2, 0 ).top_item = IT_ROCK;
     w.mut( 2, 2, 0 ).item_count = 3;
-    w.ents.push_back( ent( 1, 0, "player", 0, 0, 0, Facing::RIGHT,
+    w.ents.push_back( ent( 1, 0, "player_male", 0, 0, 0, Facing::RIGHT,
                            { "mut_base", "clothing_coat", "wield_rock" } ) );
     // Remembered street to the south: terrain/furniture memory only.
     for( int x = -5; x <= 5; ++x ) {
@@ -78,7 +78,7 @@ World make_house()
     w.set( 4, 2, 0, fire );
     w.mut( -4, -2, 0 ).trap = TRAP_SPIKE;
     w.mut( -4, -2, 0 ).graffiti = true;
-    w.ents.push_back( ent( 1, 0, "player", 0, 2, 0, Facing::LEFT,
+    w.ents.push_back( ent( 1, 0, "player_male", 0, 2, 0, Facing::LEFT,
                            { "mut_base", "clothing_armor" } ) );
     w.ents.push_back( ent( 7, MON_ZOMBIE, "mon_zombie", 8, 0, 0, Facing::NONE,
                            { "overlay_zombie" } ) );
@@ -113,7 +113,7 @@ World make_multistorey()
     w.mut( 0, 4, 0 ).terrain = T_DOOR_C;
     w.mut( 0, 0, 1 ).terrain = T_OPEN_AIR;      // stairwell opening
     w.mut( 0, 0, 0 ).terrain = T_OPEN_AIR;
-    w.ents.push_back( ent( 1, 0, "player", 0, 0, 1, Facing::RIGHT, { "mut_base" } ) );
+    w.ents.push_back( ent( 1, 0, "player_male", 0, 0, 1, Facing::RIGHT, { "mut_base" } ) );
     return w;
 }
 
@@ -140,7 +140,7 @@ World make_vehicle_road( float face_deg )
     v.parts.push_back( part( VP_DOOR, 0, 1, 0, 1, 1 ) );  // open
     v.parts.push_back( part( VP_ROOF, 0, 0, 0, 0, 4 ) );  // roof flag
     w.vehs.push_back( v );
-    w.ents.push_back( ent( 1, 0, "player", 3, 3, 0, Facing::RIGHT, {} ) );
+    w.ents.push_back( ent( 1, 0, "player_male", 3, 3, 0, Facing::RIGHT, {} ) );
     return w;
 }
 

@@ -46,7 +46,8 @@ pub mod store;
 
 pub use interp::{lerp_angle_deg, sample_vehicle, shortest_arc_deg, RenderPart, RenderVehicle};
 pub use mesh::{
-    clear_vehicle, part_state_subtile, stamp_vehicle, stamp_vehicle_mapped, VEHICLE_BLOCK_ID,
+    clear_vehicle, part_state_subtile, stamp_vehicle, stamp_vehicle_mapped,
+    stamp_vehicle_mapped_except, VEHICLE_BLOCK_ID,
 };
 pub use model::{PartKey, PartModel, VehicleModel, FLAG_BROKEN, FLAG_OPEN, FLAG_ROOF};
 pub use store::VehicleStore;

@@ -155,9 +155,15 @@ pub fn composite_geometry(comp: &Composite, tile_pixel_size: f32) -> (f32, f32, 
     let center_offset = (center_px - tps / 2.0) / tps;
     // Vertical: sprite bottom px vs tile bottom (tps). A sprite
     // whose bottom is above the tile bottom floats; the common
-    // case (bottom == tps) sits exactly on the feet line.
+    // case (bottom == tps) sits exactly on the feet line. The
+    // feet are the BASE sprite's last opaque row, not the canvas
+    // bottom: UltiCa's humanoids carry transparent rows below
+    // their feet (`feet_inset_px`), and anchoring the canvas
+    // bottom to the floor leaves the feet floating that far
+    // above it. Subtract the inset so the feet stand on the
+    // floor and the transparent margin sinks into the tile.
     let bottom_px = comp.origin_y as f32 + comp.height() as f32;
-    let bottom = (tps - bottom_px) / tps;
+    let bottom = (tps - bottom_px) / tps - comp.feet_inset_px as f32 / tps;
     (center_offset, bottom, Vec2::new(w, h))
 }
 
@@ -332,7 +338,7 @@ pub fn item_instances(
     for ly in 0..12 {
         for lx in 0..12 {
             let i = ly * 12 + lx;
-            let (Some(name), Some(uv)) = (&tiles.top_item_sprite[i], tiles.top_item_sprite[i].as_ref().and_then(|n| atlas.get(n))) else {
+            let (Some(name), Some(uv)) = (&tiles.top_item_sprite[i], tiles.top_item_sprite[i].as_ref().and_then(|n| atlas.get_resolved(n))) else {
                 continue;
             };
             let _ = name;
@@ -370,7 +376,7 @@ pub fn variety_pass<'a>(
     let mut ok = Vec::new();
     let mut missing = Vec::new();
     for id in ids {
-        if atlas.get(id).is_some() {
+        if atlas.get_resolved(id).is_some() {
             ok.push(id);
         } else {
             missing.push(id);

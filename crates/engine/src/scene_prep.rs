@@ -84,7 +84,7 @@ fn textured_spec(
     ),
     String,
 > {
-    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let table = materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
     let veh_mats = vehicles.map(|v| vehicle_materials(v, &table));
     let mut id_map = crate::rt::fake_material_ids();
     if let Some(vm) = &veh_mats {
@@ -150,7 +150,7 @@ fn wire_textured_spec(
     ),
     String,
 > {
-    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let table = materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
     let water_ids: std::collections::HashSet<u32> = id_map
         .iter()
         .filter(|(_, game_id)| {
@@ -472,7 +472,7 @@ pub(crate) fn extend_prop_scene_with_terrain(
 ) -> Result<crate::frame::PropScene, String> {
     use std::collections::BTreeSet;
     let table =
-        materials::MaterialTable::load(textures_dir).map_err(|e| format!("materials: {e}"))?;
+        materials::MaterialTable::load_cached(textures_dir).map_err(|e| format!("materials: {e}"))?;
     let fake = crate::rt::fake_material_ids();
     let per = scale.blocks_per_z_level as i32;
     let mut fence: BTreeSet<(i32, i32, i32)> = BTreeSet::new();
@@ -637,6 +637,222 @@ pub fn stamp_vehicles_mapped(
         tiles += occupied.len();
     }
     (scene.models.len(), tiles)
+}
+
+/// [`stamp_vehicles`] skipping the given absolute tiles
+/// (Stage-G covered tiles — see [`vehicle_fine_scene`]).
+pub fn stamp_vehicles_except(
+    map: &mut mesher::chunk::ChunkMap,
+    scene: &crate::frame::VehicleScene,
+    except: &std::collections::HashSet<[i32; 3]>,
+) -> (usize, usize) {
+    let except_bt: std::collections::BTreeSet<[i32; 3]> = except.iter().copied().collect();
+    let mut tiles = 0usize;
+    for model in &scene.models {
+        let (occupied, _dirtied) = vehicles::stamp_vehicle_mapped_except(
+            map,
+            model,
+            world::HOUSE_MIN_GAME_Z,
+            &|_| vehicles::VEHICLE_BLOCK_ID,
+            &except_bt,
+        );
+        tiles += occupied.len();
+    }
+    (scene.models.len(), tiles)
+}
+
+/// First model id of the Stage-G vehicle prop allocation.
+/// Above every game def id and the vehicle material range;
+/// these ids key prop models inside a merged prop scene
+/// only, they never stamp coarse blocks.
+pub const VEHICLE_PROP_ID_BASE: u32 = 1_000_000;
+
+/// The vehicle's world rotation in stamper quarter turns,
+/// derived from the exported positions themselves (the
+/// vehicles crate's rule: positions are never recomputed
+/// from facing + mounts — this reads the rotation the game
+/// already applied, off the part with the longest mount
+/// delta from the pivot part). One turn maps (a, b) to
+/// (-b, a), the fine stamper's own mapping. Diagonal
+/// facings take the least-wrong turn.
+fn vehicle_quarter_turns(model: &vehicles::VehicleModel) -> u8 {
+    let pivot = model
+        .parts
+        .iter()
+        .min_by_key(|p| p.key.mount[0] * p.key.mount[0] + p.key.mount[1] * p.key.mount[1]);
+    let Some(pivot) = pivot else { return 0 };
+    let pm = [pivot.key.mount[0], pivot.key.mount[1]];
+    let mut best: Option<([i32; 2], [i32; 2])> = None;
+    for p in &model.parts {
+        let v = [p.key.mount[0] - pm[0], p.key.mount[1] - pm[1]];
+        if v == [0, 0] {
+            continue;
+        }
+        let w = [p.abs_pos[0] - pivot.abs_pos[0], p.abs_pos[1] - pivot.abs_pos[1]];
+        let score = v[0] * v[0] + v[1] * v[1];
+        if best.is_none_or(|(bv, _)| score > bv[0] * bv[0] + bv[1] * bv[1]) {
+            best = Some((v, w));
+        }
+    }
+    let Some((v, w)) = best else { return 0 };
+    let rot = |[a, b]: [i32; 2]| [-b, a];
+    let (mut cur, mut best_t, mut best_dot) = (v, 0u8, i64::MIN);
+    for t in 0..4u8 {
+        if cur == w {
+            return t;
+        }
+        let dot = (cur[0] * w[0] + cur[1] * w[1]) as i64;
+        if dot > best_dot {
+            best_dot = dot;
+            best_t = t;
+        }
+        cur = rot(cur);
+    }
+    best_t
+}
+
+/// Convert a voxelizer prop model to the engine's sparse
+/// palette form (first-seen colour order).
+fn prop_model_data(model: &voxelizer::PropModel) -> materials::PropModelData {
+    let mut palette: Vec<[u8; 3]> = Vec::new();
+    let mut voxels = Vec::with_capacity(model.voxels.len());
+    for v in &model.voxels {
+        match v {
+            Some(c) => {
+                let rgb = [c[0], c[1], c[2]];
+                let idx = match palette.iter().position(|p| *p == rgb) {
+                    Some(i) => i as u16,
+                    None => {
+                        palette.push(rgb);
+                        (palette.len() - 1) as u16
+                    }
+                };
+                voxels.push(idx);
+            }
+            None => voxels.push(materials::PropModelData::EMPTY),
+        }
+    }
+    materials::PropModelData {
+        size: model.size,
+        palette,
+        voxels,
+    }
+}
+
+/// Stage-G (docs/vehicle-stage-g.md §5 S3): compose a
+/// vehicle scene's fine models into a prop scene, plus the
+/// absolute tiles they cover (whose coarse stamps the
+/// caller suppresses). Sprites resolve through the tileset
+/// dir's material table — a material's top-layer image, the
+/// same image the coarse textured path samples.
+///
+/// Returns `None` when nothing composes (no vpart names, a
+/// vehicle with an unnamed part, no constructed tile): the
+/// caller then keeps today's coarse-only rendering exactly.
+/// A vehicle is composed whole or not at all — a tile is
+/// covered only when every part on it is named, so a part
+/// never renders both ways.
+pub fn vehicle_fine_scene(
+    scene: &crate::frame::VehicleScene,
+    dir: &Path,
+) -> Result<
+    Option<(
+        crate::frame::PropScene,
+        std::collections::HashSet<[i32; 3]>,
+    )>,
+    String,
+> {
+    if scene.vpart_names.is_empty() {
+        return Ok(None);
+    }
+    let table = materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
+    let cache: std::cell::RefCell<
+        std::collections::HashMap<String, Option<image::RgbaImage>>,
+    > = Default::default();
+    let resolver = |id: &str| -> Option<image::RgbaImage> {
+        if let Some(hit) = cache.borrow().get(id) {
+            return hit.clone();
+        }
+        let img = table.get(id).and_then(|mat| {
+            image::open(dir.join(format!("blocks/layer_{:04}.png", mat.sprite_layer)))
+                .ok()
+                .map(|i| i.to_rgba8())
+        });
+        cache.borrow_mut().insert(id.to_string(), img.clone());
+        img
+    };
+    let mut out = crate::frame::PropScene {
+        models: Vec::new(),
+        placements: Vec::new(),
+    };
+    let mut covered: std::collections::HashSet<[i32; 3]> = Default::default();
+    let mut next_id = VEHICLE_PROP_ID_BASE;
+    for model in &scene.models {
+        if model.parts.iter().any(|p| !scene.vpart_names.contains_key(&p.key.vpart)) {
+            continue; // unnamed part: the whole vehicle stays coarse
+        }
+        let mut layout = voxelizer::vehicle::VehicleLayout::default();
+        let mut mount_abs: std::collections::HashMap<[i32; 3], [i32; 3]> = Default::default();
+        for p in &model.parts {
+            mount_abs.entry(p.key.mount).or_insert(p.abs_pos);
+            layout
+                .tiles
+                .entry((p.key.mount[0], p.key.mount[1], p.key.mount[2]))
+                .or_default()
+                .push(voxelizer::vehicle::PartSpot {
+                    base: scene.vpart_names[&p.key.vpart].clone(),
+                    roof: p.roof,
+                    open: p.open,
+                    broken: p.broken,
+                });
+        }
+        let composed = voxelizer::vehicle::compose_vehicle(&layout, &resolver);
+        if composed.is_empty() {
+            continue;
+        }
+        let turns = vehicle_quarter_turns(model);
+        for ((lx, ly, lz), pmodel) in composed {
+            let Some(abs) = mount_abs.get(&[lx, ly, lz]) else {
+                continue;
+            };
+            let level = abs[2] - world::HOUSE_MIN_GAME_Z;
+            if level < 0 {
+                continue;
+            }
+            let id = next_id;
+            next_id += 1;
+            out.models.push((id, prop_model_data(&pmodel)));
+            out.placements.push(crate::snapshot_world::FurniturePlacement {
+                x: abs[0],
+                y: abs[1],
+                level: level as u32,
+                furn_id: id,
+                quarter_turns: turns,
+            });
+            covered.insert(*abs);
+        }
+    }
+    if out.models.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some((out, covered)))
+}
+
+/// Concatenate two prop scenes (ids are the caller's to
+/// keep disjoint).
+pub(crate) fn merge_prop_scenes(
+    a: &crate::frame::PropScene,
+    b: &crate::frame::PropScene,
+) -> crate::frame::PropScene {
+    crate::frame::PropScene {
+        models: a.models.iter().cloned().chain(b.models.iter().cloned()).collect(),
+        placements: a
+            .placements
+            .iter()
+            .copied()
+            .chain(b.placements.iter().copied())
+            .collect(),
+    }
 }
 
 /// First block id of the vehicle-material allocation range.
@@ -854,7 +1070,7 @@ fn prepare_raster_fine_v(
     let mut spec_opt = match textures_dir {
         Some(dir) => {
             let table =
-                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+                materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             Some(spec)
@@ -874,6 +1090,25 @@ fn prepare_raster_fine_v(
         }
         None => props,
     };
+    // Stage-G: vehicle fine models join the prop scene;
+    // their covered tiles' coarse stamps are suppressed
+    // below (vehicle_fine_scene / docs/vehicle-stage-g.md).
+    let veh_fine = match (vehicles, textures_dir) {
+        (Some(v), Some(dir)) => vehicle_fine_scene(v, dir)?,
+        _ => None,
+    };
+    let combined;
+    let props = match &veh_fine {
+        Some((vscene, _)) => {
+            combined = merge_prop_scenes(props, vscene);
+            &combined
+        }
+        None => props,
+    };
+    let covered: std::collections::HashSet<[i32; 3]> = match &veh_fine {
+        Some((_, c)) => c.clone(),
+        None => Default::default(),
+    };
     let prep = prep_prop_spec(props, &mut spec_opt);
     if let Some(spec) = &spec_opt {
         // Coarse blocks only: stamped fine blocks already carry
@@ -881,7 +1116,7 @@ fn prepare_raster_fine_v(
         stamp_tex_layers(&mut filtered, spec);
     }
     if let Some(v) = vehicles {
-        stamp_vehicles(&mut filtered, v);
+        stamp_vehicles_except(&mut filtered, v, &covered);
     }
     let layer = stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
     let (meshes, stats) = mesh_filtered_fine(&filtered, &layer);
@@ -1118,7 +1353,7 @@ pub fn prepare_raster_wire(
     let mut spec_opt = match tex_ids {
         Some((dir, ids)) => {
             let table =
-                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+                materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _stats) = textures::build_texture_spec(&table, dir, ids)?;
             Some(spec)
         }
@@ -1217,7 +1452,7 @@ fn prepare_raster_lit_fine_v(
     let mut spec_opt = match textures_dir {
         Some(dir) => {
             let table =
-                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+                materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             Some(spec)
@@ -1237,12 +1472,31 @@ fn prepare_raster_lit_fine_v(
         }
         None => props,
     };
+    // Stage-G: vehicle fine models join the prop scene;
+    // their covered tiles' coarse stamps are suppressed
+    // below (vehicle_fine_scene / docs/vehicle-stage-g.md).
+    let veh_fine = match (vehicles, textures_dir) {
+        (Some(v), Some(dir)) => vehicle_fine_scene(v, dir)?,
+        _ => None,
+    };
+    let combined;
+    let props = match &veh_fine {
+        Some((vscene, _)) => {
+            combined = merge_prop_scenes(props, vscene);
+            &combined
+        }
+        None => props,
+    };
+    let covered: std::collections::HashSet<[i32; 3]> = match &veh_fine {
+        Some((_, c)) => c.clone(),
+        None => Default::default(),
+    };
     let prep = prep_prop_spec(props, &mut spec_opt);
     if let Some(spec) = &spec_opt {
         stamp_tex_layers(&mut filtered, spec);
     }
     if let Some(v) = vehicles {
-        stamp_vehicles(&mut filtered, v);
+        stamp_vehicles_except(&mut filtered, v, &covered);
     }
     apply_visibility_mask(&mut filtered, lit);
     apply_sky_exposure_alpha(&mut filtered, lit);

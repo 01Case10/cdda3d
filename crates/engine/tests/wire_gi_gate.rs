@@ -81,6 +81,7 @@ fn run_session(
             share: Some(share.clone()),
             captures: None,
             models_dir: None,
+            billboards_dir: None,
         },
     );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);

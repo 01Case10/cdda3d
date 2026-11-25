@@ -1,0 +1,17 @@
+{
+  "big_thing": "big_thing",
+  "f_bookcase": "bookcase",
+  "f_table": "table",
+  "filler": "filler",
+  "mon_tall": "tall_thing",
+  "t_dirt": "dirt",
+  "t_dirt_lookalike": "dirt",
+  "t_fence": "fence",
+  "t_floor_wood": "wood_floor",
+  "t_glass_window": "glass",
+  "t_grass": "grass_fg",
+  "t_open_air": "open_air_fg",
+  "t_rock_var_red": "rock_red",
+  "t_seasonal_season_spring": "seasonal_spring",
+  "t_wall": "t_wall_unconnected"
+}

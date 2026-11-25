@@ -300,6 +300,7 @@ fn decorations_are_not_pickable() {
         image: sprite,
         origin_x: 0,
         origin_y: 0,
+        feet_inset_px: 0,
         signature: billboard::composite::Signature {
             sprite_ids: vec!["decor_shrub".into()],
             facing: billboard::composite::Facing::None,
@@ -337,6 +338,8 @@ fn decorations_are_not_pickable() {
         time_s: 0.0,
         decorations: vec![decor],
         decor_atlas: Some(atlas),
+        // Fixture world: the floor-slab lift (frame::floor_surface_lift).
+        base_lift: 1.0,
     };
     let picked = frame::pick_billboard_entity(&scene, &camera, eye, dir);
     assert_eq!(picked, None, "decorations are never pickable");

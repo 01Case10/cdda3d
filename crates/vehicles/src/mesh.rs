@@ -105,6 +105,19 @@ pub fn stamp_vehicle_mapped(
     level0_z: i32,
     block_id: &dyn Fn(&PartModel) -> u32,
 ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 2]>) {
+    stamp_vehicle_mapped_except(map, model, level0_z, block_id, &BTreeSet::new())
+}
+
+/// [`stamp_vehicle_mapped`] skipping the given absolute tiles
+/// entirely (Stage-G: tiles a fine vehicle model covers must
+/// not also stamp coarse — the fine model replaces them).
+pub fn stamp_vehicle_mapped_except(
+    map: &mut ChunkMap,
+    model: &VehicleModel,
+    level0_z: i32,
+    block_id: &dyn Fn(&PartModel) -> u32,
+    except: &BTreeSet<[i32; 3]>,
+) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 2]>) {
     let scale = map.scale;
     let per = scale.blocks_per_z_level as i32;
     // Per tile: (last body part index, last roof part index).
@@ -120,6 +133,9 @@ pub fn stamp_vehicle_mapped(
     let mut occupied = BTreeSet::new();
     let mut dirtied = BTreeSet::new();
     for (pos, (body, roof)) in tiles {
+        if except.contains(&pos) {
+            continue;
+        }
         let [tx, ty, tz] = pos;
         let level = tz - level0_z;
         if level < 0 {

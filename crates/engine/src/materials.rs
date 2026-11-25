@@ -40,7 +40,8 @@
 //! untouched.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// How a material's prop model seats in its tile on the
 /// snapshot path (terrain wiring, 2026-11-18), recorded by
@@ -89,6 +90,10 @@ pub struct Material {
     pub top_layer: usize,
     pub side_layer: usize,
     pub bottom_layer: usize,
+    /// The vehicle composer's sprite layer (the _rotE
+    /// element for rotation-list parts); equals top_layer
+    /// for other materials and in pre-sprite_layer assets.
+    pub sprite_layer: usize,
     pub height_voxels: u32,
     pub transparency: String,
     pub cutout: bool,
@@ -370,8 +375,19 @@ pub struct MaterialTable {
     by_id: BTreeMap<String, Material>,
 }
 
+/// Number of real table parses this process has done
+/// (`MaterialTable::load`); see `MaterialTable::parse_count`.
+static PARSE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl MaterialTable {
     pub fn load(dir: &Path) -> Result<Self, String> {
+        // Counted: parsing this table is the expensive act the
+        // 0 fps fix eliminated from the frame path (the UltiCa
+        // materials.json is ~246 MB). The counter lets the
+        // rt_cache_gate prove no frame path re-parses it —
+        // a regression that swaps a `load_cached` back to a
+        // plain `load` anywhere fails that gate.
+        PARSE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let blocks: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(dir.join("blocks.json")).map_err(|e| e.to_string())?,
         )
@@ -486,6 +502,11 @@ impl MaterialTable {
                 top_layer: get("top_layer"),
                 side_layer: get("side_layer"),
                 bottom_layer: get("bottom_layer"),
+                sprite_layer: if m.get("sprite_layer").is_some() {
+                    get("sprite_layer")
+                } else {
+                    get("top_layer")
+                },
                 height_voxels: m["height_voxels"].as_u64().unwrap_or(0) as u32,
                 transparency: m["transparency"].as_str().unwrap_or("opaque").to_string(),
                 cutout: m["cutout"].as_bool().unwrap_or(false),
@@ -539,6 +560,42 @@ impl MaterialTable {
             }
             table.shore_size = img.width();
         }
+        Ok(table)
+    }
+
+    /// How many times [`Self::load`] has actually parsed a
+    /// table in this process. Instrumentation for the
+    /// rt_cache_gate parse test — production code never reads
+    /// it.
+    pub fn parse_count() -> usize {
+        PARSE_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// [`Self::load`], cached per directory for the life of the
+    /// process: the table is immutable on disk during a run and
+    /// the real UltiCa `materials.json` is ~246 MB, so re-parsing
+    /// it is seconds of CPU every call. The frame paths used to
+    /// call `load` several times *per rendered frame* (variant,
+    /// shore and blend preparation, texture attach, prop
+    /// stamping), which pinned the live RT demo at 0 fps
+    /// (measured 2026-11-24: ~8 s/frame textured vs ~0.4 s
+    /// untextured on a software adapter, the delta being almost
+    /// entirely repeated table loads). Callers that render in a
+    /// loop must use this; `load` stays for tests and one-shot
+    /// tools that want a fresh read.
+    pub fn load_cached(dir: &Path) -> Result<Arc<Self>, String> {
+        static CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<MaterialTable>>>> =
+            OnceLock::new();
+        let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+        let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        if let Some(t) = cache.lock().expect("material table cache lock").get(&key) {
+            return Ok(t.clone());
+        }
+        let table = Arc::new(Self::load(dir)?);
+        cache
+            .lock()
+            .expect("material table cache lock")
+            .insert(key, table.clone());
         Ok(table)
     }
     pub fn get(&self, id: &str) -> Option<&Material> {

@@ -46,11 +46,22 @@ impl SpriteUv {
 pub struct SpriteAtlas {
     pub image: RgbaImage,
     pub uvs: BTreeMap<String, SpriteUv>,
+    /// Tile-entry id -> sprite name, from the voxelizer's
+    /// `tile_sprites.json` (absent = empty). Creatures and items
+    /// are named by tile-entry ID on the wire — a monster type
+    /// id, the avatar's `player_male` — but the atlas is keyed
+    /// by sprite name, and an entry's fg is often a different
+    /// name (`player_male` -> `skin_brown_m`) or a weighted
+    /// variant list (`mon_zombie` -> `mon_zombie_2`, the
+    /// primary). `resolve` bridges the two; without it those
+    /// ids composite to nothing.
+    pub tile_sprites: BTreeMap<String, String>,
 }
 
 impl SpriteAtlas {
     /// Load the voxelizer output pair from a directory containing
-    /// `sprites.json` + `sprites.png`.
+    /// `sprites.json` + `sprites.png` (plus the optional
+    /// `tile_sprites.json` entry table).
     pub fn load(dir: &Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(dir.join("sprites.json"))
             .map_err(|e| format!("sprites.json: {e}"))?;
@@ -59,16 +70,48 @@ impl SpriteAtlas {
         let image = image::open(dir.join("sprites.png"))
             .map_err(|e| format!("sprites.png: {e}"))?
             .to_rgba8();
-        Ok(Self::from_parts(image, list))
+        let mut atlas = Self::from_parts(image, list);
+        let table_path = dir.join("tile_sprites.json");
+        if table_path.exists() {
+            let text = std::fs::read_to_string(&table_path)
+                .map_err(|e| format!("tile_sprites.json: {e}"))?;
+            atlas.tile_sprites = serde_json::from_str(&text)
+                .map_err(|e| format!("tile_sprites.json parse: {e}"))?;
+        }
+        Ok(atlas)
     }
 
     pub fn from_parts(image: RgbaImage, list: Vec<SpriteUv>) -> Self {
         let uvs = list.into_iter().map(|u| (u.name.clone(), u)).collect();
-        SpriteAtlas { image, uvs }
+        SpriteAtlas {
+            image,
+            uvs,
+            tile_sprites: BTreeMap::new(),
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<&SpriteUv> {
         self.uvs.get(name)
+    }
+
+    /// The sprite name a game id draws as: the id itself when
+    /// it names a sprite, else its tile entry's fg sprite via
+    /// `tile_sprites` (when that sprite is in this atlas).
+    pub fn resolve<'a>(&'a self, id: &'a str) -> Option<&'a str> {
+        if self.uvs.contains_key(id) {
+            return Some(id);
+        }
+        let target = self.tile_sprites.get(id)?;
+        if self.uvs.contains_key(target) {
+            Some(target.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// `get` for a game id (see `resolve`).
+    pub fn get_resolved(&self, id: &str) -> Option<&SpriteUv> {
+        self.resolve(id).and_then(|name| self.get(name))
     }
 
     /// Crop one sprite's pixels out of the packed atlas image.
@@ -95,7 +138,15 @@ impl SpriteAtlas {
         .map_err(|e| e.to_string())?;
         self.image
             .save(dir.join("sprites.png"))
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        if !self.tile_sprites.is_empty() {
+            std::fs::write(
+                dir.join("tile_sprites.json"),
+                serde_json::to_string_pretty(&self.tile_sprites).unwrap(),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 }
 
@@ -127,6 +178,13 @@ fn fill_rect(img: &mut RgbaImage, x0: u32, y0: u32, w: u32, h: u32, c: [u8; 4]) 
 ///   semi-transparent over a bright color — the dark-halo probe,
 /// * item sprites (`item_rock`, `item_crowbar`) and a second creature
 ///   (`mon_skeleton`) for the variety pass.
+///
+/// There is deliberately NO player sprite here (Joey's call,
+/// 2026-11-24: do not invent sprites). The avatar's art is the
+/// tileset's own — the `player_male` entry's fg (`skin_brown_m`
+/// in UltiCa) plus its gear overlays — and it resolves through
+/// `tile_sprites` in the real atlas. A fixture stand-in would
+/// only ever prove the fixture.
 pub fn fixture_atlas() -> SpriteAtlas {
     // Shelf-pack by hand at fixed positions (deterministic).
     // Layout (atlas 256 wide): zombie 0,0 32x32; jacket 32,0; jeans
@@ -167,6 +225,5 @@ pub fn fixture_atlas() -> SpriteAtlas {
     fill_rect(&mut img, 8, 32 + 6, 48, 58, [100, 60, 140, 255]);
     fill_rect(&mut img, 20, 32, 24, 16, [120, 80, 160, 255]);
     add(SpriteUv { name: "mon_hulk".into(), x: 0, y: 32, width: 64, height: 64, offset_x: -16, offset_y: -32, sheet: "large.png".into() });
-
     SpriteAtlas::from_parts(img, uvs)
 }

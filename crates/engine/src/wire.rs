@@ -12,8 +12,10 @@
 //! session against a live server. `WireScene` is that seating:
 //! the caller builds the block world once (choosing the block
 //! resolver — the gates use a canonical palette, the client
-//! session the coarse stand-in, a real desktop run the
-//! voxelizer materials) and hands the built map to the frame;
+//! session the production resolver (the defs' CDDA semantic
+//! colours, Lane J; Lane G's hash palette as fallback), a
+//! real desktop run the voxelizer materials) and hands the
+//! built map to the frame;
 //! both renderer paths consume it through the same filtered-map
 //! preparation the fixtures use.
 //!
@@ -32,11 +34,54 @@
 
 use std::sync::Arc;
 
+use billboard::instance::FakeEntity;
 use mesher::block::{Block, Pass};
 use mesher::chunk::ChunkMap;
 use mesher::scale::WorldScale;
 
 use crate::snapshot_world::build_snapshot_world;
+
+/// Convert one wire `Entity` to the billboard mirror type,
+/// field for field — the ONE conversion every entity takes,
+/// the player included. The avatar is not special-cased: the
+/// real adapter emits it first with sprite_id `"player_male"`
+/// (or `"player_female"`), and
+/// it renders as a sprite on a billboard exactly like an enemy
+/// (base sprite + overlays in game order, facing flip, blob
+/// shadow). Before this conversion lived here, it existed only
+/// as a copy inside the sim-creature gate, so the live loop
+/// never seated ANY wire entity — and the player, whose sprite
+/// the fixture atlas also lacked, could not have rendered even
+/// through the fixture crowds.
+pub fn wire_entity_to_billboard(e: &proto::EntityT) -> FakeEntity {
+    let p = e.pos.as_ref();
+    FakeEntity {
+        id: e.id,
+        sprite_id: e.sprite_id.clone().unwrap_or_default(),
+        pos: [p.map_or(0, |p| p.x), p.map_or(0, |p| p.y), p.map_or(0, |p| p.z)],
+        facing: match e.facing {
+            proto::Facing::LEFT => billboard::composite::Facing::Left,
+            proto::Facing::RIGHT => billboard::composite::Facing::Right,
+            _ => billboard::composite::Facing::None,
+        },
+        overlays: e.overlays.clone().unwrap_or_default(),
+        hp_frac: e.hp_frac,
+        flags: e.flags,
+        under_roof: false,
+        bob_phase: e.id as f32 * 0.7,
+        last_hit_s: -100.0,
+    }
+}
+
+/// Every entity of a snapshot as billboard mirrors, in wire
+/// order (the avatar first, per the adapter's convention).
+pub fn billboard_entities(snapshot: &proto::SnapshotT) -> Vec<FakeEntity> {
+    snapshot
+        .entities
+        .as_ref()
+        .map(|es| es.iter().map(wire_entity_to_billboard).collect())
+        .unwrap_or_default()
+}
 
 /// A built wire world: the block map derived from a
 /// `TileDefs` + `Snapshot` pair (at the frame path's default
@@ -92,6 +137,15 @@ pub struct WireScene {
     /// no def table. A frame path with a textures dir but no
     /// material ids renders exactly the untextured world.
     pub material_ids: Option<std::collections::HashMap<u32, String>>,
+    /// The snapshot's entities as billboard mirrors (the
+    /// avatar first, then creatures — wire order), converted
+    /// by [`billboard_entities`]. A consumer with a sprite
+    /// atlas seats them through [`WireScene::billboard_scene`]
+    /// so EVERY entity — the player character included —
+    /// renders as a sprite on a billboard through the one
+    /// billboard pass, exactly like an enemy. Empty when the
+    /// snapshot carried no entities.
+    pub entities: Vec<FakeEntity>,
 }
 
 impl WireScene {
@@ -132,7 +186,44 @@ impl WireScene {
             environment: None,
             lighting: None,
             material_ids: None,
+            entities: billboard_entities(snapshot),
         }
+    }
+
+    /// The billboard anchor lift for this wire world: a wire
+    /// world's solid tiles fill their whole z-level (Lane G —
+    /// see `snapshot_world::build_columns`), so the surface a
+    /// character stands on is the TOP of the level fill, one
+    /// full level height above the level base the billboard
+    /// crate anchors at — plus the level offset of game z 0 in
+    /// this snapshot's window (`min_game_z` maps to world
+    /// level 0). At the fixture scenes' slab lift, a wire
+    /// billboard sits inside the opaque fill and never renders.
+    pub fn billboard_base_lift(&self) -> f32 {
+        let scale = mesher::scale::WorldScale::default();
+        (1 - self.min_game_z) as f32 * scale.blocks_per_z_level as f32 * scale.block_size
+    }
+
+    /// The billboard scene for this wire world over `atlas`:
+    /// every wire entity (player + creatures) as a billboard
+    /// entity, drawn by the frame's one billboard pass.
+    /// `None` when the snapshot carried no entities.
+    pub fn billboard_scene(
+        &self,
+        atlas: billboard::atlas::SpriteAtlas,
+    ) -> Option<crate::frame::BillboardScene> {
+        if self.entities.is_empty() {
+            return None;
+        }
+        Some(crate::frame::BillboardScene {
+            atlas,
+            entities: self.entities.clone(),
+            items: None,
+            time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
+            base_lift: self.billboard_base_lift(),
+        })
     }
 
     /// Attach the furniture prop scene derived from this
@@ -307,23 +398,110 @@ fn material_ids_for(
     out
 }
 
-/// The live wire palette (Phase 11 follow-up, Lane G): one
-/// deterministic colour per terrain def, keyed by the def's
-/// STRING id — the only join key that means the same thing on
-/// every side of the wire (wire ids are per-kind and renumber
-/// between tables). The colour is an FNV-1a hash of the string
-/// id mapped into a constrained HSL band (saturation
-/// 0.38..0.68, lightness 0.36..0.60), so colours are stable
-/// across runs and machines, distinct per def, and never
-/// garish or near-black/near-white.
+/// CDDA colour NAME -> RGB (Phase 11 follow-up, Lane J),
+/// through the game's own colour definitions in the pinned
+/// 0.I-1 tree:
 ///
-/// This is honest colour-CODING, not the game's colours: it
-/// exists so a live wire world is readable (grass vs road vs
-/// floor vs wall are different hues) until semantic colours
-/// land — CDDA's own per-def `color` field is not currently
-/// imported into the wire def table, so there is nothing
-/// truer to show yet. When that import lands, this palette
-/// is the thing it replaces.
+/// - the RGB values are `data/raw/colors.json`'s `colordef`
+///   (identical values in
+///   `data/raw/color_themes/base_colors-default.json`): the
+///   16 base colours as RGB triplets, keyed BLACK / RED /
+///   GREEN / BROWN / BLUE / MAGENTA / CYAN / GRAY / DGRAY /
+///   LRED / LGREEN / YELLOW / LBLUE / LMAGENTA / LCYAN /
+///   WHITE;
+/// - which base colour a name denotes comes from
+///   `src/color.cpp`: `color_from_string` prefixes a bare
+///   name with `c_` (a name already carrying a prefix —
+///   second char `_` — is used as-is), and the
+///   add_color/init_colors table gives each `c_` name a
+///   colour pair whose FOREGROUND is the base colour in the
+///   table below (c_green = pair 3, GREEN fg; c_brown =
+///   pair 7, BROWN fg; c_yellow = pair 7 bold, YELLOW fg;
+///   c_pink = pair 6 bold, LMAGENTA fg; c_light_gray =
+///   pair 1, GRAY fg; c_dark_gray = pair 72, DGRAY fg; the
+///   remaining light_* names are the bold pairs: LRED /
+///   LGREEN / LBLUE / LCYAN).
+///
+/// A composite name ("brown_green") is fg_bg — the
+/// foreground component is the def's colour. An `i_` name
+/// (an inverted pair in the game) is read by its named
+/// component the same way: the hue it names is that
+/// component. Every name in the 0.I-1 def data resolves
+/// through this table (the importer's validate enforces
+/// membership in color.cpp's add_color set); anything else
+/// returns `None` and the caller falls back.
+pub fn semantic_color(name: &str) -> Option<[f32; 4]> {
+    // color_from_string's prefix rule. (Its lt/dk deprecated-
+    // spelling rewrite is not reproduced: no 0.I-1 def uses
+    // those spellings — the importer's name-set check would
+    // still pass them, and they would land here unresolved
+    // and fall back, never mis-colour.)
+    let prefixed;
+    let full = if name.len() < 2 || name.as_bytes()[1] != b'_' {
+        prefixed = format!("c_{name}");
+        &prefixed
+    } else {
+        name
+    };
+    let rest = full.split_once('_')?.1;
+    // (name component, colordef key, RGB from data/raw/colors.json)
+    const BASE: [(&str, [u8; 3]); 16] = [
+        ("black", [0, 0, 0]),              // BLACK
+        ("red", [255, 0, 0]),              // RED
+        ("green", [0, 110, 0]),            // GREEN
+        ("brown", [97, 56, 28]),           // BROWN
+        ("blue", [10, 10, 220]),           // BLUE
+        ("magenta", [139, 58, 98]),        // MAGENTA
+        ("cyan", [0, 150, 180]),           // CYAN
+        ("light_gray", [150, 150, 150]),   // GRAY
+        ("dark_gray", [99, 99, 99]),       // DGRAY
+        ("light_red", [255, 150, 150]),    // LRED
+        ("light_green", [0, 255, 0]),      // LGREEN
+        ("yellow", [255, 255, 0]),         // YELLOW
+        ("light_blue", [100, 100, 255]),   // LBLUE
+        ("pink", [254, 0, 254]),           // LMAGENTA
+        ("light_cyan", [0, 240, 255]),     // LCYAN
+        ("white", [255, 255, 255]),        // WHITE
+    ];
+    // The foreground component is the whole rest or a prefix
+    // ending at an '_' boundary; longest match wins (only
+    // light_*/dark_* are multi-word, and no shorter base name
+    // prefixes them, but the rule stays explicit).
+    let mut best: Option<&[u8; 3]> = None;
+    let mut best_len = 0;
+    for (base, rgb) in &BASE {
+        if let Some(tail) = rest.strip_prefix(base) {
+            if (tail.is_empty() || tail.starts_with('_')) && base.len() > best_len {
+                best = Some(rgb);
+                best_len = base.len();
+            }
+        }
+    }
+    let [r, g, b] = best?;
+    Some([
+        *r as f32 / 255.0,
+        *g as f32 / 255.0,
+        *b as f32 / 255.0,
+        1.0,
+    ])
+}
+
+/// The Lane G hash palette, DEMOTED by Lane J to fallback:
+/// one deterministic colour per terrain def, keyed by the
+/// def's STRING id — the only join key that means the same
+/// thing on every side of the wire (wire ids are per-kind
+/// and renumber between tables). The colour is an FNV-1a
+/// hash of the string id mapped into a constrained HSL band
+/// (saturation 0.38..0.68, lightness 0.36..0.60), so colours
+/// are stable across runs and machines, distinct per def,
+/// and never garish or near-black/near-white.
+///
+/// This is honest colour-CODING, not the game's colours.
+/// Since Lane J it is used ONLY for defs that carry no CDDA
+/// colour (or a name the game's table doesn't resolve):
+/// [`semantic_color`] is the production resolver's primary
+/// source, this is what keeps a colourless def readable
+/// instead of a hole.
 pub fn palette_color(string_id: &str) -> [f32; 4] {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in string_id.as_bytes() {
@@ -352,13 +530,18 @@ fn hsl_to_rgb(hue: f32, sat: f32, light: f32) -> [f32; 3] {
     [r + m, g + m, b + m]
 }
 
-/// The `block_for` resolver form of [`palette_color`] for a
-/// whole def table: terrain wire id -> that def's palette
-/// block (the block keeps the wire id; only the colour is
-/// derived). Id 0 ("none") resolves to AIR, matching the
-/// gates' resolver convention; a terrain id with no string
-/// id (a malformed table) hashes its `#<id>` placeholder, so
-/// it still gets a stable colour instead of a hole.
+/// The production `block_for` resolver for a whole def
+/// table: terrain wire id -> that def's block (the block
+/// keeps the wire id; only the colour is derived). The
+/// colour is the def's own CDDA colour, resolved by
+/// [`semantic_color`] from the wire `TileDef.color` name
+/// (Lane J); a def with no colour — or a name the game's
+/// table doesn't resolve — falls back to the Lane G hash
+/// [`palette_color`]. Id 0 ("none") resolves to AIR,
+/// matching the gates' resolver convention; a terrain id
+/// with no string id (a malformed table) hashes its
+/// `#<id>` placeholder, so it still gets a stable colour
+/// instead of a hole.
 pub fn palette_resolver(defs: &proto::TileDefsT) -> impl Fn(u32) -> Block + '_ {
     let mut colors: std::collections::HashMap<u32, [f32; 4]> =
         std::collections::HashMap::new();
@@ -369,7 +552,12 @@ pub fn palette_resolver(defs: &proto::TileDefsT) -> impl Fn(u32) -> Block + '_ {
                     .string_id
                     .clone()
                     .unwrap_or_else(|| format!("#{}", d.id));
-                colors.insert(d.id, palette_color(&key));
+                let color = d
+                    .color
+                    .as_deref()
+                    .and_then(semantic_color)
+                    .unwrap_or_else(|| palette_color(&key));
+                colors.insert(d.id, color);
             }
         }
     }
@@ -538,5 +726,44 @@ pub fn apply_delta_to_snapshot(snapshot: &mut proto::SnapshotT, delta: &proto::D
     }
     if let Some(env) = &delta.environment {
         snapshot.environment = Some(env.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::semantic_color;
+
+    fn rgb(r: u8, g: u8, b: u8) -> [f32; 4] {
+        [
+            r as f32 / 255.0,
+            g as f32 / 255.0,
+            b as f32 / 255.0,
+            1.0,
+        ]
+    }
+
+    /// The name forms the 0.I-1 def data actually uses, each
+    /// pinned to its data/raw/colors.json value (Lane J).
+    #[test]
+    fn semantic_color_resolves_the_games_names() {
+        // Bare names (color_from_string prefixes c_).
+        assert_eq!(semantic_color("green"), Some(rgb(0, 110, 0)));
+        assert_eq!(semantic_color("brown"), Some(rgb(97, 56, 28)));
+        assert_eq!(semantic_color("light_gray"), Some(rgb(150, 150, 150)));
+        assert_eq!(semantic_color("dark_gray"), Some(rgb(99, 99, 99)));
+        assert_eq!(semantic_color("light_green"), Some(rgb(0, 255, 0)));
+        assert_eq!(semantic_color("pink"), Some(rgb(254, 0, 254)));
+        assert_eq!(semantic_color("yellow"), Some(rgb(255, 255, 0)));
+        // Composites: the FOREGROUND component is the colour.
+        assert_eq!(semantic_color("brown_green"), Some(rgb(97, 56, 28)));
+        assert_eq!(semantic_color("light_gray_red"), Some(rgb(150, 150, 150)));
+        assert_eq!(semantic_color("white_yellow"), Some(rgb(255, 255, 255)));
+        // Pre-prefixed names are used as-is.
+        assert_eq!(semantic_color("c_brown"), Some(rgb(97, 56, 28)));
+        assert_eq!(semantic_color("i_brown"), Some(rgb(97, 56, 28)));
+        // Unknown / unset names do not resolve.
+        assert_eq!(semantic_color("unset"), None);
+        assert_eq!(semantic_color("not_a_game_colour"), None);
+        assert_eq!(semantic_color(""), None);
     }
 }

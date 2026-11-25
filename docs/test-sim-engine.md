@@ -728,8 +728,10 @@ and a subset over a real socket. Settled points:
   `snapshot_world::build_snapshot_world` with a caller-chosen
   block resolver (gates: the S1 canonical palette; the client
   session: the string-id palette since Lane G — before it, a
-  uniform-grey coarse stand-in; a desktop run: the voxelizer
-  materials) — carried as an `Arc<ChunkMap>` + the window's
+  uniform-grey coarse stand-in; the defs' CDDA semantic
+  colours since Lane J, hash as fallback — a desktop run:
+  the voxelizer materials) — carried as an `Arc<ChunkMap>` +
+  the window's
   `min_game_z`. When seated, both renderer paths prepare from
   the wire map (`scene_prep::prepare_raster_wire`; the RT
   path's `world_from_wire` + the shared lit contract) and the
@@ -848,7 +850,9 @@ and a subset over a real socket. Settled points:
   STRING id into a constrained HSL band. It is colour-CODING,
   documented as a stand-in until CDDA's own per-def `color`
   field is imported into the wire def table (it is not
-  imported today, so there is nothing truer to show).
+  imported today, so there is nothing truer to show —
+  **imported by Lane J; see the Lane J settlements below.
+  The hash survives as the fallback for colourless defs**).
   (3) **Live furniture:** `wire::prop_scene_for_wire`
   derives a `PropScene` from the snapshot's furniture arrays
   (Lane F's derivation) with models resolved by string id in
@@ -945,6 +949,81 @@ and a subset over a real socket. Settled points:
   seated their stamped cells resolve through the same spec
   the coarse world uses (the props arms' extend + RT
   fine-id shift, the fixture props shape).
+
+- **Lane J settlements (2026-11-24 — semantic colour: the
+  game's own per-def colours replace the hash palette):**
+  Lane G's stand-in note above is closed. The pipeline is
+  the fg_refs shape (Lane B) in three hops. (1) **Importer:**
+  `sim_defs.py` extracts each def's `color` NAME — plain
+  string verbatim; a LIST (the variegated form) resolves to
+  its FIRST entry; a dict takes its `color` key; field types
+  take intensity level 0's (the level `extract_name` already
+  uses); a def with none inherits through its `looks_like`
+  chain within its kind, cycle-safe; still none stays null —
+  names are never invented. `defs.json` regenerated: 13,532
+  defs, every pre-existing field byte-stable (verified
+  field-by-field: zero non-colour changes), `color` appended
+  as each def's last key. Coverage: Terrain 1108/1108, Trap
+  124/124, Monster 1120/1123, Item 9815/9912, Furniture
+  614/659, VehiclePart 376/462, Field 35/144 (a field colour
+  exists only where the data puts one on level 0); 82
+  distinct names used, 340 defs honestly null. Validate
+  recomputes colour via a fresh build (0 mismatches) and
+  requires every name used to belong to the game's own
+  colour-name set — `add_color` names parsed from the tree's
+  `src/color.cpp`, tested through `color_from_string`'s
+  normalisation (0 unknown); spot checks pin hand-verified
+  values incl. `t_floor == "cyan"` — the game's OWN entry
+  for its wooden floor (terrain-floors-indoor.json), pinned
+  precisely because it defies expectation. (2) **Wire:**
+  `TileDef.color` appended last (vtable 36) in the
+  established additive style — NO protocol-version bump
+  (displayed_field / light_frac precedent); C++ headers
+  regenerated into the stub server and the fork (flatc
+  24.3.25, purely additive diffs); the sim's registry
+  populates it from defs.json (serde-defaulted, so an older
+  defs.json degrades to all-absent); the engine's DefTable
+  stores TileDefT wholesale, so the field reaches the
+  resolver untouched; proto samples keep it None (the
+  roof_result golden rule). (3) **Resolver:**
+  `wire::semantic_color` maps name -> RGB grounded in the
+  pinned tree — RGB values from `data/raw/colors.json`'s
+  `colordef` (the 16 base colours; identical in the default
+  colour theme), name -> base mapping from `src/color.cpp`
+  (the `c_` prefix rule; the pair table: c_green = GREEN fg,
+  c_brown = BROWN fg, c_pink = LMAGENTA fg, c_light_gray =
+  GRAY fg, c_dark_gray = DGRAY fg, light_* = the bold L*
+  colours). Composites (`brown_green`) resolve by their
+  FOREGROUND component; `i_` names by their named component.
+  No name in the def data needed a non-game value — the
+  fallback list is empty. `palette_resolver` (the production
+  resolver) is semantic-first; Lane G's `palette_color`
+  survives ONLY as the fallback for colourless/unresolvable
+  defs. `from_wire` stays resolver-agnostic; the gates'
+  canonical resolver is untouched; textures still win where
+  seated (Lane H) — semantic colour is the flat/fallback
+  shading. **Gate `wire_semantic_color_gate`, FAILING-FIRST:**
+  landed after hops 1–2 with the resolver still hash-only —
+  t_grass resolved to the hash pink [0.578, 0.170, 0.347]
+  instead of the game's green [0, 0.431, 0], and the
+  street_block capture showed 0 grass-green pixels. After
+  hop 3: the pinned set (t_grass green, t_wall light_gray,
+  t_pavement dark_gray, t_door_c brown) carries the game's
+  exact RGB in the built world, the capture shows 35,981
+  grass-green px, coverage is asserted as data facts
+  (terrain colourless 0, furniture colourless exactly 45),
+  and the fallback is pinned on a synthetic table (absent
+  and unknown names both land on the hash colour).
+  **`wire_standing_gate` amended, reason recorded in place:**
+  its colour assertions now pin the production resolver's
+  colours (Lane G wrote them against `palette_color` when
+  that WAS the resolver), and its capture classes merge
+  t_wall/t_pavement into one grey class — both are
+  achromatic greys in the game's data, indistinguishable to
+  the shading-invariant normalized classifier by
+  construction; their distinct exact RGBs are pinned by the
+  semantic gate. Parity untouched: `wire_source_gate`
+  byte-identical on both renderers; golden without regen.
 
 ## 6. Test matrix — the user's named tests, plus the ones they imply
 

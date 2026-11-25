@@ -290,6 +290,43 @@
   "mismatches": [],
   "mismatch_total": 0
  },
+ "color": {
+  "per_kind": {
+   "Terrain": {
+    "defs": 1108,
+    "with_color": 1108
+   },
+   "Furniture": {
+    "defs": 659,
+    "with_color": 614
+   },
+   "Trap": {
+    "defs": 124,
+    "with_color": 124
+   },
+   "Field": {
+    "defs": 144,
+    "with_color": 35
+   },
+   "Monster": {
+    "defs": 1123,
+    "with_color": 1120
+   },
+   "Item": {
+    "defs": 9912,
+    "with_color": 9815
+   },
+   "VehiclePart": {
+    "defs": 462,
+    "with_color": 376
+   }
+  },
+  "mismatches": [],
+  "mismatch_total": 0,
+  "distinct_names_used": 82,
+  "unknown_names": [],
+  "game_name_set_size": 145
+ },
  "spot_checks": [
   {
    "check": "t_door_c.open_result == t_door_o",
@@ -401,6 +438,41 @@
     -1,
     1445
    ],
+   "pass": true
+  },
+  {
+   "check": "t_floor.color == 'cyan'",
+   "actual_color": "cyan",
+   "pass": true
+  },
+  {
+   "check": "t_grass.color == 'green'",
+   "actual_color": "green",
+   "pass": true
+  },
+  {
+   "check": "t_pavement.color == 'dark_gray'",
+   "actual_color": "dark_gray",
+   "pass": true
+  },
+  {
+   "check": "t_wall.color == 'light_gray'",
+   "actual_color": "light_gray",
+   "pass": true
+  },
+  {
+   "check": "f_table.color == 'red'",
+   "actual_color": "red",
+   "pass": true
+  },
+  {
+   "check": "fd_blood.color == 'red'",
+   "actual_color": "red",
+   "pass": true
+  },
+  {
+   "check": "mon_zombie.color == 'light_green'",
+   "actual_color": "light_green",
    "pass": true
   }
  ]

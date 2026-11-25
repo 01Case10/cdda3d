@@ -84,6 +84,10 @@ fn main() -> ExitCode {
                     // the fixture paths load materials from).
                     models_dir: value_after(&args, "--textures")
                         .map(std::path::PathBuf::from),
+                    // Captures are off in the windowed session;
+                    // entity billboards seat in the App from the
+                    // published wire scene (sync_frame_args).
+                    billboards_dir: None,
                 },
             ));
             Some(LiveWindowLink { share, input: tx })
@@ -453,6 +457,12 @@ struct App {
     overlay: DebugOverlay,
     fps_counter: FpsCounter,
     pacer: FramePacer,
+    /// RT scene cache for the live loop: the built RT scene
+    /// (trees + textures + pipelines) is reused across frames
+    /// until the scene-determining inputs change — without it
+    /// every presented frame repaid the full build and the RT
+    /// demo ran at 0 fps.
+    rt_cache: Option<engine::rt::RtSceneCache>,
     /// Stub UI store + router (Phase 2h.4 windowed half): clicks
     /// route through the Phase 4 input router and land in
     /// `input_sink` — the engine has no IPC socket client yet, so
@@ -558,6 +568,7 @@ impl App {
             overlay: DebugOverlay::new(),
             fps_counter: FpsCounter::new(),
             pacer: FramePacer::new(),
+            rt_cache: None,
             ui_store,
             router,
             input_sink: Vec::new(),
@@ -600,6 +611,19 @@ impl App {
                     None => true,
                 };
                 if fresh {
+                    self.frame_args.wire = Some(w.clone());
+                    // Entity billboards: the seated billboard
+                    // scene's ATLAS comes from `--billboards`
+                    // (fixture / sample / a tileset dir), but its
+                    // ENTITIES are the wire world's — the player
+                    // character first, then creatures — never the
+                    // flag's hard-coded crowd. The player thus
+                    // renders as a sprite on a billboard through
+                    // the same pass as every enemy.
+                    if let Some(scene) = &mut self.frame_args.billboards {
+                        scene.entities = w.entities.clone();
+                        scene.base_lift = w.billboard_base_lift();
+                    }
                     if let Some(lit) = &w.lighting {
                         self.frame_args.lighting = Some(lit.clone());
                     }
@@ -619,7 +643,6 @@ impl App {
                         }
                     }
                 }
-                self.frame_args.wire = Some(w);
             }
         }
         let a = &mut self.frame_args;
@@ -658,6 +681,30 @@ impl App {
         }
     }
 
+    /// Render one world frame through the app's RT scene cache
+    /// — the exact call `render` presents. Extracted so the
+    /// rt_cache_gate's app-wiring test can drive the windowed
+    /// path headlessly: if this ever falls back to the uncached
+    /// `render_frame`, the live demo is back to rebuilding the
+    /// scene every frame (the 2026-11-24 0 fps bug) while the
+    /// frame-level gates stay green.
+    fn render_world_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<engine::frame::FrameOutcome, engine::capture::CaptureError> {
+        let outcome = engine::frame::render_frame_with_rt_cache(
+            device,
+            queue,
+            &self.frame_args,
+            &mut self.rt_cache,
+        )?;
+        if let Some(stats) = &outcome.stats.mesh_stats {
+            self.overlay.stats = *stats;
+        }
+        Ok(outcome)
+    }
+
     fn render(&mut self) {
         let Some(size) = self.gpu.as_ref().map(|g| g.size) else {
             return;
@@ -666,6 +713,16 @@ impl App {
             return; // minimized: skip, never present to a zero-size surface
         }
         self.sync_frame_args();
+        // Render the world BEFORE acquiring the surface frame:
+        // `render_world_frame` borrows `self` mutably for the
+        // RT cache, so it cannot run under a `&self.gpu` borrow.
+        // The world texture is independent of the surface, so
+        // the order is free.
+        let (device, queue) = {
+            let Some(gpu) = &self.gpu else { return };
+            (gpu.device.clone(), gpu.queue.clone())
+        };
+        let world = self.render_world_frame(&device, &queue);
         let Some(gpu) = &self.gpu else { return };
         let frame = match gpu.surface.get_current_texture() {
             Ok(f) => f,
@@ -674,11 +731,8 @@ impl App {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        match engine::frame::render_frame(&gpu.device, &gpu.queue, &self.frame_args) {
+        match world {
             Ok(outcome) => {
-                if let Some(stats) = &outcome.stats.mesh_stats {
-                    self.overlay.stats = *stats;
-                }
                 gpu.blit
                     .draw(&gpu.device, &gpu.queue, &outcome.texture, &view);
             }
@@ -1003,5 +1057,69 @@ fn windowed_main(cfg: WindowConfig) -> ExitCode {
             eprintln!("voxel-engine: event loop error: {e}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod app_wiring_tests {
+    //! App-wiring half of the rt_cache_gate (test #3): the
+    //! frame-level gates exercise `frame::render_frame*`, but
+    //! the live demo runs through THIS binary's render path.
+    //! Drive `App::render_world_frame` — the call `render`
+    //! presents — twice and require the app's own cache to
+    //! show exactly one build. A fallback to the uncached
+    //! entry here would restore the 0 fps bug with every
+    //! frame-level gate still green.
+    use super::*;
+
+    #[test]
+    fn windowed_render_path_builds_the_rt_scene_once() {
+        let gpu = pollster::block_on(async {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::all(),
+                ..Default::default()
+            });
+            let adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions::default())
+                .await?;
+            adapter
+                .request_device(
+                    &wgpu::DeviceDescriptor {
+                        label: Some("app-wiring-test"),
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::default(),
+                        memory_hints: Default::default(),
+                    },
+                    None,
+                )
+                .await
+                .ok()
+        });
+        let Some((device, queue)) = gpu else {
+            eprintln!("SKIP app wiring test: no wgpu adapter available");
+            return;
+        };
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: None,
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: None,
+        });
+        app.frame_args.size = (320, 180);
+        app.render_world_frame(&device, &queue).expect("frame 1");
+        app.frame_args.yaw_deg += 20.0;
+        app.render_world_frame(&device, &queue).expect("frame 2");
+        assert_eq!(
+            app.rt_cache.as_ref().map(|c| c.build_count()),
+            Some(1),
+            "the windowed render path must trace frame 2 from the held scene"
+        );
     }
 }

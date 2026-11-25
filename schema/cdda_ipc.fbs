@@ -112,6 +112,15 @@ table TileDef {
   /// open-air tile shows (gate 8.4b) and would have to guess.
   /// Appended last: additive/non-breaking, old readers ignore it.
   roof_result: string;
+  /// The def's own CDDA colour NAME (the string the game's
+  /// `color_from_string` resolves, e.g. "green", "light_gray",
+  /// "brown_green"), exactly as authored/inherited in the game
+  /// data. Absent = the def carries no colour. Added 2026-11-24
+  /// (Phase 11 follow-up Lane J): the name — not an RGB — crosses
+  /// the wire; the engine maps names to RGB through the game's
+  /// own colour table so both sides agree on what "green" means.
+  /// Appended last: additive/non-breaking, old readers ignore it.
+  color: string;
 }
 
 table TileDefs {

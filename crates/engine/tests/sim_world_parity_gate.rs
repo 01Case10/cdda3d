@@ -172,7 +172,7 @@ fn player_z(snap: &SnapshotT) -> i32 {
     if let Some(entities) = &snap.entities {
         if let Some(p) = entities
             .iter()
-            .find(|e| e.sprite_id.as_deref() == Some("player"))
+            .find(|e| e.sprite_id.as_deref() == Some("player_male"))
         {
             if let Some(pos) = &p.pos {
                 return pos.z;
