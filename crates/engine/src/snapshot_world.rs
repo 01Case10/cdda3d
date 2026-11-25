@@ -446,6 +446,83 @@ pub fn stamp_furniture<'m>(
     Ok(report)
 }
 
+/// Stamp Standing models that stand on a wire world's level
+/// TOP (the wire tree seating): a wire world's solid tiles
+/// fill their whole z-level (`build_columns`), so the
+/// surface a standing tile's model stands on is the TOP of
+/// its level — fine z `(level_base_block(level) +
+/// blocks_per_z_level) * FINE` — not the floor-slab top
+/// [`stamp_furniture`] seats at. (Seating a tree at the slab
+/// top of a full-height wire world puts it in a two-block
+/// pit below the surrounding ground surface and clips its
+/// canopy at the level boundary: the 2026-11-25 Launch-Sim
+/// tree fix's first attempt.)
+///
+/// Per placement whose model resolves:
+/// - the tile's coarse column in the level band is replaced
+///   by `ground` (the caller's ground block — the scene's own
+///   grass block on the wire path), so the model stands on
+///   the same surface the surrounding ground presents; with
+///   `ground: None` the column is left as-is;
+/// - the model stamps at the level-top origin through
+///   `mesher::fine::stamp_model_rotated`.
+///
+/// A placement whose level-top block is AIR in `map` is
+/// skipped and counted (the cutaway or the visibility mask
+/// removed that tile — its model must not float over the
+/// hole). A placement with no model is likewise skipped.
+/// Errors: any resolving model that exceeds the tile fails
+/// the whole batch BEFORE anything is stamped, as in
+/// [`stamp_furniture`].
+pub fn stamp_level_top_standing<'m>(
+    map: &mut ChunkMap,
+    layer: &mut FineLayer,
+    placements: &[FurniturePlacement],
+    scale: WorldScale,
+    resolve: &dyn Fn(u32) -> Option<&'m dyn ModelCells>,
+    ground: Option<Block>,
+) -> Result<StampReport, StampError> {
+    use mesher::VoxelSampler as _;
+    for p in placements {
+        if let Some(model) = resolve(p.furn_id) {
+            let size = model.size();
+            if size[0] > FINE as u32 || size[2] > FINE as u32 || size[1] > layer.depth_z as u32 {
+                return Err(StampError::ExceedsTile { size });
+            }
+        }
+    }
+    let mut report = StampReport::default();
+    let mut touched: BTreeSet<[i32; 2]> = BTreeSet::new();
+    let per = scale.blocks_per_z_level.max(1) as i32;
+    for p in placements {
+        let base = scale.level_base_block(p.level) as i32;
+        let top_bz = base + per - 1;
+        if map.block_at(p.x, p.y, top_bz).is_air() {
+            report.skipped += 1;
+            continue;
+        }
+        let Some(model) = resolve(p.furn_id) else {
+            report.skipped += 1;
+            continue;
+        };
+        if let Some(ground) = ground {
+            for bz in base..base + per {
+                map.set_global_block(p.x, p.y, bz, ground);
+            }
+        }
+        let z0 = (base + per) * FINE;
+        let r = mesher::fine::stamp_model_rotated(layer, (p.x, p.y), z0, model, p.quarter_turns)?;
+        report.stamped_cells += r.stamped_cells;
+        report.volumes += r.volumes;
+        report.memory_bytes += r.memory_bytes;
+        touched.insert(ChunkMap::chunk_coord_of(p.x, p.y));
+    }
+    for coord in touched {
+        map.refresh_chunk_fine(coord, layer);
+    }
+    Ok(report)
+}
+
 /// Restamp ONE tile after its furniture changed (a delta):
 /// exactly [`stamp_furniture`] over a single placement — the
 /// old volume at that tile+level is dropped first, and the

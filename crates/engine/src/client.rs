@@ -176,7 +176,11 @@ impl LiveWorld {
         let lighting = crate::frame::LightingScene::from_snapshot(snap, scene.min_game_z);
         let scene = scene.with_companions(self.environment(), Some(lighting));
         match &self.props_table {
-            Some(table) => Some(scene.with_props(crate::wire::prop_scene_for_wire(defs, snap, table))),
+            Some(table) => Some(
+                scene
+                    .with_props(crate::wire::prop_scene_for_wire(defs, snap, table))
+                    .with_trees(crate::wire::tree_scene_for_wire(defs, snap, table)),
+            ),
             None => Some(scene),
         }
     }
@@ -219,15 +223,35 @@ impl LiveWorld {
 /// polls: the session replaces it after every applied flush.
 pub type SharedWireScene = Arc<Mutex<Option<WireScene>>>;
 
-/// Where the session's key bytes come from.
+/// The published live UI frame a windowed/embedder consumer
+/// polls: the session replaces it after every validated
+/// `UiFrame` ingest. Before this slot existed, the session
+/// validated each UI frame, logged it, and DISCARDED it —
+/// the windowed app only ever composited its `--ui-stub`
+/// fixture, so no sim menu could ever appear in the live
+/// window (symptom 4 of the 2026-11-25 Launch-Sim report).
+pub type SharedUiScene = Arc<Mutex<Option<crate::frame::UiPrepared>>>;
+
+/// The channel value that ends the session (the embedder's
+/// equivalent of the stdin `Q`): key codes are the
+/// `ui_share::input` codes — printable characters as their
+/// byte value, special keys (arrows, Escape) as the
+/// `KEY_*` constants — so -1 can never be a real key.
+pub const SESSION_END_KEY: i32 = -1;
+
+/// Where the session's key presses come from.
 pub enum ConnectInput {
     /// The process's stdin, one byte per key press (the S7
-    /// `--connect` behaviour).
+    /// `--connect` behaviour): byte 0x1b becomes KEY_ESCAPE
+    /// and `Q` ends the session, as always.
     Stdin,
-    /// An embedder's channel: each byte is one key press;
-    /// dropping the sender ends the session (the stdin-EOF
-    /// rule).
-    Channel(mpsc::Receiver<u8>),
+    /// An embedder's channel: each value is one key press,
+    /// as a `ui_share::input` key code (a byte-wide channel
+    /// could not carry the arrow/Escape codes at all — the
+    /// windowed app's arrows had nowhere to go). Sending
+    /// [`SESSION_END_KEY`] or dropping the sender ends the
+    /// session (the stdin-EOF rule).
+    Channel(mpsc::Receiver<i32>),
 }
 
 /// Frames to capture from the live wire world during the
@@ -257,6 +281,9 @@ pub struct ConnectConfig {
     pub input: ConnectInput,
     /// Publish the live wire scene after every applied flush.
     pub share: Option<SharedWireScene>,
+    /// Publish the prepared UI frame after every validated
+    /// `UiFrame` ingest (the windowed app's menu source).
+    pub ui_share: Option<SharedUiScene>,
     pub captures: Option<ConnectCaptures>,
     /// Voxelizer output directory holding the furniture
     /// model table (Lane G): when set, the session loads it
@@ -281,6 +308,7 @@ impl Default for ConnectConfig {
         Self {
             input: ConnectInput::Stdin,
             share: None,
+            ui_share: None,
             captures: None,
             models_dir: None,
             billboards_dir: None,
@@ -331,6 +359,7 @@ struct Session {
     stats: Stats,
     live: LiveWorld,
     share: Option<SharedWireScene>,
+    ui_share: Option<SharedUiScene>,
     captures: Option<ConnectCaptures>,
     capture_outcomes: Vec<Result<PathBuf, String>>,
     first_capture_done: bool,
@@ -531,12 +560,21 @@ impl Session {
                 self.stats.ui_frames += 1;
                 if let Some(store) = &self.ui_store {
                     match crate::frame::prepare_ui(store, note) {
-                        Ok(prepared) => println!(
-                            "connect: ui frame seq={} mode={:?} ({} tight pixels)",
-                            note.seq,
-                            note.mode,
-                            prepared.tight.len()
-                        ),
+                        Ok(prepared) => {
+                            println!(
+                                "connect: ui frame seq={} mode={:?} ({} tight pixels)",
+                                note.seq,
+                                note.mode,
+                                prepared.tight.len()
+                            );
+                            // Publish for the windowed consumer:
+                            // before this, the prepared frame
+                            // was dropped here and no live menu
+                            // could ever reach the screen.
+                            if let Some(share) = &self.ui_share {
+                                *share.lock().expect("ui share lock") = Some(prepared);
+                            }
+                        }
                         Err(e) => {
                             println!("connect: ui frame seq={} failed validation: {e}", note.seq)
                         }
@@ -605,6 +643,7 @@ pub fn run_connect_with(
         stats: Stats::default(),
         live: LiveWorld::new(),
         share: config.share,
+        ui_share: config.ui_share,
         captures: config.captures,
         capture_outcomes: Vec::new(),
         first_capture_done: false,
@@ -714,7 +753,7 @@ pub fn run_connect_with(
     let rx = match config.input {
         ConnectInput::Channel(rx) => rx,
         ConnectInput::Stdin => {
-            let (tx, rx) = mpsc::channel::<u8>();
+            let (tx, rx) = mpsc::channel::<i32>();
             std::thread::spawn(move || {
                 let stdin = std::io::stdin();
                 let mut lock = stdin.lock();
@@ -723,7 +762,12 @@ pub fn run_connect_with(
                     match lock.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(_) => {
-                            if tx.send(buf[0]).is_err() {
+                            let code = match buf[0] {
+                                b'Q' => SESSION_END_KEY,
+                                0x1b => ui_share::input::KEY_ESCAPE,
+                                b => b as i32,
+                            };
+                            if tx.send(code).is_err() {
                                 break;
                             }
                         }
@@ -759,22 +803,18 @@ pub fn run_connect_with(
             std::thread::sleep(Duration::from_millis(5));
             continue;
         }
-        // Then keyboard bytes.
+        // Then key presses.
         let mut end_session = false;
         loop {
             match rx.try_recv() {
-                Ok(b'Q') => {
+                Ok(SESSION_END_KEY) => {
                     end_session = true;
                     break;
                 }
-                Ok(byte) => {
+                Ok(code) => {
                     let mut input = InputT::default();
                     input.kind = InputKind::Key;
-                    input.key_code = if byte == 0x1b {
-                        ui_share::input::KEY_ESCAPE
-                    } else {
-                        byte as i32
-                    };
+                    input.key_code = code;
                     input.pressed = true;
                     session.send(&MessageT::Input(Box::new(input)))?;
                     session.stats.inputs_sent += 1;

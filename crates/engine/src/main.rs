@@ -69,14 +69,17 @@ fn main() -> ExitCode {
         None;
     let live_link = match value_after(&args, "--connect-window") {
         Some(socket) => {
-            let (tx, rx) = std::sync::mpsc::channel::<u8>();
+            let (tx, rx) = std::sync::mpsc::channel::<i32>();
             let share: engine::client::SharedWireScene =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            let ui_share: engine::client::SharedUiScene =
                 std::sync::Arc::new(std::sync::Mutex::new(None));
             live_session = Some(engine::client::spawn_connect(
                 std::path::Path::new(&socket),
                 engine::client::ConnectConfig {
                     input: engine::client::ConnectInput::Channel(rx),
                     share: Some(share.clone()),
+                    ui_share: Some(ui_share.clone()),
                     captures: None,
                     // Lane G: `--textures <voxelizer-output-dir>`
                     // doubles as the furniture model table
@@ -84,13 +87,23 @@ fn main() -> ExitCode {
                     // the fixture paths load materials from).
                     models_dir: value_after(&args, "--textures")
                         .map(std::path::PathBuf::from),
-                    // Captures are off in the windowed session;
-                    // entity billboards seat in the App from the
-                    // published wire scene (sync_frame_args).
-                    billboards_dir: None,
+                    // The same voxelizer dir holds the sprite
+                    // atlas (`sprites.json`/`sprites.png` +
+                    // `tile_sprites.json`): seat it for the
+                    // session's captures too, so the windowed
+                    // session and a headless capture of the same
+                    // world draw the same entity billboards. The
+                    // App seats its own copy for the live frame
+                    // (see `App::new`).
+                    billboards_dir: value_after(&args, "--textures")
+                        .map(std::path::PathBuf::from),
                 },
             ));
-            Some(LiveWindowLink { share, input: tx })
+            Some(LiveWindowLink {
+                share,
+                ui_share,
+                input: tx,
+            })
         }
         None => None,
     };
@@ -199,7 +212,8 @@ fn main() -> ExitCode {
 /// scene into, and the channel key presses are forwarded to.
 struct LiveWindowLink {
     share: engine::client::SharedWireScene,
-    input: std::sync::mpsc::Sender<u8>,
+    ui_share: engine::client::SharedUiScene,
+    input: std::sync::mpsc::Sender<i32>,
 }
 
 /// Shared by the headless and windowed entry points: build the
@@ -476,7 +490,15 @@ struct App {
     /// `frame_args.wire`) and the channel key presses are
     /// forwarded to as session Inputs.
     live_share: Option<engine::client::SharedWireScene>,
-    live_input: Option<std::sync::mpsc::Sender<u8>>,
+    /// The session thread's published UI frames, polled per
+    /// frame into `frame_args.ui` (the live menu source —
+    /// without it the window composites only the `--ui-stub`
+    /// fixture and no sim menu can appear).
+    live_ui_share: Option<engine::client::SharedUiScene>,
+    /// Seq of the last published UI frame seated into
+    /// `frame_args.ui` (re-seat only on a newer frame).
+    live_ui_seq: u64,
+    live_input: Option<std::sync::mpsc::Sender<i32>>,
     cursor: (f64, f64),
     drag_from: Option<(f64, f64)>,
     started: Instant,
@@ -526,15 +548,45 @@ impl App {
         // transients stay unseated for live sessions. Until
         // the first Snapshot publishes, `wire` stays None and
         // the frame is the default fixture.
-        let (live_share, live_input) = match cfg.live {
+        let (live_share, live_ui_share, live_input) = match cfg.live {
             Some(link) => {
                 frame_args.sky = None;
                 frame_args.lighting = None;
                 frame_args.vehicles = None;
                 frame_args.transients = None;
-                (Some(link.share), Some(link.input))
+                // Entity billboards (the player included): seat
+                // an empty scene over the sprite atlas from the
+                // textures dir — the same dir the session loads
+                // its model table from; it holds `sprites.json`
+                // + `tile_sprites.json`. `sync_frame_args` fills
+                // its entities + lift from every published wire
+                // scene. Without a seated scene that sync is a
+                // no-op and NO wire entity — above all the
+                // player — ever renders in the window (the
+                // 2026-11-25 Launch-Sim screenshot). An explicit
+                // `--billboards` scene wins; a failed atlas load
+                // is logged and the session continues without
+                // billboards (the client's posture for its own
+                // atlas load).
+                if frame_args.billboards.is_none() {
+                    if let Some(dir) = frame_args.textures.clone() {
+                        match billboard::atlas::SpriteAtlas::load(&dir) {
+                            Ok(atlas) => {
+                                frame_args.billboards =
+                                    Some(BillboardScene::empty_with_atlas(atlas));
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "voxel-engine: live billboard atlas at {} failed to load ({e}); entity billboards off",
+                                    dir.display()
+                                );
+                            }
+                        }
+                    }
+                }
+                (Some(link.share), Some(link.ui_share), Some(link.input))
             }
-            None => (None, None),
+            None => (None, None, None),
         };
         // Stub UI: a fixed 640x360 synthetic frame in an in-memory
         // store (the compositor stretches it to the window).
@@ -573,6 +625,8 @@ impl App {
             router,
             input_sink: Vec::new(),
             live_share,
+            live_ui_share,
+            live_ui_seq: 0,
             live_input,
             cursor: (0.0, 0.0),
             drag_from: None,
@@ -590,6 +644,19 @@ impl App {
     /// Sync the live camera/cutaway/size/time into the frame
     /// template before a redraw.
     fn sync_frame_args(&mut self) {
+        // Live UI: seat the session's latest published UI
+        // frame (menus included) whenever a newer one lands.
+        // UI frames arrive on their own cadence (per sim
+        // action), independent of wire-scene publishes.
+        if let Some(share) = &self.live_ui_share {
+            let published = share.lock().expect("ui share lock").clone();
+            if let Some(prepared) = published {
+                if prepared.seq != self.live_ui_seq {
+                    self.live_ui_seq = prepared.seq;
+                    self.frame_args.ui = Some(prepared);
+                }
+            }
+        }
         // Live session: seat the session's latest published
         // wire world (replaced by the session thread after
         // every applied flush; an unchanged scene is the same
@@ -612,6 +679,26 @@ impl App {
                 };
                 if fresh {
                     self.frame_args.wire = Some(w.clone());
+                    // Follow the player + track their level:
+                    // the camera recentres on the player
+                    // entity and the cutaway's player z follows
+                    // them, so movement is visible the moment
+                    // it happens (the pre-fix camera sat on the
+                    // house centre forever and the cutaway
+                    // stayed at its default level, which —
+                    // with the player invisible — made even
+                    // working movement look dead).
+                    if let Some(player) = w.entities.iter().find(|e| {
+                        e.sprite_id == "player_male" || e.sprite_id == "player_female"
+                    }) {
+                        let p = player.pos;
+                        self.camera.follow(Vec3::new(
+                            p[0] as f32 + 0.5,
+                            1.0,
+                            -(p[1] as f32 + 0.5),
+                        ));
+                        self.cutaway.player_z = p[2];
+                    }
                     // Entity billboards: the seated billboard
                     // scene's ATLAS comes from `--billboards`
                     // (fixture / sample / a tileset dir), but its
@@ -701,6 +788,16 @@ impl App {
         )?;
         if let Some(stats) = &outcome.stats.mesh_stats {
             self.overlay.stats = *stats;
+            self.overlay.rt_voxels = None;
+        } else {
+            // RT reports no mesh stats: without this the
+            // title keeps the zero defaults and claims an
+            // empty world. Report the traced voxel count and
+            // the live map's chunk count instead.
+            self.overlay.rt_voxels = Some(outcome.quads);
+            if let Some(w) = &self.frame_args.wire {
+                self.overlay.stats.chunks = w.map.chunks.len();
+            }
         }
         Ok(outcome)
     }
@@ -740,8 +837,13 @@ impl App {
         }
         frame.present();
         self.overlay.fps = self.fps_counter.tick(Instant::now());
+        let scene_label = if self.live_share.is_some() {
+            "live session"
+        } else {
+            "fake house"
+        };
         gpu.window.set_title(&format!(
-            "CDDA Voxel — fake house | {} | cutaway z<={}",
+            "CDDA Voxel — {scene_label} | {} | cutaway z<={}",
             self.overlay.summary(),
             self.cutaway.visible_levels().last().copied().unwrap_or(0)
         ));
@@ -957,29 +1059,56 @@ impl ApplicationHandler for App {
                 if event.state != ElementState::Pressed {
                     return;
                 }
-                // Live session: forward the game's keys to the
-                // session as Inputs. The camera keys (WASD/E/Q
-                // physical codes, arrows, Escape) stay local —
-                // Q is also the headless session-end byte, so
-                // in the window the session ends by closing it
-                // (the app drop closes the channel, the client's
-                // input-close rule). Everything else printable
-                // (vi-keys, o/c/g/d/i, '.', '>'/'<', space)
-                // goes to the game.
+                // Live session key routing: the game's keys go
+                // to the sim (see `live_forward_code`); only
+                // Q/E (camera yaw) and PgUp/PgDn (cutaway) stay
+                // local. Before this split, WASD panned the
+                // camera AND were filtered out of forwarding
+                // (so `w`/`a` movement and the `s`/`d` game
+                // keys never reached the sim), the arrows
+                // orbited the camera and had no forwarding
+                // path at all (a byte channel cannot carry
+                // their key codes), and Escape exited the app
+                // instead of reaching the sim's menu-close.
+                // The session ends by closing the window (the
+                // app drop closes the channel — the client's
+                // input-close rule).
                 if let Some(tx) = &self.live_input {
-                    if let Some(text) = &event.text {
-                        for ch in text.chars() {
-                            if (' '..='~').contains(&ch)
-                                && !matches!(
-                                    ch,
-                                    'w' | 'a' | 's' | 'd' | 'e' | 'q' | 'W' | 'A' | 'S' | 'D'
-                                        | 'E' | 'Q'
-                                )
+                    let tx = tx.clone();
+                    let mut camera_moved = false;
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::PageUp) => {
+                            self.cutaway.step_up();
+                            self.remesh();
+                        }
+                        PhysicalKey::Code(KeyCode::PageDown) => {
+                            self.cutaway.step_down();
+                            self.remesh();
+                        }
+                        PhysicalKey::Code(KeyCode::KeyQ) => {
+                            self.camera.orbit(0.0, 0.0, -2.0);
+                            camera_moved = true;
+                        }
+                        PhysicalKey::Code(KeyCode::KeyE) => {
+                            self.camera.orbit(0.0, 0.0, 2.0);
+                            camera_moved = true;
+                        }
+                        _ => {
+                            let code = match event.physical_key {
+                                PhysicalKey::Code(c) => Some(c),
+                                _ => None,
+                            };
+                            if let Some(code) =
+                                code.and_then(|c| live_forward_code(c, event.text.as_deref()))
                             {
-                                let _ = tx.send(ch as u8);
+                                let _ = tx.send(code);
                             }
                         }
                     }
+                    if camera_moved {
+                        self.pacer.mark_camera_dirty();
+                    }
+                    return;
                 }
                 let mut camera_moved = true;
                 match event.physical_key {
@@ -1044,6 +1173,41 @@ impl ApplicationHandler for App {
             }
             _ => {}
         }
+    }
+}
+
+/// The live window's key routing (Launch-Sim symptoms 4/5):
+/// which key press becomes which sim key code, or `None`
+/// when the key stays local to the window. Local: Q/E
+/// (camera yaw — their letters never forward, so `q` cannot
+/// quit-or-back-out by accident from the keyboard focus
+/// path; menus close with Escape) and PgUp/PgDn (cutaway).
+/// Everything else is the game's: Escape (the sim's
+/// menu-close / pending-cancel), the arrows (directions on
+/// the map, the cursor in menus), Enter/Tab/Backspace for
+/// menus, and every printable character — WASD included:
+/// `w`/`a` are movement aliases in the sim and `s`/`d` are
+/// its smash/drop keys, so the pre-fix filter that swallowed
+/// them (they "belonged" to the camera) broke both movement
+/// and two game verbs.
+fn live_forward_code(physical: KeyCode, text: Option<&str>) -> Option<i32> {
+    match physical {
+        KeyCode::Escape => return Some(ui_share::input::KEY_ESCAPE),
+        KeyCode::ArrowLeft => return Some(ui_share::input::KEY_LEFT),
+        KeyCode::ArrowRight => return Some(ui_share::input::KEY_RIGHT),
+        KeyCode::ArrowUp => return Some(ui_share::input::KEY_UP),
+        KeyCode::ArrowDown => return Some(ui_share::input::KEY_DOWN),
+        KeyCode::Enter | KeyCode::NumpadEnter => return Some(ui_share::input::KEY_ENTER),
+        KeyCode::Tab => return Some(ui_share::input::KEY_TAB),
+        KeyCode::Backspace => return Some(ui_share::input::KEY_BACKSPACE),
+        KeyCode::PageUp | KeyCode::PageDown | KeyCode::KeyQ | KeyCode::KeyE => return None,
+        _ => {}
+    }
+    let ch = text?.chars().next()?;
+    if (' '..='~').contains(&ch) && !matches!(ch, 'q' | 'Q' | 'e' | 'E') {
+        Some(ch as i32)
+    } else {
+        None
     }
 }
 
@@ -1121,5 +1285,199 @@ mod app_wiring_tests {
             Some(1),
             "the windowed render path must trace frame 2 from the held scene"
         );
+    }
+
+    /// Regression (2026-11-25 Launch-Sim screenshot, symptom
+    /// 1): a `--connect-window` App launched with a textures
+    /// dir must seat a billboard scene, and a published wire
+    /// scene must land its entities — the player first — in
+    /// it. Before the fix the App seated NO billboard scene
+    /// for live sessions (the session config hardcoded
+    /// `billboards_dir: None` and nothing else seated one), so
+    /// `sync_frame_args`'s entity copy had no scene to copy
+    /// into and the player never rendered.
+    #[test]
+    fn live_app_seats_the_wire_player_billboard() {
+        let ultica = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/ultica_run1");
+        if !ultica.join("sprites.json").exists() {
+            eprintln!("SKIP live billboard seating test: real UltiCa atlas absent");
+            return;
+        }
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: Some(ultica),
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share: share.clone(),
+                ui_share: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                input: tx,
+            }),
+        });
+        // A published wire scene whose only entity is the
+        // player at (5, 5, 0).
+        let mut snap = proto::SnapshotT::default();
+        let mut player = proto::EntityT::default();
+        player.id = 1;
+        player.sprite_id = Some("player_male".to_string());
+        player.pos = Some(proto::Vec3iT { x: 5, y: 5, z: 0 });
+        snap.entities = Some(vec![player]);
+        let wire = engine::wire::WireScene::from_map(
+            mesher::chunk::ChunkMap::new(mesher::scale::WorldScale::default()),
+            &snap,
+        );
+        let want_lift = wire.billboard_base_lift();
+        *share.lock().expect("share lock") = Some(wire);
+        app.sync_frame_args();
+        let scene = app
+            .frame_args
+            .billboards
+            .as_ref()
+            .expect("a live App with a textures dir seats a billboard scene");
+        assert!(
+            scene.entities.iter().any(|e| e.sprite_id == "player_male"),
+            "the published wire player lands in the seated billboard scene"
+        );
+        assert_eq!(scene.base_lift, want_lift, "the wire lift is applied");
+    }
+
+    /// Regression (Launch-Sim symptoms 4/5, window half):
+    /// the live key routing forwards the game's keys —
+    /// including the WASD the old filter swallowed and the
+    /// arrow/Escape codes the old byte channel could not
+    /// carry — and keeps only Q/E + PgUp/PgDn local.
+    #[test]
+    fn live_key_routing_forwards_the_game_keys() {
+        use ui_share::input::{KEY_DOWN, KEY_ESCAPE, KEY_LEFT};
+        // Movement + verbs that the pre-fix filter ate.
+        assert_eq!(live_forward_code(KeyCode::KeyW, Some("w")), Some('w' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyA, Some("a")), Some('a' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyS, Some("s")), Some('s' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyD, Some("d")), Some('d' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyB, Some("b")), Some('b' as i32));
+        // Menus.
+        assert_eq!(live_forward_code(KeyCode::KeyI, Some("i")), Some('i' as i32));
+        assert_eq!(live_forward_code(KeyCode::Escape, None), Some(KEY_ESCAPE));
+        // Arrows: no text, the code carries them.
+        assert_eq!(live_forward_code(KeyCode::ArrowDown, None), Some(KEY_DOWN));
+        assert_eq!(live_forward_code(KeyCode::ArrowLeft, None), Some(KEY_LEFT));
+        // Local-only keys never forward.
+        assert_eq!(live_forward_code(KeyCode::KeyQ, Some("q")), None);
+        assert_eq!(live_forward_code(KeyCode::KeyE, Some("e")), None);
+        assert_eq!(live_forward_code(KeyCode::PageUp, None), None);
+        assert_eq!(live_forward_code(KeyCode::PageDown, None), None);
+    }
+
+    /// Regression (Launch-Sim symptom 5, visibility half +
+    /// the title stats): a fresh live publish must recentre
+    /// the camera on the player and sync the cutaway to
+    /// their level — the pre-fix camera sat on the house
+    /// centre forever, so even a moving player left the
+    /// frame (or was never in it).
+    #[test]
+    fn live_app_follows_the_player_and_syncs_cutaway() {
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: None,
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share: share.clone(),
+                ui_share: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                input: tx,
+            }),
+        });
+        let publish = |app: &mut App, x: i32, y: i32| {
+            let mut snap = proto::SnapshotT::default();
+            let mut player = proto::EntityT::default();
+            player.id = 1;
+            player.sprite_id = Some("player_male".to_string());
+            player.pos = Some(proto::Vec3iT { x, y, z: 0 });
+            snap.entities = Some(vec![player]);
+            let wire = engine::wire::WireScene::from_map(
+                mesher::chunk::ChunkMap::new(mesher::scale::WorldScale::default()),
+                &snap,
+            );
+            *share.lock().expect("share lock") = Some(wire);
+            app.sync_frame_args();
+        };
+        publish(&mut app, 5, 5);
+        assert_eq!(app.camera.target, Vec3::new(5.5, 1.0, -5.5));
+        assert_eq!(app.cutaway.player_z, 0);
+        publish(&mut app, 5, 9);
+        assert_eq!(
+            app.camera.target,
+            Vec3::new(5.5, 1.0, -9.5),
+            "the camera follows the player out of the house"
+        );
+    }
+
+    /// Regression (Launch-Sim symptom 4, display half): a UI
+    /// frame the session publishes into the shared UI slot
+    /// must land in the App's frame args — that slot is the
+    /// ONLY route by which a live sim menu (inventory &c.)
+    /// can reach the compositor. Before the fix the slot did
+    /// not exist: the session validated each UiFrame and
+    /// dropped it, and the App composited only its --ui-stub
+    /// fixture.
+    #[test]
+    fn live_app_seats_the_published_ui_frame() {
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let ui_share: engine::client::SharedUiScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: None,
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share,
+                ui_share: ui_share.clone(),
+                input: tx,
+            }),
+        });
+        assert!(app.frame_args.ui.is_none(), "no UI before any publish");
+        *ui_share.lock().expect("ui share lock") = Some(engine::frame::UiPrepared {
+            tight: vec![7, 7, 7, 255],
+            size: (1, 1),
+            mode: proto::UiMode::UiInput,
+            terrain_rect: None,
+            seq: 42,
+        });
+        app.sync_frame_args();
+        let ui = app
+            .frame_args
+            .ui
+            .as_ref()
+            .expect("the published UI frame is seated for compositing");
+        assert_eq!(ui.seq, 42);
+        assert_eq!(ui.mode, proto::UiMode::UiInput, "the inventory-mode frame lands");
     }
 }

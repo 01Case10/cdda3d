@@ -72,13 +72,14 @@ fn run_session(
         record_path: None,
     };
     let server = std::thread::spawn(move || sim::server::run_server(&server_cfg));
-    let (tx, rx) = std::sync::mpsc::channel::<u8>();
+    let (tx, rx) = std::sync::mpsc::channel::<i32>();
     let share: SharedWireScene = std::sync::Arc::new(std::sync::Mutex::new(None));
     let client = spawn_connect(
         &socket,
         ConnectConfig {
             input: ConnectInput::Channel(rx),
             share: Some(share.clone()),
+            ui_share: None,
             captures: None,
             models_dir: None,
             billboards_dir: None,

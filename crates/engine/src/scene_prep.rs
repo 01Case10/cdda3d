@@ -601,6 +601,94 @@ pub(crate) fn extend_prop_scene_with_terrain(
     Ok(out)
 }
 
+/// The prop-colour scene for a wire world's fine stamping:
+/// the furniture scene's models plus the tree scene's
+/// models, so `prep_prop_spec`'s colour set covers both
+/// (its placements are never read — the two scenes stamp
+/// through different seaters). Without trees this is exactly
+/// the furniture scene.
+pub(crate) fn wire_color_scene(
+    furniture: Option<&crate::frame::PropScene>,
+    trees: Option<&crate::frame::PropScene>,
+) -> crate::frame::PropScene {
+    let mut out = furniture.cloned().unwrap_or(crate::frame::PropScene {
+        models: Vec::new(),
+        placements: Vec::new(),
+    });
+    if let Some(t) = trees {
+        out.models.extend(t.models.iter().cloned());
+    }
+    out
+}
+
+/// Stamp a wire world's tree models into `layer` (built by
+/// the furniture stamper over the same `map`): the trees
+/// stand on their tiles' level TOP via
+/// `snapshot_world::stamp_level_top_standing`, with each
+/// modelled tree's coarse column replaced by the scene's own
+/// grass block (the first `t_grass` block in the map, copied
+/// verbatim — colour and texture layers travel with it), so
+/// the tree stands on the same surface the surrounding
+/// ground presents. The stamper itself skips tiles the
+/// cutaway/mask aired. Errors: a model exceeding its tile.
+pub(crate) fn stamp_wire_trees_into(
+    map: &mut mesher::chunk::ChunkMap,
+    layer: &mut mesher::fine::FineLayer,
+    wire: &crate::wire::WireScene,
+    trees: &crate::frame::PropScene,
+    prep: &PropPrep,
+    scale: mesher::scale::WorldScale,
+) -> Result<(), String> {
+    let grass_block = wire.material_ids.as_ref().and_then(|ids| {
+        let grass_id = ids
+            .iter()
+            .find(|(_, s)| s.as_str() == "t_grass")
+            .map(|(id, _)| *id)?;
+        for chunk in map.chunks.values() {
+            let size = chunk.grid.size;
+            for bz in 0..size[2] as i32 {
+                for by in 0..size[1] as i32 {
+                    for bx in 0..size[0] as i32 {
+                        let b = chunk.grid.get(bx, by, bz);
+                        if b.id == grass_id && !b.is_air() {
+                            return Some(b);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    });
+    let block_fn =
+        crate::snapshot_world::prop_block_for(&prep.colors, prep.base_id, prep.first_layer);
+    let adapters: Vec<(u32, crate::snapshot_world::PropModelCells<'_>)> = trees
+        .models
+        .iter()
+        .map(|(id, model)| {
+            (
+                *id,
+                crate::snapshot_world::PropModelCells::new(model, &block_fn),
+            )
+        })
+        .collect();
+    let resolve = |id: u32| -> Option<&dyn mesher::fine::ModelCells> {
+        adapters
+            .iter()
+            .find(|(fid, _)| *fid == id)
+            .map(|(_, a)| a as &dyn mesher::fine::ModelCells)
+    };
+    crate::snapshot_world::stamp_level_top_standing(
+        map,
+        layer,
+        &trees.placements,
+        scale,
+        &resolve,
+        grass_block,
+    )
+    .map_err(|e| format!("wire tree stamp: {e}"))?;
+    Ok(())
+}
+
 /// Phase 8 wiring: stamp a vehicle scene's models into a
 /// filtered map (their exported absolute part positions,
 /// verbatim — `vehicles::stamp_vehicle`). Returns how many
@@ -1283,10 +1371,15 @@ pub fn prepare_raster_house_lit_vp(
 /// route for every bake mode (the fixture deviation rule).
 /// The returned spec is then the prop-only spec
 /// `prep_prop_spec` builds (the untextured fixture posture).
-/// Terrain fine models are NOT derived for wire worlds:
-/// they are keyed to the fixture texture pass, and the wire
-/// world's standing terrain is its coarse fill (Lane G
-/// Part 1) until a wire terrain-model seating is designed.
+/// Terrain fine models: when the wire scene carries a
+/// tree scene ([`crate::wire::WireScene::trees`], derived
+/// from the snapshot's TREE-flagged terrain), the trees
+/// stamp into the same fine layer on their tiles' level
+/// TOP — a wire world's solid tiles fill their whole
+/// z-level, so the level top is the surface a tree stands
+/// on. Other terrain keeps its coarse fill (Lane G Part 1)
+/// — a general wire terrain-model seating for walls/doors
+/// remains undesigned.
 pub fn prepare_raster_wire(
     visible_levels: &[i32],
     wire: &crate::wire::WireScene,
@@ -1303,7 +1396,9 @@ pub fn prepare_raster_wire(
         (Some(dir), Some(ids)) => Some((dir, ids)),
         _ => None,
     };
-    if wire.props.is_none() {
+    // Fine seating dispatch: the props arms run when the
+    // scene carries furniture props, tree models, or both.
+    if wire.props.is_none() && wire.trees.is_none() {
         // No-props arms: the full textured spec (shore +
         // blend assignments over the filtered map).
         let mut spec_opt = None;
@@ -1348,8 +1443,15 @@ pub fn prepare_raster_wire(
     }
     // Props arms: the base texture spec first (when seated),
     // extended with the prop materials before any stamping —
-    // the fixture fine order.
-    let props = wire.props.as_ref().expect("props arm: props is Some");
+    // the fixture fine order. `props` is the furniture scene
+    // (empty when the scene carries trees only); the colour
+    // scene merges furniture + tree models for the spec.
+    let empty_props = crate::frame::PropScene {
+        models: Vec::new(),
+        placements: Vec::new(),
+    };
+    let props = wire.props.as_ref().unwrap_or(&empty_props);
+    let color_scene = wire_color_scene(wire.props.as_ref(), wire.trees.as_ref());
     let mut spec_opt = match tex_ids {
         Some((dir, ids)) => {
             let table =
@@ -1360,7 +1462,7 @@ pub fn prepare_raster_wire(
         None => None,
     };
     let textured = spec_opt.is_some();
-    let prep = prep_prop_spec(props, &mut spec_opt);
+    let prep = prep_prop_spec(&color_scene, &mut spec_opt);
     // stamp_tex_layers runs only against a real texture spec:
     // the prop-only spec's synthetic ids share the numeric
     // space with wire terrain ids (base 1000), so stamping
@@ -1378,7 +1480,10 @@ pub fn prepare_raster_wire(
     }
     let Some(lit) = lit else {
         // Unlit with props: stamp + fine-mesh.
-        let layer = stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
+        let mut layer = stamp_props_into(&mut filtered, &props.placements, props, &prep, scale)?;
+        if let Some(trees) = &wire.trees {
+            stamp_wire_trees_into(&mut filtered, &mut layer, wire, trees, &prep, scale)?;
+        }
         let (meshes, stats) = mesh_filtered_fine(&filtered, &layer);
         return Ok((meshes, stats, spec_opt));
     };
@@ -1396,7 +1501,10 @@ pub fn prepare_raster_wire(
             !filtered.block_at(p.x, p.y, slab_z).is_air()
         })
         .collect();
-    let layer = stamp_props_into(&mut filtered, &kept, props, &prep, scale)?;
+    let mut layer = stamp_props_into(&mut filtered, &kept, props, &prep, scale)?;
+    if let Some(trees) = &wire.trees {
+        stamp_wire_trees_into(&mut filtered, &mut layer, wire, trees, &prep, scale)?;
+    }
     let (mut meshes, stats) = mesh_filtered_fine(&filtered, &layer);
     lighting::bake_pass_meshes(&mut meshes, &lit.grid, lit.env, scale, lit.min_game_z);
     refine_sky_factor_alpha(&mut meshes, lit, scale);

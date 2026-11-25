@@ -25,9 +25,17 @@ Options: `-Scene <name>` (default `street_block`), `-Seed <n>`,
 `-DebugBuild`, `-Headless` (smoke mode: scripted keys, no window).
 The bash twin `launch-sim.sh` takes the same options with `--` flags.
 Play with the game keys (hjkl / yubn / arrows, o/c, s, g, d, i, &,
-;, ., >/<, Esc); close the window to end the session. Note: the live
-wire path currently renders the coarse-colour world -- textures and
-fine props are not seated in live mode yet (plan.md, Lane A record).
+;, ., >/<, Esc); WASD also move (w/a are movement aliases, s = smash,
+d = drop — they are game keys, not camera keys). Q/E yaw the camera,
+PgUp/PgDn step the cutaway level, mouse-drag orbits; close the
+window to end the session. The camera follows the player. With the
+UltiCa export in assets/ultica_run1 the live world renders textured
+with furniture props, voxel trees, entity billboards (the player
+included) and the sim's own menus (i opens the inventory in-window);
+without it, it renders the coarse-colour world. (The 2026-11-25
+fix round seated all of these in the windowed path — before it,
+the window showed the textured coarse world with no player, no
+menus, and dead movement keys.)
 
 ## Why this exists
 

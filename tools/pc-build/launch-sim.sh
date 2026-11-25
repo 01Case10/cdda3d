@@ -122,7 +122,7 @@ else
   ENGINE_ARGS=(--connect-window "$SOCK" --renderer "$RENDERER")
   if [ -f assets/ultica_run1/materials.json ]; then
     ENGINE_ARGS+=(--textures assets/ultica_run1)
-    echo "   live furniture props: ON (model table found in assets/ultica_run1)"
+    echo "   live props + trees + billboards + menus: ON (model table found in assets/ultica_run1)"
   else
     echo "   live furniture props: OFF (no assets/ultica_run1/materials.json -- extract the models pack there to enable)"
   fi

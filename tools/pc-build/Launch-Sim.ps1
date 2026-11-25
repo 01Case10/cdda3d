@@ -151,7 +151,7 @@ try {
         $engineArgs = @("--connect-window", $SocketPath, "--renderer", $Renderer)
         if (Test-Path "assets\ultica_run1\materials.json") {
             $engineArgs += @("--textures", "assets\ultica_run1")
-            Write-Host "   live furniture props: ON (model table found in assets\ultica_run1)"
+            Write-Host "   live props + trees + billboards + menus: ON (model table found in assets\ultica_run1)"
         } else {
             Write-Host "   live furniture props: OFF (no assets\ultica_run1\materials.json -- extract the models pack there to enable)"
         }
