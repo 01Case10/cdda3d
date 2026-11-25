@@ -232,15 +232,26 @@ pub type SharedWireScene = Arc<Mutex<Option<WireScene>>>;
 /// window (symptom 4 of the 2026-11-25 Launch-Sim report).
 pub type SharedUiScene = Arc<Mutex<Option<crate::frame::UiPrepared>>>;
 
-/// Where the session's key bytes come from.
+/// The channel value that ends the session (the embedder's
+/// equivalent of the stdin `Q`): key codes are the
+/// `ui_share::input` codes — printable characters as their
+/// byte value, special keys (arrows, Escape) as the
+/// `KEY_*` constants — so -1 can never be a real key.
+pub const SESSION_END_KEY: i32 = -1;
+
+/// Where the session's key presses come from.
 pub enum ConnectInput {
     /// The process's stdin, one byte per key press (the S7
-    /// `--connect` behaviour).
+    /// `--connect` behaviour): byte 0x1b becomes KEY_ESCAPE
+    /// and `Q` ends the session, as always.
     Stdin,
-    /// An embedder's channel: each byte is one key press;
-    /// dropping the sender ends the session (the stdin-EOF
-    /// rule).
-    Channel(mpsc::Receiver<u8>),
+    /// An embedder's channel: each value is one key press,
+    /// as a `ui_share::input` key code (a byte-wide channel
+    /// could not carry the arrow/Escape codes at all — the
+    /// windowed app's arrows had nowhere to go). Sending
+    /// [`SESSION_END_KEY`] or dropping the sender ends the
+    /// session (the stdin-EOF rule).
+    Channel(mpsc::Receiver<i32>),
 }
 
 /// Frames to capture from the live wire world during the
@@ -742,7 +753,7 @@ pub fn run_connect_with(
     let rx = match config.input {
         ConnectInput::Channel(rx) => rx,
         ConnectInput::Stdin => {
-            let (tx, rx) = mpsc::channel::<u8>();
+            let (tx, rx) = mpsc::channel::<i32>();
             std::thread::spawn(move || {
                 let stdin = std::io::stdin();
                 let mut lock = stdin.lock();
@@ -751,7 +762,12 @@ pub fn run_connect_with(
                     match lock.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(_) => {
-                            if tx.send(buf[0]).is_err() {
+                            let code = match buf[0] {
+                                b'Q' => SESSION_END_KEY,
+                                0x1b => ui_share::input::KEY_ESCAPE,
+                                b => b as i32,
+                            };
+                            if tx.send(code).is_err() {
                                 break;
                             }
                         }
@@ -787,22 +803,18 @@ pub fn run_connect_with(
             std::thread::sleep(Duration::from_millis(5));
             continue;
         }
-        // Then keyboard bytes.
+        // Then key presses.
         let mut end_session = false;
         loop {
             match rx.try_recv() {
-                Ok(b'Q') => {
+                Ok(SESSION_END_KEY) => {
                     end_session = true;
                     break;
                 }
-                Ok(byte) => {
+                Ok(code) => {
                     let mut input = InputT::default();
                     input.kind = InputKind::Key;
-                    input.key_code = if byte == 0x1b {
-                        ui_share::input::KEY_ESCAPE
-                    } else {
-                        byte as i32
-                    };
+                    input.key_code = code;
                     input.pressed = true;
                     session.send(&MessageT::Input(Box::new(input)))?;
                     session.stats.inputs_sent += 1;

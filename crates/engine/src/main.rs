@@ -69,7 +69,7 @@ fn main() -> ExitCode {
         None;
     let live_link = match value_after(&args, "--connect-window") {
         Some(socket) => {
-            let (tx, rx) = std::sync::mpsc::channel::<u8>();
+            let (tx, rx) = std::sync::mpsc::channel::<i32>();
             let share: engine::client::SharedWireScene =
                 std::sync::Arc::new(std::sync::Mutex::new(None));
             let ui_share: engine::client::SharedUiScene =
@@ -213,7 +213,7 @@ fn main() -> ExitCode {
 struct LiveWindowLink {
     share: engine::client::SharedWireScene,
     ui_share: engine::client::SharedUiScene,
-    input: std::sync::mpsc::Sender<u8>,
+    input: std::sync::mpsc::Sender<i32>,
 }
 
 /// Shared by the headless and windowed entry points: build the
@@ -498,7 +498,7 @@ struct App {
     /// Seq of the last published UI frame seated into
     /// `frame_args.ui` (re-seat only on a newer frame).
     live_ui_seq: u64,
-    live_input: Option<std::sync::mpsc::Sender<u8>>,
+    live_input: Option<std::sync::mpsc::Sender<i32>>,
     cursor: (f64, f64),
     drag_from: Option<(f64, f64)>,
     started: Instant,
@@ -1024,29 +1024,56 @@ impl ApplicationHandler for App {
                 if event.state != ElementState::Pressed {
                     return;
                 }
-                // Live session: forward the game's keys to the
-                // session as Inputs. The camera keys (WASD/E/Q
-                // physical codes, arrows, Escape) stay local —
-                // Q is also the headless session-end byte, so
-                // in the window the session ends by closing it
-                // (the app drop closes the channel, the client's
-                // input-close rule). Everything else printable
-                // (vi-keys, o/c/g/d/i, '.', '>'/'<', space)
-                // goes to the game.
+                // Live session key routing: the game's keys go
+                // to the sim (see `live_forward_code`); only
+                // Q/E (camera yaw) and PgUp/PgDn (cutaway) stay
+                // local. Before this split, WASD panned the
+                // camera AND were filtered out of forwarding
+                // (so `w`/`a` movement and the `s`/`d` game
+                // keys never reached the sim), the arrows
+                // orbited the camera and had no forwarding
+                // path at all (a byte channel cannot carry
+                // their key codes), and Escape exited the app
+                // instead of reaching the sim's menu-close.
+                // The session ends by closing the window (the
+                // app drop closes the channel — the client's
+                // input-close rule).
                 if let Some(tx) = &self.live_input {
-                    if let Some(text) = &event.text {
-                        for ch in text.chars() {
-                            if (' '..='~').contains(&ch)
-                                && !matches!(
-                                    ch,
-                                    'w' | 'a' | 's' | 'd' | 'e' | 'q' | 'W' | 'A' | 'S' | 'D'
-                                        | 'E' | 'Q'
-                                )
+                    let tx = tx.clone();
+                    let mut camera_moved = false;
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::PageUp) => {
+                            self.cutaway.step_up();
+                            self.remesh();
+                        }
+                        PhysicalKey::Code(KeyCode::PageDown) => {
+                            self.cutaway.step_down();
+                            self.remesh();
+                        }
+                        PhysicalKey::Code(KeyCode::KeyQ) => {
+                            self.camera.orbit(0.0, 0.0, -2.0);
+                            camera_moved = true;
+                        }
+                        PhysicalKey::Code(KeyCode::KeyE) => {
+                            self.camera.orbit(0.0, 0.0, 2.0);
+                            camera_moved = true;
+                        }
+                        _ => {
+                            let code = match event.physical_key {
+                                PhysicalKey::Code(c) => Some(c),
+                                _ => None,
+                            };
+                            if let Some(code) =
+                                code.and_then(|c| live_forward_code(c, event.text.as_deref()))
                             {
-                                let _ = tx.send(ch as u8);
+                                let _ = tx.send(code);
                             }
                         }
                     }
+                    if camera_moved {
+                        self.pacer.mark_camera_dirty();
+                    }
+                    return;
                 }
                 let mut camera_moved = true;
                 match event.physical_key {
@@ -1111,6 +1138,41 @@ impl ApplicationHandler for App {
             }
             _ => {}
         }
+    }
+}
+
+/// The live window's key routing (Launch-Sim symptoms 4/5):
+/// which key press becomes which sim key code, or `None`
+/// when the key stays local to the window. Local: Q/E
+/// (camera yaw — their letters never forward, so `q` cannot
+/// quit-or-back-out by accident from the keyboard focus
+/// path; menus close with Escape) and PgUp/PgDn (cutaway).
+/// Everything else is the game's: Escape (the sim's
+/// menu-close / pending-cancel), the arrows (directions on
+/// the map, the cursor in menus), Enter/Tab/Backspace for
+/// menus, and every printable character — WASD included:
+/// `w`/`a` are movement aliases in the sim and `s`/`d` are
+/// its smash/drop keys, so the pre-fix filter that swallowed
+/// them (they "belonged" to the camera) broke both movement
+/// and two game verbs.
+fn live_forward_code(physical: KeyCode, text: Option<&str>) -> Option<i32> {
+    match physical {
+        KeyCode::Escape => return Some(ui_share::input::KEY_ESCAPE),
+        KeyCode::ArrowLeft => return Some(ui_share::input::KEY_LEFT),
+        KeyCode::ArrowRight => return Some(ui_share::input::KEY_RIGHT),
+        KeyCode::ArrowUp => return Some(ui_share::input::KEY_UP),
+        KeyCode::ArrowDown => return Some(ui_share::input::KEY_DOWN),
+        KeyCode::Enter | KeyCode::NumpadEnter => return Some(ui_share::input::KEY_ENTER),
+        KeyCode::Tab => return Some(ui_share::input::KEY_TAB),
+        KeyCode::Backspace => return Some(ui_share::input::KEY_BACKSPACE),
+        KeyCode::PageUp | KeyCode::PageDown | KeyCode::KeyQ | KeyCode::KeyE => return None,
+        _ => {}
+    }
+    let ch = text?.chars().next()?;
+    if (' '..='~').contains(&ch) && !matches!(ch, 'q' | 'Q' | 'e' | 'E') {
+        Some(ch as i32)
+    } else {
+        None
     }
 }
 
@@ -1207,7 +1269,7 @@ mod app_wiring_tests {
             eprintln!("SKIP live billboard seating test: real UltiCa atlas absent");
             return;
         }
-        let (tx, _rx) = std::sync::mpsc::channel::<u8>();
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
         let share: engine::client::SharedWireScene =
             std::sync::Arc::new(std::sync::Mutex::new(None));
         let mut app = App::new(WindowConfig {
@@ -1254,6 +1316,33 @@ mod app_wiring_tests {
         assert_eq!(scene.base_lift, want_lift, "the wire lift is applied");
     }
 
+    /// Regression (Launch-Sim symptoms 4/5, window half):
+    /// the live key routing forwards the game's keys —
+    /// including the WASD the old filter swallowed and the
+    /// arrow/Escape codes the old byte channel could not
+    /// carry — and keeps only Q/E + PgUp/PgDn local.
+    #[test]
+    fn live_key_routing_forwards_the_game_keys() {
+        use ui_share::input::{KEY_DOWN, KEY_ESCAPE, KEY_LEFT};
+        // Movement + verbs that the pre-fix filter ate.
+        assert_eq!(live_forward_code(KeyCode::KeyW, Some("w")), Some('w' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyA, Some("a")), Some('a' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyS, Some("s")), Some('s' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyD, Some("d")), Some('d' as i32));
+        assert_eq!(live_forward_code(KeyCode::KeyB, Some("b")), Some('b' as i32));
+        // Menus.
+        assert_eq!(live_forward_code(KeyCode::KeyI, Some("i")), Some('i' as i32));
+        assert_eq!(live_forward_code(KeyCode::Escape, None), Some(KEY_ESCAPE));
+        // Arrows: no text, the code carries them.
+        assert_eq!(live_forward_code(KeyCode::ArrowDown, None), Some(KEY_DOWN));
+        assert_eq!(live_forward_code(KeyCode::ArrowLeft, None), Some(KEY_LEFT));
+        // Local-only keys never forward.
+        assert_eq!(live_forward_code(KeyCode::KeyQ, Some("q")), None);
+        assert_eq!(live_forward_code(KeyCode::KeyE, Some("e")), None);
+        assert_eq!(live_forward_code(KeyCode::PageUp, None), None);
+        assert_eq!(live_forward_code(KeyCode::PageDown, None), None);
+    }
+
     /// Regression (Launch-Sim symptom 4, display half): a UI
     /// frame the session publishes into the shared UI slot
     /// must land in the App's frame args — that slot is the
@@ -1264,7 +1353,7 @@ mod app_wiring_tests {
     /// fixture.
     #[test]
     fn live_app_seats_the_published_ui_frame() {
-        let (tx, _rx) = std::sync::mpsc::channel::<u8>();
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
         let share: engine::client::SharedWireScene =
             std::sync::Arc::new(std::sync::Mutex::new(None));
         let ui_share: engine::client::SharedUiScene =

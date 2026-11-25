@@ -366,7 +366,7 @@ fn connect_session_captures_live_wire_world() {
     };
     let server = std::thread::spawn(move || sim::server::run_server(&server_cfg));
 
-    let (tx, rx) = std::sync::mpsc::channel::<u8>();
+    let (tx, rx) = std::sync::mpsc::channel::<i32>();
     let share: SharedWireScene = std::sync::Arc::new(std::sync::Mutex::new(None));
     let client = spawn_connect(
         &socket,
@@ -397,7 +397,7 @@ fn connect_session_captures_live_wire_world() {
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
     for b in b"jjojjj" {
-        tx.send(*b).expect("client input channel open");
+        tx.send(*b as i32).expect("client input channel open");
     }
     drop(tx); // input close: drain, end capture, Shutdown.
 

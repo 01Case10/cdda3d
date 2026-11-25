@@ -465,11 +465,33 @@ impl World {
             return Vec::new();
         }
 
+        // Escape on the map closes nothing (menus close from
+        // UiInput, handled above): it cancels an armed pending
+        // action and is NOT a turn. Before this, Esc fell
+        // through to the no-op-turn arm and advanced the clock
+        // — and in the windowed app it never even arrived,
+        // because the window treated Esc as "quit".
+        if key_code == ui_share::input::KEY_ESCAPE {
+            self.pending = None;
+            return Vec::new();
+        }
+
+        // Arrow keys are directions on the map (the same four
+        // cardinals the UI cursor uses in UiInput mode): the
+        // special key codes have no char form, so translate
+        // them before the char path.
+        let arrow_dir = match key_code {
+            ui_share::input::KEY_LEFT => Some((-1, 0)),
+            ui_share::input::KEY_RIGHT => Some((1, 0)),
+            ui_share::input::KEY_UP => Some((0, -1)),
+            ui_share::input::KEY_DOWN => Some((0, 1)),
+            _ => None,
+        };
         let key = char::from_u32(key_code as u32).unwrap_or('\0');
 
         // A pending Open/Close/Bash takes the next direction key.
         if let Some(action) = self.pending.take() {
-            if let Some(dir) = direction_for_key(key) {
+            if let Some(dir) = arrow_dir.or_else(|| direction_for_key(key)) {
                 match action {
                     PendingAction::Bash => self.apply_bash(reg, dir),
                     PendingAction::Open | PendingAction::Close => {
@@ -534,7 +556,7 @@ impl World {
                 self.flush_turn(reg)
             }
             _ => {
-                if let Some(dir) = direction_for_key(key) {
+                if let Some(dir) = arrow_dir.or_else(|| direction_for_key(key)) {
                     self.try_move(reg, dir);
                 }
                 // '.' / ' ' wait; every other key is a no-op turn.
