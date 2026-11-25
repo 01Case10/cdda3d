@@ -679,6 +679,26 @@ impl App {
                 };
                 if fresh {
                     self.frame_args.wire = Some(w.clone());
+                    // Follow the player + track their level:
+                    // the camera recentres on the player
+                    // entity and the cutaway's player z follows
+                    // them, so movement is visible the moment
+                    // it happens (the pre-fix camera sat on the
+                    // house centre forever and the cutaway
+                    // stayed at its default level, which —
+                    // with the player invisible — made even
+                    // working movement look dead).
+                    if let Some(player) = w.entities.iter().find(|e| {
+                        e.sprite_id == "player_male" || e.sprite_id == "player_female"
+                    }) {
+                        let p = player.pos;
+                        self.camera.follow(Vec3::new(
+                            p[0] as f32 + 0.5,
+                            1.0,
+                            -(p[1] as f32 + 0.5),
+                        ));
+                        self.cutaway.player_z = p[2];
+                    }
                     // Entity billboards: the seated billboard
                     // scene's ATLAS comes from `--billboards`
                     // (fixture / sample / a tileset dir), but its
@@ -768,6 +788,16 @@ impl App {
         )?;
         if let Some(stats) = &outcome.stats.mesh_stats {
             self.overlay.stats = *stats;
+            self.overlay.rt_voxels = None;
+        } else {
+            // RT reports no mesh stats: without this the
+            // title keeps the zero defaults and claims an
+            // empty world. Report the traced voxel count and
+            // the live map's chunk count instead.
+            self.overlay.rt_voxels = Some(outcome.quads);
+            if let Some(w) = &self.frame_args.wire {
+                self.overlay.stats.chunks = w.map.chunks.len();
+            }
         }
         Ok(outcome)
     }
@@ -807,8 +837,13 @@ impl App {
         }
         frame.present();
         self.overlay.fps = self.fps_counter.tick(Instant::now());
+        let scene_label = if self.live_share.is_some() {
+            "live session"
+        } else {
+            "fake house"
+        };
         gpu.window.set_title(&format!(
-            "CDDA Voxel — fake house | {} | cutaway z<={}",
+            "CDDA Voxel — {scene_label} | {} | cutaway z<={}",
             self.overlay.summary(),
             self.cutaway.visible_levels().last().copied().unwrap_or(0)
         ));
@@ -1341,6 +1376,59 @@ mod app_wiring_tests {
         assert_eq!(live_forward_code(KeyCode::KeyE, Some("e")), None);
         assert_eq!(live_forward_code(KeyCode::PageUp, None), None);
         assert_eq!(live_forward_code(KeyCode::PageDown, None), None);
+    }
+
+    /// Regression (Launch-Sim symptom 5, visibility half +
+    /// the title stats): a fresh live publish must recentre
+    /// the camera on the player and sync the cutaway to
+    /// their level — the pre-fix camera sat on the house
+    /// centre forever, so even a moving player left the
+    /// frame (or was never in it).
+    #[test]
+    fn live_app_follows_the_player_and_syncs_cutaway() {
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: None,
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share: share.clone(),
+                ui_share: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                input: tx,
+            }),
+        });
+        let publish = |app: &mut App, x: i32, y: i32| {
+            let mut snap = proto::SnapshotT::default();
+            let mut player = proto::EntityT::default();
+            player.id = 1;
+            player.sprite_id = Some("player_male".to_string());
+            player.pos = Some(proto::Vec3iT { x, y, z: 0 });
+            snap.entities = Some(vec![player]);
+            let wire = engine::wire::WireScene::from_map(
+                mesher::chunk::ChunkMap::new(mesher::scale::WorldScale::default()),
+                &snap,
+            );
+            *share.lock().expect("share lock") = Some(wire);
+            app.sync_frame_args();
+        };
+        publish(&mut app, 5, 5);
+        assert_eq!(app.camera.target, Vec3::new(5.5, 1.0, -5.5));
+        assert_eq!(app.cutaway.player_z, 0);
+        publish(&mut app, 5, 9);
+        assert_eq!(
+            app.camera.target,
+            Vec3::new(5.5, 1.0, -9.5),
+            "the camera follows the player out of the house"
+        );
     }
 
     /// Regression (Launch-Sim symptom 4, display half): a UI

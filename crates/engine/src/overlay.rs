@@ -35,6 +35,12 @@ pub struct DebugOverlay {
     pub show_stats: bool,
     pub stats: MeshStats,
     pub fps: f32,
+    /// RT frames report no mesh stats (the raster counters
+    /// stay zero — the title of the 2026-11-25 Launch-Sim
+    /// screenshot claimed "chunks 0 | verts 0 | quads 0"
+    /// over a fully rendered world). When set, the summary
+    /// reports the traced voxel (leaf) count instead.
+    pub rt_voxels: Option<usize>,
 }
 
 impl DebugOverlay {
@@ -44,10 +50,20 @@ impl DebugOverlay {
             show_stats: true,
             stats: MeshStats::default(),
             fps: 0.0,
+            rt_voxels: None,
         }
     }
 
     pub fn summary(&self) -> String {
+        if let Some(voxels) = self.rt_voxels {
+            return format!(
+                "fps {:.0} | chunks {} | rt voxels {} | borders {}",
+                self.fps,
+                self.stats.chunks,
+                voxels,
+                if self.show_chunk_borders { "on" } else { "off" },
+            );
+        }
         format!(
             "fps {:.0} | chunks {} | verts {} | quads {} | tris {} | borders {}",
             self.fps,
@@ -161,6 +177,21 @@ pub fn renderable(size: (u32, u32)) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression (the Launch-Sim screenshot's title): an RT
+    /// frame has no mesh stats, so the summary must report
+    /// the traced voxel count — never the zeroed raster
+    /// counters that claimed an empty world.
+    #[test]
+    fn overlay_summary_reports_rt_voxels() {
+        let mut o = DebugOverlay::new();
+        o.stats.chunks = 4;
+        o.rt_voxels = Some(1726);
+        let s = o.summary();
+        assert!(s.contains("chunks 4"), "{s}");
+        assert!(s.contains("rt voxels 1726"), "{s}");
+        assert!(!s.contains("quads 0"), "{s}");
+    }
 
     #[test]
     fn overlay_summary_contains_stats() {
