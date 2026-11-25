@@ -15,6 +15,16 @@
 //! key-code channel did not exist), and the App-side seating
 //! of the slot is covered by
 //! `app_wiring_tests::live_app_seats_the_published_ui_frame`.
+//!
+//! Round 2 (thread topology): UiFrames are prepared +
+//! published by the client's dedicated UI lane thread, and
+//! inputs are forwarded by its input lane thread — this
+//! gate now also round-trips `;` (LookAround, the key Joey
+//! reported as silent): `;` must publish a UiInput frame
+//! with NO world publish involved, and Esc must return to
+//! MapInput. The App-side independence property (a lone UI
+//! publish wakes + seats) is covered by
+//! `app_wiring_tests::live_poll_surfaces_publishes_and_tracks_the_sim_mode`.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -92,6 +102,20 @@ fn session_publishes_ui_frames_and_the_inventory_opens() {
     tx.send(ui_share::input::KEY_DOWN)
         .expect("client input channel open");
 
+    // ';' (look): the sim opens LookAround (UiInput) and the
+    // UI lane must publish it — a UI-only change, no world
+    // publish involved. Esc closes it back to MapInput.
+    // (Wait for the Down turn's MapInput frame to settle
+    // first is unnecessary: wait_mode keys on mode, and the
+    // look frame's seq must exceed the inventory round's.)
+    tx.send(b';' as i32).expect("client input channel open");
+    let seq3 = wait_mode(proto::UiMode::UiInput, "the look (UiInput) UI frame");
+    assert!(seq3 > seq2, "look frame is newer ({seq3} > {seq2})");
+    tx.send(ui_share::input::KEY_ESCAPE)
+        .expect("client input channel open");
+    let seq4 = wait_mode(proto::UiMode::MapInput, "the look closed back to MapInput");
+    assert!(seq4 > seq3, "look-close frame is newer ({seq4} > {seq3})");
+
     drop(tx); // input close: drain + Shutdown.
     let report = client
         .join()
@@ -101,7 +125,7 @@ fn session_publishes_ui_frames_and_the_inventory_opens() {
         .join()
         .expect("server thread panicked")
         .expect("sim-server exited cleanly");
-    assert_eq!(report.inputs_sent, 3, "i + Esc + Down were forwarded");
+    assert_eq!(report.inputs_sent, 5, "i + Esc + Down + ; + Esc were forwarded");
     assert_eq!(
         report.player_pos,
         Some([5, 6, 0]),
