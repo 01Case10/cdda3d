@@ -375,8 +375,19 @@ pub struct MaterialTable {
     by_id: BTreeMap<String, Material>,
 }
 
+/// Number of real table parses this process has done
+/// (`MaterialTable::load`); see `MaterialTable::parse_count`.
+static PARSE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl MaterialTable {
     pub fn load(dir: &Path) -> Result<Self, String> {
+        // Counted: parsing this table is the expensive act the
+        // 0 fps fix eliminated from the frame path (the UltiCa
+        // materials.json is ~246 MB). The counter lets the
+        // rt_cache_gate prove no frame path re-parses it —
+        // a regression that swaps a `load_cached` back to a
+        // plain `load` anywhere fails that gate.
+        PARSE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let blocks: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(dir.join("blocks.json")).map_err(|e| e.to_string())?,
         )
@@ -550,6 +561,14 @@ impl MaterialTable {
             table.shore_size = img.width();
         }
         Ok(table)
+    }
+
+    /// How many times [`Self::load`] has actually parsed a
+    /// table in this process. Instrumentation for the
+    /// rt_cache_gate parse test — production code never reads
+    /// it.
+    pub fn parse_count() -> usize {
+        PARSE_COUNT.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// [`Self::load`], cached per directory for the life of the
