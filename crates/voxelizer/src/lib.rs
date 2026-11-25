@@ -884,6 +884,22 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     .map_err(|e| e.to_string())?;
     report.sprites = uvs.len();
 
+    // Tile-entry -> billboard sprite table (`tile_sprites.json`):
+    // the atlas above is keyed by sprite NAME, but creatures are
+    // named by tile-entry ID on the wire (a monster type id, the
+    // avatar's `player_male`/`player_female`), and an entry's fg
+    // is often a different name entirely (`player_male` -> the
+    // sprite `skin_brown_m`) or a weighted variant list
+    // (`mon_zombie` -> `mon_zombie_1..5`). The billboard atlas
+    // resolves ids through this table at load time; without it
+    // those creatures composite to nothing.
+    let table = tile_sprite_table(ts, &cfg.looks_like, &cfg.season);
+    std::fs::write(
+        out_dir.join("tile_sprites.json"),
+        serde_json::to_string_pretty(&table).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+
     // Contact sheet: one top face per material, grid.
     let contact = build_contact_sheet(&layers, &materials, tile);
     contact
@@ -900,6 +916,46 @@ pub fn run(ts: &Tileset, cfg: &VoxelizerConfig, out_dir: &Path) -> Result<RunRep
     std::fs::write(out_dir.join("ATTRIBUTION.md"), attribution).map_err(|e| e.to_string())?;
 
     Ok(report)
+}
+
+/// The tile-entry -> sprite-name table written as
+/// `tile_sprites.json` beside the billboard atlas. For every
+/// tile entry whose fg has a named primary sprite, map the
+/// entry id to that sprite name (`SpriteRef::primary`: highest
+/// weight, ties by list order — the voxelizer's deterministic
+/// stand-in for the game's weighted random pick). Game ids
+/// with no entry of their own are then resolved through the
+/// full chain (variant/season/`looks_like`, via `resolve`) and
+/// mapped the same way, so an id the game would draw via a
+/// `looks_like` hop still lands on a real sprite.
+pub fn tile_sprite_table(
+    ts: &Tileset,
+    looks_like: &BTreeMap<String, String>,
+    season: &str,
+) -> BTreeMap<String, String> {
+    let fg_name = |e: &TileEntry| -> Option<String> {
+        e.fg.as_ref()
+            .and_then(|fg| fg.primary())
+            .and_then(|p| p.name().map(|s| s.to_string()))
+    };
+    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    for (id, e) in &ts.entries {
+        if let Some(name) = fg_name(e) {
+            out.insert(id.clone(), name);
+        }
+    }
+    for id in looks_like.keys() {
+        if out.contains_key(id) {
+            continue;
+        }
+        let res = resolve(ts, id, looks_like, None, season);
+        if let Some(e) = res.entry {
+            if let Some(name) = fg_name(e) {
+                out.insert(id.clone(), name);
+            }
+        }
+    }
+    out
 }
 
 fn build_atlas(ts: &Tileset) -> Result<(RgbaImage, Vec<SpriteUv>), String> {

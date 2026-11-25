@@ -289,11 +289,19 @@ std::vector<EntVal> RealAdapter::entities()
         out.push_back( std::move( e ) );
     };
     avatar &u = g.u;
-    push_creature( u, 1, 0, "player", u.get_overlay_ids() );
+    // The sprite id is the tile-entry id the game itself draws
+    // for the base body (`cata_tiles::draw_entity_with_overlays`:
+    // `player_male`/`player_female`, `npc_male`/`npc_female`) —
+    // the engine resolves it through the tileset's entry table
+    // to the entry's fg sprite, then composites these overlays
+    // on top in game order, exactly as the game does.
+    push_creature( u, 1, 0, u.male ? "player_male" : "player_female",
+                   u.get_overlay_ids() );
     uint64_t npc_id = 1000000;
     for( npc &n : g.all_npcs() ) {
         push_creature( n, npc_id + static_cast<uint64_t>( n.getID().get_value() ),
-                       0, "npc", n.get_overlay_ids() );
+                       0, n.male ? "npc_male" : "npc_female",
+                       n.get_overlay_ids() );
     }
     for( const shared_ptr_fast<monster> &mp : get_creature_tracker().get_monsters_list() ) {
         const monster &m = *mp;

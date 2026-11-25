@@ -346,7 +346,8 @@ pub fn sample_snapshot() -> SnapshotT {
 //   `sample_implicit_roof_snapshot` (identical except z +1 is all
 //   open air).
 // - Player entity: the real adapter emits the avatar first with
-//   id 1, type_def 0, sprite_id "player" (voxel_real_adapter.cpp).
+//   id 1, type_def 0, sprite_id "player_male" (the tile-entry id
+//   the game draws the avatar with; voxel_real_adapter.cpp).
 // ---------------------------------------------------------------------
 
 pub const TER_TREE: u32 = 12;
@@ -486,12 +487,12 @@ fn roofed_house_block(z: i32, explicit_roof: bool) -> SubmapBlockT {
 }
 
 /// The avatar entity the real adapter emits (id 1, type 0,
-/// sprite "player"), standing inside the house at (6, 6, 0).
+/// sprite "player_male"), standing inside the house at (6, 6, 0).
 pub fn sample_player_entity() -> EntityT {
     EntityT {
         id: 1,
         type_def: 0,
-        sprite_id: Some("player".into()),
+        sprite_id: Some("player_male".into()),
         pos: Some(v3(6, 6, 0)),
         facing: Facing::RIGHT,
         overlays: Some(vec!["mut_base".into()]),

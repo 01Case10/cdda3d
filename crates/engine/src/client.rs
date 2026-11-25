@@ -69,6 +69,12 @@ pub struct LiveWorld {
     /// from the live state carry the snapshot-derived prop
     /// scene.
     props_table: Option<Arc<crate::materials::MaterialTable>>,
+    /// The sprite atlas for entity billboards, when the
+    /// session was configured with one: captures seat the
+    /// wire world's entities (player + creatures) as
+    /// billboards over it. `None` = no billboard pass in
+    /// captures (the pre-billboard-seating behaviour).
+    billboard_atlas: Option<billboard::atlas::SpriteAtlas>,
 }
 
 impl LiveWorld {
@@ -80,6 +86,12 @@ impl LiveWorld {
     /// prop-scene derivation in [`LiveWorld::wire_scene`].
     pub fn set_props_table(&mut self, table: Option<Arc<crate::materials::MaterialTable>>) {
         self.props_table = table;
+    }
+
+    /// Seat (or clear) the sprite atlas captures draw entity
+    /// billboards from (see the `billboard_atlas` field).
+    pub fn set_billboard_atlas(&mut self, atlas: Option<billboard::atlas::SpriteAtlas>) {
+        self.billboard_atlas = atlas;
     }
 
     pub fn player_pos(&self) -> Option<[i32; 3]> {
@@ -100,7 +112,10 @@ impl LiveWorld {
 
     fn note_entities(&mut self, entities: &[proto::EntityT]) {
         for e in entities {
-            if e.sprite_id.as_deref() == Some("player") {
+            if matches!(
+                e.sprite_id.as_deref(),
+                Some("player_male") | Some("player_female")
+            ) {
                 if let Some(p) = &e.pos {
                     self.player_pos = Some([p.x, p.y, p.z]);
                 }
@@ -181,6 +196,14 @@ impl LiveWorld {
         if let Some(env) = &wire.environment {
             args.sky = Some(crate::frame::SkyScene::new(env.clone()));
         }
+        // Entity billboards: the wire world's entities (the
+        // player character first, then creatures) seated over
+        // the configured atlas — the same billboard pass the
+        // fixture crowds take, so the player renders exactly
+        // like an enemy: a sprite on a billboard.
+        if let Some(atlas) = &self.billboard_atlas {
+            args.billboards = wire.billboard_scene(atlas.clone());
+        }
         args.wire = Some(wire);
         args.out = out.to_path_buf();
         args.size = size;
@@ -243,6 +266,14 @@ pub struct ConnectConfig {
     /// the session continues without props (the protocol is
     /// the session's job; props are presentation).
     pub models_dir: Option<PathBuf>,
+    /// Billboard atlas directory (`sprites.json` + `sprites.png`,
+    /// the voxelizer/billboard format): when set, the session
+    /// loads it once and captures seat the live world's
+    /// entities — player character included — as billboards.
+    /// `None` = captures carry no billboard pass. A load
+    /// failure is logged and the session continues without
+    /// billboards (presentation, not protocol).
+    pub billboards_dir: Option<PathBuf>,
 }
 
 impl Default for ConnectConfig {
@@ -252,6 +283,7 @@ impl Default for ConnectConfig {
             share: None,
             captures: None,
             models_dir: None,
+            billboards_dir: None,
         }
     }
 }
@@ -359,7 +391,10 @@ impl Session {
 
     fn note_player(&mut self, entities: &[proto::EntityT]) {
         for e in entities {
-            if e.sprite_id.as_deref() == Some("player") {
+            if matches!(
+                e.sprite_id.as_deref(),
+                Some("player_male") | Some("player_female")
+            ) {
                 if let Some(p) = &e.pos {
                     let pos = [p.x, p.y, p.z];
                     if self.player_pos != Some(pos) {
@@ -574,6 +609,26 @@ pub fn run_connect_with(
         capture_outcomes: Vec::new(),
         first_capture_done: false,
     };
+    // Entity billboards: load the sprite atlas once, up front;
+    // a failure leaves captures billboard-less (logged).
+    if let Some(dir) = &config.billboards_dir {
+        match billboard::atlas::SpriteAtlas::load(dir) {
+            Ok(atlas) => {
+                println!(
+                    "connect: billboard atlas loaded from {} (entity billboards on)",
+                    dir.display()
+                );
+                session.live.set_billboard_atlas(Some(atlas));
+            }
+            Err(e) => {
+                println!(
+                    "connect: billboard atlas at {} failed to load ({e}); entity billboards off",
+                    dir.display()
+                );
+            }
+        }
+    }
+
     // Lane G: load the furniture model table once, up front;
     // a failure leaves the session coarse-only (logged).
     if let Some(dir) = &config.models_dir {

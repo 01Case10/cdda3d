@@ -332,7 +332,7 @@ pub fn item_instances(
     for ly in 0..12 {
         for lx in 0..12 {
             let i = ly * 12 + lx;
-            let (Some(name), Some(uv)) = (&tiles.top_item_sprite[i], tiles.top_item_sprite[i].as_ref().and_then(|n| atlas.get(n))) else {
+            let (Some(name), Some(uv)) = (&tiles.top_item_sprite[i], tiles.top_item_sprite[i].as_ref().and_then(|n| atlas.get_resolved(n))) else {
                 continue;
             };
             let _ = name;
@@ -370,7 +370,7 @@ pub fn variety_pass<'a>(
     let mut ok = Vec::new();
     let mut missing = Vec::new();
     for id in ids {
-        if atlas.get(id).is_some() {
+        if atlas.get_resolved(id).is_some() {
             ok.push(id);
         } else {
             missing.push(id);

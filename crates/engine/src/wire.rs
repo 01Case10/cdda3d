@@ -34,11 +34,54 @@
 
 use std::sync::Arc;
 
+use billboard::instance::FakeEntity;
 use mesher::block::{Block, Pass};
 use mesher::chunk::ChunkMap;
 use mesher::scale::WorldScale;
 
 use crate::snapshot_world::build_snapshot_world;
+
+/// Convert one wire `Entity` to the billboard mirror type,
+/// field for field — the ONE conversion every entity takes,
+/// the player included. The avatar is not special-cased: the
+/// real adapter emits it first with sprite_id `"player_male"`
+/// (or `"player_female"`), and
+/// it renders as a sprite on a billboard exactly like an enemy
+/// (base sprite + overlays in game order, facing flip, blob
+/// shadow). Before this conversion lived here, it existed only
+/// as a copy inside the sim-creature gate, so the live loop
+/// never seated ANY wire entity — and the player, whose sprite
+/// the fixture atlas also lacked, could not have rendered even
+/// through the fixture crowds.
+pub fn wire_entity_to_billboard(e: &proto::EntityT) -> FakeEntity {
+    let p = e.pos.as_ref();
+    FakeEntity {
+        id: e.id,
+        sprite_id: e.sprite_id.clone().unwrap_or_default(),
+        pos: [p.map_or(0, |p| p.x), p.map_or(0, |p| p.y), p.map_or(0, |p| p.z)],
+        facing: match e.facing {
+            proto::Facing::LEFT => billboard::composite::Facing::Left,
+            proto::Facing::RIGHT => billboard::composite::Facing::Right,
+            _ => billboard::composite::Facing::None,
+        },
+        overlays: e.overlays.clone().unwrap_or_default(),
+        hp_frac: e.hp_frac,
+        flags: e.flags,
+        under_roof: false,
+        bob_phase: e.id as f32 * 0.7,
+        last_hit_s: -100.0,
+    }
+}
+
+/// Every entity of a snapshot as billboard mirrors, in wire
+/// order (the avatar first, per the adapter's convention).
+pub fn billboard_entities(snapshot: &proto::SnapshotT) -> Vec<FakeEntity> {
+    snapshot
+        .entities
+        .as_ref()
+        .map(|es| es.iter().map(wire_entity_to_billboard).collect())
+        .unwrap_or_default()
+}
 
 /// A built wire world: the block map derived from a
 /// `TileDefs` + `Snapshot` pair (at the frame path's default
@@ -94,6 +137,15 @@ pub struct WireScene {
     /// no def table. A frame path with a textures dir but no
     /// material ids renders exactly the untextured world.
     pub material_ids: Option<std::collections::HashMap<u32, String>>,
+    /// The snapshot's entities as billboard mirrors (the
+    /// avatar first, then creatures — wire order), converted
+    /// by [`billboard_entities`]. A consumer with a sprite
+    /// atlas seats them through [`WireScene::billboard_scene`]
+    /// so EVERY entity — the player character included —
+    /// renders as a sprite on a billboard through the one
+    /// billboard pass, exactly like an enemy. Empty when the
+    /// snapshot carried no entities.
+    pub entities: Vec<FakeEntity>,
 }
 
 impl WireScene {
@@ -134,7 +186,44 @@ impl WireScene {
             environment: None,
             lighting: None,
             material_ids: None,
+            entities: billboard_entities(snapshot),
         }
+    }
+
+    /// The billboard anchor lift for this wire world: a wire
+    /// world's solid tiles fill their whole z-level (Lane G —
+    /// see `snapshot_world::build_columns`), so the surface a
+    /// character stands on is the TOP of the level fill, one
+    /// full level height above the level base the billboard
+    /// crate anchors at — plus the level offset of game z 0 in
+    /// this snapshot's window (`min_game_z` maps to world
+    /// level 0). At the fixture scenes' slab lift, a wire
+    /// billboard sits inside the opaque fill and never renders.
+    pub fn billboard_base_lift(&self) -> f32 {
+        let scale = mesher::scale::WorldScale::default();
+        (1 - self.min_game_z) as f32 * scale.blocks_per_z_level as f32 * scale.block_size
+    }
+
+    /// The billboard scene for this wire world over `atlas`:
+    /// every wire entity (player + creatures) as a billboard
+    /// entity, drawn by the frame's one billboard pass.
+    /// `None` when the snapshot carried no entities.
+    pub fn billboard_scene(
+        &self,
+        atlas: billboard::atlas::SpriteAtlas,
+    ) -> Option<crate::frame::BillboardScene> {
+        if self.entities.is_empty() {
+            return None;
+        }
+        Some(crate::frame::BillboardScene {
+            atlas,
+            entities: self.entities.clone(),
+            items: None,
+            time_s: 0.0,
+            decorations: Vec::new(),
+            decor_atlas: None,
+            base_lift: self.billboard_base_lift(),
+        })
     }
 
     /// Attach the furniture prop scene derived from this

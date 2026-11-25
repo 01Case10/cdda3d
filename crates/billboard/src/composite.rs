@@ -122,9 +122,14 @@ pub fn compose(
     let mut missing = Vec::new();
     let mut layers: Vec<(RgbaImage, i32, i32)> = Vec::new();
     for id in sprite_ids {
-        match (atlas.get(id), atlas.sprite_image(id)) {
-            (Some(uv), Some(img)) => layers.push((img, uv.offset_x, uv.offset_y)),
-            _ => missing.push(id.clone()),
+        // Game ids resolve to sprite names first (tile-entry
+        // table): a creature's base id is an entry id, not a
+        // sprite name (`mon_zombie` -> `mon_zombie_2`,
+        // `player_male` -> `skin_brown_m`).
+        let resolved = atlas.resolve(id);
+        match resolved.and_then(|name| atlas.get(name).zip(atlas.sprite_image(name))) {
+            Some((uv, img)) => layers.push((img, uv.offset_x, uv.offset_y)),
+            None => missing.push(id.clone()),
         }
     }
     if layers.is_empty() {

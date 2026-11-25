@@ -71,7 +71,7 @@ fn player_z(snap: &proto::SnapshotT) -> i32 {
         .as_ref()
         .unwrap()
         .iter()
-        .find(|e| e.sprite_id.as_deref() == Some("player"))
+        .find(|e| e.sprite_id.as_deref() == Some("player_male"))
         .expect("snapshot carries the player entity");
     let pz = player.pos.as_ref().unwrap().z;
     assert_eq!(snap.view_origin.as_ref().unwrap().z, pz);

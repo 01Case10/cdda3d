@@ -615,7 +615,12 @@ impl World {
         let mut player_id: Option<u64> = None;
         for (n, s) in scene.spawns.iter().enumerate() {
             let (type_def, sprite) = if s.type_id == "player" {
-                (0, s.sprite.clone().unwrap_or_else(|| "player".to_string()))
+                // The avatar's sprite is the tile-entry id the
+                // game itself draws (`cata_tiles::
+                // draw_entity_with_overlays`): `player_male` /
+                // `player_female`. The sim's test avatar is male;
+                // a scene can override with `sprite = ...`.
+                (0, s.sprite.clone().unwrap_or_else(|| "player_male".to_string()))
             } else {
                 let id = reg.id_of(Kind::Monster, &s.type_id);
                 if id == 0 {
