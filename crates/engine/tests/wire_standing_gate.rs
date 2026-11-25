@@ -1,5 +1,5 @@
 //! Phase 11 follow-up (Lane G) gate: the wire world carries
-//! STANDING geometry and per-def palette colour.
+//! STANDING geometry and per-def resolver colour.
 //!
 //! Before Lane G, `build_snapshot_world` stamped floor slabs
 //! only and the live client painted every def the same grey:
@@ -13,14 +13,19 @@
 //! - tiles whose terrain is standing (t_wall / t_window in
 //!   the scene) fill their level's blocks above the floor
 //!   slab with that def's block;
-//! - the blocks' colours are the string-id palette
-//!   (`engine::wire::palette_color`), and grass / pavement /
-//!   floor carry three pairwise-distinct colours;
+//! - the blocks' colours are the production resolver's
+//!   per-def colours (`engine::wire::palette_resolver` —
+//!   Lane G's string-id hash palette at this gate's birth,
+//!   the defs' CDDA semantic colours since Lane J; this
+//!   gate pins that the built world carries the resolver's
+//!   colours, wire_semantic_color_gate pins what those
+//!   colours ARE), and grass / pavement / floor carry three
+//!   pairwise-distinct colours;
 //! - the filled-block count and exposed-face count jump
 //!   vs the floors-only baseline (both numbers recorded
 //!   at the assertions);
 //! - a raster capture of the wire scene is non-blank and
-//!   actually contains the palette colours of the scene's
+//!   actually contains the resolver colours of the scene's
 //!   defs (the windowed app renders exactly this scene).
 //!
 //! Failing-first: on the pre-Lane-G builder the standing
@@ -32,7 +37,7 @@ use std::path::PathBuf;
 
 use engine::capture::{run_capture, CaptureArgs, RendererKind};
 use engine::snapshot_world::build_snapshot_world;
-use engine::wire::{palette_color, palette_resolver, WireScene};
+use engine::wire::{palette_resolver, WireScene};
 use mesher::chunk::ChunkMap;
 use mesher::{Block, WorldScale};
 use proto::{SnapshotT, TileDefsT, TileKind};
@@ -173,7 +178,7 @@ fn street_block_wire_world_has_standing_geometry_and_palette() {
 
     // -- Standing geometry: every t_wall / t_window tile
     // fills the blocks above its floor slab with its own
-    // def's block (id AND palette colour).
+    // def's block (id AND resolver colour).
     let mut standing = 0usize;
     for (x, y, z, ter, sid) in &all {
         if sid != "t_wall" && sid != "t_window" {
@@ -191,8 +196,8 @@ fn street_block_wire_world_has_standing_geometry_and_palette() {
             );
             assert_eq!(
                 b.color,
-                palette_color(sid),
-                "standing tile {sid} at ({x},{y},{z}): block z {} must carry the palette colour",
+                resolver(*ter).color,
+                "standing tile {sid} at ({x},{y},{z}): block z {} must carry the resolver colour",
                 base + dz
             );
         }
@@ -202,11 +207,11 @@ fn street_block_wire_world_has_standing_geometry_and_palette() {
         "street_block must exercise standing tiles (found {standing})"
     );
 
-    // -- Palette: grass / pavement / floor appear, carry
-    // their palette colours in the built world, and the
-    // three colours are pairwise distinct.
+    // -- Resolver colours: grass / pavement / floor appear,
+    // carry their production-resolver colours in the built
+    // world, and the three colours are pairwise distinct.
     let mut seen: BTreeMap<&str, [f32; 4]> = BTreeMap::new();
-    for (x, y, z, _ter, sid) in &all {
+    for (x, y, z, ter, sid) in &all {
         if !matches!(sid.as_str(), "t_grass" | "t_pavement" | "t_floor") {
             continue;
         }
@@ -214,8 +219,8 @@ fn street_block_wire_world_has_standing_geometry_and_palette() {
         let b = block_at(&map, *x, *y, base);
         assert_eq!(
             b.color,
-            palette_color(sid),
-            "tile {sid} at ({x},{y},{z}) must carry its palette colour"
+            resolver(*ter).color,
+            "tile {sid} at ({x},{y},{z}) must carry its resolver colour"
         );
         seen.insert(sid.as_str(), b.color);
     }
@@ -229,7 +234,7 @@ fn street_block_wire_world_has_standing_geometry_and_palette() {
         for j in i + 1..colors.len() {
             assert_ne!(
                 colors[i], colors[j],
-                "palette colours must be distinct per def: {seen:?}"
+                "resolver colours must be distinct per def: {seen:?}"
             );
         }
     }
@@ -260,7 +265,7 @@ fn levels_span(snap: &SnapshotT, min_z: i32) -> i32 {
 }
 
 #[test]
-fn street_block_wire_capture_shows_palette_colours() {
+fn street_block_wire_capture_shows_resolver_colours() {
     let (defs, snap) = street_block_wire();
     let scene = WireScene::from_wire(&defs, &snap, &palette_resolver(&defs));
     let out = std::env::temp_dir().join(format!(
@@ -283,14 +288,25 @@ fn street_block_wire_capture_shows_palette_colours() {
         outcome.distinct_colors
     );
     let img = image::open(&out).expect("capture png").to_rgba8();
-    // The palette colours of the scene's defs must actually
+    // The resolver colours of the scene's defs must actually
     // appear. The renderer treats block colours as LINEAR
     // and sRGB-encodes on output, with a per-face scalar
     // shade — so a def's rendered pixels are scalar
-    // multiples of its palette colour in linear space.
+    // multiples of its resolver colour in linear space.
     // Classify each pixel by its max-normalized linear
     // colour (shading-invariant) against the defs'
-    // normalized palette colours.
+    // normalized resolver colours.
+    //
+    // Lane J amendment: the classes are grass / floor / GREY.
+    // In the game's own data t_wall is "light_gray" and
+    // t_pavement is "dark_gray" — both achromatic, so the
+    // shading-invariant normalized classifier cannot tell
+    // them apart BY CONSTRUCTION (they differ only in value,
+    // which normalization discards). They form one grey class
+    // here; their distinct exact RGBs are pinned at the data
+    // level by wire_semantic_color_gate. (Under Lane G's hash
+    // palette the two hashed to unrelated hues and classified
+    // separately — a property of the hash, not of the game.)
     fn norm_linear(rgb: [f32; 3]) -> [f32; 3] {
         let m = rgb.iter().copied().fold(0.0f32, f32::max).max(1e-6);
         [rgb[0] / m, rgb[1] / m, rgb[2] / m]
@@ -302,15 +318,27 @@ fn street_block_wire_capture_shows_palette_colours() {
             ((c + 0.055) / 1.055).powf(2.4)
         }
     }
-    let defs4 = ["t_grass", "t_pavement", "t_floor", "t_wall"];
-    let centroids: Vec<[f32; 3]> = defs4
+    let resolver = palette_resolver(&defs);
+    let terrain_id = |sid: &str| {
+        defs.defs
+            .as_ref()
+            .expect("defs present")
+            .iter()
+            .find(|d| d.kind == TileKind::Terrain && d.string_id.as_deref() == Some(sid))
+            .unwrap_or_else(|| panic!("terrain def {sid} present"))
+            .id
+    };
+    // Class representatives: grass, floor, and t_wall for
+    // the shared grey class (t_pavement lands on it too).
+    let classes = ["t_grass", "t_floor", "t_wall"];
+    let centroids: Vec<[f32; 3]> = classes
         .iter()
         .map(|sid| {
-            let c = palette_color(sid);
+            let c = resolver(terrain_id(sid)).color;
             norm_linear([c[0], c[1], c[2]])
         })
         .collect();
-    let mut counts = [0usize; 4];
+    let mut counts = [0usize; 3];
     for p in img.pixels() {
         let lin = [
             srgb_to_linear(p.0[0] as f32 / 255.0),
@@ -338,6 +366,6 @@ fn street_block_wire_capture_shows_palette_colours() {
     let present = counts.iter().filter(|&&n| n >= 200).count();
     assert!(
         present >= 3,
-        "at least three def palette colours must appear in the capture: {counts:?} for {defs4:?}"
+        "all three def colour classes must appear in the capture: {counts:?} for {classes:?}"
     );
 }

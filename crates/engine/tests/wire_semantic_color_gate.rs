@@ -228,7 +228,7 @@ fn colourless_and_unknown_defs_fall_back_to_the_hash_palette() {
     // back to Lane G's hash palette — never error, never a
     // hole — for a def whose colour is absent AND for a def
     // whose colour name the game does not define.
-    let mut mk = |id: u32, sid: &str, color: Option<&str>| {
+    let mk = |id: u32, sid: &str, color: Option<&str>| {
         let mut d = TileDefT::default();
         d.id = id;
         d.string_id = Some(sid.to_string());
