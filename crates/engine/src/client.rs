@@ -27,6 +27,26 @@
 //! Input is stdin by default (each byte is one key press;
 //! `Esc` byte = the Escape key, `Q` = end the session cleanly,
 //! stdin EOF likewise) or an mpsc channel for embedders.
+//!
+//! Thread topology (2026-11-25, Joey's constraint: the UI
+//! must not run on the world thread):
+//! - **world thread** (the session loop): socket reads,
+//!   handshake, Snapshot/Delta ingest and the (expensive)
+//!   wire-scene build + publish, heartbeat, Shutdown.
+//! - **UI lane thread**: owns the UI shm store; receives
+//!   `UiFrame` notes over its own channel, validates +
+//!   prepares them and publishes to [`SharedUiScene`]. A
+//!   world stall (a big snapshot build) cannot delay a menu
+//!   frame, and a UI stall cannot delay the world.
+//! - **input lane thread**: forwards key codes from the
+//!   input source to the socket as `Input` messages the
+//!   moment they arrive — never queued behind world ingest.
+//!   Socket writes from the world and input lanes are
+//!   serialised by one send lock so frames cannot interleave.
+//! Before this split, all three jobs ran on the session
+//! loop: every Delta's wire-scene build sat between a key
+//! press and its forwarding, and between a `UiFrame` and
+//! its publish.
 
 use std::io::{Read, Write};
 #[cfg(unix)]
@@ -354,12 +374,19 @@ struct Session {
     heartbeat: HeartbeatTracker,
     start: Instant,
     defs: Option<TileDefsT>,
-    ui_store: Option<ui_share::UiShmStore>,
     player_pos: Option<[i32; 3]>,
     stats: Stats,
     live: LiveWorld,
     share: Option<SharedWireScene>,
-    ui_share: Option<SharedUiScene>,
+    /// The UI lane's channel: `UiFrame` notes are handed off
+    /// here (a cheap clone) and prepared + published on the
+    /// UI thread — the world thread never touches the shm
+    /// store (see the module's thread topology).
+    ui_tx: Option<mpsc::Sender<proto::UiFrameT>>,
+    /// Serialises socket writes against the input lane
+    /// thread, which sends `Input` messages on its own
+    /// cloned stream handle.
+    send_lock: Arc<Mutex<()>>,
     captures: Option<ConnectCaptures>,
     capture_outcomes: Vec<Result<PathBuf, String>>,
     first_capture_done: bool,
@@ -368,6 +395,7 @@ struct Session {
 impl Session {
     fn send(&mut self, msg: &MessageT) -> Result<(), String> {
         let framed = FrameEncoder::encode(&encode_message(msg));
+        let _guard = self.send_lock.lock().expect("send lock");
         self.stream
             .write_all(&framed)
             .map_err(|e| format!("client send: {e}"))
@@ -558,27 +586,14 @@ impl Session {
             }
             MessageT::UiFrame(note) => {
                 self.stats.ui_frames += 1;
-                if let Some(store) = &self.ui_store {
-                    match crate::frame::prepare_ui(store, note) {
-                        Ok(prepared) => {
-                            println!(
-                                "connect: ui frame seq={} mode={:?} ({} tight pixels)",
-                                note.seq,
-                                note.mode,
-                                prepared.tight.len()
-                            );
-                            // Publish for the windowed consumer:
-                            // before this, the prepared frame
-                            // was dropped here and no live menu
-                            // could ever reach the screen.
-                            if let Some(share) = &self.ui_share {
-                                *share.lock().expect("ui share lock") = Some(prepared);
-                            }
-                        }
-                        Err(e) => {
-                            println!("connect: ui frame seq={} failed validation: {e}", note.seq)
-                        }
-                    }
+                // Hand off to the UI lane: validation +
+                // prepare + publish happen on the UI thread,
+                // so a menu frame never waits behind a world
+                // build on this thread (and a UI stall never
+                // blocks the world). The note is the whole
+                // cost here — one clone.
+                if let Some(tx) = &self.ui_tx {
+                    let _ = tx.send((**note).clone());
                 }
             }
             MessageT::Ping(p) => {
@@ -599,6 +614,118 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// The UI lane: a dedicated thread owning the UI shm store
+/// and the [`SharedUiScene`] publish (see the module's
+/// thread topology). It receives `UiFrame` notes, validates
+/// + prepares each against the store, and publishes the
+/// prepared frame for the windowed consumer. It exits when
+/// its channel closes (session end).
+fn spawn_ui_lane(
+    shm_path: PathBuf,
+    ui_share: Option<SharedUiScene>,
+) -> (mpsc::Sender<proto::UiFrameT>, std::thread::JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel::<proto::UiFrameT>();
+    let handle = std::thread::spawn(move || {
+        let mut store: Option<ui_share::UiShmStore> = None;
+        let mut store_tried = false;
+        while let Ok(note) = rx.recv() {
+            if !store_tried {
+                store_tried = true;
+                // The shm path is agreed alongside the
+                // handshake by convention (docs/phase4-ui.md):
+                // the server's store sits beside its socket
+                // at `<socket>.ui-shm` unless configured
+                // otherwise; the UiFrame carries the rest.
+                match ui_share::UiShmStore::open_file(&shm_path) {
+                    Ok(s) => {
+                        println!("connect: ui shm attached ({})", shm_path.to_string_lossy());
+                        store = Some(s);
+                    }
+                    Err(e) => {
+                        println!(
+                            "connect: ui shm open failed ({}): {e}",
+                            shm_path.to_string_lossy()
+                        );
+                    }
+                }
+            }
+            let Some(store) = &store else { continue };
+            match crate::frame::prepare_ui(store, &note) {
+                Ok(prepared) => {
+                    println!(
+                        "connect: ui frame seq={} mode={:?} ({} tight pixels)",
+                        note.seq,
+                        note.mode,
+                        prepared.tight.len()
+                    );
+                    if let Some(share) = &ui_share {
+                        *share.lock().expect("ui share lock") = Some(prepared);
+                    }
+                }
+                Err(e) => {
+                    println!("connect: ui frame seq={} failed validation: {e}", note.seq)
+                }
+            }
+        }
+    });
+    (tx, handle)
+}
+
+/// The input lane: a dedicated thread forwarding key codes
+/// from the input source to the socket as `Input` messages
+/// the moment they arrive — never queued behind world
+/// ingest on the session thread. `SESSION_END_KEY` or a
+/// closed source sets `end_flag` (the session loop then
+/// drains + shuts down as before); `stop_flag` ends the
+/// lane when the session is over. Returns the lane handle
+/// and the shared inputs-sent counter.
+#[allow(clippy::too_many_arguments)]
+fn spawn_input_lane(
+    rx: mpsc::Receiver<i32>,
+    mut stream: UnixStream,
+    send_lock: Arc<Mutex<()>>,
+    end_flag: Arc<std::sync::atomic::AtomicBool>,
+    stop_flag: Arc<std::sync::atomic::AtomicBool>,
+) -> (std::thread::JoinHandle<()>, Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::Ordering;
+    let sent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let sent_thread = sent.clone();
+    let handle = std::thread::spawn(move || {
+        loop {
+            if stop_flag.load(Ordering::Relaxed) {
+                break;
+            }
+            match rx.recv_timeout(Duration::from_millis(25)) {
+                Ok(SESSION_END_KEY) => {
+                    end_flag.store(true, Ordering::Relaxed);
+                    break;
+                }
+                Ok(code) => {
+                    let mut input = InputT::default();
+                    input.kind = InputKind::Key;
+                    input.key_code = code;
+                    input.pressed = true;
+                    let framed =
+                        FrameEncoder::encode(&encode_message(&MessageT::Input(Box::new(input))));
+                    let _guard = send_lock.lock().expect("send lock");
+                    if stream.write_all(&framed).is_err() {
+                        end_flag.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                    sent_thread.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    // Input closed: end the session cleanly too.
+                    end_flag.store(true, Ordering::Relaxed);
+                    break;
+                }
+            }
+        }
+    });
+    (handle, sent)
 }
 
 /// Run the `--connect` session until `Q`, stdin EOF, a dead
@@ -631,6 +758,14 @@ pub fn run_connect_with(
             }
         }
     };
+    // Thread lanes (see the module topology): the UI lane
+    // starts now so even the handshake's UiFrame is prepared
+    // off the world thread; the input lane starts after the
+    // handshake (its stream handle is cloned below).
+    let send_lock = Arc::new(Mutex::new(()));
+    let mut shm_path = socket_path.as_os_str().to_os_string();
+    shm_path.push(".ui-shm");
+    let (ui_tx, ui_lane) = spawn_ui_lane(PathBuf::from(shm_path), config.ui_share.clone());
     let mut session = Session {
         stream,
         dec: FrameDecoder::new(),
@@ -638,12 +773,12 @@ pub fn run_connect_with(
         heartbeat: HeartbeatTracker::new(0),
         start,
         defs: None,
-        ui_store: None,
         player_pos: None,
         stats: Stats::default(),
         live: LiveWorld::new(),
         share: config.share,
-        ui_share: config.ui_share,
+        ui_tx: Some(ui_tx),
+        send_lock: send_lock.clone(),
         captures: config.captures,
         capture_outcomes: Vec::new(),
         first_capture_done: false,
@@ -723,34 +858,21 @@ pub fn run_connect_with(
     session.ingest(&snap)?;
     match session.expect("UiFrame")? {
         MessageT::UiFrame(note) => {
-            // The shm path is agreed alongside the handshake
-            // by convention (docs/phase4-ui.md): the server's
-            // store sits beside its socket at
-            // `<socket>.ui-shm` unless configured otherwise;
-            // the UiFrame itself carries geometry/seq/mode.
-            let mut shm_path = socket_path.as_os_str().to_os_string();
-            shm_path.push(".ui-shm");
-            match ui_share::UiShmStore::open_file(Path::new(&shm_path)) {
-                Ok(store) => {
-                    session.ui_store = Some(store);
-                    println!("connect: ui shm attached ({})", shm_path.to_string_lossy());
-                }
-                Err(e) => {
-                    println!(
-                        "connect: ui shm open failed ({}): {e}",
-                        shm_path.to_string_lossy()
-                    );
-                }
-            }
+            // Hand off to the UI lane (it opens the shm store
+            // and publishes) — the world thread never prepares
+            // UI frames, handshake included.
             session.ingest(&MessageT::UiFrame(note))?;
         }
         other => return Err(format!("expected UiFrame, got {other:?}")),
     }
 
     // Input drive: stdin bytes on a thread (stdin reads
-    // block), or the embedder's channel directly — both end
-    // the session the same way when they close.
-    let rx = match config.input {
+    // block), or the embedder's channel directly — both feed
+    // the input lane, which forwards each code to the socket
+    // on its own thread (never queued behind world ingest
+    // here) and flags the end of the session the same way
+    // for both sources.
+    let source_rx = match config.input {
         ConnectInput::Channel(rx) => rx,
         ConnectInput::Stdin => {
             let (tx, rx) = mpsc::channel::<i32>();
@@ -777,6 +899,19 @@ pub fn run_connect_with(
             rx
         }
     };
+    let input_stream = session
+        .stream
+        .try_clone()
+        .map_err(|e| format!("client input stream clone: {e}"))?;
+    let end_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (input_lane, inputs_sent_counter) = spawn_input_lane(
+        source_rx,
+        input_stream,
+        send_lock.clone(),
+        end_flag.clone(),
+        stop_flag.clone(),
+    );
 
     let mut ping_nonce: u64 = 0;
     // When the user ends the session (Q / input close), the
@@ -803,31 +938,10 @@ pub fn run_connect_with(
             std::thread::sleep(Duration::from_millis(5));
             continue;
         }
-        // Then key presses.
-        let mut end_session = false;
-        loop {
-            match rx.try_recv() {
-                Ok(SESSION_END_KEY) => {
-                    end_session = true;
-                    break;
-                }
-                Ok(code) => {
-                    let mut input = InputT::default();
-                    input.kind = InputKind::Key;
-                    input.key_code = code;
-                    input.pressed = true;
-                    session.send(&MessageT::Input(Box::new(input)))?;
-                    session.stats.inputs_sent += 1;
-                }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    // Input closed: end the session cleanly too.
-                    end_session = true;
-                    break;
-                }
-            }
-        }
-        if end_session {
+        // Key presses are forwarded by the input lane the
+        // moment they arrive; this loop only watches for the
+        // lane's end flag (SESSION_END_KEY / source closed).
+        if end_flag.load(std::sync::atomic::Ordering::Relaxed) && draining_since.is_none() {
             draining_since = Some(Instant::now());
         }
         // Heartbeat: ping on the protocol's cadence; silence
@@ -866,6 +980,15 @@ pub fn run_connect_with(
     let mut shutdown = ShutdownT::default();
     shutdown.reason = Some("engine --connect session ended".to_string());
     session.send(&MessageT::Shutdown(Box::new(shutdown)))?;
+    // Lane teardown: stop the input lane and join both lanes
+    // so their final publishes are in before the report.
+    // (The UI lane exits when the session's sender drops,
+    // just below.)
+    stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = input_lane.join();
+    session.stats.inputs_sent = inputs_sent_counter.load(std::sync::atomic::Ordering::Relaxed);
+    session.ui_tx = None;
+    let _ = ui_lane.join();
     println!(
         "connect: session ended — {} snapshots, {} deltas, {} light updates, {} env updates, \
          {} effects, {} ui frames, {} pongs, {} inputs sent; player at {:?}",

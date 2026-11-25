@@ -26,9 +26,14 @@ Options: `-Scene <name>` (default `street_block`), `-Seed <n>`,
 The bash twin `launch-sim.sh` takes the same options with `--` flags.
 Play with the game keys (hjkl / yubn / arrows, o/c, s, g, d, i, &,
 ;, ., >/<, Esc); WASD also move (w/a are movement aliases, s = smash,
-d = drop — they are game keys, not camera keys). Q/E yaw the camera,
-PgUp/PgDn step the cutaway level, mouse-drag orbits; close the
-window to end the session. The camera follows the player. With the
+d = drop — they are game keys, not camera keys). On the map, Q/E yaw
+the camera and PgUp/PgDn step the cutaway level — but while a menu
+is open, EVERY key belongs to the game: q backs out of the menu (it
+does not touch the camera), PgUp/PgDn page the menu's list, and Esc
+closes the menu. Mouse-drag orbits; close the window to end the
+session. The camera follows the player. (Key trouble? Run with the
+environment variable CDDA_VOXEL_KEY_DEBUG=1 to log every key event,
+the sim mode it routed under, and the decision, to stderr.) With the
 UltiCa export in assets/ultica_run1 the live world renders textured
 with furniture props, voxel trees, entity billboards (the player
 included) and the sim's own menus (i opens the inventory in-window);

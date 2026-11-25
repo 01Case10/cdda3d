@@ -41,7 +41,7 @@ use glam::Vec3;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 fn main() -> ExitCode {
@@ -498,6 +498,15 @@ struct App {
     /// Seq of the last published UI frame seated into
     /// `frame_args.ui` (re-seat only on a newer frame).
     live_ui_seq: u64,
+    /// The sim's current UI mode, as last published on the
+    /// UI share (MapInput = map focus; UiInput = a menu is
+    /// open). Key routing is gated on it: while a menu is
+    /// open, every key belongs to the sim — Q/E yaw and
+    /// PgUp/PgDn cutaway are MapInput-only. Updated by
+    /// `poll_live` straight from the share, not only when a
+    /// frame seats, so the first key pressed after a menu
+    /// opens already routes by the new mode.
+    live_mode: proto::UiMode,
     live_input: Option<std::sync::mpsc::Sender<i32>>,
     cursor: (f64, f64),
     drag_from: Option<(f64, f64)>,
@@ -627,6 +636,7 @@ impl App {
             live_share,
             live_ui_share,
             live_ui_seq: 0,
+            live_mode: proto::UiMode::MapInput,
             live_input,
             cursor: (0.0, 0.0),
             drag_from: None,
@@ -641,6 +651,63 @@ impl App {
         self.pacer.mark_world_dirty();
     }
 
+    /// Poll the session's shared slots WITHOUT seating or
+    /// rendering: returns true when a fresher wire scene or
+    /// UI frame is waiting, and refreshes `live_mode` from
+    /// the latest published UI frame either way.
+    ///
+    /// This poll is the live window's only wake-up path, and
+    /// its absence was the root cause of the second
+    /// Launch-Sim input round (2026-11-25, merged build):
+    /// the session thread publishes into these slots but has
+    /// no channel to the winit event loop, the loop sleeps
+    /// under `ControlFlow::Wait`, and the frame pacer only
+    /// renders when something marks it dirty — forwarded
+    /// keys never did. So the sim advanced (the player
+    /// moved, menus opened, Esc closed them sim-side) while
+    /// the screen sat on the pre-key frame until some
+    /// unrelated OS event forced a redraw: movement looked
+    /// dead, menus "barely worked" with large, random
+    /// latency, and Esc-in-menu looked broken. The
+    /// app-wiring tests could not see it — they call
+    /// `sync_frame_args` directly, bypassing the pacer and
+    /// the event loop entirely.
+    fn poll_live(&mut self) -> bool {
+        let mut changed = false;
+        if let Some(share) = &self.live_ui_share {
+            let published = {
+                let guard = share.lock().expect("ui share lock");
+                guard.as_ref().map(|p| (p.seq, p.mode))
+            };
+            if let Some((seq, mode)) = published {
+                if mode != self.live_mode {
+                    if key_debug_enabled() {
+                        eprintln!(
+                            "key-debug: sim mode {:?} -> {:?} (ui seq {seq})",
+                            self.live_mode, mode
+                        );
+                    }
+                    self.live_mode = mode;
+                }
+                if seq != self.live_ui_seq {
+                    changed = true;
+                }
+            }
+        }
+        if let Some(share) = &self.live_share {
+            let guard = share.lock().expect("wire share lock");
+            let fresh = match (&*guard, &self.frame_args.wire) {
+                (Some(w), Some(old)) => !Arc::ptr_eq(&old.map, &w.map),
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if fresh {
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Sync the live camera/cutaway/size/time into the frame
     /// template before a redraw.
     fn sync_frame_args(&mut self) {
@@ -653,6 +720,7 @@ impl App {
             if let Some(prepared) = published {
                 if prepared.seq != self.live_ui_seq {
                     self.live_ui_seq = prepared.seq;
+                    self.live_mode = prepared.mode;
                     self.frame_args.ui = Some(prepared);
                 }
             }
@@ -1009,11 +1077,28 @@ impl ApplicationHandler for App {
         self.gpu.as_ref().unwrap().window.request_redraw();
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Live session: poll the session's shared slots and
+        // dirty the pacer when the sim published anything —
+        // and keep a short wake deadline while a session is
+        // attached, because `ControlFlow::Wait` otherwise
+        // sleeps until the next OS event and a publish that
+        // lands while the loop sleeps would wait for one
+        // (see `poll_live`: the presentation-latency root
+        // cause). With the poll, a sim publish is presented
+        // within one poll interval + one frame.
+        if self.poll_live() {
+            self.pacer.mark_world_dirty();
+        }
         if self.pacer.should_render() {
             if let Some(gpu) = &self.gpu {
                 gpu.window.request_redraw();
             }
+        }
+        if self.live_share.is_some() {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                Instant::now() + LIVE_POLL_INTERVAL,
+            ));
         }
     }
 
@@ -1059,54 +1144,62 @@ impl ApplicationHandler for App {
                 if event.state != ElementState::Pressed {
                     return;
                 }
-                // Live session key routing: the game's keys go
-                // to the sim (see `live_forward_code`); only
-                // Q/E (camera yaw) and PgUp/PgDn (cutaway) stay
-                // local. Before this split, WASD panned the
-                // camera AND were filtered out of forwarding
-                // (so `w`/`a` movement and the `s`/`d` game
-                // keys never reached the sim), the arrows
-                // orbited the camera and had no forwarding
-                // path at all (a byte channel cannot carry
-                // their key codes), and Escape exited the app
-                // instead of reaching the sim's menu-close.
-                // The session ends by closing the window (the
-                // app drop closes the channel — the client's
-                // input-close rule).
+                // Live session key routing: ONE decision
+                // function (`live_key_action`) decides, gated
+                // on the sim's current UI mode — in MapInput
+                // the game's keys go to the sim and only Q/E
+                // (camera yaw) and PgUp/PgDn (cutaway) stay
+                // local; in UiInput (a menu is open) EVERY key
+                // is the sim's, Q/E and PgUp/PgDn included, so
+                // `q` backs out of the menu instead of yawing
+                // the camera behind it. The character comes
+                // from the event's LOGICAL key (`key_char`),
+                // not `event.text` alone: winit only
+                // guarantees text for character-producing keys
+                // and it can be absent where the logical key
+                // still names the character. The session ends
+                // by closing the window (the app drop closes
+                // the channel — the client's input-close rule).
                 if let Some(tx) = &self.live_input {
                     let tx = tx.clone();
-                    let mut camera_moved = false;
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::PageUp) => {
+                    // Fresh mode first: a menu may have opened
+                    // since the last rendered frame (publishes
+                    // do not wait for renders — `poll_live`).
+                    self.poll_live();
+                    let physical = match event.physical_key {
+                        PhysicalKey::Code(c) => Some(c),
+                        _ => None,
+                    };
+                    let ch = key_char(&event.logical_key, event.text.as_deref());
+                    let action = physical.map_or(LiveKeyAction::Ignore, |c| {
+                        live_key_action(self.live_mode, c, ch)
+                    });
+                    if key_debug_enabled() {
+                        eprintln!(
+                            "key-debug: physical={physical:?} logical={:?} text={:?} \
+                             mode={:?} -> {action:?}",
+                            event.logical_key, event.text, self.live_mode
+                        );
+                    }
+                    match action {
+                        LiveKeyAction::Forward(code) => {
+                            if tx.send(code).is_err() && key_debug_enabled() {
+                                eprintln!("key-debug: forward of {code} failed: channel closed");
+                            }
+                        }
+                        LiveKeyAction::CameraYaw(d) => {
+                            self.camera.orbit(0.0, 0.0, d);
+                            self.pacer.mark_camera_dirty();
+                        }
+                        LiveKeyAction::CutawayUp => {
                             self.cutaway.step_up();
                             self.remesh();
                         }
-                        PhysicalKey::Code(KeyCode::PageDown) => {
+                        LiveKeyAction::CutawayDown => {
                             self.cutaway.step_down();
                             self.remesh();
                         }
-                        PhysicalKey::Code(KeyCode::KeyQ) => {
-                            self.camera.orbit(0.0, 0.0, -2.0);
-                            camera_moved = true;
-                        }
-                        PhysicalKey::Code(KeyCode::KeyE) => {
-                            self.camera.orbit(0.0, 0.0, 2.0);
-                            camera_moved = true;
-                        }
-                        _ => {
-                            let code = match event.physical_key {
-                                PhysicalKey::Code(c) => Some(c),
-                                _ => None,
-                            };
-                            if let Some(code) =
-                                code.and_then(|c| live_forward_code(c, event.text.as_deref()))
-                            {
-                                let _ = tx.send(code);
-                            }
-                        }
-                    }
-                    if camera_moved {
-                        self.pacer.mark_camera_dirty();
+                        LiveKeyAction::Ignore => {}
                     }
                     return;
                 }
@@ -1176,38 +1269,141 @@ impl ApplicationHandler for App {
     }
 }
 
-/// The live window's key routing (Launch-Sim symptoms 4/5):
-/// which key press becomes which sim key code, or `None`
-/// when the key stays local to the window. Local: Q/E
-/// (camera yaw — their letters never forward, so `q` cannot
-/// quit-or-back-out by accident from the keyboard focus
-/// path; menus close with Escape) and PgUp/PgDn (cutaway).
-/// Everything else is the game's: Escape (the sim's
-/// menu-close / pending-cancel), the arrows (directions on
-/// the map, the cursor in menus), Enter/Tab/Backspace for
-/// menus, and every printable character — WASD included:
-/// `w`/`a` are movement aliases in the sim and `s`/`d` are
-/// its smash/drop keys, so the pre-fix filter that swallowed
-/// them (they "belonged" to the camera) broke both movement
-/// and two game verbs.
-fn live_forward_code(physical: KeyCode, text: Option<&str>) -> Option<i32> {
+/// How often the live window wakes to poll the session's
+/// shared slots while a session is attached (see
+/// `App::poll_live`): the bound on publish -> present
+/// latency for sim-driven changes (movement results, menu
+/// frames) is one interval + one rendered frame.
+const LIVE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
+
+/// Key-input debug logging (Joey's debug-logging rule):
+/// `CDDA_VOXEL_KEY_DEBUG=1` logs every live-window key
+/// event, the sim mode it was routed under, the routing
+/// decision, and mode changes as publishes land. Off by
+/// default; no behaviour change when off.
+fn key_debug_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var_os("CDDA_VOXEL_KEY_DEBUG").is_some_and(|v| v != "0")
+    })
+}
+
+/// The character a key event names, from its LOGICAL key
+/// first (winit's layout-aware character), falling back to
+/// the event text. The pre-fix routing read `event.text`
+/// only: winit guarantees text just for
+/// character-producing keys, and where text is absent the
+/// old code silently forwarded nothing for a key whose
+/// logical key still named it.
+fn key_char(logical: &Key, text: Option<&str>) -> Option<char> {
+    if let Key::Character(s) = logical {
+        if let Some(c) = s.chars().next() {
+            return Some(c);
+        }
+    }
+    text.and_then(|t| t.chars().next())
+}
+
+/// What one live-window key press should do — the REAL
+/// window handler's decision, extracted as a pure function
+/// so the gates exercise the exact code the window runs
+/// (the first fix round tested a parallel routing helper
+/// while the handler kept its own match; they diverged in
+/// the ways Joey's PC run reported).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LiveKeyAction {
+    /// Send this `ui_share::input` key code to the sim.
+    Forward(i32),
+    /// Yaw the camera by this many degrees (Q/E, MapInput
+    /// only).
+    CameraYaw(f32),
+    /// Step the cutaway up/down (PgUp/PgDn, MapInput only).
+    CutawayUp,
+    CutawayDown,
+    /// Neither the sim's nor the window's: drop it.
+    Ignore,
+}
+
+/// The live window's key routing, gated on the sim's UI
+/// mode (Launch-Sim input rounds 1+2):
+/// - **MapInput** (no menu): the game's keys forward —
+///   Escape (pending-action cancel), the arrows, Enter /
+///   Tab / Backspace, and every printable character, WASD
+///   included (`w`/`a` are movement aliases in the sim and
+///   `s`/`d` are its smash/drop keys). Only Q/E (camera
+///   yaw) and PgUp/PgDn (cutaway) stay local.
+/// - **UiInput** (a menu is open): EVERY key is the sim's.
+///   `q` backs out of the menu (it must not also yaw the
+///   camera), `e` is the menu's own key, PgUp/PgDn are the
+///   sim's list-page keys, and Escape closes the menu.
+///   Camera and cutaway keys are suspended until the sim
+///   returns to MapInput.
+fn live_key_action(mode: proto::UiMode, physical: KeyCode, ch: Option<char>) -> LiveKeyAction {
+    use ui_share::input::{
+        KEY_BACKSPACE, KEY_DOWN, KEY_ENTER, KEY_ESCAPE, KEY_LEFT, KEY_PAGE_DOWN, KEY_PAGE_UP,
+        KEY_RIGHT, KEY_TAB, KEY_UP,
+    };
+    let in_menu = mode == proto::UiMode::UiInput;
     match physical {
-        KeyCode::Escape => return Some(ui_share::input::KEY_ESCAPE),
-        KeyCode::ArrowLeft => return Some(ui_share::input::KEY_LEFT),
-        KeyCode::ArrowRight => return Some(ui_share::input::KEY_RIGHT),
-        KeyCode::ArrowUp => return Some(ui_share::input::KEY_UP),
-        KeyCode::ArrowDown => return Some(ui_share::input::KEY_DOWN),
-        KeyCode::Enter | KeyCode::NumpadEnter => return Some(ui_share::input::KEY_ENTER),
-        KeyCode::Tab => return Some(ui_share::input::KEY_TAB),
-        KeyCode::Backspace => return Some(ui_share::input::KEY_BACKSPACE),
-        KeyCode::PageUp | KeyCode::PageDown | KeyCode::KeyQ | KeyCode::KeyE => return None,
+        KeyCode::Escape => return LiveKeyAction::Forward(KEY_ESCAPE),
+        KeyCode::ArrowLeft => return LiveKeyAction::Forward(KEY_LEFT),
+        KeyCode::ArrowRight => return LiveKeyAction::Forward(KEY_RIGHT),
+        KeyCode::ArrowUp => return LiveKeyAction::Forward(KEY_UP),
+        KeyCode::ArrowDown => return LiveKeyAction::Forward(KEY_DOWN),
+        KeyCode::Enter | KeyCode::NumpadEnter => return LiveKeyAction::Forward(KEY_ENTER),
+        KeyCode::Tab => return LiveKeyAction::Forward(KEY_TAB),
+        KeyCode::Backspace => return LiveKeyAction::Forward(KEY_BACKSPACE),
+        KeyCode::PageUp => {
+            return if in_menu {
+                LiveKeyAction::Forward(KEY_PAGE_UP)
+            } else {
+                LiveKeyAction::CutawayUp
+            };
+        }
+        KeyCode::PageDown => {
+            return if in_menu {
+                LiveKeyAction::Forward(KEY_PAGE_DOWN)
+            } else {
+                LiveKeyAction::CutawayDown
+            };
+        }
+        KeyCode::KeyQ | KeyCode::KeyE => {
+            if in_menu {
+                let c = ch.unwrap_or(if physical == KeyCode::KeyQ { 'q' } else { 'e' });
+                return LiveKeyAction::Forward(c as i32);
+            }
+            return LiveKeyAction::CameraYaw(if physical == KeyCode::KeyQ {
+                -2.0
+            } else {
+                2.0
+            });
+        }
         _ => {}
     }
-    let ch = text?.chars().next()?;
-    if (' '..='~').contains(&ch) && !matches!(ch, 'q' | 'Q' | 'e' | 'E') {
-        Some(ch as i32)
-    } else {
-        None
+    match ch {
+        Some(c) if (' '..='~').contains(&c) => {
+            if !in_menu && matches!(c, 'q' | 'Q' | 'e' | 'E') {
+                LiveKeyAction::Ignore
+            } else {
+                LiveKeyAction::Forward(c as i32)
+            }
+        }
+        _ => LiveKeyAction::Ignore,
+    }
+}
+
+/// The first round's routing helper, kept as a thin
+/// MapInput-mode shim over [`live_key_action`] (its original
+/// callers/tests predate mode-aware routing).
+#[cfg(test)]
+fn live_forward_code(physical: KeyCode, text: Option<&str>) -> Option<i32> {
+    match live_key_action(
+        proto::UiMode::MapInput,
+        physical,
+        text.and_then(|t| t.chars().next()),
+    ) {
+        LiveKeyAction::Forward(code) => Some(code),
+        _ => None,
     }
 }
 
@@ -1356,26 +1552,183 @@ mod app_wiring_tests {
     /// including the WASD the old filter swallowed and the
     /// arrow/Escape codes the old byte channel could not
     /// carry — and keeps only Q/E + PgUp/PgDn local.
+    /// Round 2: these assertions run against
+    /// `live_key_action`, the decision function the REAL
+    /// window handler calls (round 1 tested a parallel
+    /// helper while the handler kept its own match — the
+    /// divergence Joey's PC run exposed).
     #[test]
     fn live_key_routing_forwards_the_game_keys() {
         use ui_share::input::{KEY_DOWN, KEY_ESCAPE, KEY_LEFT};
+        let map = proto::UiMode::MapInput;
+        let fwd = |c: KeyCode, t: Option<char>| live_key_action(map, c, t);
         // Movement + verbs that the pre-fix filter ate.
-        assert_eq!(live_forward_code(KeyCode::KeyW, Some("w")), Some('w' as i32));
-        assert_eq!(live_forward_code(KeyCode::KeyA, Some("a")), Some('a' as i32));
-        assert_eq!(live_forward_code(KeyCode::KeyS, Some("s")), Some('s' as i32));
-        assert_eq!(live_forward_code(KeyCode::KeyD, Some("d")), Some('d' as i32));
-        assert_eq!(live_forward_code(KeyCode::KeyB, Some("b")), Some('b' as i32));
+        assert_eq!(fwd(KeyCode::KeyW, Some('w')), LiveKeyAction::Forward('w' as i32));
+        assert_eq!(fwd(KeyCode::KeyA, Some('a')), LiveKeyAction::Forward('a' as i32));
+        assert_eq!(fwd(KeyCode::KeyS, Some('s')), LiveKeyAction::Forward('s' as i32));
+        assert_eq!(fwd(KeyCode::KeyD, Some('d')), LiveKeyAction::Forward('d' as i32));
+        assert_eq!(fwd(KeyCode::KeyB, Some('b')), LiveKeyAction::Forward('b' as i32));
         // Menus.
-        assert_eq!(live_forward_code(KeyCode::KeyI, Some("i")), Some('i' as i32));
-        assert_eq!(live_forward_code(KeyCode::Escape, None), Some(KEY_ESCAPE));
-        // Arrows: no text, the code carries them.
-        assert_eq!(live_forward_code(KeyCode::ArrowDown, None), Some(KEY_DOWN));
-        assert_eq!(live_forward_code(KeyCode::ArrowLeft, None), Some(KEY_LEFT));
-        // Local-only keys never forward.
+        assert_eq!(fwd(KeyCode::KeyI, Some('i')), LiveKeyAction::Forward('i' as i32));
+        assert_eq!(fwd(KeyCode::Escape, None), LiveKeyAction::Forward(KEY_ESCAPE));
+        // Arrows: no character, the code carries them.
+        assert_eq!(fwd(KeyCode::ArrowDown, None), LiveKeyAction::Forward(KEY_DOWN));
+        assert_eq!(fwd(KeyCode::ArrowLeft, None), LiveKeyAction::Forward(KEY_LEFT));
+        // ';' (look) forwards — round 1 keyed it on
+        // `event.text`, which winit does not guarantee.
+        assert_eq!(fwd(KeyCode::Semicolon, Some(';')), LiveKeyAction::Forward(';' as i32));
+        // Local-only keys in MapInput: Q/E yaw, PgUp/PgDn cutaway.
+        assert_eq!(fwd(KeyCode::KeyQ, Some('q')), LiveKeyAction::CameraYaw(-2.0));
+        assert_eq!(fwd(KeyCode::KeyE, Some('e')), LiveKeyAction::CameraYaw(2.0));
+        assert_eq!(fwd(KeyCode::PageUp, None), LiveKeyAction::CutawayUp);
+        assert_eq!(fwd(KeyCode::PageDown, None), LiveKeyAction::CutawayDown);
+        // The round-1 shim still agrees in MapInput mode.
+        assert_eq!(live_forward_code(KeyCode::KeyW, Some("w")), Some('w' as i32));
         assert_eq!(live_forward_code(KeyCode::KeyQ, Some("q")), None);
-        assert_eq!(live_forward_code(KeyCode::KeyE, Some("e")), None);
         assert_eq!(live_forward_code(KeyCode::PageUp, None), None);
-        assert_eq!(live_forward_code(KeyCode::PageDown, None), None);
+    }
+
+    /// Regression (input round 2, defect 2): while a menu is
+    /// open (UiInput), routing must give EVERY key to the
+    /// sim — above all `q`, which round 1 yawed the camera
+    /// with even as it (didn't) back out of the menu, and
+    /// PgUp/PgDn, which are the sim's list-page keys there.
+    #[test]
+    fn live_key_routing_in_a_menu_gives_every_key_to_the_sim() {
+        use ui_share::input::{KEY_ESCAPE, KEY_PAGE_DOWN, KEY_PAGE_UP};
+        let ui = proto::UiMode::UiInput;
+        assert_eq!(
+            live_key_action(ui, KeyCode::KeyQ, Some('q')),
+            LiveKeyAction::Forward('q' as i32),
+            "q backs out of the menu; it must not yaw the camera"
+        );
+        assert_eq!(
+            live_key_action(ui, KeyCode::KeyE, Some('e')),
+            LiveKeyAction::Forward('e' as i32)
+        );
+        assert_eq!(
+            live_key_action(ui, KeyCode::PageUp, None),
+            LiveKeyAction::Forward(KEY_PAGE_UP),
+            "PgUp pages the sim's list in a menu, not the cutaway"
+        );
+        assert_eq!(
+            live_key_action(ui, KeyCode::PageDown, None),
+            LiveKeyAction::Forward(KEY_PAGE_DOWN)
+        );
+        assert_eq!(
+            live_key_action(ui, KeyCode::Escape, None),
+            LiveKeyAction::Forward(KEY_ESCAPE),
+            "Esc closes the menu (defect 3)"
+        );
+        assert_eq!(
+            live_key_action(ui, KeyCode::KeyJ, Some('j')),
+            LiveKeyAction::Forward('j' as i32),
+            "menu cursor keys still forward"
+        );
+    }
+
+    /// Regression (input round 2, defect 1 half): the
+    /// character for a printable key comes from the LOGICAL
+    /// key, with text only as a fallback — round 1 read
+    /// `event.text` alone, which winit does not guarantee
+    /// for every key/platform.
+    #[test]
+    fn key_char_prefers_the_logical_key_over_text() {
+        assert_eq!(
+            key_char(&Key::Character("j".into()), None),
+            Some('j'),
+            "a logical character with NO text still names the key"
+        );
+        assert_eq!(
+            key_char(&Key::Character(";".into()), Some(";")),
+            Some(';')
+        );
+        assert_eq!(
+            key_char(
+                &Key::Named(winit::keyboard::NamedKey::ArrowDown),
+                None
+            ),
+            None,
+            "named keys have no character (the code path carries them)"
+        );
+        assert_eq!(
+            key_char(&Key::Named(winit::keyboard::NamedKey::Enter), Some("\r")),
+            Some('\r'),
+            "text is the fallback when the logical key names none"
+        );
+    }
+
+    /// Regression (input round 2, defects 1+4): a session
+    /// publish must be VISIBLE to the App's wake path
+    /// without any render happening first. Round 1's App
+    /// only ever learned about publishes inside
+    /// `sync_frame_args` (called from `render`), and renders
+    /// only happened when the pacer was dirty — forwarded
+    /// keys never dirtied it — so publishes sat unpresented
+    /// until an unrelated OS event forced a redraw. This
+    /// test drives `poll_live` (the `about_to_wait` path)
+    /// exactly as the event loop does: publish -> poll ->
+    /// changed, and the UI mode tracks the publish so the
+    /// NEXT key routes by it.
+    #[test]
+    fn live_poll_surfaces_publishes_and_tracks_the_sim_mode() {
+        let (tx, _rx) = std::sync::mpsc::channel::<i32>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let ui_share: engine::client::SharedUiScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: None,
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share: share.clone(),
+                ui_share: ui_share.clone(),
+                input: tx,
+            }),
+        });
+        assert!(!app.poll_live(), "nothing published: no wake");
+        assert_eq!(app.live_mode, proto::UiMode::MapInput);
+
+        // A UI frame ALONE (no world publish at all) must
+        // surface: this is the menu-latency property — the
+        // UI lane is seatable independent of the world path.
+        *ui_share.lock().expect("ui share lock") = Some(engine::frame::UiPrepared {
+            tight: vec![7, 7, 7, 255],
+            size: (1, 1),
+            mode: proto::UiMode::UiInput,
+            terrain_rect: None,
+            seq: 7,
+        });
+        assert!(app.poll_live(), "a lone UI publish wakes the window");
+        assert_eq!(
+            app.live_mode,
+            proto::UiMode::UiInput,
+            "mode tracks the publish before any render seats the frame"
+        );
+        // And it seats through the ordinary render sync.
+        app.sync_frame_args();
+        assert_eq!(app.frame_args.ui.as_ref().map(|u| u.seq), Some(7));
+        assert!(!app.poll_live(), "seated: no further wake");
+
+        // A fresh wire publish alone also wakes the window
+        // (movement results land as wire publishes).
+        let snap = proto::SnapshotT::default();
+        let wire = engine::wire::WireScene::from_map(
+            mesher::chunk::ChunkMap::new(mesher::scale::WorldScale::default()),
+            &snap,
+        );
+        *share.lock().expect("share lock") = Some(wire);
+        assert!(app.poll_live(), "a wire publish wakes the window");
+        app.sync_frame_args();
+        assert!(!app.poll_live(), "seated wire scene: no further wake");
     }
 
     /// Regression (Launch-Sim symptom 5, visibility half +
