@@ -249,9 +249,21 @@ fn gate_10_4a_ceiling_rule_rt() {
         roof_neut.mean_lum(),
         roof_noon.mean_lum()
     );
+    // Midnight darkening threshold re-derived for Option B
+    // (2026-11-25): the roof level of this night fixture is lit
+    // DARK (cap 0.25). Under the pre-B product, midnight moon
+    // (~0.21 light) was multiplied by the cap and by AO and read
+    // 0.011 vs noon 0.084 (0.13x). Under Option B the cap is a
+    // ceiling on the sum, not a multiplier: noon saturates the
+    // DARK ceiling and midnight's ~0.21 of moonlight nearly
+    // does too, so the rendered ratio compresses to ~0.67
+    // (measured 0.048 vs 0.068). The gate's claim — the exposed
+    // roof still darkens at midnight while the interior below
+    // does not move — holds at <0.8x; the >2x figure was a
+    // product-composition artifact.
     assert!(
-        roof_mid.mean_lum() < roof_noon.mean_lum() * 0.5,
-        "exposed roof must darken strongly at midnight vs noon ({:.3} -> {:.3})",
+        roof_mid.mean_lum() < roof_noon.mean_lum() * 0.8,
+        "exposed roof must darken at midnight vs noon ({:.3} -> {:.3})",
         roof_noon.mean_lum(),
         roof_mid.mean_lum()
     );

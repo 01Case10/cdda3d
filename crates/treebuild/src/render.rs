@@ -719,6 +719,27 @@ fn lit_factor(lit: u32) -> f32 {
     }
 }
 
+// Option B (2026-11-25): the interior probe floor for one lit
+// level — the low end of the game's own lit band for the tile
+// (lighting::mapping::band lows: DARK .06 / LOW .18 /
+// BRIGHT_ONLY .34 / LIT .54 / BRIGHT .80). The game's band IS
+// its irradiance estimate (it already accounted for roofs and
+// bounce in its lightmap), so a tile the game calls lit has at
+// least this much indirect light wherever the sky gives it
+// none. MEMORIZED (5) and BLANK/unknown get no floor: memory
+// keeps its pinned presentation, and BLANK never enters the
+// tree at all.
+fn lit_band_floor(lit: u32) -> f32 {
+    switch lit {
+        case 0u: { return 0.06; }
+        case 1u: { return 0.18; }
+        case 2u: { return 0.34; }
+        case 3u: { return 0.54; }
+        case 4u: { return 0.80; }
+        default: { return 0.0; }
+    }
+}
+
 // RT slope spike (docs/fine-slope-normals.md S5): occupancy
 // of one fine cell via the tree point query.
 fn fine_occupied(cell: vec3<i32>) -> bool {
@@ -833,48 +854,37 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     // Phase 10 (10.4, §5.3): sky GI from the shared SkyUniforms,
     // replacing the hardcoded `0.35 + 0.85 * ndl` model.
     //
-    // Hemisphere ambient: mix(ground, zenith, n.z * 0.5 + 0.5)
-    // (grid space: +z is up) * ambient_scale (packed in zenith.w).
-    // The hemisphere term is NOT scaled by the per-tile sky
-    // factor: it is the ambient floor lamp-lit interiors rely on
-    // (§3.4 — interiors lit by lamps look as they do today; the
-    // lit_factor ceiling below still caps the total). The
-    // directional terms ARE scaled by it (§3.4, decision 4A;
-    // side-table flag bit 32, FLAG_SKY_EXPOSED).
+    // Option B composition (2026-11-25, Joey's call — the
+    // industry probe shape, replacing the pre-B product of
+    // independent darkening factors `light * lit_factor * ao`
+    // that crushed roofed interiors to ~0.07-0.15x):
+    //
+    //   light = (direct + indirect), scaled so its luminance
+    //   never exceeds lit_factor
+    //
+    // - indirect is the hemisphere term. It is NOT scaled by
+    //   the per-tile sky factor (§3.4), it is the ONLY term
+    //   occupancy AO darkens, and where the tile takes no sky
+    //   it carries a floor (see below).
+    // - direct is sun + moon, scaled by the per-tile sky
+    //   factor (§3.4, decision 4A; side-table flag bit 32,
+    //   FLAG_SKY_EXPOSED), plus local emitters. AO never
+    //   touches it.
+    // - the game's lit band CAPS the sum instead of
+    //   multiplying the parts: the cap is a luminance limit
+    //   (the band is a scalar intensity in the game), applied
+    //   as a ratio so the light's chromaticity survives —
+    //   a per-channel min would bleach every capped surface
+    //   toward grey. Sky GI still never reveals what the game
+    //   marks dark/unseen (§3.4 ceiling rule), but a lit
+    //   interior is no longer multiplied down by its own
+    //   ceiling.
     let sky_factor = select(0.0, 1.0, (e.flags & 32u) != 0u);
     let hemi = mix(sky_u.ground_col.xyz, sky_u.zenith.xyz, n.z * 0.5 + 0.5);
-    var light = hemi * sky_u.zenith.w;
-    // Directional: sun + moon, colours pre-multiplied by
-    // intensity in the uniforms. ONE shadow ray, toward the
-    // dominant source (greater premultiplied luminance); the
-    // weaker source is unshadowed (v1 limit). Two-tree: props
-    // occlude too (same coarse-bias note as Phase 9).
-    let sun_c = sky_u.sun_color.xyz;
-    let moon_c = sky_u.moon_color.xyz;
-    let sun_i = dot(sun_c, vec3<f32>(0.299, 0.587, 0.114));
-    let moon_i = dot(moon_c, vec3<f32>(0.299, 0.587, 0.114));
-    let dom_i = max(sun_i, moon_i);
-    // Overcast collapse threshold: mirror of
-    // crate::render::SKY_COLLAPSE_LUMINANCE (0.18).
-    if dom_i < 0.18 {
-        // Overcast collapse (§5.3): the directional energy folds
-        // into the hemisphere term; no shadow ray is cast.
-        light = light + hemi * dom_i;
-    } else {
-        let moon_dom = moon_i > sun_i;
-        var dom_vis = 1.0;
-        if u.shadows != 0u {
-            let dom_dir = select(sky_u.sun_dir.xyz, sky_u.moon_dir.xyz, moon_dom);
-            let sh = trace_two(hitp + n * 0.01, dom_dir, true);
-            dom_vis = select(1.0, 0.0, sh.hit);
-        }
-        let sun_vis = select(dom_vis, 1.0, moon_dom);
-        let moon_vis = select(1.0, dom_vis, moon_dom);
-        light = light + (sun_c * max(dot(n, sky_u.sun_dir.xyz), 0.0) * sun_vis
-            + moon_c * max(dot(n, sky_u.moon_dir.xyz), 0.0) * moon_vis) * sky_factor;
-    }
+    let cap = lit_factor(e.lit);
     // Cheap occupancy AO: the four cells just outside the face,
-    // diagonally adjacent along its tangents.
+    // diagonally adjacent along its tangents. Computed up front
+    // because Option B scopes it to the indirect term below.
     var t1 = vec3<f32>(1.0, 0.0, 0.0);
     var t2 = vec3<f32>(0.0, 1.0, 0.0);
     if abs(n.x) > 0.5 {
@@ -891,6 +901,64 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
     if point_occluded(center + t2) { occ = occ + 1.0; }
     if point_occluded(center - t2) { occ = occ + 1.0; }
     let ao = 1.0 - 0.10 * occ;
+    // Hemisphere ambient: mix(ground, zenith, n.z * 0.5 + 0.5)
+    // (grid space: +z is up) * ambient_scale (packed in zenith.w).
+    var indirect = hemi * sky_u.zenith.w;
+    var direct = vec3<f32>(0.0, 0.0, 0.0);
+    // Directional: sun + moon, colours pre-multiplied by
+    // intensity in the uniforms. ONE shadow ray, toward the
+    // dominant source (greater premultiplied luminance); the
+    // weaker source is unshadowed (v1 limit). Two-tree: props
+    // occlude too (same coarse-bias note as Phase 9).
+    let sun_c = sky_u.sun_color.xyz;
+    let moon_c = sky_u.moon_color.xyz;
+    let sun_i = dot(sun_c, vec3<f32>(0.299, 0.587, 0.114));
+    let moon_i = dot(moon_c, vec3<f32>(0.299, 0.587, 0.114));
+    let dom_i = max(sun_i, moon_i);
+    // Overcast collapse threshold: mirror of
+    // crate::render::SKY_COLLAPSE_LUMINANCE (0.18).
+    if dom_i < 0.18 {
+        // Overcast collapse (§5.3): the directional energy folds
+        // into the hemisphere (indirect) term; no shadow ray is
+        // cast. As indirect it takes AO and the floor below.
+        indirect = indirect + hemi * dom_i;
+    } else {
+        let moon_dom = moon_i > sun_i;
+        var dom_vis = 1.0;
+        if u.shadows != 0u {
+            let dom_dir = select(sky_u.sun_dir.xyz, sky_u.moon_dir.xyz, moon_dom);
+            let sh = trace_two(hitp + n * 0.01, dom_dir, true);
+            dom_vis = select(1.0, 0.0, sh.hit);
+        }
+        let sun_vis = select(dom_vis, 1.0, moon_dom);
+        let moon_vis = select(1.0, dom_vis, moon_dom);
+        direct = direct + (sun_c * max(dot(n, sky_u.sun_dir.xyz), 0.0) * sun_vis
+            + moon_c * max(dot(n, sky_u.moon_dir.xyz), 0.0) * moon_vis) * sky_factor;
+    }
+    // AO scopes to the indirect term only (Option B): occlusion
+    // darkens crevices in the ambient contribution; it no
+    // longer darkens direct light a second time.
+    indirect = indirect * ao;
+    // Interior probe floor (Option B): where the tile takes no
+    // sky (roofed / sheltered), the hemisphere is the only
+    // indirect source and it can read ~0 (a lamp-lit room at
+    // midnight) even though the game reports the tile lit. The
+    // floor is the cheap stand-in for an interior irradiance
+    // probe: the low end of the game's own lit band for this
+    // tile (lit_band_floor), tinted by the hemisphere colour
+    // normalized to unit luminance (so the time-of-day tint
+    // survives without its magnitude crush; per-channel tint
+    // clamped to 2.0 against night-blue blowout). Applied as a
+    // per-channel max AFTER AO, so the floor is a guarantee,
+    // not another factor AO can multiply away.
+    if sky_factor == 0.0 {
+        let fl = lit_band_floor(e.lit);
+        if fl > 0.0 {
+            let hemi_lum = dot(hemi, vec3<f32>(0.299, 0.587, 0.114));
+            let tint = clamp(hemi / max(hemi_lum, 1e-4), vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(2.0, 2.0, 2.0));
+            indirect = max(indirect, tint * fl);
+        }
+    }
     // Water surface (terrain item 2 follow-up,
     // 2026-11-23): FLAG_WATER cells (bit 4, from the
     // block's WATER_ALPHA marker) with an up face shade
@@ -908,21 +976,23 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         spec_add = pow(max(dot(n, hv), 0.0), 64.0) * 0.35;
     }
     // Addendum 11 (emitter prototype): declared local emitters
-    // (headlights et al.) add their transported light to `light`
-    // BEFORE the ceiling multiply below, so the game's per-tile
-    // lit factor still caps the total — the capped baseline (the
-    // "lid" option) the prototype exists to measure. Per emitter:
-    // the shared cone+distance falloff (lighting::EMITTER_WGSL)
-    // at the hit point, with visibility from ONE shadow ray
-    // toward the emitter through the same two-tree traversal the
-    // sun shadows use (skip_transparent, origin nudged along the
-    // normal by the sun path's 0.01); blocked by any voxel
-    // strictly between hit and emitter (hit distance < emitter
-    // distance - 0.05) => visibility 0. Emitter positions arrive
-    // in grid space; `hitp` is tree space, so the falloff is
-    // evaluated at the grid-space point and the shadow ray at the
-    // tree-space emitter. Count 0 (the default block) skips the
-    // loop entirely — the pre-Addendum-11 shading, byte-for-byte.
+    // (headlights et al.) add their transported light to the
+    // DIRECT sum BEFORE the lit-band cap below, so the game's
+    // per-tile lit band still caps the total — the capped
+    // baseline (the "lid" option) the prototype exists to
+    // measure. (Pre-Option-B this read "before the ceiling
+    // multiply"; the cap is now a min on the sum, same lid.)
+    // Per emitter: the shared cone+distance falloff
+    // (lighting::EMITTER_WGSL) at the hit point, with visibility
+    // from ONE shadow ray toward the emitter through the same
+    // two-tree traversal the sun shadows use (skip_transparent,
+    // origin nudged along the normal by the sun path's 0.01);
+    // blocked by any voxel strictly between hit and emitter
+    // (hit distance < emitter distance - 0.05) => visibility 0.
+    // Emitter positions arrive in grid space; `hitp` is tree
+    // space, so the falloff is evaluated at the grid-space point
+    // and the shadow ray at the tree-space emitter. Count 0 (the
+    // default block) skips the loop entirely.
     {
         let ecount = emitter_count(emitters_u);
         for (var i = 0; i < ecount; i = i + 1) {
@@ -934,12 +1004,20 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
                 let sh = trace_two(hitp + n * 0.01, to_e / d, true);
                 vis = select(1.0, 0.0, sh.hit && sh.dist < d - 0.05);
             }
-            light = light + emitter_term(emitters_u, i, hitp + u.tree_origin, vis);
+            direct = direct + emitter_term(emitters_u, i, hitp + u.tree_origin, vis);
         }
     }
-    // The lit_factor ceiling multiply stays LAST (§3.4 ceiling
-    // rule: sky GI never reveals what the game marks dark/unseen).
-    var col = albedo * light * (lit_factor(e.lit) * ao);
+    // Option B cap: the game's lit band caps the SUM's
+    // luminance (§3.4 ceiling rule: sky GI never reveals what
+    // the game marks dark/unseen) — it no longer multiplies
+    // the parts. Ratio form, so capping never shifts hue.
+    let total = direct + indirect;
+    let total_lum = dot(total, vec3<f32>(0.299, 0.587, 0.114));
+    var capped = total;
+    if total_lum > cap {
+        capped = total * (cap / total_lum);
+    }
+    var col = albedo * capped;
     if (e.flags & 8u) != 0u {
         // Memorized, second stage: the albedo desaturation above
         // sufficed when the light was a scalar, but the §5.3
@@ -951,7 +1029,7 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>, h: Hit) -> vec3<f32> {
         let clum = dot(col, vec3<f32>(0.299, 0.587, 0.114));
         col = mix(vec3<f32>(clum), col, 0.30);
     }
-    return col + vec3<f32>(spec_add, spec_add, spec_add) * lit_factor(e.lit);
+    return col + vec3<f32>(spec_add, spec_add, spec_add) * cap;
 }
 
 fn sky(rd: vec3<f32>) -> vec3<f32> {

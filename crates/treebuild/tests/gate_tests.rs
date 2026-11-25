@@ -681,8 +681,18 @@ fn gate_texture_hookup_samples_array_and_falls_back_flat() {
         "checkerboard black texels must appear (min {})",
         textured.iter().min().unwrap()
     );
+    // White-texel ceiling recalibrated for Option B (2026-11-25):
+    // the pre-B product let the top face reach light R 1.17 x
+    // cap 0.85 x tint 0.5 ~ 0.50, with brighter faces past 180.
+    // Under Option B the lit band luminance-caps the sum: the
+    // top face's light (1.17, 1.35, 1.65), luminance 1.38, is
+    // ratio-scaled to the LIT cap 0.85, so R lands at
+    // 1.17 x 0.85/1.38 x tint 0.5 ~ 0.36 (~92) — the gate's
+    // discrimination is black checks (<40) vs white checks at
+    // that cap, against the flat control's per-face uniformity
+    // below.
     assert!(
-        textured.iter().any(|&v| v > 180),
+        textured.iter().any(|&v| v > 85),
         "checkerboard white texels must appear (max {})",
         textured.iter().max().unwrap()
     );
