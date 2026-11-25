@@ -84,6 +84,10 @@ fn main() -> ExitCode {
                     // the fixture paths load materials from).
                     models_dir: value_after(&args, "--textures")
                         .map(std::path::PathBuf::from),
+                    // Captures are off in the windowed session;
+                    // entity billboards seat in the App from the
+                    // published wire scene (sync_frame_args).
+                    billboards_dir: None,
                 },
             ));
             Some(LiveWindowLink { share, input: tx })
@@ -608,6 +612,18 @@ impl App {
                 };
                 if fresh {
                     self.frame_args.wire = Some(w.clone());
+                    // Entity billboards: the seated billboard
+                    // scene's ATLAS comes from `--billboards`
+                    // (fixture / sample / a tileset dir), but its
+                    // ENTITIES are the wire world's — the player
+                    // character first, then creatures — never the
+                    // flag's hard-coded crowd. The player thus
+                    // renders as a sprite on a billboard through
+                    // the same pass as every enemy.
+                    if let Some(scene) = &mut self.frame_args.billboards {
+                        scene.entities = w.entities.clone();
+                        scene.base_lift = w.billboard_base_lift();
+                    }
                     if let Some(lit) = &w.lighting {
                         self.frame_args.lighting = Some(lit.clone());
                     }
@@ -715,16 +731,8 @@ impl App {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        match engine::frame::render_frame_with_rt_cache(
-            &gpu.device,
-            &gpu.queue,
-            &self.frame_args,
-            &mut self.rt_cache,
-        ) {
+        match world {
             Ok(outcome) => {
-                if let Some(stats) = &outcome.stats.mesh_stats {
-                    self.overlay.stats = *stats;
-                }
                 gpu.blit
                     .draw(&gpu.device, &gpu.queue, &outcome.texture, &view);
             }
