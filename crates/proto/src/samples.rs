@@ -117,6 +117,9 @@ pub fn sample_tiledefs() -> TileDefsT {
             // sample values stay None so the committed goldens
             // (which encode these samples) remain byte-identical.
             roof_result: None,
+            // Lane J additive field: absent = no colour. None
+            // here too, for the same golden reason.
+            color: None,
         };
     let mut wall = def(TER_WALL, "t_wall", "wall", TileKind::Terrain, 101, -1);
     wall.connect_groups = Some(vec![0]);
@@ -375,6 +378,7 @@ pub fn sample_roofed_tiledefs() -> TileDefsT {
         fg_ref: -1,
         bg_ref: -1,
         roof_result: roof.map(|s| s.to_string()),
+        color: None,
     };
     let mut wall = def(TER_WALL, "t_wall", "wall", Some("t_flat_roof"));
     wall.connect_groups = Some(vec![0]);
@@ -551,6 +555,7 @@ pub fn sample_terrain_tiledefs() -> TileDefsT {
         fg_ref: -1,
         bg_ref: -1,
         roof_result: roof.map(|s| s.to_string()),
+        color: None,
     };
     TileDefsT {
         connect_groups: Some(vec![]),

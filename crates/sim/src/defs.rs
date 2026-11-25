@@ -111,6 +111,14 @@ pub struct Def {
     pub bash_result: Option<String>,
     pub looks_like: Option<String>,
     pub roof_result: Option<String>,
+    /// The def's CDDA colour NAME (Lane J), as extracted by the
+    /// importer from the game data (`color` field, looks_like
+    /// inheritance applied importer-side). `None` = the def
+    /// carries no colour; the engine falls back to its hash
+    /// palette for such defs. An older defs.json without the
+    /// key deserialises as all-None (serde default).
+    #[serde(default)]
+    pub color: Option<String>,
     #[serde(default = "minus_one")]
     pub fg_ref: i32,
     #[serde(default = "minus_one")]
@@ -179,6 +187,7 @@ impl Def {
         t.fg_ref = self.fg_ref;
         t.bg_ref = self.bg_ref;
         t.roof_result = self.roof_result.clone().filter(|s| !s.is_empty());
+        t.color = self.color.clone().filter(|s| !s.is_empty());
         t
     }
 }

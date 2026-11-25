@@ -143,8 +143,9 @@ impl LiveWorld {
     }
 
     /// The renderable wire scene for the current live state
-    /// (blocks coloured by the string-id palette,
-    /// [`crate::wire::palette_resolver`] — Lane G; before it,
+    /// (blocks coloured by [`crate::wire::palette_resolver`]
+    /// — Lane G's string-id palette, semantic CDDA colours
+    /// since Lane J with the hash as fallback; before Lane G,
     /// every def rendered the same grey), or `None` before
     /// the first Snapshot.
     ///

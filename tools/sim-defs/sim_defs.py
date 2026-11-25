@@ -31,6 +31,28 @@ id with no composed entry, or a slot with no index primary, keeps
 the -1 sentinel — indices are never invented (the fork adapter's
 rule, fork/src/voxel_ipc/voxel_refs.h). Override the config with
 --tile-config.
+
+Semantic colour (Phase 11 follow-up Lane J, 2026-11-24): each def
+also emits `color` — CDDA's own per-def colour NAME (the string
+the game's `color_from_string` resolves, e.g. "green",
+"light_gray", "brown_green"), or null. Extraction rules:
+  * a plain string is taken verbatim;
+  * a LIST of strings (the variegated form — the game keeps the
+    whole list and the displayed colour varies) resolves to its
+    FIRST entry: the wire carries one name per def;
+  * a dict takes its "color" key (the monster colour-object
+    form; not present in 0.I-1's def data, handled defensively);
+  * field types carry no top-level color: theirs lives on the
+    intensity levels, and the def's colour is level 0's — the
+    same level `extract_name` takes the field's name from;
+  * a def with no colour of its own inherits through its
+    `looks_like` chain, within its own kind (the S1a rule for
+    looks_like resolution), cycle-safe;
+  * still nothing -> null. Names are never invented.
+The name itself (not an RGB) is what crosses the wire: the
+engine maps names to RGB through the game's own colour table
+(data/raw/colors.json colourdef values + src/color.cpp's
+name->pair table), so both sides agree on what "green" means.
 """
 
 import argparse
@@ -165,6 +187,30 @@ def parse_connect_groups(connect_json):
     return [e["id"] for e in data
             if isinstance(e, dict) and e.get("type") == "connect_group"
             and "id" in e]
+
+
+def parse_game_color_names(color_cpp):
+    """The game's colour-name set: every name registered with
+    add_color in src/color.cpp ("c_green", "c_brown_green",
+    "i_brown", ...). Parsed from the pinned source, never
+    hardcoded."""
+    text = Path(color_cpp).read_text(encoding="utf-8")
+    names = set(re.findall(r'add_color\(\s*\w+,\s*"([^"]+)"', text))
+    if not names:
+        raise SystemExit(f"no add_color names parsed from {color_cpp}")
+    return names
+
+
+def game_color_name(raw):
+    """src/color.cpp `color_from_string`'s normalisation of a
+    def's colour string into a registered name: prefix "c_"
+    unless the string already carries a prefix (second char
+    "_"), then rewrite the deprecated lt/dk suffix spellings
+    to light_/dark_."""
+    name = raw
+    if len(name) < 2 or name[1] != "_":
+        name = "c_" + name
+    return name.replace("lt", "light_").replace("dk", "dark_")
 
 
 # --------------------------------------------------------------------------
@@ -444,6 +490,36 @@ def as_str_list(value):
     return []
 
 
+def extract_color_value(value):
+    """One raw CDDA `color` JSON value -> (name, form) where
+    form is "direct" (plain string), "array" (list — FIRST
+    string entry wins, the Lane J rule in the module docstring),
+    or None (no usable colour). A dict takes its "color" key
+    recursively (the monster colour-object form)."""
+    if isinstance(value, str):
+        return (value, "direct") if value else (None, None)
+    if isinstance(value, list):
+        for v in value:
+            if isinstance(v, str) and v:
+                return v, "array"
+        return None, None
+    if isinstance(value, dict):
+        return extract_color_value(value.get("color"))
+    return None, None
+
+
+def extract_color(entry, kind):
+    """(name, form) for one resolved entry. Field types (kind
+    3) carry no top-level `color`: theirs is intensity level
+    0's, mirroring extract_name's use of that level."""
+    if kind == 3:
+        levels = entry.get("intensity_levels")
+        if isinstance(levels, list) and levels and isinstance(levels[0], dict):
+            return extract_color_value(levels[0].get("color"))
+        return None, None
+    return extract_color_value(entry.get("color"))
+
+
 def build_defs(data_dir, mapdata_h, connect_json, tile_config):
     by_type, meta = collect_entries(data_dir)
     flag_order = parse_ter_furn_flags(mapdata_h)
@@ -461,6 +537,8 @@ def build_defs(data_dir, mapdata_h, connect_json, tile_config):
     unknown_groups = Counter()
     name_fallbacks = Counter()
     per_kind_reports = {}
+    color_per_kind = {}
+    color_names_used = Counter()
     all_defs = []
 
     for jtype, (kind, kind_name) in sorted(TYPE_TO_KIND.items(),
@@ -468,6 +546,12 @@ def build_defs(data_dir, mapdata_h, connect_json, tile_config):
         rows = by_type.get(jtype, [])
         resolved, report = resolve_entries(rows)
         per_kind_reports[jtype] = report
+        # Semantic colour, stage 1: each resolved entry's own
+        # colour (post copy-from, so an inherited colour is
+        # already the entry's). The looks_like fill runs after
+        # the def rows exist (stage 2, below).
+        raw_color = {sid: extract_color(entry, kind)
+                     for sid, entry in resolved.items()}
         defs = []
         for string_id in sorted(resolved):
             entry = resolved[string_id]
@@ -575,6 +659,10 @@ def build_defs(data_dir, mapdata_h, connect_json, tile_config):
                 # invented.
                 "fg_ref": fg_bg_refs.get(string_id, (-1, -1))[0],
                 "bg_ref": fg_bg_refs.get(string_id, (-1, -1))[1],
+                # Semantic colour NAME (Lane J): filled by the
+                # looks_like pass below; None = no colour of its
+                # own and none inherited — never invented.
+                "color": None,
             })
             cov = fg_bg_per_kind[kind_name]
             cov["defs"] += 1
@@ -590,6 +678,42 @@ def build_defs(data_dir, mapdata_h, connect_json, tile_config):
                     cov["with_bg"] += 1
                 else:
                     cov["entry_without_bg"] += 1
+        # Semantic colour, stage 2: a def whose own colour is
+        # absent inherits through its looks_like chain, within
+        # this kind (the S1a looks_like rule), cycle-safe. The
+        # chain reads the RESOLVED entries' looks_like fields,
+        # so a target reached mid-chain contributes its own
+        # colour or passes the walk on to its own looks_like.
+        color_stats = {"defs": len(defs), "direct": 0, "array_first": 0,
+                       "via_looks_like": 0, "none": 0}
+        for d in defs:
+            name, form = raw_color[d["string_id"]]
+            if name is not None:
+                d["color"] = name
+                color_stats["array_first" if form == "array"
+                            else "direct"] += 1
+                color_names_used[name] += 1
+                continue
+            seen = {d["string_id"]}
+            cur = d["looks_like"]
+            found = None
+            while cur and cur not in seen:
+                seen.add(cur)
+                tname, _ = raw_color.get(cur, (None, None))
+                if tname is not None:
+                    found = tname
+                    break
+                target = resolved.get(cur)
+                nxt = target.get("looks_like") if target else None
+                cur = nxt if isinstance(nxt, str) and nxt else None
+            if found is not None:
+                d["color"] = found
+                color_stats["via_looks_like"] += 1
+                color_names_used[found] += 1
+            else:
+                color_stats["none"] += 1
+        color_per_kind[kind_name] = color_stats
+
         # Per-kind ids: sorted string_ids, 1..N (0 = none). The real
         # adapter emits the game's own load-order int ids (and items
         # already use sorted order there — item_wire_id()); game int
@@ -610,6 +734,9 @@ def build_defs(data_dir, mapdata_h, connect_json, tile_config):
             KIND_NAME[k]: sum(1 for d in all_defs if d["kind"] == k)
             for k in sorted(KIND_NAME)},
         "fg_bg": {**fg_bg_stats, "per_kind": fg_bg_per_kind},
+        "color": {"per_kind": color_per_kind,
+                  "distinct_names_used": len(color_names_used),
+                  "names_used": dict(sorted(color_names_used.items()))},
     }
     table = {
         "protocol_version": 1,
@@ -741,6 +868,29 @@ def spot_checks(defs):
             "check": f"{key[1]}.(fg_ref, bg_ref) == {expected}",
             "actual_fg_bg": list(actual),
             "pass": actual == expected})
+    # Semantic-colour spot checks (Lane J), hand-verified
+    # against the 0.I-1 JSON: t_grass/t_wall/t_pavement are the
+    # obvious ones; t_floor pins the game's OWN surprising
+    # value ("cyan", terrain-floors-indoor.json) so the check
+    # proves the extraction reads the data rather than anyone's
+    # expectation of what a wood floor "should" be; fd_blood
+    # pins the field level-0 rule; f_table/mon_zombie pin the
+    # furniture/monster paths.
+    color_expect = {
+        (0, "t_grass"): "green",
+        (0, "t_wall"): "light_gray",
+        (0, "t_pavement"): "dark_gray",
+        (0, "t_floor"): "cyan",
+        (1, "f_table"): "red",
+        (4, "mon_zombie"): "light_green",
+        (3, "fd_blood"): "red",
+    }
+    for key, expected in sorted(color_expect.items()):
+        d = by_id.get(key, {})
+        checks.append({
+            "check": f"{key[1]}.color == {expected!r}",
+            "actual_color": d.get("color"),
+            "pass": d.get("color") == expected})
     return checks
 
 
@@ -860,6 +1010,46 @@ def run_validate(data_dir, defs_path, known_dangling_path, tile_config,
         failures.append(f"{len(fg_mismatches)} def(s) with fg/bg refs "
                         "!= the recomputed tileset join")
 
+    # -- semantic colour: recomputed from source via a fresh
+    # build (never trusted from the file under test), and every
+    # colour name used must be one the game itself defines —
+    # the add_color name set parsed from the tree's
+    # src/color.cpp, tested through color_from_string's
+    # normalisation (game_color_name).
+    tree_root = Path(data_dir).parents[1]
+    rebuilt, _breport = build_defs(
+        data_dir,
+        DEFAULT_MAPDATA if data_dir == DEFAULT_DATA
+        else tree_root / "src" / "mapdata.h",
+        DEFAULT_CONNECT if data_dir == DEFAULT_DATA
+        else Path(data_dir) / "connect_groups.json",
+        tile_config)
+    expected_color = {(d["kind"], d["string_id"]): d.get("color")
+                      for d in rebuilt["defs"]}
+    color_coverage = {name: {"defs": 0, "with_color": 0}
+                      for name in KIND_NAME.values()}
+    color_mismatches = []
+    for d in defs:
+        cov = color_coverage[KIND_NAME[d["kind"]]]
+        cov["defs"] += 1
+        if d.get("color"):
+            cov["with_color"] += 1
+        exp = expected_color.get((d["kind"], d["string_id"]))
+        if exp != d.get("color"):
+            color_mismatches.append({
+                "kind": d["kind"], "string_id": d["string_id"],
+                "expected": exp, "actual": d.get("color")})
+    if color_mismatches:
+        failures.append(f"{len(color_mismatches)} def(s) with color "
+                        "!= the recomputed extraction")
+    known_color_names = parse_game_color_names(tree_root / "src" / "color.cpp")
+    names_used = sorted({d["color"] for d in defs if d.get("color")})
+    unknown_color_names = [n for n in names_used
+                           if game_color_name(n) not in known_color_names]
+    if unknown_color_names:
+        failures.append(f"colour name(s) the game does not define: "
+                        f"{unknown_color_names}")
+
     # -- spot checks
     spots = spot_checks(defs)
     for s in spots:
@@ -881,6 +1071,12 @@ def run_validate(data_dir, defs_path, known_dangling_path, tile_config,
         "fg_bg": {**fg_stats, "per_kind": fg_coverage,
                   "mismatches": fg_mismatches[:50],
                   "mismatch_total": len(fg_mismatches)},
+        "color": {"per_kind": color_coverage,
+                  "mismatches": color_mismatches[:50],
+                  "mismatch_total": len(color_mismatches),
+                  "distinct_names_used": len(names_used),
+                  "unknown_names": unknown_color_names,
+                  "game_name_set_size": len(known_color_names)},
         "spot_checks": spots,
     }
     return validation
@@ -946,6 +1142,15 @@ def main(argv=None):
         print(f"fg/bg join: {fg['ids_registered']} tileset ids "
               f"({fg['ids_with_fg']} with fg, {fg['ids_with_bg']} with "
               f"bg) from {fg['tile_config']}")
+        col = report["color"]
+        for kname in sorted(col["per_kind"]):
+            s = col["per_kind"][kname]
+            have = s["direct"] + s["array_first"] + s["via_looks_like"]
+            print(f"color {kname:12s}: {have}/{s['defs']} "
+                  f"(direct {s['direct']}, array-first "
+                  f"{s['array_first']}, looks_like "
+                  f"{s['via_looks_like']}, none {s['none']}); "
+                  f"{col['distinct_names_used']} distinct names overall")
         return 0
 
     if args.cmd == "validate":
@@ -959,7 +1164,10 @@ def main(argv=None):
               f"(defs={validation['total_defs']}, "
               f"dangling={validation['dangling_total']} total / "
               f"{len(validation['dangling_unlisted'])} unlisted, "
-              f"fg/bg mismatches={validation['fg_bg']['mismatch_total']})")
+              f"fg/bg mismatches={validation['fg_bg']['mismatch_total']}, "
+              f"color mismatches={validation['color']['mismatch_total']}, "
+              f"unknown color names="
+              f"{len(validation['color']['unknown_names'])})")
         for f in validation["failures"]:
             print("FAIL:", f)
         return 0 if validation["verdict"] == "PASS" else 1
