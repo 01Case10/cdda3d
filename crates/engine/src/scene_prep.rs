@@ -84,7 +84,7 @@ fn textured_spec(
     ),
     String,
 > {
-    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let table = materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
     let veh_mats = vehicles.map(|v| vehicle_materials(v, &table));
     let mut id_map = crate::rt::fake_material_ids();
     if let Some(vm) = &veh_mats {
@@ -150,7 +150,7 @@ fn wire_textured_spec(
     ),
     String,
 > {
-    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let table = materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
     let water_ids: std::collections::HashSet<u32> = id_map
         .iter()
         .filter(|(_, game_id)| {
@@ -472,7 +472,7 @@ pub(crate) fn extend_prop_scene_with_terrain(
 ) -> Result<crate::frame::PropScene, String> {
     use std::collections::BTreeSet;
     let table =
-        materials::MaterialTable::load(textures_dir).map_err(|e| format!("materials: {e}"))?;
+        materials::MaterialTable::load_cached(textures_dir).map_err(|e| format!("materials: {e}"))?;
     let fake = crate::rt::fake_material_ids();
     let per = scale.blocks_per_z_level as i32;
     let mut fence: BTreeSet<(i32, i32, i32)> = BTreeSet::new();
@@ -765,7 +765,7 @@ pub fn vehicle_fine_scene(
     if scene.vpart_names.is_empty() {
         return Ok(None);
     }
-    let table = materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+    let table = materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
     let cache: std::cell::RefCell<
         std::collections::HashMap<String, Option<image::RgbaImage>>,
     > = Default::default();
@@ -1070,7 +1070,7 @@ fn prepare_raster_fine_v(
     let mut spec_opt = match textures_dir {
         Some(dir) => {
             let table =
-                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+                materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             Some(spec)
@@ -1353,7 +1353,7 @@ pub fn prepare_raster_wire(
     let mut spec_opt = match tex_ids {
         Some((dir, ids)) => {
             let table =
-                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+                materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _stats) = textures::build_texture_spec(&table, dir, ids)?;
             Some(spec)
         }
@@ -1452,7 +1452,7 @@ fn prepare_raster_lit_fine_v(
     let mut spec_opt = match textures_dir {
         Some(dir) => {
             let table =
-                materials::MaterialTable::load(dir).map_err(|e| format!("materials: {e}"))?;
+                materials::MaterialTable::load_cached(dir).map_err(|e| format!("materials: {e}"))?;
             let (spec, _tex_stats) =
                 textures::build_texture_spec(&table, dir, &crate::rt::fake_material_ids())?;
             Some(spec)

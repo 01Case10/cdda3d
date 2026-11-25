@@ -453,6 +453,12 @@ struct App {
     overlay: DebugOverlay,
     fps_counter: FpsCounter,
     pacer: FramePacer,
+    /// RT scene cache for the live loop: the built RT scene
+    /// (trees + textures + pipelines) is reused across frames
+    /// until the scene-determining inputs change — without it
+    /// every presented frame repaid the full build and the RT
+    /// demo ran at 0 fps.
+    rt_cache: Option<engine::rt::RtSceneCache>,
     /// Stub UI store + router (Phase 2h.4 windowed half): clicks
     /// route through the Phase 4 input router and land in
     /// `input_sink` — the engine has no IPC socket client yet, so
@@ -558,6 +564,7 @@ impl App {
             overlay: DebugOverlay::new(),
             fps_counter: FpsCounter::new(),
             pacer: FramePacer::new(),
+            rt_cache: None,
             ui_store,
             router,
             input_sink: Vec::new(),
@@ -600,6 +607,7 @@ impl App {
                     None => true,
                 };
                 if fresh {
+                    self.frame_args.wire = Some(w.clone());
                     if let Some(lit) = &w.lighting {
                         self.frame_args.lighting = Some(lit.clone());
                     }
@@ -619,7 +627,6 @@ impl App {
                         }
                     }
                 }
-                self.frame_args.wire = Some(w);
             }
         }
         let a = &mut self.frame_args;
@@ -674,7 +681,12 @@ impl App {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        match engine::frame::render_frame(&gpu.device, &gpu.queue, &self.frame_args) {
+        match engine::frame::render_frame_with_rt_cache(
+            &gpu.device,
+            &gpu.queue,
+            &self.frame_args,
+            &mut self.rt_cache,
+        ) {
             Ok(outcome) => {
                 if let Some(stats) = &outcome.stats.mesh_stats {
                     self.overlay.stats = *stats;

@@ -40,7 +40,8 @@
 //! untouched.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// How a material's prop model seats in its tile on the
 /// snapshot path (terrain wiring, 2026-11-18), recorded by
@@ -548,6 +549,34 @@ impl MaterialTable {
             }
             table.shore_size = img.width();
         }
+        Ok(table)
+    }
+
+    /// [`Self::load`], cached per directory for the life of the
+    /// process: the table is immutable on disk during a run and
+    /// the real UltiCa `materials.json` is ~246 MB, so re-parsing
+    /// it is seconds of CPU every call. The frame paths used to
+    /// call `load` several times *per rendered frame* (variant,
+    /// shore and blend preparation, texture attach, prop
+    /// stamping), which pinned the live RT demo at 0 fps
+    /// (measured 2026-11-24: ~8 s/frame textured vs ~0.4 s
+    /// untextured on a software adapter, the delta being almost
+    /// entirely repeated table loads). Callers that render in a
+    /// loop must use this; `load` stays for tests and one-shot
+    /// tools that want a fresh read.
+    pub fn load_cached(dir: &Path) -> Result<Arc<Self>, String> {
+        static CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<MaterialTable>>>> =
+            OnceLock::new();
+        let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+        let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        if let Some(t) = cache.lock().expect("material table cache lock").get(&key) {
+            return Ok(t.clone());
+        }
+        let table = Arc::new(Self::load(dir)?);
+        cache
+            .lock()
+            .expect("material table cache lock")
+            .insert(key, table.clone());
         Ok(table)
     }
     pub fn get(&self, id: &str) -> Option<&Material> {

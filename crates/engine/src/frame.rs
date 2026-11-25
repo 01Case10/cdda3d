@@ -1408,14 +1408,43 @@ pub fn render_frame(
     queue: &wgpu::Queue,
     args: &CaptureArgs,
 ) -> Result<FrameOutcome, CaptureError> {
+    render_frame_scaled(device, queue, args, None)
+}
+
+/// [`render_frame`] with a caller-held RT scene cache (the
+/// live windowed loop): on the RT path the built scene (trees,
+/// textures, pipelines) is reused across frames whose
+/// scene-determining inputs are unchanged — see
+/// `rt::RtSceneCache`. One-shot callers use [`render_frame`],
+/// which builds per call exactly as before.
+pub fn render_frame_with_rt_cache(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    rt_cache: &mut Option<crate::rt::RtSceneCache>,
+) -> Result<FrameOutcome, CaptureError> {
+    render_frame_scaled(device, queue, args, Some(rt_cache))
+}
+
+fn render_frame_scaled(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    mut rt_cache: Option<&mut Option<crate::rt::RtSceneCache>>,
+) -> Result<FrameOutcome, CaptureError> {
     let scale = args.render_scale.max(1);
     if scale == 1 {
-        return render_frame_inner(device, queue, args);
+        return render_frame_inner(device, queue, args, rt_cache);
     }
     let mut inner_args = args.clone();
     inner_args.size = ((args.size.0 / scale).max(1), (args.size.1 / scale).max(1));
     inner_args.render_scale = 1;
-    let inner = render_frame_inner(device, queue, &inner_args)?;
+    let inner = render_frame_inner(
+        device,
+        queue,
+        &inner_args,
+        rt_cache.as_mut().map(|c| &mut **c),
+    )?;
     let (width, height) = (args.size.0.max(1), args.size.1.max(1));
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("frame-upscaled"),
@@ -1447,6 +1476,7 @@ fn render_frame_inner(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,
+    rt_cache: Option<&mut Option<crate::rt::RtSceneCache>>,
 ) -> Result<FrameOutcome, CaptureError> {
     let defs = fx_defs(args)?;
     let mut stats = FrameStats::default();
@@ -1489,16 +1519,30 @@ fn render_frame_inner(
         // inner path.
         let emitter_uniforms = args.emitters.as_ref().map(|s| s.uniforms_grid_space());
         let sky_grid_uniforms = args.sky.as_ref().map(|s| s.uniforms_grid_space());
-        let frame = if sky_grid_uniforms.is_none() && emitter_uniforms.is_none() {
-            crate::rt::render_rt_frame(device, queue, args)?
-        } else {
-            crate::rt::render_rt_frame_sky_emitters(
+        // A caller-held cache (the live loop) traces from the
+        // held scene — the cached entry subsumes the sky/emitter
+        // call, since both are per-frame uniforms there.
+        // Without a cache slot, one-shot callers keep the exact
+        // build-per-call behaviour of the two entries below.
+        let frame = match rt_cache {
+            Some(cache) => crate::rt::render_rt_frame_cached(
                 device,
                 queue,
                 args,
                 sky_grid_uniforms.as_ref(),
                 emitter_uniforms.as_ref(),
-            )?
+                cache,
+            )?,
+            None if sky_grid_uniforms.is_none() && emitter_uniforms.is_none() => {
+                crate::rt::render_rt_frame(device, queue, args)?
+            }
+            None => crate::rt::render_rt_frame_sky_emitters(
+                device,
+                queue,
+                args,
+                sky_grid_uniforms.as_ref(),
+                emitter_uniforms.as_ref(),
+            )?,
         };
         let (width, height) = frame.size;
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {

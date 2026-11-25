@@ -80,7 +80,7 @@ pub fn prepare_variants_with(
     dir: &std::path::Path,
     id_map: &std::collections::HashMap<u32, String>,
 ) -> Result<Vec<treebuild::connect::VariantAssignment>, CaptureError> {
-    let table = crate::materials::MaterialTable::load(dir)
+    let table = crate::materials::MaterialTable::load_cached(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
     let multitile_ids: std::collections::HashSet<u32> = id_map
         .iter()
@@ -123,7 +123,7 @@ pub fn prepare_shore_variants_with(
     dir: &std::path::Path,
     id_map: &std::collections::HashMap<u32, String>,
 ) -> Result<Vec<crate::shore::ShoreAssignment>, CaptureError> {
-    let table = crate::materials::MaterialTable::load(dir)
+    let table = crate::materials::MaterialTable::load_cached(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
     let water_ids: std::collections::HashSet<u32> = id_map
         .iter()
@@ -162,7 +162,7 @@ pub fn prepare_blend_variants_with(
     dir: &std::path::Path,
     id_map: &std::collections::HashMap<u32, String>,
 ) -> Result<Vec<crate::blend::BlendAssignment>, CaptureError> {
-    let table = crate::materials::MaterialTable::load(dir)
+    let table = crate::materials::MaterialTable::load_cached(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
     let macro_spans: std::collections::HashMap<u32, u32> = id_map
         .iter()
@@ -222,7 +222,7 @@ pub fn attach_textures_with(
     blend_assignments: &[crate::blend::BlendAssignment],
     veh_mats: Option<&crate::scene_prep::VehicleMaterials>,
 ) -> Result<crate::textures::TextureStats, CaptureError> {
-    let table = crate::materials::MaterialTable::load(dir)
+    let table = crate::materials::MaterialTable::load_cached(dir)
         .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
     let mut id_map = base_id_map.clone();
     if let Some(vm) = veh_mats {
@@ -530,6 +530,265 @@ pub struct RtFrameOut {
     pub texture_stats: Option<crate::textures::TextureStats>,
 }
 
+/// A fully built RT scene: the renderer (compiled pipelines),
+/// the GPU scene (trees uploaded, textures attached) and the
+/// build's bookkeeping. Building one is the expensive half of
+/// an RT frame — 64-tree builds for the coarse + fine worlds,
+/// texture-spec construction (PNG layer decode + mip chains),
+/// GPU uploads and compute-pipeline/shader compilation —
+/// while tracing a frame from one is just a dispatch. The
+/// one-shot capture path builds and drops one per call; the
+/// live windowed loop reuses one through [`RtSceneCache`].
+pub struct BuiltRtScene {
+    renderer: RtRenderer,
+    scene: treebuild::render::RtScene,
+    leaves: usize,
+    nodes: usize,
+    fine_leaves: usize,
+    fine_nodes: usize,
+    build_ms: f64,
+    texture_stats: Option<crate::textures::TextureStats>,
+}
+
+/// Trace one frame from a built scene. Sky/emitters are
+/// per-frame uniforms, (re)uploaded here every call — `None`
+/// restores the renderer's defaults (neutral sky / no
+/// emitters), which is also what a freshly built scene starts
+/// with, so a cached scene never leaks a previous frame's sky.
+fn render_built_rt(
+    built: &BuiltRtScene,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+    build_ms: f64,
+) -> RtFrameOut {
+    match sky {
+        Some(s) => built.scene.set_sky(queue, s),
+        None => built.scene.set_sky(queue, &lighting::SkyUniforms::neutral()),
+    }
+    match emitters {
+        Some(e) => built.scene.set_emitters(queue, e),
+        None => built
+            .scene
+            .set_emitters(queue, &lighting::EmitterUniforms::empty()),
+    }
+    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
+    let aspect = width as f32 / height as f32;
+    let camera = capture_camera(args, aspect);
+    let frame = if args.macro_debug_height {
+        built.renderer.render_macro_debug_height(
+            device,
+            queue,
+            &built.scene,
+            &camera,
+            (width, height),
+        )
+    } else {
+        built
+            .renderer
+            .render(device, queue, &built.scene, &camera, (width, height), true)
+    };
+    device.poll(wgpu::Maintain::Wait);
+    RtFrameOut {
+        color: frame.color,
+        depth: frame.depth,
+        max_dist: frame.max_dist,
+        camera,
+        size: (width, height),
+        leaves: built.leaves,
+        nodes: built.nodes,
+        fine_leaves: built.fine_leaves,
+        fine_nodes: built.fine_nodes,
+        build_ms,
+        texture_stats: built.texture_stats.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------
+// Live-loop scene cache (the 0 fps fix, 2026-11-24)
+// ---------------------------------------------------------------------
+
+/// Everything about `CaptureArgs` that determines the BUILT RT
+/// scene (trees + attached textures). Camera, size, sky and
+/// emitters are deliberately absent: they are per-frame
+/// uniforms/inputs to the trace, not the build. `bake_mode` and
+/// the lighting `env` are absent because the RT build never
+/// reads them (the grid + `min_game_z` are what it reads; the
+/// raster bake is the env's consumer). Large payloads (light
+/// grids, prop model voxels) are folded in as hashes; small
+/// payloads are compared exactly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RtCacheKey {
+    snapshot: String,
+    cutaway_z: i32,
+    textures: Option<std::path::PathBuf>,
+    fine_props: bool,
+    wire_map: Option<usize>,
+    wire_min_game_z: Option<i32>,
+    wire_material_ids: Option<Vec<(u32, String)>>,
+    wire_props: Option<u64>,
+    props: Option<u64>,
+    lighting: Option<(i32, u64, Option<u64>)>,
+    vehicles: Option<u64>,
+}
+
+fn hash_prop_scene(scene: &crate::frame::PropScene) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    scene.models.len().hash(&mut h);
+    for (id, m) in &scene.models {
+        id.hash(&mut h);
+        m.size.hash(&mut h);
+        m.palette.hash(&mut h);
+        m.voxels.len().hash(&mut h);
+        for v in &m.voxels {
+            v.hash(&mut h);
+        }
+    }
+    scene.placements.len().hash(&mut h);
+    for p in &scene.placements {
+        p.x.hash(&mut h);
+        p.y.hash(&mut h);
+        p.level.hash(&mut h);
+        p.furn_id.hash(&mut h);
+        p.quarter_turns.hash(&mut h);
+    }
+    h.finish()
+}
+
+fn hash_lighting(lit: &crate::frame::LightingScene) -> (i32, u64, Option<u64>) {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    lit.grid.origin.hash(&mut h);
+    lit.grid.size.hash(&mut h);
+    for (pos, t) in lit.grid.iter_tiles() {
+        pos.hash(&mut h);
+        t.lit.0.hash(&mut h);
+        t.seen.hash(&mut h);
+        for c in t.tint {
+            c.to_bits().hash(&mut h);
+        }
+        t.occluding.hash(&mut h);
+        t.outside.hash(&mut h);
+    }
+    let exposure = lit.sky_exposure.as_ref().map(|e| {
+        let mut eh = std::collections::hash_map::DefaultHasher::new();
+        let mut tiles: Vec<[i32; 3]> = e.sheltered.iter().copied().collect();
+        tiles.sort_unstable();
+        tiles.hash(&mut eh);
+        eh.finish()
+    });
+    (lit.min_game_z, h.finish(), exposure)
+}
+
+fn hash_vehicles(v: &crate::frame::VehicleScene) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    v.models.len().hash(&mut h);
+    for m in &v.models {
+        m.id.hash(&mut h);
+        m.name.hash(&mut h);
+        m.face_deg.to_bits().hash(&mut h);
+        m.parts.len().hash(&mut h);
+        for p in &m.parts {
+            p.key.vpart.hash(&mut h);
+            p.key.mount.hash(&mut h);
+            p.abs_pos.hash(&mut h);
+            p.hp_frac.hash(&mut h);
+            p.open.hash(&mut h);
+            p.broken.hash(&mut h);
+            p.roof.hash(&mut h);
+        }
+    }
+    let mut names: Vec<(&u32, &String)> = v.vpart_names.iter().collect();
+    names.sort_unstable();
+    names.len().hash(&mut h);
+    for (k, s) in names {
+        k.hash(&mut h);
+        s.hash(&mut h);
+    }
+    h.finish()
+}
+
+impl RtCacheKey {
+    fn from_args(args: &CaptureArgs) -> Self {
+        Self {
+            snapshot: args.snapshot.clone(),
+            cutaway_z: args.cutaway_z,
+            textures: args.textures.clone(),
+            fine_props: args.fine_props,
+            wire_map: args.wire.as_ref().map(|w| std::sync::Arc::as_ptr(&w.map) as usize),
+            wire_min_game_z: args.wire.as_ref().map(|w| w.min_game_z),
+            wire_material_ids: args.wire.as_ref().and_then(|w| {
+                w.material_ids.as_ref().map(|ids| {
+                    let mut v: Vec<(u32, String)> =
+                        ids.iter().map(|(k, s)| (*k, s.clone())).collect();
+                    v.sort_unstable();
+                    v
+                })
+            }),
+            wire_props: args
+                .wire
+                .as_ref()
+                .and_then(|w| w.props.as_ref().map(hash_prop_scene)),
+            props: args.props.as_ref().map(hash_prop_scene),
+            lighting: args.lighting.as_ref().map(hash_lighting),
+            vehicles: args.vehicles.as_ref().map(hash_vehicles),
+        }
+    }
+}
+
+/// A built RT scene held for reuse across live frames, with
+/// the key it was built from. The windowed app owns one; a
+/// frame whose key matches traces from the held scene (camera
+/// moves, resizes, sky/time changes and emitter changes are
+/// all per-frame uniforms), and a mismatching frame rebuilds
+/// and replaces it. Without this, every live frame repaid the
+/// full build — measured 2026-11-24 at ~10.5 s/frame for the
+/// street_block demo (RT + textures + props + lighting) on a
+/// software adapter, i.e. the title-bar 0 fps Joey hit on his
+/// PC, where each build is faster but still far over a frame.
+pub struct RtSceneCache {
+    key: RtCacheKey,
+    built: BuiltRtScene,
+    builds: usize,
+}
+
+impl RtSceneCache {
+    /// How many scenes this cache has built (1 = every frame
+    /// since the first was a reuse).
+    pub fn build_count(&self) -> usize {
+        self.builds
+    }
+}
+
+/// [`render_rt_frame_sky_emitters`] for a caller that renders
+/// many frames of a scene (the live windowed loop): the built
+/// scene is cached in `cache` and rebuilt only when the
+/// scene-determining inputs change.
+pub fn render_rt_frame_cached(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+    sky: Option<&lighting::SkyUniforms>,
+    emitters: Option<&lighting::EmitterUniforms>,
+    cache: &mut Option<RtSceneCache>,
+) -> Result<RtFrameOut, CaptureError> {
+    let key = RtCacheKey::from_args(args);
+    if let Some(c) = cache.as_ref() {
+        if c.key == key {
+            return Ok(render_built_rt(&c.built, device, queue, args, sky, emitters, 0.0));
+        }
+    }
+    let builds = cache.as_ref().map(|c| c.builds).unwrap_or(0) + 1;
+    let built = build_rt_scene(device, queue, args)?;
+    let out = render_built_rt(&built, device, queue, args, sky, emitters, built.build_ms);
+    *cache = Some(RtSceneCache { key, built, builds });
+    Ok(out)
+}
+
 /// Render one RT frame on an already-created device/queue,
 /// returning the GPU frame (color texture + linear depth
 /// buffer). [`capture_rt_with_device`] is this plus readback.
@@ -589,6 +848,27 @@ fn render_rt_frame_inner(
     sky: Option<&lighting::SkyUniforms>,
     emitters: Option<&lighting::EmitterUniforms>,
 ) -> Result<RtFrameOut, CaptureError> {
+    let built = build_rt_scene(device, queue, args)?;
+    Ok(render_built_rt(
+        &built,
+        device,
+        queue,
+        args,
+        sky,
+        emitters,
+        built.build_ms,
+    ))
+}
+
+/// Build the RT scene for `args` (dispatch + world builds +
+/// tree builds + texture attach), without tracing. The
+/// one-shot entry points build, trace once and drop it;
+/// [`render_rt_frame_cached`] holds it in an [`RtSceneCache`].
+fn build_rt_scene(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    args: &CaptureArgs,
+) -> Result<BuiltRtScene, CaptureError> {
     // Phase 9 (9.5): the effective prop scene — an explicit
     // `props` scene wins regardless of the flag; with only
     // `--fine-props` set, the snapshot's fixture scene is used
@@ -609,12 +889,12 @@ fn render_rt_frame_inner(
     // from its snapshot), which takes the wire props path.
     if let Some(wire) = &args.wire {
         if let Some(props) = &wire.props {
-            return render_rt_frame_wire_props(device, queue, args, wire, props, sky, emitters);
+            return build_rt_scene_wire_props(device, queue, args, wire, props);
         }
     }
     if args.wire.is_none() {
         if let Some(props) = args.props.as_ref().or(fixture_props.as_ref()) {
-            return render_rt_frame_props(device, queue, args, props, sky, emitters);
+            return build_rt_scene_props(device, queue, args, props);
         }
     }
     let t0 = Instant::now();
@@ -644,7 +924,7 @@ fn render_rt_frame_inner(
     let wire = args.wire.as_ref();
     let veh_mats = match (wire, &args.textures, &args.vehicles) {
         (None, Some(dir), Some(v)) => {
-            let table = crate::materials::MaterialTable::load(dir)
+            let table = crate::materials::MaterialTable::load_cached(dir)
                 .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
             Some(crate::scene_prep::vehicle_materials(v, &table))
         }
@@ -696,12 +976,6 @@ fn render_rt_frame_inner(
         .map_err(|e| CaptureError::Device(format!("treebuild: {e}")))?;
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) = RtRenderer::with_scene(device, queue, &built);
-    if let Some(sky) = sky {
-        scene.set_sky(queue, sky);
-    }
-    if let Some(e) = emitters {
-        scene.set_emitters(queue, e);
-    }
     let texture_stats = match (wire, &args.textures) {
         (None, Some(dir)) => Some(attach_fake_textures(
             device,
@@ -729,21 +1003,9 @@ fn render_rt_frame_inner(
         },
         _ => None,
     };
-    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
-    let aspect = width as f32 / height as f32;
-    let camera = capture_camera(args, aspect);
-    let frame = if args.macro_debug_height {
-        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
-    } else {
-        renderer.render(device, queue, &scene, &camera, (width, height), true)
-    };
-    device.poll(wgpu::Maintain::Wait);
-    Ok(RtFrameOut {
-        color: frame.color,
-        depth: frame.depth,
-        max_dist: frame.max_dist,
-        camera,
-        size: (width, height),
+    Ok(BuiltRtScene {
+        renderer,
+        scene,
         leaves: built.leaf_count(),
         nodes: built.node_count(),
         fine_leaves: 0,
@@ -891,14 +1153,12 @@ fn shift_fine_ids(world: &mut VoxelWorld, from_base: u32, to_base: u32) {
 /// coarse world's max id and the shift lands the synthetic
 /// ids above the whole attached spec, so the namespaces
 /// cannot collide.
-fn render_rt_frame_props(
+fn build_rt_scene_props(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,
     props: &crate::frame::PropScene,
-    sky: Option<&lighting::SkyUniforms>,
-    emitters: Option<&lighting::EmitterUniforms>,
-) -> Result<RtFrameOut, CaptureError> {
+) -> Result<BuiltRtScene, CaptureError> {
     let t0 = Instant::now();
     let levels = capture_visible_levels(args.cutaway_z);
     let sample = args.snapshot == "sample-scene";
@@ -972,7 +1232,7 @@ fn render_rt_frame_props(
     let placements: &[crate::snapshot_world::FurniturePlacement] = &all_placements;
     let mut spec_opt = match &args.textures {
         Some(dir) => {
-            let table = crate::materials::MaterialTable::load(dir)
+            let table = crate::materials::MaterialTable::load_cached(dir)
                 .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
             let (spec, _stats) =
                 crate::textures::build_texture_spec(&table, dir, &fake_material_ids())
@@ -1013,7 +1273,7 @@ fn render_rt_frame_props(
     let mut texture_stats = None;
     let attach_spec: Option<treebuild::render::TextureSpec> = match &args.textures {
         Some(dir) => {
-            let table = crate::materials::MaterialTable::load(dir)
+            let table = crate::materials::MaterialTable::load_cached(dir)
                 .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
             let (mut spec, stats) = crate::textures::build_texture_spec_variants(
                 &table,
@@ -1059,32 +1319,14 @@ fn render_rt_frame_props(
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) =
         RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
-    if let Some(sky) = sky {
-        scene.set_sky(queue, sky);
-    }
-    if let Some(e) = emitters {
-        scene.set_emitters(queue, e);
-    }
     if let Some(spec) = &attach_spec {
         scene
             .attach_textures(device, queue, spec)
             .map_err(CaptureError::Device)?;
     }
-    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
-    let aspect = width as f32 / height as f32;
-    let camera = capture_camera(args, aspect);
-    let frame = if args.macro_debug_height {
-        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
-    } else {
-        renderer.render(device, queue, &scene, &camera, (width, height), true)
-    };
-    device.poll(wgpu::Maintain::Wait);
-    Ok(RtFrameOut {
-        color: frame.color,
-        depth: frame.depth,
-        max_dist: frame.max_dist,
-        camera,
-        size: (width, height),
+    Ok(BuiltRtScene {
+        renderer,
+        scene,
         leaves: built.leaf_count(),
         nodes: built.node_count(),
         fine_leaves: fine_built.as_ref().map(|b| b.leaf_count()).unwrap_or(0),
@@ -1094,7 +1336,7 @@ fn render_rt_frame_props(
     })
 }
 
-/// The wire form of [`render_rt_frame_props`] (Lane G): the
+/// The wire form of [`build_rt_scene_props`] (Lane G): the
 /// same two-tree build (coarse world + fine prop world, lit
 /// rewrites, fine occlusion) over the wire scene's map and
 /// its own snapshot-derived prop scene. The fixture-keyed
@@ -1108,15 +1350,13 @@ fn render_rt_frame_props(
 /// with the fake id map swapped for the wire one); without
 /// either, the wire world renders its resolver's flat
 /// colours + the prop-only spec, exactly as Lane G left it.
-fn render_rt_frame_wire_props(
+fn build_rt_scene_wire_props(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     args: &CaptureArgs,
     wire: &crate::wire::WireScene,
     props: &crate::frame::PropScene,
-    sky: Option<&lighting::SkyUniforms>,
-    emitters: Option<&lighting::EmitterUniforms>,
-) -> Result<RtFrameOut, CaptureError> {
+) -> Result<BuiltRtScene, CaptureError> {
     let t0 = Instant::now();
     let levels = capture_visible_levels(args.cutaway_z);
     let scale = mesher::scale::WorldScale::default();
@@ -1149,7 +1389,7 @@ fn render_rt_frame_wire_props(
     };
     let mut spec_opt = match tex_ids {
         Some((dir, ids)) => {
-            let table = crate::materials::MaterialTable::load(dir)
+            let table = crate::materials::MaterialTable::load_cached(dir)
                 .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
             let (spec, _stats) = crate::textures::build_texture_spec(&table, dir, ids)
                 .map_err(CaptureError::Device)?;
@@ -1183,7 +1423,7 @@ fn render_rt_frame_wire_props(
     let mut texture_stats = None;
     let attach_spec: Option<treebuild::render::TextureSpec> = match tex_ids {
         Some((dir, ids)) => {
-            let table = crate::materials::MaterialTable::load(dir)
+            let table = crate::materials::MaterialTable::load_cached(dir)
                 .map_err(|e| CaptureError::Device(format!("materials: {e}")))?;
             let (mut spec, stats) = crate::textures::build_texture_spec_variants(
                 &table,
@@ -1230,32 +1470,14 @@ fn render_rt_frame_wire_props(
     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let (renderer, mut scene) =
         RtRenderer::with_scene_fine(device, queue, &built, fine_built.as_ref());
-    if let Some(sky) = sky {
-        scene.set_sky(queue, sky);
-    }
-    if let Some(e) = emitters {
-        scene.set_emitters(queue, e);
-    }
     if let Some(spec) = &attach_spec {
         scene
             .attach_textures(device, queue, spec)
             .map_err(CaptureError::Device)?;
     }
-    let (width, height) = (args.size.0.max(1), args.size.1.max(1));
-    let aspect = width as f32 / height as f32;
-    let camera = capture_camera(args, aspect);
-    let frame = if args.macro_debug_height {
-        renderer.render_macro_debug_height(device, queue, &scene, &camera, (width, height))
-    } else {
-        renderer.render(device, queue, &scene, &camera, (width, height), true)
-    };
-    device.poll(wgpu::Maintain::Wait);
-    Ok(RtFrameOut {
-        color: frame.color,
-        depth: frame.depth,
-        max_dist: frame.max_dist,
-        camera,
-        size: (width, height),
+    Ok(BuiltRtScene {
+        renderer,
+        scene,
         leaves: built.leaf_count(),
         nodes: built.node_count(),
         fine_leaves: fine_built.as_ref().map(|b| b.leaf_count()).unwrap_or(0),

@@ -577,13 +577,13 @@ pub fn run_connect_with(
     // Lane G: load the furniture model table once, up front;
     // a failure leaves the session coarse-only (logged).
     if let Some(dir) = &config.models_dir {
-        match crate::materials::MaterialTable::load(dir) {
+        match crate::materials::MaterialTable::load_cached(dir) {
             Ok(table) => {
                 println!(
                     "connect: furniture model table loaded from {} (live props on)",
                     dir.display()
                 );
-                session.live.set_props_table(Some(Arc::new(table)));
+                session.live.set_props_table(Some(table));
             }
             Err(e) => {
                 println!(
