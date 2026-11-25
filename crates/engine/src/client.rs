@@ -223,6 +223,15 @@ impl LiveWorld {
 /// polls: the session replaces it after every applied flush.
 pub type SharedWireScene = Arc<Mutex<Option<WireScene>>>;
 
+/// The published live UI frame a windowed/embedder consumer
+/// polls: the session replaces it after every validated
+/// `UiFrame` ingest. Before this slot existed, the session
+/// validated each UI frame, logged it, and DISCARDED it —
+/// the windowed app only ever composited its `--ui-stub`
+/// fixture, so no sim menu could ever appear in the live
+/// window (symptom 4 of the 2026-11-25 Launch-Sim report).
+pub type SharedUiScene = Arc<Mutex<Option<crate::frame::UiPrepared>>>;
+
 /// Where the session's key bytes come from.
 pub enum ConnectInput {
     /// The process's stdin, one byte per key press (the S7
@@ -261,6 +270,9 @@ pub struct ConnectConfig {
     pub input: ConnectInput,
     /// Publish the live wire scene after every applied flush.
     pub share: Option<SharedWireScene>,
+    /// Publish the prepared UI frame after every validated
+    /// `UiFrame` ingest (the windowed app's menu source).
+    pub ui_share: Option<SharedUiScene>,
     pub captures: Option<ConnectCaptures>,
     /// Voxelizer output directory holding the furniture
     /// model table (Lane G): when set, the session loads it
@@ -285,6 +297,7 @@ impl Default for ConnectConfig {
         Self {
             input: ConnectInput::Stdin,
             share: None,
+            ui_share: None,
             captures: None,
             models_dir: None,
             billboards_dir: None,
@@ -335,6 +348,7 @@ struct Session {
     stats: Stats,
     live: LiveWorld,
     share: Option<SharedWireScene>,
+    ui_share: Option<SharedUiScene>,
     captures: Option<ConnectCaptures>,
     capture_outcomes: Vec<Result<PathBuf, String>>,
     first_capture_done: bool,
@@ -535,12 +549,21 @@ impl Session {
                 self.stats.ui_frames += 1;
                 if let Some(store) = &self.ui_store {
                     match crate::frame::prepare_ui(store, note) {
-                        Ok(prepared) => println!(
-                            "connect: ui frame seq={} mode={:?} ({} tight pixels)",
-                            note.seq,
-                            note.mode,
-                            prepared.tight.len()
-                        ),
+                        Ok(prepared) => {
+                            println!(
+                                "connect: ui frame seq={} mode={:?} ({} tight pixels)",
+                                note.seq,
+                                note.mode,
+                                prepared.tight.len()
+                            );
+                            // Publish for the windowed consumer:
+                            // before this, the prepared frame
+                            // was dropped here and no live menu
+                            // could ever reach the screen.
+                            if let Some(share) = &self.ui_share {
+                                *share.lock().expect("ui share lock") = Some(prepared);
+                            }
+                        }
                         Err(e) => {
                             println!("connect: ui frame seq={} failed validation: {e}", note.seq)
                         }
@@ -609,6 +632,7 @@ pub fn run_connect_with(
         stats: Stats::default(),
         live: LiveWorld::new(),
         share: config.share,
+        ui_share: config.ui_share,
         captures: config.captures,
         capture_outcomes: Vec::new(),
         first_capture_done: false,

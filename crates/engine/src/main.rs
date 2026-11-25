@@ -72,11 +72,14 @@ fn main() -> ExitCode {
             let (tx, rx) = std::sync::mpsc::channel::<u8>();
             let share: engine::client::SharedWireScene =
                 std::sync::Arc::new(std::sync::Mutex::new(None));
+            let ui_share: engine::client::SharedUiScene =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
             live_session = Some(engine::client::spawn_connect(
                 std::path::Path::new(&socket),
                 engine::client::ConnectConfig {
                     input: engine::client::ConnectInput::Channel(rx),
                     share: Some(share.clone()),
+                    ui_share: Some(ui_share.clone()),
                     captures: None,
                     // Lane G: `--textures <voxelizer-output-dir>`
                     // doubles as the furniture model table
@@ -96,7 +99,11 @@ fn main() -> ExitCode {
                         .map(std::path::PathBuf::from),
                 },
             ));
-            Some(LiveWindowLink { share, input: tx })
+            Some(LiveWindowLink {
+                share,
+                ui_share,
+                input: tx,
+            })
         }
         None => None,
     };
@@ -205,6 +212,7 @@ fn main() -> ExitCode {
 /// scene into, and the channel key presses are forwarded to.
 struct LiveWindowLink {
     share: engine::client::SharedWireScene,
+    ui_share: engine::client::SharedUiScene,
     input: std::sync::mpsc::Sender<u8>,
 }
 
@@ -482,6 +490,14 @@ struct App {
     /// `frame_args.wire`) and the channel key presses are
     /// forwarded to as session Inputs.
     live_share: Option<engine::client::SharedWireScene>,
+    /// The session thread's published UI frames, polled per
+    /// frame into `frame_args.ui` (the live menu source —
+    /// without it the window composites only the `--ui-stub`
+    /// fixture and no sim menu can appear).
+    live_ui_share: Option<engine::client::SharedUiScene>,
+    /// Seq of the last published UI frame seated into
+    /// `frame_args.ui` (re-seat only on a newer frame).
+    live_ui_seq: u64,
     live_input: Option<std::sync::mpsc::Sender<u8>>,
     cursor: (f64, f64),
     drag_from: Option<(f64, f64)>,
@@ -532,7 +548,7 @@ impl App {
         // transients stay unseated for live sessions. Until
         // the first Snapshot publishes, `wire` stays None and
         // the frame is the default fixture.
-        let (live_share, live_input) = match cfg.live {
+        let (live_share, live_ui_share, live_input) = match cfg.live {
             Some(link) => {
                 frame_args.sky = None;
                 frame_args.lighting = None;
@@ -568,9 +584,9 @@ impl App {
                         }
                     }
                 }
-                (Some(link.share), Some(link.input))
+                (Some(link.share), Some(link.ui_share), Some(link.input))
             }
-            None => (None, None),
+            None => (None, None, None),
         };
         // Stub UI: a fixed 640x360 synthetic frame in an in-memory
         // store (the compositor stretches it to the window).
@@ -609,6 +625,8 @@ impl App {
             router,
             input_sink: Vec::new(),
             live_share,
+            live_ui_share,
+            live_ui_seq: 0,
             live_input,
             cursor: (0.0, 0.0),
             drag_from: None,
@@ -626,6 +644,19 @@ impl App {
     /// Sync the live camera/cutaway/size/time into the frame
     /// template before a redraw.
     fn sync_frame_args(&mut self) {
+        // Live UI: seat the session's latest published UI
+        // frame (menus included) whenever a newer one lands.
+        // UI frames arrive on their own cadence (per sim
+        // action), independent of wire-scene publishes.
+        if let Some(share) = &self.live_ui_share {
+            let published = share.lock().expect("ui share lock").clone();
+            if let Some(prepared) = published {
+                if prepared.seq != self.live_ui_seq {
+                    self.live_ui_seq = prepared.seq;
+                    self.frame_args.ui = Some(prepared);
+                }
+            }
+        }
         // Live session: seat the session's latest published
         // wire world (replaced by the session thread after
         // every applied flush; an unchanged scene is the same
@@ -1192,6 +1223,7 @@ mod app_wiring_tests {
             fine_props: false,
             live: Some(LiveWindowLink {
                 share: share.clone(),
+                ui_share: std::sync::Arc::new(std::sync::Mutex::new(None)),
                 input: tx,
             }),
         });
@@ -1220,5 +1252,55 @@ mod app_wiring_tests {
             "the published wire player lands in the seated billboard scene"
         );
         assert_eq!(scene.base_lift, want_lift, "the wire lift is applied");
+    }
+
+    /// Regression (Launch-Sim symptom 4, display half): a UI
+    /// frame the session publishes into the shared UI slot
+    /// must land in the App's frame args — that slot is the
+    /// ONLY route by which a live sim menu (inventory &c.)
+    /// can reach the compositor. Before the fix the slot did
+    /// not exist: the session validated each UiFrame and
+    /// dropped it, and the App composited only its --ui-stub
+    /// fixture.
+    #[test]
+    fn live_app_seats_the_published_ui_frame() {
+        let (tx, _rx) = std::sync::mpsc::channel::<u8>();
+        let share: engine::client::SharedWireScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let ui_share: engine::client::SharedUiScene =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut app = App::new(WindowConfig {
+            renderer_kind: RendererKind::Rt,
+            textures_dir: None,
+            effects: None,
+            billboards: None,
+            ui_stub: false,
+            light_hour: None,
+            vehicle_fixture: false,
+            transient_fixture_ms: None,
+            render_scale: 1,
+            fine_props: false,
+            live: Some(LiveWindowLink {
+                share,
+                ui_share: ui_share.clone(),
+                input: tx,
+            }),
+        });
+        assert!(app.frame_args.ui.is_none(), "no UI before any publish");
+        *ui_share.lock().expect("ui share lock") = Some(engine::frame::UiPrepared {
+            tight: vec![7, 7, 7, 255],
+            size: (1, 1),
+            mode: proto::UiMode::UiInput,
+            terrain_rect: None,
+            seq: 42,
+        });
+        app.sync_frame_args();
+        let ui = app
+            .frame_args
+            .ui
+            .as_ref()
+            .expect("the published UI frame is seated for compositing");
+        assert_eq!(ui.seq, 42);
+        assert_eq!(ui.mode, proto::UiMode::UiInput, "the inventory-mode frame lands");
     }
 }

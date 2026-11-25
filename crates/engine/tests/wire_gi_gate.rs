@@ -79,6 +79,7 @@ fn run_session(
         ConnectConfig {
             input: ConnectInput::Channel(rx),
             share: Some(share.clone()),
+            ui_share: None,
             captures: None,
             models_dir: None,
             billboards_dir: None,

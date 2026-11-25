@@ -373,6 +373,7 @@ fn connect_session_captures_live_wire_world() {
         ConnectConfig {
             input: ConnectInput::Channel(rx),
             share: Some(share.clone()),
+            ui_share: None,
             captures: Some(ConnectCaptures {
                 first: Some(first_png.clone()),
                 end: Some(end_png.clone()),
